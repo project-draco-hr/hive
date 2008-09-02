@@ -1,0 +1,30 @@
+{
+  if (tbl.isPartitioned()) {
+    List<org.apache.hadoop.hive.metastore.api.Partition> tParts;
+    try {
+      tParts=msc.listPartitions(tbl.getDbName(),tbl.getName(),(short)-1);
+    }
+ catch (    Exception e) {
+      LOG.error(StringUtils.stringifyException(e));
+      throw new HiveException(e);
+    }
+    List<Partition> parts=new ArrayList<Partition>(tParts.size());
+    for (    org.apache.hadoop.hive.metastore.api.Partition tpart : tParts) {
+      parts.add(new Partition(tbl,tpart));
+    }
+    List<Partition> hdfsPartitions=tbl.getPartitionsFromHDFS();
+    if (hdfsPartitions.size() != parts.size()) {
+      LOG.error("Metadata for partitions doesn't match the data in HDFS. Table name: " + tbl.getName());
+      return hdfsPartitions;
+    }
+    return parts;
+  }
+ else {
+    org.apache.hadoop.hive.metastore.api.Partition tPart=new org.apache.hadoop.hive.metastore.api.Partition();
+    tPart.setSd(tbl.getTTable().getSd());
+    Partition part=new Partition(tbl,tPart);
+    ArrayList<Partition> parts=new ArrayList<Partition>(1);
+    parts.add(part);
+    return parts;
+  }
+}

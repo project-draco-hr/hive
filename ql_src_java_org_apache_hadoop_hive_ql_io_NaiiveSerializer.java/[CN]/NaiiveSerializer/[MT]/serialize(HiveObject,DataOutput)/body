@@ -1,0 +1,62 @@
+{
+  try {
+    if (ho.getIsNull()) {
+      os.write(nullByteArray);
+    }
+ else {
+      if (topLevelFields == null) {
+        try {
+          if (ho.isPrimitive()) {
+            topLevelFields=HiveObject.nlist;
+            isPrimitive=true;
+          }
+ else {
+            topLevelFields=ho.getFields();
+            isPrimitive=false;
+            assert(topLevelFields != null);
+            topLevelSerializers=new NaiiveSerializer[topLevelFields.size()];
+            for (int i=0; i < topLevelFields.size(); i++) {
+              topLevelSerializers[i]=new NaiiveSerializer();
+              topLevelSerializers[i].setSeparator(separator + 1);
+              topLevelSerializers[i].setIsTopLevel(false);
+              topLevelSerializers[i].setNullByteArray(nullByteArray);
+            }
+          }
+        }
+ catch (        HiveException e) {
+          throw new RuntimeException("Cannot get Fields from HiveObject",e);
+        }
+      }
+      if (isPrimitive) {
+        os.write(ho.getJavaObject().toString().getBytes("UTF-8"));
+      }
+ else {
+        boolean first=true;
+        int i=-1;
+        for (        SerDeField onef : topLevelFields) {
+          i++;
+          if (!first) {
+            os.write(separator);
+          }
+ else {
+            first=false;
+          }
+          HiveObject nho=ho.get(onef);
+          if (nho == null)           continue;
+          if (nho.isPrimitive()) {
+            os.write(nho.getJavaObject().toString().getBytes("UTF-8"));
+          }
+ else {
+            topLevelSerializers[i].serialize(nho,os);
+          }
+        }
+      }
+    }
+    if (isTopLevel) {
+      os.write(terminator);
+    }
+  }
+ catch (  HiveException e) {
+    writeErrorCount++;
+  }
+}

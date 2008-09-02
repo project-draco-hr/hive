@@ -1,0 +1,81 @@
+{
+  boolean noName=StringUtils.isEmpty(conf.getVar(HiveConf.ConfVars.HADOOPJOBNAME));
+  int maxlen=conf.getIntVar(HiveConf.ConfVars.HIVEJOBNAMELENGTH);
+  int jobs=0;
+  conf.setVar(HiveConf.ConfVars.HIVEQUERYID,command);
+  try {
+    BaseSemanticAnalyzer sem;
+    LOG.info("Starting command: " + command);
+    if (resStream != null) {
+      resStream.close();
+      resStream=null;
+    }
+    ctx.clear();
+    pd=new ParseDriver();
+    CommonTree tree=pd.parse(command);
+    while ((tree.getToken() == null) && (tree.getChildCount() > 0)) {
+      tree=(CommonTree)tree.getChild(0);
+    }
+    sem=SemanticAnalyzerFactory.get(conf,tree);
+    sem.analyze(tree,ctx);
+    LOG.info("Semantic Analysis Completed");
+    for (    Task rootTask : sem.getRootTasks()) {
+      rootTask.initialize(conf);
+    }
+    jobs=countJobs(sem.getRootTasks());
+    if (jobs > 0) {
+      console.printInfo("Total MapReduce jobs = " + jobs);
+    }
+    Queue<Task> runnable=new LinkedList<Task>();
+    for (    Task rootTask : sem.getRootTasks()) {
+      if (runnable.offer(rootTask) == false) {
+        LOG.error("Could not insert the first task into the queue");
+        return (1);
+      }
+    }
+    while (runnable.peek() != null) {
+      Task tsk=runnable.remove();
+      if (noName) {
+        conf.setVar(HiveConf.ConfVars.HADOOPJOBNAME,Utilities.abbreviate(command,maxlen));
+      }
+      int exitVal=tsk.execute();
+      if (exitVal != 0) {
+        console.printError("FAILED: Execution Error, return code " + exitVal + " from "+ tsk.getClass().getName());
+        return 9;
+      }
+      tsk.setDone();
+      if (tsk.getChildTasks() == null) {
+        continue;
+      }
+      for (      Object child : tsk.getChildTasks()) {
+        if (!((Task)child).isRunnable()) {
+          continue;
+        }
+        if (runnable.offer((Task)child) == false) {
+          LOG.error("Could not add child task to queue");
+        }
+      }
+    }
+  }
+ catch (  SemanticException e) {
+    console.printError("FAILED: Error in semantic analysis: " + e.getMessage());
+    return (10);
+  }
+catch (  ParseException e) {
+    console.printError("FAILED: Parse Error: " + e.getMessage());
+    return (11);
+  }
+catch (  Exception e) {
+    console.printError("FAILED: Unknown exception : " + e.getMessage(),"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
+    return (12);
+  }
+ finally {
+    if (noName) {
+      conf.setVar(HiveConf.ConfVars.HADOOPJOBNAME,"");
+    }
+  }
+  if (jobs > 0) {
+    console.printInfo("OK");
+  }
+  return (0);
+}

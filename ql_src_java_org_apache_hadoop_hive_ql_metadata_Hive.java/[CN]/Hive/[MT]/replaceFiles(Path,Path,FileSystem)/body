@@ -1,0 +1,44 @@
+{
+  FileStatus[] srcs;
+  try {
+    srcs=fs.globStatus(srcf);
+  }
+ catch (  IOException e) {
+    throw new HiveException("addFiles: filesystem error in check phase",e);
+  }
+  if (srcs == null) {
+    LOG.info("No sources specified to move: " + srcf);
+    return;
+  }
+  checkPaths(fs,srcs,destf,true);
+  Random randGen=new Random();
+  Path tmppath=new Path("/tmp/" + randGen.nextInt());
+  try {
+    fs.mkdirs(tmppath);
+    for (int i=0; i < srcs.length; i++) {
+      FileStatus[] items=fs.listStatus(srcs[i].getPath());
+      for (int j=0; j < items.length; j++) {
+        if (items[j].getPath().getName().startsWith("_task")) {
+          continue;
+        }
+        boolean b=fs.rename(items[j].getPath(),new Path(tmppath,items[j].getPath().getName()));
+        LOG.debug("Renaming:" + items[j] + ",Status:"+ b);
+      }
+    }
+    boolean b=fs.delete(destf,true);
+    LOG.debug("Deleting:" + destf.toString() + ",Status:"+ b);
+    b=fs.rename(tmppath,destf);
+    LOG.debug("Renaming:" + tmppath.toString() + ",Status:"+ b);
+  }
+ catch (  IOException e) {
+    throw new HiveException("replaceFiles: error while moving files!!!",e);
+  }
+ finally {
+    try {
+      fs.delete(tmppath,true);
+    }
+ catch (    IOException e) {
+      LOG.warn("Unable delete path " + tmppath,e);
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  if (!tbl.isValidSpec(partSpec)) {
+    throw new HiveException("Invalid partition: " + partSpec);
+  }
+  List<String> pvals=new ArrayList<String>();
+  for (  FieldSchema field : tbl.getPartCols()) {
+    String val=partSpec.get(field.getName());
+    if (val == null || val.length() == 0) {
+      throw new HiveException("Value for key " + field.getName() + " is null or empty");
+    }
+    pvals.add(val);
+  }
+  org.apache.hadoop.hive.metastore.api.Partition tpart=null;
+  try {
+    tpart=msc.getPartition(MetaStoreUtils.DEFAULT_DATABASE_NAME,tbl.getName(),pvals);
+    if (tpart == null && forceCreate) {
+      LOG.debug("creating partition for table " + tbl.getName() + " with partition spec : "+ partSpec);
+      tpart=msc.appendPartition(MetaStoreUtils.DEFAULT_DATABASE_NAME,tbl.getName(),pvals);
+      ;
+    }
+    if (tpart == null) {
+      return null;
+    }
+  }
+ catch (  Exception e) {
+    LOG.error(StringUtils.stringifyException(e));
+    throw new HiveException(e);
+  }
+  return new Partition(tbl,tpart);
+}

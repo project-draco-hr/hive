@@ -1,0 +1,50 @@
+{
+  this.fieldName=fieldName;
+  isMap=isList=isClove=false;
+  if (fieldName.startsWith("#")) {
+    fieldName=fieldName.substring(1);
+    isLength=true;
+  }
+ else {
+    isLength=false;
+  }
+  SerDeField curField=parentField;
+  String[] component=fieldName.split("\\.");
+  unitArray=new Unit[component.length];
+  int firstListIndex=-1;
+  l4j.debug("ComplexSerDeField: Parent=" + ((parentField != null) ? parentField.getName() : "") + ", Field="+ fieldName);
+  for (int i=0; i < component.length; i++) {
+    Matcher m=sUnit.matcher(component[i]);
+    if (!m.matches())     throw new SerDeException("Illegal fieldName: " + fieldName);
+    String cField=m.group(1);
+    String cIndex=m.group(3);
+    unitArray[i]=new Unit();
+    if (cField != null) {
+      curField=classSD.getFieldFromExpression(curField,cField);
+    }
+    unitArray[i].init(curField,cIndex);
+    if (unitArray[i].isList()) {
+      isList=true;
+      if (firstListIndex == -1) {
+        firstListIndex=i;
+        if (i == (component.length - 1)) {
+          isClove=true;
+        }
+      }
+    }
+ else     if (unitArray[i].isMap()) {
+      isMap=true;
+      if (i != (component.length - 1))       throw new SerDeException("Trying to nest within map field: " + cField);
+    }
+ else     if (unitArray[i].isPrimitive()) {
+      if (i != (component.length - 1))       throw new SerDeException("Trying to nest within primitive field: " + cField);
+    }
+    l4j.debug("Unit=" + ReflectionSerDeField.fieldToString(unitArray[i]));
+    curField=unitArray[i];
+  }
+  if (isLength && !isList) {
+    throw new SerDeException("Cannot get length of non-list type: " + this.fieldName);
+  }
+  currentObjects=new ArrayList();
+  nextObjects=new ArrayList();
+}

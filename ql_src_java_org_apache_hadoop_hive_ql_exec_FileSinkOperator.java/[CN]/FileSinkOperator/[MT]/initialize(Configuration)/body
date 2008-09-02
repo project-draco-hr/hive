@@ -1,0 +1,43 @@
+{
+  super.initialize(hconf);
+  try {
+    fs=FileSystem.get(hconf);
+    finalPath=new Path(conf.getDirName(),Utilities.getTaskId(hconf));
+    outPath=new Path(conf.getDirName(),"tmp." + Utilities.getTaskId(hconf));
+    OutputFormat outputFormat=conf.getTableInfo().getOutputFileFormatClass().newInstance();
+    if (outputFormat instanceof IgnoreKeyTextOutputFormat) {
+      final FSDataOutputStream outStream=fs.create(outPath);
+      outWriter=new RecordWriter(){
+        public void write(        Writable r) throws IOException {
+          Text tr=(Text)r;
+          outStream.write(tr.getBytes(),0,tr.getLength());
+          outStream.write('\n');
+        }
+        public void close(        boolean abort) throws IOException {
+          outStream.close();
+        }
+      }
+;
+    }
+ else     if (outputFormat instanceof SequenceFileOutputFormat) {
+      final SequenceFile.Writer outStream=SequenceFile.createWriter(fs,hconf,outPath,BytesWritable.class,Text.class);
+      outWriter=new RecordWriter(){
+        public void write(        Writable r) throws IOException {
+          outStream.append(commonKey,r);
+        }
+        public void close(        boolean abort) throws IOException {
+          outStream.close();
+        }
+      }
+;
+    }
+ else {
+      assert(false);
+    }
+    serDe=conf.getTableInfo().getSerdeClass().newInstance();
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    throw new HiveException(e);
+  }
+}

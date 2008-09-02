@@ -1,0 +1,40 @@
+{
+  try {
+    ArrayList<HiveObject> keys=new ArrayList<HiveObject>(keyFields.length);
+    for (int i=0; i < keyFields.length; i++) {
+      keys.add(keyFields[i].evaluate(row));
+    }
+    CompositeHiveObject newKeys=new CompositeHiveObject(keys);
+    UDAF[] aggs=null;
+    Object[][] lastInvoke=null;
+    if (aggregations != null) {
+      if (currentKeys != null && !newKeys.equals(currentKeys)) {
+        forward(currentKeys,aggregations);
+      }
+      if (currentKeys == null || !newKeys.equals(currentKeys)) {
+        currentKeys=newKeys;
+        for (        UDAF aggregation : aggregations) {
+          aggregation.init();
+        }
+        for (int i=0; i < aggregationsParametersLastInvoke.length; i++) {
+          aggregationsParametersLastInvoke[i]=null;
+        }
+      }
+      aggs=aggregations;
+      lastInvoke=aggregationsParametersLastInvoke;
+    }
+ else {
+      aggs=hashAggregations.get(newKeys);
+      if (aggs == null) {
+        aggs=newAggregations();
+        hashAggregations.put(newKeys,aggs);
+        lastInvoke=null;
+      }
+    }
+    updateAggregations(aggs,row,lastInvoke);
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    throw new HiveException(e);
+  }
+}

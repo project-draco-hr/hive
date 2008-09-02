@@ -1,0 +1,28 @@
+{
+  QBParseInfo qbp=qb.getParseInfo();
+  OperatorInfoList output=new OperatorInfoList();
+  TreeSet<String> ks=new TreeSet<String>();
+  ks.addAll(qbp.getClauseNames());
+  for (  String dest : ks) {
+    OperatorInfoList curr=input;
+    if (qbp.getWhrForClause(dest) != null) {
+      curr=genFilterPlan(dest,qb,curr);
+    }
+    if (qbp.getAggregationExprsForClause(dest).size() != 0 || getGroupByForClause(qbp,dest).size() > 0) {
+      curr=genGroupByPlan2MR(dest,qb,curr);
+    }
+ else {
+      curr=genSelectPlan(dest,qb,curr);
+    }
+    if (qbp.getClusterByForClause(dest) != null) {
+      curr=genReduceSinkPlan(dest,qb,curr);
+    }
+ else     if (!qbp.getIsSubQ()) {
+      curr=genConversionOps(dest,qb,curr);
+      curr=genFileSinkPlan(dest,qb,curr);
+    }
+    output.addAll(curr);
+  }
+  LOG.debug("Created Body Plan for Query Block " + qb.getId());
+  return output;
+}

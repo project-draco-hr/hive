@@ -1,0 +1,22 @@
+{
+  RowResolver reduceSinkOutputRowResolver2=new RowResolver();
+  reduceSinkOutputRowResolver2.setIsExprResolver(true);
+  ArrayList<exprNodeDesc> reduceKeys=new ArrayList<exprNodeDesc>();
+  List<CommonTree> grpByExprs=getGroupByForClause(parseInfo,dest);
+  for (int i=0; i < grpByExprs.size(); ++i) {
+    CommonTree grpbyExpr=grpByExprs.get(i);
+    String field=(Integer.valueOf(i)).toString();
+    reduceKeys.add(new exprNodeColumnDesc(TypeInfo.getPrimitiveTypeInfo(String.class),field));
+    reduceSinkOutputRowResolver2.put("",grpbyExpr.toStringTree(),new ColumnInfo(Utilities.ReduceField.KEY.toString() + "." + field,String.class,false));
+  }
+  ArrayList<exprNodeDesc> reduceValues=new ArrayList<exprNodeDesc>();
+  int inputField=reduceKeys.size();
+  HashMap<String,CommonTree> aggregationTrees=parseInfo.getAggregationExprsForClause(dest);
+  for (  Map.Entry entry : aggregationTrees.entrySet()) {
+    String key=(String)entry.getKey();
+    reduceValues.add(new exprNodeColumnDesc(TypeInfo.getPrimitiveTypeInfo(String.class),(Integer.valueOf(inputField)).toString()));
+    inputField++;
+    reduceSinkOutputRowResolver2.put("",((CommonTree)entry.getValue()).toStringTree(),new ColumnInfo(Utilities.ReduceField.VALUE.toString() + "." + (Integer.valueOf(reduceValues.size() - 1)).toString(),String.class,false));
+  }
+  return new OperatorInfo(OperatorFactory.getAndMakeChild(new reduceSinkDesc(reduceKeys,reduceValues,numPartitionFields),new RowSchema(reduceSinkOutputRowResolver2.getColumnInfos()),groupByOperatorInfo.getOp()),reduceSinkOutputRowResolver2);
+}

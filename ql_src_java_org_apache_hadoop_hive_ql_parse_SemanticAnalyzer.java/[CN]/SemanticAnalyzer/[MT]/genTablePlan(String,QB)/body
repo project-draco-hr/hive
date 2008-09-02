@@ -1,0 +1,63 @@
+{
+  Table tab=qb.getMetaData().getSrcForAlias(alias);
+  RowResolver rwsch=new RowResolver();
+  for (  SerDeField field : tab.getFields(null)) {
+    rwsch.put(alias,field.getName(),new ColumnInfo(field.getName(),new TypeInfo(tab.getSerDe(),field),false));
+  }
+  for (  FieldSchema part_col : tab.getPartCols()) {
+    LOG.trace("Adding partition col: " + part_col);
+    rwsch.put(alias,part_col.getName(),new ColumnInfo(part_col.getName(),String.class,true));
+  }
+  Operator<? extends Serializable> top=OperatorFactory.get(forwardDesc.class,new RowSchema(rwsch.getColumnInfos()));
+  String alias_id=(qb.getId() == null ? alias : qb.getId() + ":" + alias);
+  this.topOps.put(alias_id,top);
+  Operator<? extends Serializable> tableOp=top;
+  TableSample ts=qb.getParseInfo().getTabSample(alias);
+  if (ts != null) {
+    int num=ts.getNumerator();
+    int den=ts.getDenominator();
+    ArrayList<String> sampleCols=ts.getCols();
+    List<FieldSchema> tabCols=tab.getCols();
+    for (    String col : sampleCols) {
+      boolean found=false;
+      for (      FieldSchema s : tabCols) {
+        if (col.equalsIgnoreCase(s.getName())) {
+          found=true;
+        }
+      }
+      if (!found) {
+        throw new SemanticException(ErrorMsg.SAMPLE_COLUMN_NOT_FOUND.getMsg(qb.getParseInfo().getSrcForAlias(alias),"Sampling column " + col + " not found in table "+ tab.getName()));
+      }
+    }
+    List<String> tabBucketCols=tab.getBucketCols();
+    int numBuckets=tab.getNumBuckets();
+    boolean colsEqual=true;
+    if (sampleCols.size() != tabBucketCols.size()) {
+      colsEqual=false;
+    }
+    for (int i=0; i < sampleCols.size() && colsEqual; i++) {
+      boolean colFound=false;
+      for (int j=0; j < tabBucketCols.size() && !colFound; j++) {
+        if (sampleCols.get(i).equalsIgnoreCase(tabBucketCols.get(j))) {
+          colFound=true;
+        }
+      }
+      colsEqual=colFound;
+    }
+    if (colsEqual) {
+      ts.setCols(new ArrayList<String>(tabBucketCols));
+    }
+    if ((sampleCols == null || sampleCols.size() == 0 || colsEqual) && (num == den || den <= numBuckets && numBuckets % den == 0)) {
+      LOG.info("No need for sample filter");
+    }
+ else {
+      LOG.info("Need sample filter");
+      exprNodeDesc samplePredicate=genSamplePredicate(ts);
+      tableOp=OperatorFactory.getAndMakeChild(new filterDesc(samplePredicate),top);
+    }
+  }
+  OperatorInfoList output=new OperatorInfoList();
+  output.add(new OperatorInfo(tableOp,rwsch));
+  LOG.debug("Created Table Plan for " + alias + " "+ tableOp.toString());
+  return output;
+}

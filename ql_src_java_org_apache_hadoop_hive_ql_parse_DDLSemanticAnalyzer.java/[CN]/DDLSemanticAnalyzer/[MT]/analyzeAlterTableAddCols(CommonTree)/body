@@ -1,0 +1,25 @@
+{
+  String tblName=ast.getChild(0).getText();
+  List<FieldSchema> newCols=getColumns((CommonTree)ast.getChild(1));
+  Table tbl;
+  try {
+    tbl=db.getTable(tblName);
+  }
+ catch (  HiveException e) {
+    throw new SemanticException(e.getMessage());
+  }
+  List<FieldSchema> oldCols=tbl.getCols();
+  Iterator<FieldSchema> iterNewCols=newCols.iterator();
+  while (iterNewCols.hasNext()) {
+    FieldSchema newCol=iterNewCols.next();
+    String newColName=newCol.getName();
+    Iterator<FieldSchema> iterOldCols=oldCols.iterator();
+    while (iterOldCols.hasNext()) {
+      String oldColName=iterOldCols.next().getName();
+      if (oldColName.equalsIgnoreCase(newColName))       throw new SemanticException(ErrorMsg.DUPLICATE_COLUMN_NAMES.getMsg());
+    }
+    oldCols.add(newCol);
+  }
+  alterTableDesc alterTblDesc=new alterTableDesc(tblName,oldCols);
+  rootTasks.add(TaskFactory.get(new DDLWork(alterTblDesc),conf));
+}

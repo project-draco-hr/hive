@@ -1,0 +1,35 @@
+{
+  LOG.trace("Started pruning partiton");
+  LOG.trace("tabname = " + this.tab.getName());
+  LOG.trace("prune Expression = " + this.prunerExpr);
+  HashSet<Partition> ret_parts=new HashSet<Partition>();
+  try {
+    ExprNodeEvaluator evaluator=ExprNodeEvaluatorFactory.get(this.prunerExpr);
+    for (    Partition part : Hive.get().getPartitions(this.tab)) {
+      LinkedHashMap<String,String> partSpec=part.getSpec();
+      String[] partNames=new String[partSpec.size()];
+      int i=0;
+      for (      String name : partSpec.keySet()) {
+        partNames[i++]=name;
+      }
+      LabeledCompositeHiveObject hiveObject;
+      hiveObject=new LabeledCompositeHiveObject(partNames);
+      for (      String s : partNames) {
+        hiveObject.addHiveObject(new PrimitiveHiveObject(partSpec.get(s)));
+      }
+      HiveObject r=evaluator.evaluate(hiveObject);
+      LOG.trace("prune result for partition " + partSpec + ": "+ r.getJavaObject());
+      if (!Boolean.FALSE.equals(r.getJavaObject())) {
+        LOG.debug("retained partition: " + partSpec);
+        ret_parts.add(part);
+      }
+ else {
+        LOG.trace("pruned partition: " + partSpec);
+      }
+    }
+  }
+ catch (  Exception e) {
+    throw new HiveException(e);
+  }
+  return ret_parts;
+}

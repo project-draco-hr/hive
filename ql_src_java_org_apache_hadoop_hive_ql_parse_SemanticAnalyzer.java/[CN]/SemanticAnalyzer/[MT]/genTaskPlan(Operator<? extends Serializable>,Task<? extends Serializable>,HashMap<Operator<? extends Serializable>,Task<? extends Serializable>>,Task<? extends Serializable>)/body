@@ -1,0 +1,63 @@
+{
+  if (op.getClass() == FileSinkOperator.class) {
+    currTask.addDependentTask(mvTask);
+  }
+  List<Operator<? extends Serializable>> childOps=op.getChildOperators();
+  if (childOps == null) {
+    return;
+  }
+  mapredWork plan=(mapredWork)currTask.getWork();
+  for (int i=0; i < childOps.size(); ++i) {
+    Operator<? extends Serializable> child=childOps.get(i);
+    if (child.getClass() == ReduceSinkOperator.class) {
+      assert(child.getChildOperators().size() == 1);
+      Operator<? extends Serializable> reducer=child.getChildOperators().get(0);
+      assert(plan.getReducer() != null);
+      if (plan.getReducer() == reducer) {
+        if (child.getChildOperators().get(0).getClass() == JoinOperator.class)         plan.setNeedsTagging(true);
+        genTaskPlan(reducer,currTask,redTaskMap,mvTask);
+      }
+ else       if (plan.getReducer() != reducer) {
+        Task<? extends Serializable> ctask=null;
+        mapredWork cplan=null;
+        ctask=redTaskMap.get(reducer);
+        if (ctask == null) {
+          cplan=getMapRedWork();
+          ctask=TaskFactory.get(cplan,this.conf);
+          cplan.setReducer(reducer);
+          redTaskMap.put(reducer,ctask);
+          genTaskPlan(reducer,ctask,redTaskMap,mvTask);
+          String taskTmpDir=this.scratchDir + File.separator + this.randomid+ '.'+ this.pathid;
+          this.pathid++;
+          StringBuilder sb=new StringBuilder();
+          boolean isfirst=true;
+          for (          ColumnInfo colInfo : op.getSchema().getSignature()) {
+            if (!isfirst) {
+              sb.append(",");
+            }
+            sb.append(colInfo.getInternalName());
+            isfirst=false;
+          }
+          tableDesc tt_desc=new tableDesc(org.apache.hadoop.hive.serde.simple_meta.MetadataTypedColumnsetSerDe.class,TextInputFormat.class,IgnoreKeyTextOutputFormat.class,Utilities.makeProperties(org.apache.hadoop.hive.serde.Constants.SERIALIZATION_FORMAT,"" + Utilities.ctrlaCode,"columns",sb.toString()));
+          Operator<? extends Serializable> fs_op=OperatorFactory.get(new fileSinkDesc(taskTmpDir,tt_desc),op.getSchema());
+          childOps.set(i,fs_op);
+          if (cplan.getPathToAliases().get(taskTmpDir) == null) {
+            cplan.getPathToAliases().put(taskTmpDir,new ArrayList<String>());
+          }
+          String streamDesc;
+          if (child.getChildOperators().get(0).getClass() == JoinOperator.class)           streamDesc="$INTNAME";
+ else           streamDesc=taskTmpDir;
+          cplan.getPathToAliases().get(taskTmpDir).add(streamDesc);
+          cplan.getPathToPartitionInfo().put(taskTmpDir,new partitionDesc(tt_desc,null));
+          cplan.getAliasToWork().put(streamDesc,child);
+          currTask.addDependentTask(ctask);
+          if (child.getChildOperators().get(0).getClass() == JoinOperator.class)           cplan.setNeedsTagging(true);
+        }
+      }
+      child.setChildOperators(null);
+    }
+ else {
+      genTaskPlan(child,currTask,redTaskMap,mvTask);
+    }
+  }
+}

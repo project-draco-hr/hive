@@ -1,0 +1,27 @@
+{
+  if (!fromURI.getScheme().equals("file") && !fromURI.getScheme().equals("hdfs")) {
+    throw new SemanticException(ErrorMsg.INVALID_PATH.getMsg(ast,"only \"file\" or \"hdfs\" file systems accepted"));
+  }
+  if (isLocal && !fromURI.getScheme().equals("file")) {
+    throw new SemanticException(ErrorMsg.ILLEGAL_PATH.getMsg(ast));
+  }
+  try {
+    FileStatus[] srcs=matchFilesOrDir(fs,new Path(fromURI.getScheme(),fromURI.getAuthority(),fromURI.getPath()));
+    if (srcs == null || srcs.length == 0) {
+      throw new SemanticException(ErrorMsg.INVALID_PATH.getMsg(ast,"No files matching path"));
+    }
+    for (    FileStatus oneSrc : srcs) {
+      if (oneSrc.isDir()) {
+        throw new SemanticException(ErrorMsg.INVALID_PATH.getMsg(ast,"source contains directory: " + oneSrc.getPath().toString()));
+      }
+    }
+  }
+ catch (  IOException e) {
+    LOG.error(org.apache.hadoop.util.StringUtils.stringifyException(e));
+    throw new SemanticException(ErrorMsg.INVALID_PATH.getMsg(ast));
+  }
+  if (!isLocal && (!StringUtils.equals(fromURI.getScheme(),toURI.getScheme()) || !StringUtils.equals(fromURI.getAuthority(),toURI.getAuthority()))) {
+    LOG.error("Move from: " + fromURI.toString() + " to: "+ toURI.toString()+ " is not valid");
+    throw new SemanticException(ErrorMsg.ILLEGAL_PATH.getMsg(ast,"Cannot load data across filesystems, use load data local"));
+  }
+}

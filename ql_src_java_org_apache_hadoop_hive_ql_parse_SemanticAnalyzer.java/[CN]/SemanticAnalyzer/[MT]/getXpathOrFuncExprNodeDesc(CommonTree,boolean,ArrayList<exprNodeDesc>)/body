@@ -1,0 +1,48 @@
+{
+  if (isRedundantConversionFunction(expr,isFunction,children)) {
+    assert(children.size() == 1);
+    return children.get(0);
+  }
+  String funcText=getFunctionText(expr,isFunction);
+  exprNodeDesc desc;
+  if (funcText.equals(".")) {
+    assert(children.size() == 2);
+    assert(children.get(1) instanceof exprNodeConstantDesc);
+    exprNodeDesc object=children.get(0);
+    exprNodeConstantDesc fieldName=(exprNodeConstantDesc)children.get(1);
+    assert(fieldName.getValue() instanceof String);
+    String fieldNameString=(String)fieldName.getValue();
+    TypeInfo t=object.getTypeInfo().getFieldType(fieldNameString);
+    desc=new exprNodeFieldDesc(t,children.get(0),fieldNameString);
+  }
+ else   if (funcText.equals("[")) {
+    assert(children.size() == 2);
+    if (!(children.get(1) instanceof exprNodeConstantDesc) || !(((exprNodeConstantDesc)children.get(1)).getValue() instanceof Integer)) {
+      throw new SemanticException(ErrorMsg.INVALID_ARRAYINDEX_CONSTANT.getMsg(expr));
+    }
+    TypeInfo t=children.get(0).getTypeInfo().getListElementType();
+    desc=new exprNodeIndexDesc(t,children.get(0),children.get(1));
+  }
+ else {
+    Class<? extends UDF> udf=UDFRegistry.getUDFClass(funcText);
+    if (udf == null) {
+      throw new SemanticException(ErrorMsg.INVALID_FUNCTION.getMsg((CommonTree)expr.getChild(0)));
+    }
+    desc=getFuncExprNodeDesc(funcText,children);
+    if (desc == null) {
+      ArrayList<Class<?>> argumentClasses=new ArrayList<Class<?>>(children.size());
+      for (int i=0; i < children.size(); i++) {
+        argumentClasses.add(children.get(i).getTypeInfo().getPrimitiveClass());
+      }
+      if (isFunction) {
+        String reason="Looking for UDF \"" + expr.getChild(0).getText() + "\" with parameters "+ argumentClasses;
+        throw new SemanticException(ErrorMsg.INVALID_FUNCTION_SIGNATURE.getMsg((CommonTree)expr.getChild(0),reason));
+      }
+ else {
+        String reason="Looking for Operator \"" + expr.getText() + "\" with parameters "+ argumentClasses;
+        throw new SemanticException(ErrorMsg.INVALID_OPERATOR_SIGNATURE.getMsg(expr,reason));
+      }
+    }
+  }
+  return desc;
+}

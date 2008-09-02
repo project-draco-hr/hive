@@ -1,0 +1,39 @@
+{
+  super.initialize(hconf);
+  totalSz=0;
+  storage=new HashMap<Byte,Vector<CompositeHiveObject>>();
+  numValues=conf.getExprs().size();
+  joinExprs=new HashMap<Byte,JoinExprMap>();
+  if (order == null) {
+    order=new Byte[numValues];
+    for (int i=0; i < numValues; i++)     order[i]=(byte)i;
+  }
+  condn=conf.getConds();
+  noOuterJoin=conf.getNoOuterJoin();
+  Map<Byte,ArrayList<exprNodeDesc>> map=conf.getExprs();
+  Iterator entryIter=map.entrySet().iterator();
+  while (entryIter.hasNext()) {
+    Map.Entry e=(Map.Entry)entryIter.next();
+    Byte key=(Byte)e.getKey();
+    ArrayList<exprNodeDesc> expr=(ArrayList<exprNodeDesc>)e.getValue();
+    int sz=expr.size();
+    totalSz+=sz;
+    ExprNodeEvaluator[] valueFields=new ExprNodeEvaluator[sz];
+    for (int j=0; j < sz; j++)     valueFields[j]=ExprNodeEvaluatorFactory.get(expr.get(j));
+    joinExprs.put(key,new JoinExprMap(valueFields,CompositeHiveObject.getFields(sz)));
+  }
+  dummyObj=new HiveObject[numValues];
+  dummyObjVectors=new Vector[numValues];
+  int pos=0;
+  for (  Byte alias : order) {
+    int sz=map.get(alias).size();
+    CompositeHiveObject nr=new CompositeHiveObject(sz);
+    for (int j=0; j < sz; j++)     nr.addHiveObject(null);
+    dummyObj[pos]=nr;
+    Vector<CompositeHiveObject> values=new Vector<CompositeHiveObject>();
+    values.add((CompositeHiveObject)dummyObj[pos]);
+    dummyObjVectors[pos]=values;
+    pos++;
+  }
+  iterators=new Stack<Iterator<CompositeHiveObject>>();
+}

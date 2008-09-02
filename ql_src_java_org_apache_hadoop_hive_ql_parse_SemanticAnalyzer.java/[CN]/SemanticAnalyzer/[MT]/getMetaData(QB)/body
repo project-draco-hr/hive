@@ -1,0 +1,56 @@
+{
+  try {
+    LOG.info("Get metadata for source tables");
+    for (    String alias : qb.getTabAliases()) {
+      String tab_name=qb.getTabNameForAlias(alias);
+      Table tab=null;
+      try {
+        tab=this.db.getTable(tab_name);
+      }
+ catch (      InvalidTableException ite) {
+        throw new SemanticException(ErrorMsg.INVALID_TABLE.getMsg(qb.getParseInfo().getSrcForAlias(alias)));
+      }
+      qb.getMetaData().setSrcForAlias(alias,tab);
+    }
+    LOG.info("Get metadata for subqueries");
+    for (    String alias : qb.getSubqAliases()) {
+      QBExpr qbexpr=qb.getSubqForAlias(alias);
+      getMetaData(qbexpr);
+    }
+    LOG.info("Get metadata for destination tables");
+    QBParseInfo qbp=qb.getParseInfo();
+    for (    String name : qbp.getClauseNamesForDest()) {
+      CommonTree ast=qbp.getDestForClause(name);
+switch (ast.getToken().getType()) {
+case HiveParser.TOK_TAB:
+{
+          tableSpec ts=new tableSpec(this.db,ast);
+          if (ts.partSpec == null) {
+            qb.getMetaData().setDestForAlias(name,ts.tableHandle);
+          }
+ else {
+            qb.getMetaData().setDestForAlias(name,ts.partHandle);
+          }
+          break;
+        }
+case HiveParser.TOK_LOCAL_DIR:
+case HiveParser.TOK_DIR:
+{
+        String fname=stripQuotes(ast.getChild(0).getText());
+        if ((!qb.getParseInfo().getIsSubQ()) && (((CommonTree)ast.getChild(0)).getToken().getType() == HiveParser.TOK_TMP_FILE)) {
+          fname=getTmpFileName();
+          ctx.setResDir(new Path(fname));
+        }
+        qb.getMetaData().setDestForAlias(name,fname,(ast.getToken().getType() == HiveParser.TOK_DIR));
+        break;
+      }
+default :
+    throw new SemanticException("Unknown Token Type " + ast.getToken().getType());
+}
+}
+}
+ catch (HiveException e) {
+LOG.error(org.apache.hadoop.util.StringUtils.stringifyException(e));
+throw new SemanticException(e.getMessage(),e);
+}
+}

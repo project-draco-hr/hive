@@ -1,0 +1,32 @@
+{
+  boolean success=false;
+  boolean commited=false;
+  try {
+    openTransaction();
+    dbname=dbname.toLowerCase();
+    LOG.info("Dropping database along with all tables " + dbname);
+    Query q1=pm.newQuery(MTable.class,"database.name == dbName");
+    q1.declareParameters("java.lang.String dbName");
+    List<MTable> mtbls=(List<MTable>)q1.execute(dbname.trim());
+    pm.deletePersistentAll(mtbls);
+    Query query=pm.newQuery(MDatabase.class,"name == dbName");
+    query.declareParameters("java.lang.String dbName");
+    query.setUnique(true);
+    MDatabase db=(MDatabase)query.execute(dbname.trim());
+    pm.retrieve(db);
+    if (db != null)     pm.deletePersistent(db);
+    commited=commitTransaction();
+    success=true;
+  }
+ catch (  JDOObjectNotFoundException e) {
+    LOG.debug("database not found " + dbname,e);
+    commited=commitTransaction();
+  }
+ finally {
+    if (!commited) {
+      rollbackTransaction();
+      success=false;
+    }
+  }
+  return success;
+}

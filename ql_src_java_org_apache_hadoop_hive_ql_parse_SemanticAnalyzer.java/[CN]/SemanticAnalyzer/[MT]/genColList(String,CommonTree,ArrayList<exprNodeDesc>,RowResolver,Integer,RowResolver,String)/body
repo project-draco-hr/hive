@@ -1,0 +1,41 @@
+{
+  String tabName=((CommonTree)sel.getChild(0)).getToken().getText();
+  ArrayList<TypeInfo> fieldTypeList=new ArrayList<TypeInfo>();
+  ArrayList<String> fieldList=new ArrayList<String>();
+  if (sel.getToken().getType() == HiveParser.TOK_ALLCOLREF) {
+    for (    ColumnInfo colInfo : input.getColumnInfos()) {
+      String name=colInfo.getInternalName();
+      String[] tmp=input.reverseLookup(name);
+      fieldList.add(name);
+      fieldTypeList.add(colInfo.getType());
+      output.put(alias,tmp[1],new ColumnInfo(pos.toString(),colInfo.getType(),colInfo.getIsVirtual()));
+      pos=Integer.valueOf(pos.intValue() + 1);
+    }
+  }
+ else {
+    if (sel.getChildCount() == 1) {
+      throw new SemanticException(ErrorMsg.NO_TABLE_ALIAS.getMsg(sel.getChild(0)));
+    }
+    ColumnInfo colInfo=input.get(tabName,sel.getChild(1).getText());
+    if (colInfo == null && input.getIsExprResolver()) {
+      throw new SemanticException(ErrorMsg.NON_KEY_EXPR_IN_GROUPBY.getMsg(sel));
+    }
+ else     if (!input.hasTableAlias(tabName)) {
+      throw new SemanticException(ErrorMsg.INVALID_TABLE_ALIAS.getMsg(sel.getChild(0)));
+    }
+ else     if (colInfo == null) {
+      throw new SemanticException(ErrorMsg.INVALID_COLUMN.getMsg(sel.getChild(1)));
+    }
+    fieldList.add(colInfo.getInternalName());
+    fieldTypeList.add(colInfo.getType());
+    if (!StringUtils.isEmpty(alias) && (output.get(alias,colAlias) != null)) {
+      throw new SemanticException(ErrorMsg.AMBIGOUS_COLUMN.getMsg(sel.getChild(1)));
+    }
+    output.put(alias,colAlias,new ColumnInfo(pos.toString(),colInfo.getType(),colInfo.getIsVirtual()));
+    pos=Integer.valueOf(pos.intValue() + 1);
+  }
+  for (int i=0; i < fieldList.size(); i++) {
+    exprNodeColumnDesc expr=new exprNodeColumnDesc(fieldTypeList.get(i),fieldList.get(i));
+    col_list.add(expr);
+  }
+}

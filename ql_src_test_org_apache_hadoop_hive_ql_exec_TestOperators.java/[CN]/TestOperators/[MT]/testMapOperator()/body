@@ -1,0 +1,46 @@
+{
+  try {
+    Configuration hconf=new JobConf(TestOperators.class);
+    HiveConf.setVar(hconf,HiveConf.ConfVars.HADOOPMAPFILENAME,"hdfs:///testDir/testFile");
+    ArrayList<String> aliases=new ArrayList<String>();
+    aliases.add("a");
+    aliases.add("b");
+    LinkedHashMap<String,ArrayList<String>> pathToAliases=new LinkedHashMap<String,ArrayList<String>>();
+    pathToAliases.put("/testDir",aliases);
+    tableDesc td=new tableDesc(org.apache.hadoop.hive.serde.thrift.columnsetSerDe.class,TextInputFormat.class,IgnoreKeyTextOutputFormat.class,new Properties());
+    partitionDesc pd=new partitionDesc(td,null);
+    LinkedHashMap<String,org.apache.hadoop.hive.ql.plan.partitionDesc> pathToPartitionInfo=new LinkedHashMap<String,org.apache.hadoop.hive.ql.plan.partitionDesc>();
+    pathToPartitionInfo.put("/testDir",pd);
+    collectDesc cd=new collectDesc(Integer.valueOf(1));
+    CollectOperator cdop1=(CollectOperator)OperatorFactory.get(collectDesc.class);
+    cdop1.setConf(cd);
+    CollectOperator cdop2=(CollectOperator)OperatorFactory.get(collectDesc.class);
+    cdop2.setConf(cd);
+    HashMap<String,Operator<? extends Serializable>> aliasToWork=new HashMap<String,Operator<? extends Serializable>>();
+    aliasToWork.put("a",cdop1);
+    aliasToWork.put("b",cdop2);
+    mapredWork mrwork=new mapredWork();
+    mrwork.setPathToAliases(pathToAliases);
+    mrwork.setPathToPartitionInfo(pathToPartitionInfo);
+    mrwork.setAliasToWork(aliasToWork);
+    MapOperator mo=new MapOperator();
+    mo.setConf(mrwork);
+    mo.initialize(hconf);
+    Text tw=new Text();
+    for (int i=0; i < 5; i++) {
+      tw.set("" + i + "\001"+ (i + 1)+ "\001"+ (i + 2));
+      mo.process((Writable)tw);
+      HiveObject ho1=cdop1.retrieve();
+      HiveObject ho2=cdop2.retrieve();
+      ColumnSet c=(ColumnSet)ho1.getJavaObject();
+      assertEquals(c.col.get(0) + "\001" + c.col.get(1)+ "\001"+ c.col.get(2),tw.toString());
+      c=(ColumnSet)ho2.getJavaObject();
+      assertEquals(c.col.get(0) + "\001" + c.col.get(1)+ "\001"+ c.col.get(2),tw.toString());
+    }
+    System.out.println("Map Operator ok");
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    throw (e);
+  }
+}

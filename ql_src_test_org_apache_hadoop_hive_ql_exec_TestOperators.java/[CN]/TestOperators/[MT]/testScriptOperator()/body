@@ -1,0 +1,45 @@
+{
+  try {
+    exprNodeDesc exprDesc1=new exprNodeColumnDesc(String.class,"col[1]");
+    exprNodeDesc expr1=new exprNodeColumnDesc(String.class,"col[0]");
+    exprNodeDesc expr2=new exprNodeConstantDesc("1");
+    exprNodeDesc exprDesc2=SemanticAnalyzer.getFuncExprNodeDesc("concat",expr1,expr2);
+    ArrayList<exprNodeDesc> earr=new ArrayList<exprNodeDesc>();
+    earr.add(exprDesc1);
+    earr.add(exprDesc2);
+    selectDesc selectCtx=new selectDesc(earr);
+    Operator<selectDesc> op=OperatorFactory.get(selectDesc.class);
+    op.setConf(selectCtx);
+    Properties p=new Properties();
+    p.setProperty(Constants.SERIALIZATION_FORMAT,"9");
+    tableDesc td=new tableDesc(columnsetSerDe.class,TextInputFormat.class,IgnoreKeyTextOutputFormat.class,p);
+    scriptDesc sd=new scriptDesc("cat",td);
+    Operator<scriptDesc> sop=OperatorFactory.get(scriptDesc.class);
+    sop.setConf(sd);
+    ArrayList<Operator<? extends Serializable>> nextScriptOp=new ArrayList<Operator<? extends Serializable>>();
+    nextScriptOp.add(sop);
+    collectDesc cd=new collectDesc(Integer.valueOf(10));
+    CollectOperator cdop=(CollectOperator)OperatorFactory.get(collectDesc.class);
+    cdop.setConf(cd);
+    ArrayList<Operator<? extends Serializable>> nextCollectOp=new ArrayList<Operator<? extends Serializable>>();
+    nextCollectOp.add(cdop);
+    op.setChildOperators(nextScriptOp);
+    sop.setChildOperators(nextCollectOp);
+    op.initialize(new JobConf(TestOperators.class));
+    for (int i=0; i < 5; i++) {
+      op.process(r[i]);
+    }
+    op.close(false);
+    for (int i=0; i < 5; i++) {
+      HiveObject ho=cdop.retrieve();
+      ColumnSet c=(ColumnSet)ho.getJavaObject();
+      assertEquals(c.col.get(0),"" + (i + 1));
+      assertEquals(c.col.get(1),(i) + "1");
+    }
+    System.out.println("Script Operator ok");
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    throw e;
+  }
+}

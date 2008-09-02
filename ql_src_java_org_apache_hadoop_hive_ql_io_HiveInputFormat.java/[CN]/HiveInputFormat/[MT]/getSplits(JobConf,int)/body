@@ -1,0 +1,21 @@
+{
+  init(job);
+  Path[] dirs=FileInputFormat.getInputPaths(job);
+  if (dirs.length == 0) {
+    throw new IOException("No input paths specified in job");
+  }
+  JobConf newjob=new JobConf(job);
+  ArrayList<InputSplit> result=new ArrayList<InputSplit>();
+  for (  Path dir : dirs) {
+    tableDesc table=getTableDescFromPath(dir);
+    Class inputFormatClass=table.getInputFileFormatClass();
+    InputFormat inputFormat=getInputFormatFromCache(inputFormatClass);
+    FileInputFormat.setInputPaths(newjob,dir);
+    newjob.setInputFormat(inputFormat.getClass());
+    InputSplit[] iss=inputFormat.getSplits(newjob,numSplits / dirs.length);
+    for (    InputSplit is : iss) {
+      result.add(new HiveInputSplit(is,inputFormatClass.getName()));
+    }
+  }
+  return result.toArray(new HiveInputSplit[result.size()]);
+}

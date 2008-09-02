@@ -1,0 +1,33 @@
+{
+  this.incrementCounter("append_partition");
+  Partition part=new Partition();
+  boolean success=false;
+  try {
+    ms.openTransaction();
+    part=new Partition();
+    part.setDatabase(dbName);
+    part.setTableName(tableName);
+    part.setValues(part_vals);
+    Table tbl=ms.getTable(part.getDatabase(),part.getTableName());
+    if (tbl == null) {
+      throw new InvalidObjectException("Unable to add partition because table or database do not exist");
+    }
+    part.setSd(tbl.getSd());
+    Path partLocation=new Path(tbl.getSd().getLocation(),Warehouse.makePartName(tbl.getPartitionKeys(),part_vals));
+    part.getSd().setLocation(partLocation.toString());
+    success=ms.addPartition(part);
+    if (success) {
+      success=ms.commitTransaction();
+    }
+  }
+  finally {
+    if (!success) {
+      ms.rollbackTransaction();
+    }
+ else {
+      Path path=new Path(part.getSd().getLocation());
+      MetaStoreUtils.makeDir(path,hiveConf);
+    }
+  }
+  return part;
+}

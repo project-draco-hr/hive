@@ -1,0 +1,54 @@
+{
+  isLocal=isOverWrite=false;
+  Tree from_t=ast.getChild(0);
+  Tree table_t=ast.getChild(1);
+  if (ast.getChildCount() == 4) {
+    isOverWrite=isLocal=true;
+  }
+  if (ast.getChildCount() == 3) {
+    if (ast.getChild(2).getText().toLowerCase().equals("local")) {
+      isLocal=true;
+    }
+ else {
+      isOverWrite=true;
+    }
+  }
+  URI fromURI;
+  try {
+    String fromPath=stripQuotes(from_t.getText());
+    fromURI=initializeFromURI(fromPath);
+  }
+ catch (  IOException e) {
+    throw new SemanticException(ErrorMsg.INVALID_PATH.getMsg(from_t,e.getMessage()));
+  }
+catch (  RuntimeException e) {
+    throw new SemanticException(ErrorMsg.INVALID_PATH.getMsg(from_t,e.getMessage()));
+  }
+  tableSpec ts=new tableSpec(db,(CommonTree)table_t);
+  URI toURI=(ts.partHandle != null) ? ts.partHandle.getDataLocation() : ts.tableHandle.getDataLocation();
+  applyConstraints(fromURI,toURI,from_t,isLocal);
+  Task rTask=null;
+  if (isLocal) {
+    URI copyURI;
+    try {
+      copyURI=new URI(toURI.getScheme(),toURI.getAuthority(),conf.getVar(HiveConf.ConfVars.SCRATCHDIR) + "/" + Utilities.randGen.nextInt(),null,null);
+    }
+ catch (    URISyntaxException e) {
+      LOG.error(org.apache.hadoop.util.StringUtils.stringifyException(e));
+      LOG.error("Invalid URI. Check value of variable: " + HiveConf.ConfVars.SCRATCHDIR.toString());
+      throw new SemanticException("Cannot initialize temporary destination URI");
+    }
+    rTask=TaskFactory.get(new copyWork(fromURI.toString(),copyURI.toString()),this.conf);
+    fromURI=copyURI;
+  }
+  List<loadTableDesc> loadTableWork=new ArrayList<loadTableDesc>();
+  List<loadFileDesc> loadFileWork=new ArrayList<loadFileDesc>();
+  loadTableWork.add(new loadTableDesc(fromURI.toString(),Utilities.getTableDesc(ts.tableHandle),(ts.partSpec != null) ? ts.partSpec : new HashMap<String,String>(),isOverWrite));
+  if (rTask != null) {
+    rTask.addDependentTask(TaskFactory.get(new moveWork(loadTableWork,loadFileWork),this.conf));
+  }
+ else {
+    rTask=TaskFactory.get(new moveWork(loadTableWork,loadFileWork),this.conf);
+  }
+  rootTasks.add(rTask);
+}

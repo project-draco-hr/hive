@@ -1,0 +1,40 @@
+{
+  try {
+    if (!path.getFileSystem(conf).exists(path)) {
+      LOG.warn("drop data called on table/partition with no directory: " + path);
+      return;
+    }
+    if (use_trash) {
+      int count=0;
+      Path newPath=new Path("/Trash/Current" + path.getParent().toUri().getPath());
+      if (path.getFileSystem(conf).exists(newPath) == false) {
+        path.getFileSystem(conf).mkdirs(newPath);
+      }
+      do {
+        newPath=new Path("/Trash/Current" + path.toUri().getPath() + "."+ count);
+        if (path.getFileSystem(conf).exists(newPath)) {
+          count++;
+          continue;
+        }
+        if (path.getFileSystem(conf).rename(path,newPath)) {
+          break;
+        }
+      }
+ while (++count < 50);
+      if (count >= 50) {
+        throw new MetaException("Rename failed due to maxing out retries");
+      }
+    }
+ else {
+      path.getFileSystem(conf).delete(path,true);
+    }
+  }
+ catch (  IOException e) {
+    LOG.error("Got exception trying to delete data dir: " + e);
+    throw new MetaException(e.getMessage());
+  }
+catch (  MetaException e) {
+    LOG.error("Got exception trying to delete data dir: " + e);
+    throw e;
+  }
+}
