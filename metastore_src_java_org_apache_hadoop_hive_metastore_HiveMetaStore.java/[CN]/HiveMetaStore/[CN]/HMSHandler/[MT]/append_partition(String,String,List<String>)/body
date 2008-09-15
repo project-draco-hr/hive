@@ -1,37 +1,32 @@
 {
   this.incrementCounter("append_partition");
-  logStartFunction("append_partition",dbName,tableName);
   Partition part=new Partition();
   boolean success=false;
   try {
-    getMS().openTransaction();
+    ms.openTransaction();
     part=new Partition();
     part.setDatabase(dbName);
     part.setTableName(tableName);
     part.setValues(part_vals);
-    Partition old_part=this.get_partition(part.getDatabase(),part.getTableName(),part.getValues());
-    if (old_part != null) {
-      throw new AlreadyExistsException("Partition already exists:" + part);
-    }
-    Table tbl=getMS().getTable(part.getDatabase(),part.getTableName());
+    Table tbl=ms.getTable(part.getDatabase(),part.getTableName());
     if (tbl == null) {
       throw new InvalidObjectException("Unable to add partition because table or database do not exist");
     }
     part.setSd(tbl.getSd());
     Path partLocation=new Path(tbl.getSd().getLocation(),Warehouse.makePartName(tbl.getPartitionKeys(),part_vals));
     part.getSd().setLocation(partLocation.toString());
-    success=getMS().addPartition(part);
+    success=ms.addPartition(part);
     if (success) {
-      success=getMS().commitTransaction();
+      success=ms.commitTransaction();
     }
   }
   finally {
     if (!success) {
-      getMS().rollbackTransaction();
+      ms.rollbackTransaction();
     }
  else {
       Path path=new Path(part.getSd().getLocation());
-      wh.mkdirs(path);
+      MetaStoreUtils.makeDir(path,hiveConf);
     }
   }
   return part;
