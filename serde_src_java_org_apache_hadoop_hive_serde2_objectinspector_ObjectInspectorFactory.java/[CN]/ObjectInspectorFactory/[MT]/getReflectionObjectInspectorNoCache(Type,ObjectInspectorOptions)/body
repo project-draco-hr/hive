@@ -1,0 +1,46 @@
+{
+  if (t instanceof GenericArrayType) {
+    GenericArrayType at=(GenericArrayType)t;
+    return getStandardListObjectInspector(getReflectionObjectInspector(at.getGenericComponentType(),options));
+  }
+  if (t instanceof ParameterizedType) {
+    ParameterizedType pt=(ParameterizedType)t;
+    if (List.class.isAssignableFrom((Class<?>)pt.getRawType())) {
+      return getStandardListObjectInspector(getReflectionObjectInspector(pt.getActualTypeArguments()[0],options));
+    }
+    if (Map.class.isAssignableFrom((Class<?>)pt.getRawType())) {
+      return getStandardMapObjectInspector(getReflectionObjectInspector(pt.getActualTypeArguments()[0],options),getReflectionObjectInspector(pt.getActualTypeArguments()[1],options));
+    }
+    t=pt.getRawType();
+  }
+  if (!(t instanceof Class)) {
+    throw new RuntimeException(ObjectInspectorFactory.class.getName() + ": internal error.");
+  }
+  Class<?> c=(Class<?>)t;
+  if (ObjectInspectorUtils.isPrimitiveClass(c)) {
+    return getStandardPrimitiveObjectInspector(c);
+  }
+  assert(!List.class.isAssignableFrom(c));
+  assert(!Map.class.isAssignableFrom(c));
+  ReflectionStructObjectInspector oi;
+switch (options) {
+case JAVA:
+    oi=new ReflectionStructObjectInspector();
+  break;
+case THRIFT:
+oi=new ThriftStructObjectInspector();
+break;
+default :
+throw new RuntimeException(ObjectInspectorFactory.class.getName() + ": internal error.");
+}
+objectInspectorCache.put(t,oi);
+Field[] fields=c.getDeclaredFields();
+ArrayList<ObjectInspector> structFieldObjectInspectors=new ArrayList<ObjectInspector>(fields.length);
+for (int i=0; i < fields.length; i++) {
+if (!oi.shouldIgnoreField(fields[i].getName())) {
+structFieldObjectInspectors.add(getReflectionObjectInspector(fields[i].getGenericType(),options));
+}
+}
+oi.init(c,structFieldObjectInspectors);
+return oi;
+}
