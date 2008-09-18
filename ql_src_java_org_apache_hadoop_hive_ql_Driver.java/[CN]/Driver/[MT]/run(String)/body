@@ -4,6 +4,7 @@
   int jobs=0;
   conf.setVar(HiveConf.ConfVars.HIVEQUERYID,command);
   try {
+    TaskFactory.resetId();
     BaseSemanticAnalyzer sem;
     LOG.info("Starting command: " + command);
     if (resStream != null) {
@@ -19,25 +20,30 @@
     sem=SemanticAnalyzerFactory.get(conf,tree);
     sem.analyze(tree,ctx);
     LOG.info("Semantic Analysis Completed");
-    for (    Task rootTask : sem.getRootTasks()) {
-      rootTask.initialize(conf);
-    }
     jobs=countJobs(sem.getRootTasks());
     if (jobs > 0) {
       console.printInfo("Total MapReduce jobs = " + jobs);
     }
-    Queue<Task> runnable=new LinkedList<Task>();
-    for (    Task rootTask : sem.getRootTasks()) {
+    String jobname=Utilities.abbreviate(command,maxlen - 6);
+    int curJob=0;
+    for (    Task<? extends Serializable> rootTask : sem.getRootTasks()) {
+      if ((rootTask instanceof ExecDriver) || (rootTask instanceof MapRedTask)) {
+        curJob++;
+        if (noName) {
+          conf.setVar(HiveConf.ConfVars.HADOOPJOBNAME,jobname + "(" + curJob+ "/"+ jobs+ ")");
+        }
+      }
+      rootTask.initialize(conf);
+    }
+    Queue<Task<? extends Serializable>> runnable=new LinkedList<Task<? extends Serializable>>();
+    for (    Task<? extends Serializable> rootTask : sem.getRootTasks()) {
       if (runnable.offer(rootTask) == false) {
         LOG.error("Could not insert the first task into the queue");
         return (1);
       }
     }
     while (runnable.peek() != null) {
-      Task tsk=runnable.remove();
-      if (noName) {
-        conf.setVar(HiveConf.ConfVars.HADOOPJOBNAME,Utilities.abbreviate(command,maxlen));
-      }
+      Task<? extends Serializable> tsk=runnable.remove();
       int exitVal=tsk.execute();
       if (exitVal != 0) {
         console.printError("FAILED: Execution Error, return code " + exitVal + " from "+ tsk.getClass().getName());
@@ -47,11 +53,11 @@
       if (tsk.getChildTasks() == null) {
         continue;
       }
-      for (      Object child : tsk.getChildTasks()) {
-        if (!((Task)child).isRunnable()) {
+      for (      Task<? extends Serializable> child : tsk.getChildTasks()) {
+        if (!child.isRunnable()) {
           continue;
         }
-        if (runnable.offer((Task)child) == false) {
+        if (runnable.offer(child) == false) {
           LOG.error("Could not add child task to queue");
         }
       }
