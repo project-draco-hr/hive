@@ -18,8 +18,13 @@ case HiveParser.TOK_COLREF:
         desc=new exprNodeColumnDesc(String.class,colName);
       }
  else {
-        TypeInfo typeInfo=new TypeInfo(this.metaData.getTableForAlias(tabAlias).getSerDe(),null);
-        desc=new exprNodeConstantDesc(typeInfo.getFieldType(colName),null);
+        try {
+          TypeInfo typeInfo=TypeInfoUtils.getTypeInfoFromObjectInspector(this.metaData.getTableForAlias(tabAlias).getDeserializer().getObjectInspector());
+          desc=new exprNodeConstantDesc(typeInfo.getStructFieldTypeInfo(colName),null);
+        }
+ catch (        SerDeException e) {
+          throw new RuntimeException(e);
+        }
       }
       break;
     }
@@ -29,7 +34,9 @@ default :
     int childrenBegin=(isFunction ? 1 : 0);
     ArrayList<exprNodeDesc> children=new ArrayList<exprNodeDesc>(expr.getChildCount() - childrenBegin);
     for (int ci=childrenBegin; ci < expr.getChildCount(); ci++) {
-      children.add(genExprNodeDesc((CommonTree)expr.getChild(ci)));
+      exprNodeDesc child=genExprNodeDesc((CommonTree)expr.getChild(ci));
+      assert(child.getTypeInfo() != null);
+      children.add(child);
     }
     desc=SemanticAnalyzer.getXpathOrFuncExprNodeDesc(expr,isFunction,children);
     if (desc instanceof exprNodeFuncDesc && (((exprNodeFuncDesc)desc).getUDFMethod().getDeclaringClass().equals(UDFOPAnd.class) || ((exprNodeFuncDesc)desc).getUDFMethod().getDeclaringClass().equals(UDFOPOr.class) || ((exprNodeFuncDesc)desc).getUDFMethod().getDeclaringClass().equals(UDFOPNot.class))) {

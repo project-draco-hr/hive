@@ -2,40 +2,41 @@
   ArrayList<FieldSchema> str_fields=new ArrayList<FieldSchema>();
   String[] names=table_name.split("\\.");
   String base_table_name=names[0];
-  List<SerDeField> hive_fields=new ArrayList<SerDeField>();
+  String last_name=names[names.length - 1];
   AbstractMap<String,String> schema_map=get_schema(base_table_name);
   Properties p=new Properties();
   for (Iterator<Entry<String,String>> it=schema_map.entrySet().iterator(); it.hasNext(); ) {
     Entry<String,String> entry=it.next();
     p.setProperty(entry.getKey(),entry.getValue());
   }
-  SerDeField hf=null;
   try {
-    SerDe s=MetaStoreUtils.getSerDe(conf_,p);
+    Deserializer s=MetaStoreUtils.getDeserializer(conf_,p);
+    ObjectInspector oi=s.getObjectInspector();
     for (int i=1; i < names.length; i++) {
-      hf=s.getFieldFromExpression(hf,names[i]);
-    }
-    if (hf != null && hf.isPrimitive()) {
-      hive_fields.add(hf);
-    }
- else     if (hf != null && hf.isList()) {
-      try {
-        hive_fields=s.getFields(hf);
+      if (!(oi instanceof StructObjectInspector)) {
+        oi=s.getObjectInspector();
+        break;
       }
- catch (      Exception e) {
-        hive_fields.add(hf);
+      StructObjectInspector soi=(StructObjectInspector)oi;
+      StructField sf=soi.getStructFieldRef(names[i]);
+      if (sf == null) {
+        oi=s.getObjectInspector();
+        break;
+      }
+ else {
+        oi=sf.getFieldObjectInspector();
       }
     }
- else     if (hf != null && hf.isMap()) {
-      hive_fields.add(hf);
+    if (oi.getCategory() != Category.STRUCT) {
+      str_fields.add(new FieldSchema(last_name,oi.getTypeName(),"automatically generated"));
     }
  else {
-      hive_fields=s.getFields(hf);
-    }
-    for (    SerDeField field : hive_fields) {
-      String name=field.getName();
-      String schema=this.hfToString(field);
-      str_fields.add(new FieldSchema(name,schema,"automatically generated"));
+      List<? extends StructField> fields=((StructObjectInspector)oi).getAllStructFieldRefs();
+      for (int i=0; i < fields.size(); i++) {
+        String fieldName=fields.get(i).getFieldName();
+        String fieldTypeName=fields.get(i).getFieldObjectInspector().getTypeName();
+        str_fields.add(new FieldSchema(fieldName,fieldTypeName,"automatically generated"));
+      }
     }
     return str_fields;
   }

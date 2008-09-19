@@ -8,10 +8,10 @@
     if (!onepath.toUri().relativize(fpath.toUri()).equals(fpath.toUri())) {
       List<String> aliases=conf.getPathToAliases().get(onefile);
       for (      String onealias : aliases) {
-        l4j.info("Adding alias " + onealias + " to work list for file "+ fpath.toUri().getPath());
+        LOG.info("Adding alias " + onealias + " to work list for file "+ fpath.toUri().getPath());
         todo.add(conf.getAliasToWork().get(onealias));
       }
-      if (decoder != null) {
+      if (deserializer != null) {
         continue;
       }
       partitionDesc pd=conf.getPathToPartitionInfo().get(onefile);
@@ -21,7 +21,7 @@
       HiveConf.setVar(hconf,HiveConf.ConfVars.HIVETABLENAME,String.valueOf(p.getProperty("name")));
       HiveConf.setVar(hconf,HiveConf.ConfVars.HIVEPARTITIONNAME,String.valueOf(partSpec));
       try {
-        Class sdclass=td.getSerdeClass();
+        Class sdclass=td.getDeserializerClass();
         if (sdclass == null) {
           String className=td.getSerdeClassName();
           if ((className == "") || (className == null)) {
@@ -29,23 +29,30 @@
           }
           sdclass=MapOperator.class.getClassLoader().loadClass(className);
         }
-        decoder=(SerDe)sdclass.newInstance();
-        decoder.initialize(hconf,p);
+        deserializer=(Deserializer)sdclass.newInstance();
+        deserializer.initialize(hconf,p);
+        rowObjectInspector=(StructObjectInspector)deserializer.getObjectInspector();
         String pcols=p.getProperty(org.apache.hadoop.hive.metastore.api.Constants.META_TABLE_PARTITION_COLUMNS);
         if (pcols != null && pcols.length() > 0) {
-          partCols=new ArrayList<String>();
-          partFields=new ArrayList<SerDeField>();
-          String[] part_keys=pcols.trim().split("/");
-          for (          String key : part_keys) {
-            partCols.add(key);
-            partFields.add(new ConstantTypedSerDeField(key,partSpec.get(key)));
+          partNames=new ArrayList<String>();
+          partValues=new ArrayList<String>();
+          partObjectInspectors=new ArrayList<ObjectInspector>();
+          String[] partKeys=pcols.trim().split("/");
+          for (          String key : partKeys) {
+            partNames.add(key);
+            partValues.add(partSpec.get(key));
+            partObjectInspectors.add(ObjectInspectorFactory.getStandardPrimitiveObjectInspector(String.class));
           }
+          StructObjectInspector partObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(partNames,partObjectInspectors);
+          rowWithPart=new Object[2];
+          rowWithPart[1]=partValues;
+          rowObjectInspector=ObjectInspectorFactory.getUnionStructObjectInspector(Arrays.asList(new StructObjectInspector[]{rowObjectInspector,partObjectInspector}));
         }
  else {
-          partCols=null;
-          partFields=null;
+          partNames=null;
+          partValues=null;
         }
-        l4j.info("Got partitions: " + pcols);
+        LOG.info("Got partitions: " + pcols);
       }
  catch (      SerDeException e) {
         e.printStackTrace();
@@ -63,7 +70,7 @@ catch (      ClassNotFoundException e) {
     }
   }
   if (todo.size() == 0) {
-    l4j.error("Configuration does not have any alias for path: " + fpath.toUri().getPath());
+    LOG.error("Configuration does not have any alias for path: " + fpath.toUri().getPath());
     throw new HiveException("Configuration and input path are inconsistent");
   }
   this.setChildOperators(todo);

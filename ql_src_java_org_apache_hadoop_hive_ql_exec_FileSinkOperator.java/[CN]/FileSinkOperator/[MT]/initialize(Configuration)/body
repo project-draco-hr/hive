@@ -1,12 +1,26 @@
 {
   super.initialize(hconf);
   try {
+    serializer=(Serializer)conf.getTableInfo().getDeserializerClass().newInstance();
+    serializer.initialize(null,conf.getTableInfo().getProperties());
+    JobConf jc;
+    if (hconf instanceof JobConf) {
+      jc=(JobConf)hconf;
+    }
+ else {
+      jc=new JobConf(hconf,ExecDriver.class);
+    }
     fs=FileSystem.get(hconf);
     finalPath=new Path(conf.getDirName(),Utilities.getTaskId(hconf));
     outPath=new Path(conf.getDirName(),"_tmp." + Utilities.getTaskId(hconf));
-    OutputFormat outputFormat=conf.getTableInfo().getOutputFileFormatClass().newInstance();
+    OutputFormat<?,?> outputFormat=conf.getTableInfo().getOutputFileFormatClass().newInstance();
+    final Class<? extends Writable> outputClass=serializer.getSerializedClass();
+    boolean isCompressed=FileOutputFormat.getCompressOutput(jc);
     if (outputFormat instanceof IgnoreKeyTextOutputFormat) {
-      final FSDataOutputStream outStream=fs.create(outPath);
+      if (isCompressed) {
+        finalPath=new Path(conf.getDirName(),Utilities.getTaskId(hconf) + ".gz");
+      }
+      final OutputStream outStream=Utilities.createCompressedStream(jc,fs.create(outPath));
       outWriter=new RecordWriter(){
         public void write(        Writable r) throws IOException {
           Text tr=(Text)r;
@@ -20,7 +34,7 @@
 ;
     }
  else     if (outputFormat instanceof SequenceFileOutputFormat) {
-      final SequenceFile.Writer outStream=SequenceFile.createWriter(fs,hconf,outPath,BytesWritable.class,Text.class);
+      final SequenceFile.Writer outStream=Utilities.createSequenceWriter(jc,fs,outPath,BytesWritable.class,outputClass);
       outWriter=new RecordWriter(){
         public void write(        Writable r) throws IOException {
           outStream.append(commonKey,r);
@@ -32,11 +46,13 @@
 ;
     }
  else {
-      assert(false);
+      throw new HiveException("Illegal outputformat: " + outputFormat.getClass().getName());
     }
-    serDe=conf.getTableInfo().getSerdeClass().newInstance();
   }
- catch (  Exception e) {
+ catch (  HiveException e) {
+    throw e;
+  }
+catch (  Exception e) {
     e.printStackTrace();
     throw new HiveException(e);
   }

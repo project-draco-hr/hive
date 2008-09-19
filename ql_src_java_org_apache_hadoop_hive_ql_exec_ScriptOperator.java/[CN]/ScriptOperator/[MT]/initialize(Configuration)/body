@@ -4,22 +4,16 @@
   statsMap.put(Counter.SERIALIZE_ERRORS,serialize_error_count);
   try {
     this.hconf=hconf;
-    tableDesc td=conf.getScriptOutputInfo();
-    if (td == null) {
-      td=Utilities.defaultTabTd;
-    }
-    decoder=td.getSerdeClass().newInstance();
-    decoder.initialize(hconf,td.getProperties());
-    hos=new NaiiveJSONSerializer();
-    Properties p=new Properties();
-    p.setProperty(org.apache.hadoop.hive.serde.Constants.SERIALIZATION_FORMAT,"" + Utilities.tabCode);
-    hos.initialize(p);
+    scriptOutputDeserializer=conf.getScriptOutputInfo().getDeserializerClass().newInstance();
+    scriptOutputDeserializer.initialize(hconf,conf.getScriptOutputInfo().getProperties());
+    scriptInputSerializer=(Serializer)conf.getScriptInputInfo().getDeserializerClass().newInstance();
+    scriptInputSerializer.initialize(hconf,conf.getScriptInputInfo().getProperties());
     String[] cmdArgs=splitArgs(conf.getScriptCmd());
     String[] wrappedCmdArgs=addWrapper(cmdArgs);
-    l4j.info("Executing " + Arrays.asList(wrappedCmdArgs));
-    l4j.info("tablename=" + hconf.get(HiveConf.ConfVars.HIVETABLENAME.varname));
-    l4j.info("partname=" + hconf.get(HiveConf.ConfVars.HIVEPARTITIONNAME.varname));
-    l4j.info("alias=" + alias);
+    LOG.info("Executing " + Arrays.asList(wrappedCmdArgs));
+    LOG.info("tablename=" + hconf.get(HiveConf.ConfVars.HIVETABLENAME.varname));
+    LOG.info("partname=" + hconf.get(HiveConf.ConfVars.HIVEPARTITIONNAME.varname));
+    LOG.info("alias=" + alias);
     ProcessBuilder pb=new ProcessBuilder(wrappedCmdArgs);
     Map<String,String> env=pb.environment();
     addJobConfToEnvironment(hconf,env);
@@ -28,7 +22,7 @@
     scriptOut=new DataOutputStream(new BufferedOutputStream(scriptPid.getOutputStream()));
     scriptIn=new DataInputStream(new BufferedInputStream(scriptPid.getInputStream()));
     scriptErr=new DataInputStream(new BufferedInputStream(scriptPid.getErrorStream()));
-    outThread=new StreamThread(scriptIn,new OutputStreamProcessor(),"OutputProcessor");
+    outThread=new StreamThread(scriptIn,new OutputStreamProcessor(scriptOutputDeserializer.getObjectInspector()),"OutputProcessor");
     outThread.start();
     errThread=new StreamThread(scriptErr,new ErrorStreamProcessor(),"ErrorProcessor");
     errThread.start();

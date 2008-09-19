@@ -1,8 +1,15 @@
 {
   Table tab=qb.getMetaData().getSrcForAlias(alias);
   RowResolver rwsch=new RowResolver();
-  for (  SerDeField field : tab.getFields(null)) {
-    rwsch.put(alias,field.getName(),new ColumnInfo(field.getName(),new TypeInfo(tab.getSerDe(),field),false));
+  try {
+    StructObjectInspector rowObjectInspector=(StructObjectInspector)tab.getDeserializer().getObjectInspector();
+    List<? extends StructField> fields=rowObjectInspector.getAllStructFieldRefs();
+    for (int i=0; i < fields.size(); i++) {
+      rwsch.put(alias,fields.get(i).getFieldName(),new ColumnInfo(fields.get(i).getFieldName(),TypeInfoUtils.getTypeInfoFromObjectInspector(fields.get(i).getFieldObjectInspector()),false));
+    }
+  }
+ catch (  SerDeException e) {
+    throw new RuntimeException(e);
   }
   for (  FieldSchema part_col : tab.getPartCols()) {
     LOG.trace("Adding partition col: " + part_col);
