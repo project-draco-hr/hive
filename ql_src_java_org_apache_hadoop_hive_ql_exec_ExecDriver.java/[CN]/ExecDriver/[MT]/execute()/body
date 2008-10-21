@@ -30,8 +30,26 @@
   RunningJob rj=null;
   try {
     fs=FileSystem.get(job);
+    Path[] inputPaths=FileInputFormat.getInputPaths(job);
+    boolean emptyInput=true;
+    for (    Path inputP : inputPaths) {
+      if (!fs.exists(inputP))       continue;
+      FileStatus[] fStats=fs.listStatus(inputP);
+      for (      FileStatus fStat : fStats) {
+        if (fStat.getLen() > 0) {
+          emptyInput=false;
+          break;
+        }
+      }
+    }
+    if (emptyInput) {
+      console.printInfo("Job need not be submitted: no output: Success");
+      return 0;
+    }
+    inferNumReducers();
     JobClient jc=new JobClient(job);
     rj=jc.submitJob(job);
+    runningJobKillURIs.put(rj.getJobID(),rj.getTrackingURL() + "&action=kill");
     jobInfo(rj);
     rj=jobProgress(jc,rj);
     String statusMesg="Ended Job = " + rj.getJobID();
@@ -62,6 +80,7 @@
       if (returnVal != 0 && rj != null) {
         rj.killJob();
       }
+      runningJobKillURIs.remove(rj.getJobID());
     }
  catch (    Exception e) {
     }

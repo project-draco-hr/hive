@@ -8,8 +8,12 @@
     PartitionPruner pruner=new PartitionPruner(alias,qb.getMetaData());
     QBParseInfo qbp=qb.getParseInfo();
     for (    String clause : qbp.getClauseNames()) {
-      if (qbp.getWhrForClause(clause) != null) {
-        pruner.addExpression((CommonTree)qbp.getWhrForClause(clause).getChild(0));
+      CommonTree whexp=(CommonTree)qbp.getWhrForClause(clause);
+      if (pruner.getTable().isPartitioned() && conf.getVar(HiveConf.ConfVars.HIVEPARTITIONPRUNER).equalsIgnoreCase("strict") && (whexp == null || !pruner.hasPartitionPredicate((CommonTree)whexp.getChild(0)))) {
+        throw new SemanticException(ErrorMsg.NO_PARTITION_PREDICATE.getMsg(whexp != null ? whexp : qbp.getSelForClause(clause)," for Alias " + alias + " Table "+ pruner.getTable().getName()));
+      }
+      if (whexp != null) {
+        pruner.addExpression((CommonTree)whexp.getChild(0));
       }
     }
     this.aliasToPruner.put(alias_id,pruner);

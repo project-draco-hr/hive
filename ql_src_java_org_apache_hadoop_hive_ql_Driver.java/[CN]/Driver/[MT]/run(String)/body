@@ -5,9 +5,9 @@
   conf.setVar(HiveConf.ConfVars.HIVEQUERYID,command);
   try {
     TaskFactory.resetId();
-    BaseSemanticAnalyzer sem;
     LOG.info("Starting command: " + command);
     ctx.clear();
+    ctx.makeScratchDir();
     resStream=null;
     pd=new ParseDriver();
     CommonTree tree=pd.parse(command);
@@ -21,10 +21,16 @@
     if (jobs > 0) {
       console.printInfo("Total MapReduce jobs = " + jobs);
     }
+    boolean hasReduce=hasReduceTasks(sem.getRootTasks());
+    if (hasReduce) {
+      console.printInfo("Number of reducers = " + conf.getIntVar(HiveConf.ConfVars.HADOOPNUMREDUCERS));
+      console.printInfo("In order to change numer of reducers use:");
+      console.printInfo("  set mapred.reduce.tasks = <number>");
+    }
     String jobname=Utilities.abbreviate(command,maxlen - 6);
     int curJob=0;
     for (    Task<? extends Serializable> rootTask : sem.getRootTasks()) {
-      if ((rootTask instanceof ExecDriver) || (rootTask instanceof MapRedTask)) {
+      if (rootTask.isMapRedTask()) {
         curJob++;
         if (noName) {
           conf.setVar(HiveConf.ConfVars.HADOOPJOBNAME,jobname + "(" + curJob+ "/"+ jobs+ ")");
@@ -61,11 +67,11 @@
     }
   }
  catch (  SemanticException e) {
-    console.printError("FAILED: Error in semantic analysis: " + e.getMessage());
+    console.printError("FAILED: Error in semantic analysis: " + e.getMessage(),"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
     return (10);
   }
 catch (  ParseException e) {
-    console.printError("FAILED: Parse Error: " + e.getMessage());
+    console.printError("FAILED: Parse Error: " + e.getMessage(),"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
     return (11);
   }
 catch (  Exception e) {

@@ -17,8 +17,13 @@
   if (!oproc.process_stage2(ss)) {
     System.exit(2);
   }
+  HiveConf conf=ss.getConf();
+  for (  Map.Entry<Object,Object> item : ss.cmdProperties.entrySet()) {
+    conf.set((String)item.getKey(),(String)item.getValue());
+  }
   sp=new SetProcessor();
   qp=new Driver();
+  dfs=new FsShell(ss.getConf());
   if (ss.execString != null) {
     System.exit(processLine(ss.execString));
   }
@@ -46,9 +51,21 @@
   int ret=0;
   Log LOG=LogFactory.getLog("CliDriver");
   LogHelper console=new LogHelper(LOG);
-  while ((line=reader.readLine(prompt + "> ")) != null) {
+  String prefix="";
+  String curPrompt=prompt;
+  while ((line=reader.readLine(curPrompt + "> ")) != null) {
     long start=System.currentTimeMillis();
-    ret=processLine(line);
+    if (line.trim().endsWith(";")) {
+      line=prefix + " " + line;
+      ret=processLine(line);
+      prefix="";
+      curPrompt=prompt;
+    }
+ else {
+      prefix=prefix + line;
+      curPrompt=prompt2;
+      continue;
+    }
     long end=System.currentTimeMillis();
     if (end > start) {
       double timeTaken=(double)(end - start) / 1000.0;

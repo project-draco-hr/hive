@@ -1,0 +1,38 @@
+{
+  super.initialize(conf);
+  splitNum=0;
+  currRecReader=null;
+  try {
+    fs=FileSystem.get(conf);
+    serde=work.getDeserializerClass().newInstance();
+    serde.initialize(null,work.getSchema());
+    job=new JobConf(conf,ExecDriver.class);
+    Path inputP=work.getSrcDir();
+    if (!fs.exists(inputP)) {
+      empty=true;
+      return;
+    }
+    empty=true;
+    FileStatus[] fStats=fs.listStatus(inputP);
+    for (    FileStatus fStat : fStats) {
+      if (fStat.getLen() > 0) {
+        empty=false;
+        break;
+      }
+    }
+    if (empty)     return;
+    FileInputFormat.setInputPaths(job,inputP);
+    inputFormat=getInputFormatFromCache(work.getInputFormatClass(),job);
+    inputSplits=inputFormat.getSplits(job,1);
+    mSerde=new MetadataTypedColumnsetSerDe();
+    Properties mSerdeProp=new Properties();
+    mSerdeProp.put(Constants.SERIALIZATION_FORMAT,"" + Utilities.tabCode);
+    mSerdeProp.put(Constants.SERIALIZATION_NULL_FORMAT,"NULL");
+    mSerde.initialize(null,mSerdeProp);
+    totalRows=0;
+  }
+ catch (  Exception e) {
+    LOG.error(StringUtils.stringifyException(e));
+    throw new RuntimeException(e);
+  }
+}

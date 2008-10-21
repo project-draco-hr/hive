@@ -1,5 +1,31 @@
 {
   this.incrementCounter("drop_partition");
   logStartFunction("drop_partition",db_name,tbl_name);
-  return getMS().dropPartition(db_name,tbl_name,part_vals);
+  LOG.info("Partition values:" + part_vals);
+  boolean success=false;
+  Path partPath=null;
+  try {
+    getMS().openTransaction();
+    Partition part=this.get_partition(db_name,tbl_name,part_vals);
+    if (part == null) {
+      throw new NoSuchObjectException("Partition doesn't exist. " + part_vals);
+    }
+    if (part.getSd() == null || part.getSd().getLocation() == null) {
+      throw new MetaException("Partition metadata is corrupted");
+    }
+    if (!getMS().dropPartition(db_name,tbl_name,part_vals)) {
+      throw new MetaException("Unable to drop partition");
+    }
+    success=getMS().commitTransaction();
+    partPath=new Path(part.getSd().getLocation());
+  }
+  finally {
+    if (!success) {
+      getMS().rollbackTransaction();
+    }
+ else     if (deleteData && (partPath != null)) {
+      wh.deleteDir(partPath,true);
+    }
+  }
+  return true;
 }

@@ -13,16 +13,43 @@
     exprNodeConstantDesc fieldName=(exprNodeConstantDesc)children.get(1);
     assert(fieldName.getValue() instanceof String);
     String fieldNameString=(String)fieldName.getValue();
-    TypeInfo t=object.getTypeInfo().getStructFieldTypeInfo(fieldNameString);
-    desc=new exprNodeFieldDesc(t,children.get(0),fieldNameString);
+    TypeInfo objectTypeInfo=object.getTypeInfo();
+    boolean isList=(object.getTypeInfo().getCategory() == ObjectInspector.Category.LIST);
+    if (isList) {
+      objectTypeInfo=objectTypeInfo.getListElementTypeInfo();
+    }
+    if (objectTypeInfo.getCategory() != Category.STRUCT) {
+      throw new SemanticException(ErrorMsg.INVALID_DOT.getMsg(expr));
+    }
+    TypeInfo t=objectTypeInfo.getStructFieldTypeInfo(fieldNameString);
+    if (isList) {
+      t=TypeInfoFactory.getListTypeInfo(t);
+    }
+    desc=new exprNodeFieldDesc(t,children.get(0),fieldNameString,isList);
   }
  else   if (funcText.equals("[")) {
     assert(children.size() == 2);
-    if (!(children.get(1) instanceof exprNodeConstantDesc) || !(((exprNodeConstantDesc)children.get(1)).getValue() instanceof Integer)) {
-      throw new SemanticException(ErrorMsg.INVALID_ARRAYINDEX_CONSTANT.getMsg(expr));
+    TypeInfo myt=children.get(0).getTypeInfo();
+    if (myt.getCategory() == Category.LIST) {
+      if (!(children.get(1) instanceof exprNodeConstantDesc) || !(((exprNodeConstantDesc)children.get(1)).getValue() instanceof Integer)) {
+        throw new SemanticException(ErrorMsg.INVALID_ARRAYINDEX_CONSTANT.getMsg(expr));
+      }
+      TypeInfo t=myt.getListElementTypeInfo();
+      desc=new exprNodeIndexDesc(t,children.get(0),children.get(1));
     }
-    TypeInfo t=children.get(0).getTypeInfo().getListElementTypeInfo();
-    desc=new exprNodeIndexDesc(t,children.get(0),children.get(1));
+ else     if (myt.getCategory() == Category.MAP) {
+      if (!(children.get(1) instanceof exprNodeConstantDesc)) {
+        throw new SemanticException(ErrorMsg.INVALID_MAPINDEX_CONSTANT.getMsg(expr));
+      }
+      if (!(((exprNodeConstantDesc)children.get(1)).getValue().getClass() == myt.getMapKeyTypeInfo().getPrimitiveClass())) {
+        throw new SemanticException(ErrorMsg.INVALID_MAPINDEX_TYPE.getMsg(expr));
+      }
+      TypeInfo t=myt.getMapValueTypeInfo();
+      desc=new exprNodeIndexDesc(t,children.get(0),children.get(1));
+    }
+ else {
+      throw new SemanticException(ErrorMsg.NON_COLLECTION_TYPE.getMsg(expr));
+    }
   }
  else {
     Class<? extends UDF> udf=FunctionRegistry.getUDFClass(funcText);
@@ -44,6 +71,13 @@
         String reason="Looking for Operator \"" + expr.getText() + "\" with parameters "+ argumentClasses;
         throw new SemanticException(ErrorMsg.INVALID_OPERATOR_SIGNATURE.getMsg(expr,reason));
       }
+    }
+  }
+  if (desc instanceof exprNodeFuncDesc) {
+    exprNodeFuncDesc funcDesc=(exprNodeFuncDesc)desc;
+    if (funcDesc.getUDFClass().equals(UDFOPPositive.class)) {
+      assert(funcDesc.getChildren().size() == 1);
+      desc=funcDesc.getChildren().get(0);
     }
   }
   assert(desc != null);

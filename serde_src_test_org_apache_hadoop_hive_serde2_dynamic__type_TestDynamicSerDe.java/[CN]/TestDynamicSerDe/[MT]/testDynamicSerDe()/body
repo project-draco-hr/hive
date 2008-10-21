@@ -1,0 +1,61 @@
+{
+  try {
+    ArrayList<String> bye=new ArrayList<String>();
+    bye.add("firstString");
+    bye.add("secondString");
+    HashMap<String,Integer> another=new HashMap<String,Integer>();
+    another.put("firstKey",1);
+    another.put("secondKey",2);
+    ArrayList<Object> struct=new ArrayList<Object>();
+    struct.add(Integer.valueOf(234));
+    struct.add(bye);
+    struct.add(another);
+    ArrayList<String> protocols=new ArrayList<String>();
+    ArrayList<Boolean> isBinaries=new ArrayList<Boolean>();
+    protocols.add(com.facebook.thrift.protocol.TBinaryProtocol.class.getName());
+    isBinaries.add(true);
+    protocols.add(com.facebook.thrift.protocol.TJSONProtocol.class.getName());
+    isBinaries.add(false);
+    protocols.add(org.apache.hadoop.hive.serde2.thrift.TCTLSeparatedProtocol.class.getName());
+    isBinaries.add(false);
+    System.out.println("input struct = " + struct);
+    for (int pp=0; pp < protocols.size(); pp++) {
+      String protocol=protocols.get(pp);
+      boolean isBinary=isBinaries.get(pp);
+      System.out.println("Testing protocol: " + protocol);
+      Properties schema=new Properties();
+      schema.setProperty(Constants.SERIALIZATION_FORMAT,protocol);
+      schema.setProperty(org.apache.hadoop.hive.metastore.api.Constants.META_TABLE_NAME,"test");
+      schema.setProperty(Constants.SERIALIZATION_DDL,"struct test { i32 hello, list<string> bye, map<string,i32> another}");
+      schema.setProperty(Constants.SERIALIZATION_LIB,new DynamicSerDe().getClass().toString());
+      DynamicSerDe serde=new DynamicSerDe();
+      serde.initialize(new Configuration(),schema);
+      ObjectInspector oi=serde.getObjectInspector();
+      System.out.println("TypeName = " + oi.getTypeName());
+      BytesWritable bytes=(BytesWritable)serde.serialize(struct,oi);
+      StringBuilder sb=new StringBuilder();
+      for (int i=0; i < bytes.getSize(); i++) {
+        byte b=bytes.get()[i];
+        int v=(b < 0 ? 256 + b : b);
+        sb.append(String.format("x%02x",v));
+      }
+      System.out.println("bytes =" + sb);
+      if (!isBinary) {
+        System.out.println("bytes in text =" + new String(bytes.get(),0,bytes.getSize()));
+      }
+      Object o=serde.deserialize(bytes);
+      System.out.println("o class = " + o.getClass());
+      List<?> olist=(List<?>)o;
+      System.out.println("o size = " + olist.size());
+      System.out.println("o[0] class = " + olist.get(0).getClass());
+      System.out.println("o[1] class = " + olist.get(1).getClass());
+      System.out.println("o[2] class = " + olist.get(2).getClass());
+      System.out.println("o = " + o);
+      assertEquals(o,struct);
+    }
+  }
+ catch (  Throwable e) {
+    e.printStackTrace();
+    throw e;
+  }
+}
