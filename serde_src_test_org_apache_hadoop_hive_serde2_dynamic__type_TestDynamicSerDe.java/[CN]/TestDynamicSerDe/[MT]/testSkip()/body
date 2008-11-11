@@ -1,0 +1,48 @@
+{
+  try {
+    ArrayList<String> bye=new ArrayList<String>();
+    bye.add("firstString");
+    bye.add("secondString");
+    HashMap<String,Integer> another=new HashMap<String,Integer>();
+    another.put("firstKey",1);
+    another.put("secondKey",2);
+    ArrayList<Object> struct=new ArrayList<Object>();
+    struct.add(Integer.valueOf(234));
+    struct.add(bye);
+    struct.add(another);
+    Properties schema=new Properties();
+    schema.setProperty(Constants.SERIALIZATION_FORMAT,org.apache.hadoop.hive.serde2.thrift.TCTLSeparatedProtocol.class.getName());
+    schema.setProperty(org.apache.hadoop.hive.metastore.api.Constants.META_TABLE_NAME,"test");
+    schema.setProperty(Constants.SERIALIZATION_DDL,"struct test { i32 hello, list<string> bye, map<string,i32> another}");
+    schema.setProperty(Constants.SERIALIZATION_LIB,new DynamicSerDe().getClass().toString());
+    schema.setProperty(Constants.FIELD_DELIM,"9");
+    schema.setProperty(Constants.COLLECTION_DELIM,"1");
+    schema.setProperty(Constants.LINE_DELIM,"2");
+    schema.setProperty(Constants.MAPKEY_DELIM,"4");
+    DynamicSerDe serde=new DynamicSerDe();
+    serde.initialize(new Configuration(),schema);
+    TCTLSeparatedProtocol prot=(TCTLSeparatedProtocol)serde.oprot_;
+    assertTrue(prot.getPrimarySeparator().equals("\u0009"));
+    ObjectInspector oi=serde.getObjectInspector();
+    BytesWritable bytes=(BytesWritable)serde.serialize(struct,oi);
+    hexString(bytes);
+    String compare="234" + "\u0009" + "firstString"+ "\u0001"+ "secondString"+ "\u0009"+ "firstKey"+ "\u0004"+ "1"+ "\u0001"+ "secondKey"+ "\u0004"+ "2";
+    System.out.println("bytes in text =" + new String(bytes.get(),0,bytes.getSize()) + ">");
+    System.out.println("compare to    =" + compare + ">");
+    assertTrue(compare.equals(new String(bytes.get(),0,bytes.getSize())));
+    schema.setProperty(Constants.SERIALIZATION_DDL,"struct test { i32 hello, skip list<string> bye, map<string,i32> another}");
+    serde.initialize(new Configuration(),schema);
+    Object o=serde.deserialize(bytes);
+    System.out.println("o class = " + o.getClass());
+    List<?> olist=(List<?>)o;
+    System.out.println("o size = " + olist.size());
+    System.out.println("o = " + o);
+    assertEquals(null,olist.get(1));
+    struct.set(1,null);
+    assertEquals(o,struct);
+  }
+ catch (  Throwable e) {
+    e.printStackTrace();
+    throw e;
+  }
+}

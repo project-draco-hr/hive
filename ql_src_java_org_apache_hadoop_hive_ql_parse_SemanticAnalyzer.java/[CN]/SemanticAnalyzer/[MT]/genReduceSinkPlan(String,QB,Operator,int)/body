@@ -1,0 +1,32 @@
+{
+  ArrayList<exprNodeDesc> keyCols=new ArrayList<exprNodeDesc>();
+  RowResolver inputRR=opParseCtx.get(input).getRR();
+  CommonTree clby=qb.getParseInfo().getClusterByForClause(dest);
+  if (clby != null) {
+    int ccount=clby.getChildCount();
+    for (int i=0; i < ccount; ++i) {
+      CommonTree cl=(CommonTree)clby.getChild(i);
+      ColumnInfo colInfo=inputRR.get(qb.getParseInfo().getAlias(),unescapeIdentifier(cl.getText()));
+      if (colInfo == null) {
+        throw new SemanticException(ErrorMsg.INVALID_COLUMN.getMsg(cl));
+      }
+      keyCols.add(new exprNodeColumnDesc(colInfo.getType(),colInfo.getInternalName()));
+    }
+  }
+  ArrayList<exprNodeDesc> valueCols=new ArrayList<exprNodeDesc>();
+  for (  ColumnInfo colInfo : inputRR.getColumnInfos()) {
+    valueCols.add(new exprNodeColumnDesc(colInfo.getType(),colInfo.getInternalName()));
+  }
+  Operator interim=putOpInsertMap(OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(keyCols,valueCols,-1,keyCols.size(),numReducers,false),new RowSchema(inputRR.getColumnInfos()),input),inputRR);
+  RowResolver out_rwsch=new RowResolver();
+  RowResolver interim_rwsch=inputRR;
+  Integer pos=Integer.valueOf(0);
+  for (  ColumnInfo colInfo : interim_rwsch.getColumnInfos()) {
+    String[] info=interim_rwsch.reverseLookup(colInfo.getInternalName());
+    out_rwsch.put(info[0],info[1],new ColumnInfo(pos.toString(),colInfo.getType()));
+    pos=Integer.valueOf(pos.intValue() + 1);
+  }
+  Operator output=putOpInsertMap(OperatorFactory.getAndMakeChild(new extractDesc(new exprNodeColumnDesc(String.class,Utilities.ReduceField.VALUE.toString())),new RowSchema(out_rwsch.getColumnInfos()),interim),out_rwsch);
+  LOG.debug("Created ReduceSink Plan for clause: " + dest + " row schema: "+ out_rwsch.toString());
+  return output;
+}

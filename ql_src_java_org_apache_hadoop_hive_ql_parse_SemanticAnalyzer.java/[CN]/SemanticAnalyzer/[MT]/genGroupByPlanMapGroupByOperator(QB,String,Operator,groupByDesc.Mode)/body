@@ -1,0 +1,51 @@
+{
+  RowResolver groupByInputRowResolver=opParseCtx.get(inputOperatorInfo).getRR();
+  QBParseInfo parseInfo=qb.getParseInfo();
+  RowResolver groupByOutputRowResolver=new RowResolver();
+  groupByOutputRowResolver.setIsExprResolver(true);
+  ArrayList<exprNodeDesc> groupByKeys=new ArrayList<exprNodeDesc>();
+  ArrayList<aggregationDesc> aggregations=new ArrayList<aggregationDesc>();
+  List<CommonTree> grpByExprs=getGroupByForClause(parseInfo,dest);
+  for (int i=0; i < grpByExprs.size(); ++i) {
+    CommonTree grpbyExpr=grpByExprs.get(i);
+    exprNodeDesc grpByExprNode=genExprNodeDesc(qb.getMetaData(),grpbyExpr,groupByInputRowResolver);
+    groupByKeys.add(grpByExprNode);
+    String field=(Integer.valueOf(i)).toString();
+    groupByOutputRowResolver.put("",grpbyExpr.toStringTree(),new ColumnInfo(field,grpByExprNode.getTypeInfo()));
+  }
+  if (parseInfo.getDistinctFuncExprForClause(dest) != null) {
+    CommonTree value=parseInfo.getDistinctFuncExprForClause(dest);
+    int numDistn=0;
+    for (int i=1; i < value.getChildCount(); i++) {
+      CommonTree parameter=(CommonTree)value.getChild(i);
+      String text=parameter.toStringTree();
+      if (groupByOutputRowResolver.get("",text) == null) {
+        exprNodeDesc distExprNode=genExprNodeDesc(qb.getMetaData(),parameter,groupByInputRowResolver);
+        groupByKeys.add(distExprNode);
+        numDistn++;
+        String field=(Integer.valueOf(grpByExprs.size() + numDistn - 1)).toString();
+        groupByOutputRowResolver.put("",text,new ColumnInfo(field,distExprNode.getTypeInfo()));
+      }
+    }
+  }
+  HashMap<String,CommonTree> aggregationTrees=parseInfo.getAggregationExprsForClause(dest);
+  assert(aggregationTrees != null);
+  for (  Map.Entry<String,CommonTree> entry : aggregationTrees.entrySet()) {
+    CommonTree value=entry.getValue();
+    String aggName=value.getChild(0).getText();
+    Class<? extends UDAF> aggClass=FunctionRegistry.getUDAF(aggName);
+    assert(aggClass != null);
+    ArrayList<exprNodeDesc> aggParameters=new ArrayList<exprNodeDesc>();
+    ArrayList<Class<?>> aggClasses=new ArrayList<Class<?>>();
+    for (int i=1; i < value.getChildCount(); i++) {
+      CommonTree paraExpr=(CommonTree)value.getChild(i);
+      exprNodeDesc paraExprNode=genExprNodeDesc(qb.getMetaData(),paraExpr,groupByInputRowResolver);
+      aggParameters.add(paraExprNode);
+      aggClasses.add(paraExprNode.getTypeInfo().getPrimitiveClass());
+    }
+    UDAFInfo udaf=getUDAFInfo(aggName,mode,aggClasses,aggParameters,value);
+    aggregations.add(new aggregationDesc(aggClass,udaf.convertedParameters,value.getToken().getType() == HiveParser.TOK_FUNCTIONDI));
+    groupByOutputRowResolver.put("",value.toStringTree(),new ColumnInfo(Integer.valueOf(groupByKeys.size() + aggregations.size() - 1).toString(),udaf.evaluateMethod.getReturnType()));
+  }
+  return putOpInsertMap(OperatorFactory.getAndMakeChild(new groupByDesc(mode,groupByKeys,aggregations),new RowSchema(groupByOutputRowResolver.getColumnInfos()),inputOperatorInfo),groupByOutputRowResolver);
+}

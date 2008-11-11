@@ -1,4 +1,6 @@
 {
+  Map<String,Boolean> joinPartnPruner=new HashMap<String,Boolean>();
+  QBParseInfo qbp=qb.getParseInfo();
   for (  String alias : qb.getSubqAliases()) {
     QBExpr qbexpr=qb.getSubqForAlias(alias);
     genPartitionPruners(qbexpr);
@@ -6,16 +8,50 @@
   for (  String alias : qb.getTabAliases()) {
     String alias_id=(qb.getId() == null ? alias : qb.getId() + ":" + alias);
     PartitionPruner pruner=new PartitionPruner(alias,qb.getMetaData());
-    QBParseInfo qbp=qb.getParseInfo();
     for (    String clause : qbp.getClauseNames()) {
       CommonTree whexp=(CommonTree)qbp.getWhrForClause(clause);
-      if (pruner.getTable().isPartitioned() && conf.getVar(HiveConf.ConfVars.HIVEPARTITIONPRUNER).equalsIgnoreCase("strict") && (whexp == null || !pruner.hasPartitionPredicate((CommonTree)whexp.getChild(0)))) {
-        throw new SemanticException(ErrorMsg.NO_PARTITION_PREDICATE.getMsg(whexp != null ? whexp : qbp.getSelForClause(clause)," for Alias " + alias + " Table "+ pruner.getTable().getName()));
-      }
       if (whexp != null) {
         pruner.addExpression((CommonTree)whexp.getChild(0));
       }
     }
     this.aliasToPruner.put(alias_id,pruner);
+  }
+  if (!qb.getTabAliases().isEmpty() && qb.getQbJoinTree() != null) {
+    int pos=0;
+    for (    String alias : qb.getQbJoinTree().getBaseSrc()) {
+      if (alias != null) {
+        String alias_id=(qb.getId() == null ? alias : qb.getId() + ":" + alias);
+        PartitionPruner pruner=this.aliasToPruner.get(alias_id);
+        if (pruner == null) {
+          pos++;
+          continue;
+        }
+        Vector<CommonTree> filters=qb.getQbJoinTree().getFilters().get(pos);
+        for (        CommonTree cond : filters) {
+          pruner.addJoinOnExpression(cond);
+          if (pruner.hasPartitionPredicate(cond))           joinPartnPruner.put(alias_id,new Boolean(true));
+        }
+        if (qb.getQbJoinTree().getJoinSrc() != null) {
+          filters=qb.getQbJoinTree().getFilters().get(0);
+          for (          CommonTree cond : filters) {
+            pruner.addJoinOnExpression(cond);
+            if (pruner.hasPartitionPredicate(cond))             joinPartnPruner.put(alias_id,new Boolean(true));
+          }
+        }
+      }
+      pos++;
+    }
+  }
+  for (  String alias : qb.getTabAliases()) {
+    String alias_id=(qb.getId() == null ? alias : qb.getId() + ":" + alias);
+    PartitionPruner pruner=this.aliasToPruner.get(alias_id);
+    if (joinPartnPruner.get(alias_id) == null) {
+      for (      String clause : qbp.getClauseNames()) {
+        CommonTree whexp=(CommonTree)qbp.getWhrForClause(clause);
+        if (pruner.getTable().isPartitioned() && conf.getVar(HiveConf.ConfVars.HIVEPARTITIONPRUNER).equalsIgnoreCase("strict") && (whexp == null || !pruner.hasPartitionPredicate((CommonTree)whexp.getChild(0)))) {
+          throw new SemanticException(ErrorMsg.NO_PARTITION_PREDICATE.getMsg(whexp != null ? whexp : qbp.getSelForClause(clause)," for Alias " + alias + " Table "+ pruner.getTable().getName()));
+        }
+      }
+    }
   }
 }

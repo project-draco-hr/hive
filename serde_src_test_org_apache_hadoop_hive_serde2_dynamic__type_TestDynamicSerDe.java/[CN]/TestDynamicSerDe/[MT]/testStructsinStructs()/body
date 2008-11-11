@@ -1,0 +1,38 @@
+{
+  try {
+    Properties schema=new Properties();
+    schema.setProperty(Constants.SERIALIZATION_FORMAT,com.facebook.thrift.protocol.TBinaryProtocol.class.getName());
+    schema.setProperty(org.apache.hadoop.hive.metastore.api.Constants.META_TABLE_NAME,"test");
+    schema.setProperty(Constants.SERIALIZATION_DDL,"struct inner { i32 field1, string field2 },struct  test {inner foo,  i32 hello, list<string> bye, map<string,i32> another}");
+    schema.setProperty(Constants.SERIALIZATION_LIB,new DynamicSerDe().getClass().toString());
+    ArrayList<Object> innerStruct=new ArrayList<Object>();
+    innerStruct.add(new Integer(22));
+    innerStruct.add(new String("hello world"));
+    ArrayList<String> bye=new ArrayList<String>();
+    bye.add("firstString");
+    bye.add("secondString");
+    HashMap<String,Integer> another=new HashMap<String,Integer>();
+    another.put("firstKey",1);
+    another.put("secondKey",2);
+    ArrayList<Object> struct=new ArrayList<Object>();
+    struct.add(innerStruct);
+    struct.add(Integer.valueOf(234));
+    struct.add(bye);
+    struct.add(another);
+    DynamicSerDe serde=new DynamicSerDe();
+    serde.initialize(new Configuration(),schema);
+    ObjectInspector oi=serde.getObjectInspector();
+    BytesWritable bytes=(BytesWritable)serde.serialize(struct,oi);
+    Object o=serde.deserialize(bytes);
+    List<?> olist=(List<?>)o;
+    assertEquals(4,olist.size());
+    assertEquals(innerStruct,olist.get(0));
+    assertEquals(new Integer(234),olist.get(1));
+    assertEquals(bye,olist.get(2));
+    assertEquals(another,olist.get(3));
+  }
+ catch (  Throwable e) {
+    e.printStackTrace();
+    throw e;
+  }
+}

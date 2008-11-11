@@ -1,0 +1,41 @@
+{
+  int fields=((List)structs[structs.length - 1]).size();
+  String order="";
+  for (int i=0; i < fields; i++) {
+    order=order + (ascending ? "+" : "-");
+  }
+  Properties schema=new Properties();
+  schema.setProperty(Constants.SERIALIZATION_FORMAT,org.apache.hadoop.hive.serde2.thrift.TBinarySortableProtocol.class.getName());
+  schema.setProperty(org.apache.hadoop.hive.metastore.api.Constants.META_TABLE_NAME,"test");
+  schema.setProperty(Constants.SERIALIZATION_DDL,ddl);
+  schema.setProperty(Constants.SERIALIZATION_LIB,DynamicSerDe.class.getName());
+  schema.setProperty(Constants.SERIALIZATION_SORT_ORDER,order);
+  DynamicSerDe serde=new DynamicSerDe();
+  serde.initialize(new Configuration(),schema);
+  ObjectInspector oi=serde.getObjectInspector();
+  BytesWritable bytes[]=new BytesWritable[structs.length];
+  for (int i=0; i < structs.length; i++) {
+    bytes[i]=new BytesWritable();
+    BytesWritable s=(BytesWritable)serde.serialize(structs[i],oi);
+    bytes[i].set(s);
+    if (i > 0) {
+      int compareResult=bytes[i - 1].compareTo(bytes[i]);
+      if ((compareResult < 0 && !ascending) || (compareResult > 0 && ascending)) {
+        System.out.println("Test failed in " + (ascending ? "ascending" : "descending") + " order.");
+        System.out.println("serialized data of " + structs[i - 1] + " = "+ hexString(bytes[i - 1]));
+        System.out.println("serialized data of " + structs[i] + " = "+ hexString(bytes[i]));
+        fail("Sort order of serialized " + structs[i - 1] + " and "+ structs[i]+ " are reversed!");
+      }
+    }
+  }
+  Object[] deserialized=new Object[structs.length];
+  for (int i=0; i < structs.length; i++) {
+    deserialized[i]=serde.deserialize(bytes[i]);
+    if (!structs[i].equals(deserialized[i])) {
+      System.out.println("structs[i] = " + structs[i]);
+      System.out.println("deserialized[i] = " + deserialized[i]);
+      System.out.println("serialized[i] = " + hexString(bytes[i]));
+      assertEquals(structs[i],deserialized[i]);
+    }
+  }
+}

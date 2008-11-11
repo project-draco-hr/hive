@@ -1,0 +1,47 @@
+{
+  Configuration conf;
+  JobConf job;
+  FileSystem fs;
+  Path dir;
+  Path file;
+  Reporter reporter;
+  FSDataOutputStream ds;
+  try {
+    conf=new Configuration();
+    job=new JobConf(conf);
+    fs=FileSystem.getLocal(conf);
+    dir=new Path(System.getProperty("test.build.data",".") + "/mapred");
+    file=new Path(dir,"test.txt");
+    reporter=Reporter.NULL;
+    fs.delete(dir,true);
+    job.setClass(FlatFileInputFormat.SerializationImplKey,org.apache.hadoop.io.serializer.JavaSerialization.class,org.apache.hadoop.io.serializer.Serialization.class);
+    job.setClass(FlatFileInputFormat.SerializationContextFromConf.SerializationSubclassKey,JavaTestObjFlatFileInputFormat.class,java.io.Serializable.class);
+    FileInputFormat.setInputPaths(job,dir);
+    ds=fs.create(file);
+    Serializer serializer=new JavaSerialization().getSerializer(null);
+    serializer.open(ds);
+    for (int i=0; i < 10; i++) {
+      serializer.serialize(new JavaTestObjFlatFileInputFormat("Hello World! " + String.valueOf(i),i));
+    }
+    serializer.close();
+    FileInputFormat<Void,FlatFileInputFormat.RowContainer<Serializable>> format=new FlatFileInputFormat<Serializable>();
+    InputSplit[] splits=format.getSplits(job,1);
+    RecordReader<Void,FlatFileInputFormat.RowContainer<Serializable>> reader=format.getRecordReader(splits[0],job,reporter);
+    Void key=reader.createKey();
+    FlatFileInputFormat.RowContainer<Serializable> value=reader.createValue();
+    int count=0;
+    while (reader.next(key,value)) {
+      assertTrue(key == null);
+      assertTrue(((JavaTestObjFlatFileInputFormat)value.row).s.equals("Hello World! " + String.valueOf(count)));
+      assertTrue(((JavaTestObjFlatFileInputFormat)value.row).num == count);
+      count++;
+    }
+    reader.close();
+  }
+ catch (  Exception e) {
+    System.err.println("caught: " + e);
+    e.printStackTrace();
+  }
+ finally {
+  }
+}

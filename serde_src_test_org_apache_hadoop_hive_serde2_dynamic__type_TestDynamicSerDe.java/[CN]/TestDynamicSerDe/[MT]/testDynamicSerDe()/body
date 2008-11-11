@@ -10,14 +10,27 @@
     struct.add(Integer.valueOf(234));
     struct.add(bye);
     struct.add(another);
+    struct.add(Integer.valueOf(-234));
+    struct.add(Double.valueOf(1.0));
+    struct.add(Double.valueOf(-2.5));
     ArrayList<String> protocols=new ArrayList<String>();
     ArrayList<Boolean> isBinaries=new ArrayList<Boolean>();
+    ArrayList<HashMap<String,String>> additionalParams=new ArrayList<HashMap<String,String>>();
+    protocols.add(org.apache.hadoop.hive.serde2.thrift.TBinarySortableProtocol.class.getName());
+    isBinaries.add(true);
+    additionalParams.add(makeHashMap("serialization.sort.order","++++++"));
+    protocols.add(org.apache.hadoop.hive.serde2.thrift.TBinarySortableProtocol.class.getName());
+    isBinaries.add(true);
+    additionalParams.add(makeHashMap("serialization.sort.order","------"));
     protocols.add(com.facebook.thrift.protocol.TBinaryProtocol.class.getName());
     isBinaries.add(true);
+    additionalParams.add(null);
     protocols.add(com.facebook.thrift.protocol.TJSONProtocol.class.getName());
     isBinaries.add(false);
+    additionalParams.add(null);
     protocols.add(org.apache.hadoop.hive.serde2.thrift.TCTLSeparatedProtocol.class.getName());
     isBinaries.add(false);
+    additionalParams.add(null);
     System.out.println("input struct = " + struct);
     for (int pp=0; pp < protocols.size(); pp++) {
       String protocol=protocols.get(pp);
@@ -26,20 +39,20 @@
       Properties schema=new Properties();
       schema.setProperty(Constants.SERIALIZATION_FORMAT,protocol);
       schema.setProperty(org.apache.hadoop.hive.metastore.api.Constants.META_TABLE_NAME,"test");
-      schema.setProperty(Constants.SERIALIZATION_DDL,"struct test { i32 hello, list<string> bye, map<string,i32> another}");
+      schema.setProperty(Constants.SERIALIZATION_DDL,"struct test { i32 hello, list<string> bye, map<string,i32> another, i32 nhello, double d, double nd}");
       schema.setProperty(Constants.SERIALIZATION_LIB,new DynamicSerDe().getClass().toString());
+      HashMap<String,String> p=additionalParams.get(pp);
+      if (p != null) {
+        for (        Entry<String,String> e : p.entrySet()) {
+          schema.setProperty(e.getKey(),e.getValue());
+        }
+      }
       DynamicSerDe serde=new DynamicSerDe();
       serde.initialize(new Configuration(),schema);
       ObjectInspector oi=serde.getObjectInspector();
       System.out.println("TypeName = " + oi.getTypeName());
       BytesWritable bytes=(BytesWritable)serde.serialize(struct,oi);
-      StringBuilder sb=new StringBuilder();
-      for (int i=0; i < bytes.getSize(); i++) {
-        byte b=bytes.get()[i];
-        int v=(b < 0 ? 256 + b : b);
-        sb.append(String.format("x%02x",v));
-      }
-      System.out.println("bytes =" + sb);
+      System.out.println("bytes =" + hexString(bytes));
       if (!isBinary) {
         System.out.println("bytes in text =" + new String(bytes.get(),0,bytes.getSize()));
       }
@@ -51,7 +64,7 @@
       System.out.println("o[1] class = " + olist.get(1).getClass());
       System.out.println("o[2] class = " + olist.get(2).getClass());
       System.out.println("o = " + o);
-      assertEquals(o,struct);
+      assertEquals(struct,o);
     }
   }
  catch (  Throwable e) {

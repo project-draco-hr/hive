@@ -8,11 +8,16 @@
 switch (tokType) {
 case HiveParser.TOK_COLREF:
 {
-      assert(expr.getChildCount() == 2);
-      String tabAlias=expr.getChild(0).getText();
-      String colName=expr.getChild(1).getText();
-      if (tabAlias == null || colName == null) {
-        throw new SemanticException(ErrorMsg.INVALID_XPATH.getMsg(expr));
+      String tabAlias=null;
+      String colName=null;
+      if (expr.getChildCount() != 1) {
+        assert(expr.getChildCount() == 2);
+        tabAlias=BaseSemanticAnalyzer.unescapeIdentifier(expr.getChild(0).getText());
+        colName=BaseSemanticAnalyzer.unescapeIdentifier(expr.getChild(1).getText());
+      }
+ else {
+        colName=BaseSemanticAnalyzer.unescapeIdentifier(expr.getChild(0).getText());
+        tabAlias=SemanticAnalyzer.getTabAliasForCol(this.metaData,colName,(CommonTree)expr.getChild(0));
       }
       if (tabAlias.equals(tableAlias) && tab.isPartitionKey(colName)) {
         desc=new exprNodeColumnDesc(String.class,colName);
@@ -26,6 +31,7 @@ case HiveParser.TOK_COLREF:
  else {
             TypeInfo typeInfo=TypeInfoUtils.getTypeInfoFromObjectInspector(this.metaData.getTableForAlias(tabAlias).getDeserializer().getObjectInspector());
             desc=new exprNodeConstantDesc(typeInfo.getStructFieldTypeInfo(colName),null);
+            containsPartCols=false;
           }
         }
  catch (        SerDeException e) {

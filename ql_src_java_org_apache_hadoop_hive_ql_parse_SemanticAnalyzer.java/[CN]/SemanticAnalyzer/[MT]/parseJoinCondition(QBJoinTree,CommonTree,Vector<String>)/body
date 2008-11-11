@@ -1,0 +1,67 @@
+{
+switch (joinCond.getToken().getType()) {
+case HiveParser.KW_OR:
+    throw new SemanticException(ErrorMsg.INVALID_JOIN_CONDITION_3.getMsg(joinCond));
+case HiveParser.KW_AND:
+  parseJoinCondition(joinTree,(CommonTree)joinCond.getChild(0),leftSrc);
+parseJoinCondition(joinTree,(CommonTree)joinCond.getChild(1),leftSrc);
+break;
+case HiveParser.EQUAL:
+CommonTree leftCondn=(CommonTree)joinCond.getChild(0);
+Vector<String> leftCondAl1=new Vector<String>();
+Vector<String> leftCondAl2=new Vector<String>();
+parseJoinCondPopulateAlias(joinTree,leftCondn,leftCondAl1,leftCondAl2);
+CommonTree rightCondn=(CommonTree)joinCond.getChild(1);
+Vector<String> rightCondAl1=new Vector<String>();
+Vector<String> rightCondAl2=new Vector<String>();
+parseJoinCondPopulateAlias(joinTree,rightCondn,rightCondAl1,rightCondAl2);
+if (((leftCondAl1.size() != 0) && (leftCondAl2.size() != 0)) || ((rightCondAl1.size() != 0) && (rightCondAl2.size() != 0))) throw new SemanticException(ErrorMsg.INVALID_JOIN_CONDITION_1.getMsg(joinCond));
+if (leftCondAl1.size() != 0) {
+if ((rightCondAl1.size() != 0) || ((rightCondAl1.size() == 0) && (rightCondAl2.size() == 0))) joinTree.getFilters().get(0).add(joinCond);
+ else if (rightCondAl2.size() != 0) {
+populateAliases(leftCondAl1,leftCondAl2,leftCondn,joinTree,leftSrc);
+populateAliases(rightCondAl1,rightCondAl2,rightCondn,joinTree,leftSrc);
+}
+}
+ else if (leftCondAl2.size() != 0) {
+if ((rightCondAl2.size() != 0) || ((rightCondAl1.size() == 0) && (rightCondAl2.size() == 0))) joinTree.getFilters().get(1).add(joinCond);
+ else if (rightCondAl1.size() != 0) {
+populateAliases(leftCondAl1,leftCondAl2,leftCondn,joinTree,leftSrc);
+populateAliases(rightCondAl1,rightCondAl2,rightCondn,joinTree,leftSrc);
+}
+}
+ else if (rightCondAl1.size() != 0) joinTree.getFilters().get(0).add(joinCond);
+ else joinTree.getFilters().get(1).add(joinCond);
+break;
+default :
+boolean isFunction=(joinCond.getType() == HiveParser.TOK_FUNCTION);
+int childrenBegin=(isFunction ? 1 : 0);
+ArrayList<Vector<String>> leftAlias=new ArrayList<Vector<String>>(joinCond.getChildCount() - childrenBegin);
+ArrayList<Vector<String>> rightAlias=new ArrayList<Vector<String>>(joinCond.getChildCount() - childrenBegin);
+for (int ci=0; ci < joinCond.getChildCount() - childrenBegin; ci++) {
+Vector<String> left=new Vector<String>();
+Vector<String> right=new Vector<String>();
+leftAlias.add(left);
+rightAlias.add(right);
+}
+for (int ci=childrenBegin; ci < joinCond.getChildCount(); ci++) parseJoinCondPopulateAlias(joinTree,(CommonTree)joinCond.getChild(ci),leftAlias.get(ci - childrenBegin),rightAlias.get(ci - childrenBegin));
+boolean leftAliasNull=true;
+for (Vector<String> left : leftAlias) {
+if (left.size() != 0) {
+leftAliasNull=false;
+break;
+}
+}
+boolean rightAliasNull=true;
+for (Vector<String> right : rightAlias) {
+if (right.size() != 0) {
+rightAliasNull=false;
+break;
+}
+}
+if (!leftAliasNull && !rightAliasNull) throw new SemanticException(ErrorMsg.INVALID_JOIN_CONDITION_1.getMsg(joinCond));
+if (!leftAliasNull) joinTree.getFilters().get(0).add(joinCond);
+ else joinTree.getFilters().get(1).add(joinCond);
+break;
+}
+}

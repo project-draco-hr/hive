@@ -1,0 +1,36 @@
+{
+  RowResolver leftRR=opParseCtx.get(leftOp).getRR();
+  RowResolver rightRR=opParseCtx.get(rightOp).getRR();
+  HashMap<String,ColumnInfo> leftmap=leftRR.getFieldMap(leftalias);
+  HashMap<String,ColumnInfo> rightmap=rightRR.getFieldMap(rightalias);
+  for (  Map.Entry<String,ColumnInfo> lEntry : leftmap.entrySet()) {
+    String field=lEntry.getKey();
+    ColumnInfo lInfo=lEntry.getValue();
+    ColumnInfo rInfo=rightmap.get(field);
+    if (rInfo == null) {
+      throw new SemanticException("Schema of both sides of union should match. " + rightalias + " does not have the field "+ field);
+    }
+    if (lInfo == null) {
+      throw new SemanticException("Schema of both sides of union should match. " + leftalias + " does not have the field "+ field);
+    }
+    if (!lInfo.getInternalName().equals(rInfo.getInternalName())) {
+      throw new SemanticException("Schema of both sides of union should match: " + field + ":"+ lInfo.getInternalName()+ " "+ rInfo.getInternalName());
+    }
+  }
+  RowResolver unionoutRR=new RowResolver();
+  for (  Map.Entry<String,ColumnInfo> lEntry : leftmap.entrySet()) {
+    String field=lEntry.getKey();
+    ColumnInfo lInfo=lEntry.getValue();
+    unionoutRR.put(unionalias,field,lInfo);
+  }
+  Operator<? extends Serializable> unionforward=OperatorFactory.get(forwardDesc.class,new RowSchema(unionoutRR.getColumnInfos()));
+  List<Operator<? extends Serializable>> child=new ArrayList<Operator<? extends Serializable>>();
+  child.add(unionforward);
+  rightOp.setChildOperators(child);
+  leftOp.setChildOperators(child);
+  List<Operator<? extends Serializable>> parent=new ArrayList<Operator<? extends Serializable>>();
+  parent.add(leftOp);
+  parent.add(rightOp);
+  unionforward.setParentOperators(parent);
+  return putOpInsertMap(unionforward,unionoutRR);
+}

@@ -1,0 +1,25 @@
+{
+  this.pctx=pactx;
+  boolean done=true;
+  for (  String alias_id : pctx.getTopOps().keySet()) {
+    Operator<? extends Serializable> topOp=pctx.getTopOps().get(alias_id);
+    List<String> colNames=topOp.genColLists(pctx.getOpParseCtx());
+    if (pushSelect(topOp,colNames)) {
+      topOp.setChildOperators(null);
+      Operator select=genSelectPlan(topOp,colNames);
+      pctx.getTopSelOps().put(alias_id,select);
+      done=false;
+    }
+  }
+  if (!done) {
+    SemanticAnalyzer sem=(SemanticAnalyzer)SemanticAnalyzerFactory.get(pctx.getConf(),pctx.getParseTree());
+    resetParseContext(pctx);
+    sem.init(pctx);
+    QB qb=new QB(null,null,false);
+    sem.doPhase1(pctx.getParseTree(),qb,sem.initPhase1Ctx());
+    sem.getMetaData(qb);
+    sem.genPlan(qb);
+    pctx=sem.getParseContext();
+  }
+  return pctx;
+}

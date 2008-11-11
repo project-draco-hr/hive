@@ -1,0 +1,23 @@
+{
+  RowResolver inputRS=opParseCtx.get(child).getRR();
+  RowResolver outputRS=new RowResolver();
+  ArrayList<exprNodeDesc> reduceKeys=new ArrayList<exprNodeDesc>();
+  Vector<CommonTree> exprs=joinTree.getExpressions().get(pos);
+  for (int i=0; i < exprs.size(); i++) {
+    CommonTree expr=exprs.get(i);
+    reduceKeys.add(genExprNodeDesc(qb.getMetaData(),expr,inputRS));
+  }
+  ArrayList<exprNodeDesc> reduceValues=new ArrayList<exprNodeDesc>();
+  Iterator<String> tblNamesIter=inputRS.getTableNames().iterator();
+  while (tblNamesIter.hasNext()) {
+    String src=tblNamesIter.next();
+    HashMap<String,ColumnInfo> fMap=inputRS.getFieldMap(src);
+    for (    Map.Entry<String,ColumnInfo> entry : fMap.entrySet()) {
+      String field=entry.getKey();
+      ColumnInfo valueInfo=entry.getValue();
+      reduceValues.add(new exprNodeColumnDesc(valueInfo.getType(),valueInfo.getInternalName()));
+      if (outputRS.get(src,field) == null)       outputRS.put(src,field,new ColumnInfo(Utilities.ReduceField.VALUE.toString() + "." + Integer.valueOf(reduceValues.size() - 1).toString(),valueInfo.getType()));
+    }
+  }
+  return putOpInsertMap(OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(reduceKeys,reduceValues,joinTree.getNextTag(),reduceKeys.size(),-1,false),new RowSchema(outputRS.getColumnInfos()),child),outputRS);
+}

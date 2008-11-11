@@ -1,69 +1,74 @@
 {
-  Table tab=qb.getMetaData().getSrcForAlias(alias);
-  RowResolver rwsch=new RowResolver();
-  try {
-    StructObjectInspector rowObjectInspector=(StructObjectInspector)tab.getDeserializer().getObjectInspector();
-    List<? extends StructField> fields=rowObjectInspector.getAllStructFieldRefs();
-    for (int i=0; i < fields.size(); i++) {
-      rwsch.put(alias,fields.get(i).getFieldName(),new ColumnInfo(fields.get(i).getFieldName(),TypeInfoUtils.getTypeInfoFromObjectInspector(fields.get(i).getFieldObjectInspector())));
-    }
-  }
- catch (  SerDeException e) {
-    throw new RuntimeException(e);
-  }
-  for (  FieldSchema part_col : tab.getPartCols()) {
-    LOG.trace("Adding partition col: " + part_col);
-    rwsch.put(alias,part_col.getName(),new ColumnInfo(part_col.getName(),String.class));
-  }
-  Operator<? extends Serializable> top=OperatorFactory.get(forwardDesc.class,new RowSchema(rwsch.getColumnInfos()));
   String alias_id=(qb.getId() == null ? alias : qb.getId() + ":" + alias);
-  this.topOps.put(alias_id,top);
+  Table tab=qb.getMetaData().getSrcForAlias(alias);
+  RowResolver rwsch;
+  Operator<? extends Serializable> top=this.topOps.get(alias_id);
+  Operator<? extends Serializable> dummySel=this.topSelOps.get(alias_id);
+  if (dummySel != null)   top=dummySel;
+  if (top == null) {
+    rwsch=new RowResolver();
+    try {
+      StructObjectInspector rowObjectInspector=(StructObjectInspector)tab.getDeserializer().getObjectInspector();
+      List<? extends StructField> fields=rowObjectInspector.getAllStructFieldRefs();
+      for (int i=0; i < fields.size(); i++) {
+        rwsch.put(alias,fields.get(i).getFieldName(),new ColumnInfo(fields.get(i).getFieldName(),TypeInfoUtils.getTypeInfoFromObjectInspector(fields.get(i).getFieldObjectInspector())));
+      }
+    }
+ catch (    SerDeException e) {
+      throw new RuntimeException(e);
+    }
+    for (    FieldSchema part_col : tab.getPartCols()) {
+      LOG.trace("Adding partition col: " + part_col);
+      rwsch.put(alias,part_col.getName(),new ColumnInfo(part_col.getName(),String.class));
+    }
+    top=putOpInsertMap(OperatorFactory.get(forwardDesc.class,new RowSchema(rwsch.getColumnInfos())),rwsch);
+    this.topOps.put(alias_id,top);
+  }
+ else {
+    rwsch=opParseCtx.get(top).getRR();
+    top.setChildOperators(null);
+  }
   Operator<? extends Serializable> tableOp=top;
   TableSample ts=qb.getParseInfo().getTabSample(alias);
   if (ts != null) {
     int num=ts.getNumerator();
     int den=ts.getDenominator();
-    ArrayList<String> sampleCols=ts.getCols();
-    List<FieldSchema> tabCols=tab.getCols();
-    for (    String col : sampleCols) {
-      boolean found=false;
-      for (      FieldSchema s : tabCols) {
-        if (col.equalsIgnoreCase(s.getName())) {
-          found=true;
-        }
-      }
-      if (!found) {
-        throw new SemanticException(ErrorMsg.SAMPLE_COLUMN_NOT_FOUND.getMsg(qb.getParseInfo().getSrcForAlias(alias),"Sampling column " + col + " not found in table "+ tab.getName()));
-      }
-    }
+    ArrayList<CommonTree> sampleExprs=ts.getExprs();
     List<String> tabBucketCols=tab.getBucketCols();
     int numBuckets=tab.getNumBuckets();
+    if (tabBucketCols.size() == 0 && sampleExprs.size() == 0) {
+      throw new SemanticException(ErrorMsg.NON_BUCKETED_TABLE.getMsg() + " " + tab.getName());
+    }
     boolean colsEqual=true;
-    if ((sampleCols.size() != tabBucketCols.size()) && (sampleCols.size() != 0)) {
+    if ((sampleExprs.size() != tabBucketCols.size()) && (sampleExprs.size() != 0)) {
       colsEqual=false;
     }
-    for (int i=0; i < sampleCols.size() && colsEqual; i++) {
+    for (int i=0; i < sampleExprs.size() && colsEqual; i++) {
       boolean colFound=false;
       for (int j=0; j < tabBucketCols.size() && !colFound; j++) {
-        if (sampleCols.get(i).equalsIgnoreCase(tabBucketCols.get(j))) {
+        if (sampleExprs.get(i).getToken().getType() != HiveParser.TOK_COLREF) {
+          break;
+        }
+        if (sampleExprs.get(i).getChildCount() != 1) {
+          throw new SemanticException(ErrorMsg.TABLE_ALIAS_NOT_ALLOWED.getMsg());
+        }
+        if (((CommonTree)sampleExprs.get(i).getChild(0)).getText().equalsIgnoreCase(tabBucketCols.get(j))) {
           colFound=true;
         }
       }
-      colsEqual=colFound;
+      colsEqual=(colsEqual && colFound);
     }
-    if (colsEqual) {
-      ts.setCols(new ArrayList<String>(tabBucketCols));
-    }
-    if ((sampleCols == null || sampleCols.size() == 0 || colsEqual) && (num == den || den <= numBuckets && numBuckets % den == 0)) {
+    ts.setInputPruning((sampleExprs == null || sampleExprs.size() == 0 || colsEqual));
+    if ((sampleExprs == null || sampleExprs.size() == 0 || colsEqual) && (num == den || den <= numBuckets && numBuckets % den == 0)) {
       LOG.info("No need for sample filter");
     }
  else {
       LOG.info("Need sample filter");
-      exprNodeDesc samplePredicate=genSamplePredicate(ts);
+      exprNodeDesc samplePredicate=genSamplePredicate(ts,tabBucketCols,colsEqual,alias,rwsch,qb.getMetaData());
       tableOp=OperatorFactory.getAndMakeChild(new filterDesc(samplePredicate),top);
     }
   }
-  OperatorInfo output=new OperatorInfo(tableOp,rwsch);
+  Operator output=putOpInsertMap(tableOp,rwsch);
   LOG.debug("Created Table Plan for " + alias + " "+ tableOp.toString());
   return output;
 }

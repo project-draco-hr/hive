@@ -1,0 +1,55 @@
+{
+  exprNodeDesc desc=null;
+  ColumnInfo colInfo=input.get("",expr.toStringTree());
+  if (colInfo != null) {
+    desc=new exprNodeColumnDesc(colInfo.getType(),colInfo.getInternalName());
+    return desc;
+  }
+  desc=genSimpleExprNodeDesc(expr);
+  if (desc != null) {
+    return desc;
+  }
+  int tokType=expr.getType();
+switch (tokType) {
+case HiveParser.TOK_COLREF:
+{
+      String tabAlias=null;
+      String colName=null;
+      if (expr.getChildCount() != 1) {
+        tabAlias=unescapeIdentifier(expr.getChild(0).getText());
+        colName=unescapeIdentifier(expr.getChild(1).getText());
+      }
+ else {
+        colName=unescapeIdentifier(expr.getChild(0).getText());
+      }
+      if (colName == null) {
+        throw new SemanticException(ErrorMsg.INVALID_XPATH.getMsg(expr));
+      }
+      colInfo=input.get(tabAlias,colName);
+      if (colInfo == null && input.getIsExprResolver()) {
+        throw new SemanticException(ErrorMsg.NON_KEY_EXPR_IN_GROUPBY.getMsg(expr));
+      }
+ else       if (tabAlias != null && !input.hasTableAlias(tabAlias)) {
+        throw new SemanticException(ErrorMsg.INVALID_TABLE_ALIAS.getMsg(expr.getChild(0)));
+      }
+ else       if (colInfo == null) {
+        throw new SemanticException(ErrorMsg.INVALID_COLUMN.getMsg(tabAlias == null ? expr.getChild(0) : expr.getChild(1)));
+      }
+      desc=new exprNodeColumnDesc(colInfo.getType(),colInfo.getInternalName());
+      break;
+    }
+default :
+{
+    boolean isFunction=(expr.getType() == HiveParser.TOK_FUNCTION);
+    int childrenBegin=(isFunction ? 1 : 0);
+    ArrayList<exprNodeDesc> children=new ArrayList<exprNodeDesc>(expr.getChildCount() - childrenBegin);
+    for (int ci=childrenBegin; ci < expr.getChildCount(); ci++) {
+      children.add(genExprNodeDesc(qbm,(CommonTree)expr.getChild(ci),input));
+    }
+    desc=getXpathOrFuncExprNodeDesc(expr,isFunction,children);
+    break;
+  }
+}
+assert(desc != null);
+return desc;
+}

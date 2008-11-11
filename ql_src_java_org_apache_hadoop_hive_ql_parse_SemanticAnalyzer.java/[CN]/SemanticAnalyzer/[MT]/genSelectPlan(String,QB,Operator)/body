@@ -1,0 +1,65 @@
+{
+  CommonTree selExprList=qb.getParseInfo().getSelForClause(dest);
+  ArrayList<exprNodeDesc> col_list=new ArrayList<exprNodeDesc>();
+  RowResolver out_rwsch=new RowResolver();
+  CommonTree trfm=null;
+  String alias=qb.getParseInfo().getAlias();
+  Integer pos=Integer.valueOf(0);
+  RowResolver inputRR=opParseCtx.get(input).getRR();
+  boolean selectStar=false;
+  for (int i=0; i < selExprList.getChildCount(); ++i) {
+    CommonTree selExpr=(CommonTree)selExprList.getChild(i);
+    String colAlias=getColAlias(selExpr,"_C" + i);
+    CommonTree sel=(CommonTree)selExpr.getChild(0);
+    if (sel.getToken().getType() == HiveParser.TOK_ALLCOLREF) {
+      String tabAlias=null;
+      if (sel.getChildCount() == 1)       tabAlias=unescapeIdentifier(sel.getChild(0).getText().toLowerCase());
+      genColList(tabAlias,alias,sel,col_list,inputRR,pos,out_rwsch);
+      selectStar=true;
+    }
+ else     if (sel.getToken().getType() == HiveParser.TOK_TRANSFORM) {
+      if (i > 0) {
+        throw new SemanticException(ErrorMsg.INVALID_TRANSFORM.getMsg(sel));
+      }
+      trfm=sel;
+      CommonTree cols=(CommonTree)trfm.getChild(0);
+      for (int j=0; j < cols.getChildCount(); ++j) {
+        CommonTree expr=(CommonTree)cols.getChild(j);
+        if (expr.getToken().getType() == HiveParser.TOK_ALLCOLREF) {
+          String tabAlias=null;
+          if (sel.getChildCount() == 1)           tabAlias=unescapeIdentifier(sel.getChild(0).getText().toLowerCase());
+          genColList(tabAlias,alias,expr,col_list,inputRR,pos,out_rwsch);
+          selectStar=true;
+        }
+ else {
+          exprNodeDesc exp=genExprNodeDesc(qb.getMetaData(),expr,inputRR);
+          col_list.add(exp);
+          if (!StringUtils.isEmpty(alias) && (out_rwsch.get(alias,colAlias) != null)) {
+            throw new SemanticException(ErrorMsg.AMBIGOUS_COLUMN.getMsg(expr.getChild(1)));
+          }
+          out_rwsch.put(alias,unescapeIdentifier(expr.getText()),new ColumnInfo((Integer.valueOf(pos)).toString(),exp.getTypeInfo()));
+        }
+      }
+    }
+ else {
+      exprNodeDesc exp=genExprNodeDesc(qb.getMetaData(),sel,inputRR);
+      col_list.add(exp);
+      if (!StringUtils.isEmpty(alias) && (out_rwsch.get(alias,colAlias) != null)) {
+        throw new SemanticException(ErrorMsg.AMBIGOUS_COLUMN.getMsg(sel.getChild(1)));
+      }
+      out_rwsch.put(alias,colAlias,new ColumnInfo((Integer.valueOf(pos)).toString(),exp.getTypeInfo()));
+    }
+    pos=Integer.valueOf(pos.intValue() + 1);
+  }
+  for (int i=0; i < col_list.size(); i++) {
+    if (col_list.get(i) instanceof exprNodeNullDesc) {
+      col_list.set(i,new exprNodeConstantDesc(String.class,null));
+    }
+  }
+  Operator output=putOpInsertMap(OperatorFactory.getAndMakeChild(new selectDesc(col_list,(selExprList.getChildCount() == 1) && selectStar),new RowSchema(out_rwsch.getColumnInfos()),input),out_rwsch);
+  if (trfm != null) {
+    output=genScriptPlan(trfm,qb,output);
+  }
+  LOG.debug("Created Select Plan for clause: " + dest + " row schema: "+ out_rwsch.toString());
+  return output;
+}

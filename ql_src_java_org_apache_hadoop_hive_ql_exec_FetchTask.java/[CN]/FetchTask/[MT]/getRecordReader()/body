@@ -1,5 +1,27 @@
 {
-  if (splitNum >= inputSplits.length)   return null;
+  if (currPath == null) {
+    getNextPath();
+    if (currPath == null)     return null;
+    FileInputFormat.setInputPaths(job,currPath);
+    tableDesc tmp=currTbl;
+    if (tmp == null)     tmp=currPart.getTableDesc();
+    inputFormat=getInputFormatFromCache(tmp.getInputFileFormatClass(),job);
+    inputSplits=inputFormat.getSplits(job,1);
+    splitNum=0;
+    serde=tmp.getDeserializerClass().newInstance();
+    serde.initialize(null,tmp.getProperties());
+    LOG.debug("Creating fetchTask with deserializer typeinfo: " + serde.getObjectInspector().getTypeName());
+    LOG.debug("deserializer properties: " + tmp.getProperties());
+    if (!tblDataDone)     setPrtnDesc();
+  }
+  if (splitNum >= inputSplits.length) {
+    if (currRecReader != null) {
+      currRecReader.close();
+      currRecReader=null;
+    }
+    currPath=null;
+    return getRecordReader();
+  }
   currRecReader=inputFormat.getRecordReader(inputSplits[splitNum++],job,Reporter.NULL);
   key=currRecReader.createKey();
   value=currRecReader.createValue();

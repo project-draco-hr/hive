@@ -40,9 +40,12 @@
             sb.append(colInfo.getInternalName());
             isfirst=false;
           }
-          tableDesc tt_desc=PlanUtils.getDefaultTableDesc(Integer.toString(Utilities.ctrlaCode),sb.toString());
-          Operator<? extends Serializable> fs_op=OperatorFactory.get(new fileSinkDesc(taskTmpDir,tt_desc),op.getSchema());
+          tableDesc tt_desc=PlanUtils.getBinaryTableDesc(PlanUtils.getFieldSchemasFromRowSchema(op.getSchema(),"temporarycol"));
+          Operator<? extends Serializable> fs_op=putOpInsertMap(OperatorFactory.get(new fileSinkDesc(taskTmpDir,tt_desc),op.getSchema()),null);
           childOps.set(i,fs_op);
+          List<Operator<? extends Serializable>> parent=new ArrayList<Operator<? extends Serializable>>();
+          parent.add(op);
+          fs_op.setParentOperators(parent);
           if (cplan.getPathToAliases().get(taskTmpDir) == null) {
             cplan.getPathToAliases().put(taskTmpDir,new ArrayList<String>());
           }
@@ -52,6 +55,7 @@
           cplan.getPathToAliases().get(taskTmpDir).add(streamDesc);
           cplan.getPathToPartitionInfo().put(taskTmpDir,new partitionDesc(tt_desc,null));
           cplan.getAliasToWork().put(streamDesc,child);
+          setKeyAndValueDesc(cplan,child);
           currTask.addDependentTask(ctask);
           if (child.getChildOperators().get(0).getClass() == JoinOperator.class)           cplan.setNeedsTagging(true);
         }
