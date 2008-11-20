@@ -2,7 +2,8 @@
   LOG.trace("Started pruning partiton");
   LOG.trace("tabname = " + this.tab.getName());
   LOG.trace("prune Expression = " + this.prunerExpr);
-  LinkedHashSet<Partition> ret_parts=new LinkedHashSet<Partition>();
+  LinkedHashSet<Partition> true_parts=new LinkedHashSet<Partition>();
+  LinkedHashSet<Partition> unkn_parts=new LinkedHashSet<Partition>();
   try {
     StructObjectInspector rowObjectInspector=(StructObjectInspector)this.tab.getDeserializer().getObjectInspector();
     Object[] rowWithPart=new Object[2];
@@ -28,19 +29,25 @@
       if (evaluator != null) {
         evaluator.evaluate(rowWithPart,rowWithPartObjectInspector,inspectableObject);
         LOG.trace("prune result for partition " + partSpec + ": "+ inspectableObject.o);
-        if (!Boolean.FALSE.equals(inspectableObject.o)) {
+        if (Boolean.TRUE.equals(inspectableObject.o)) {
           LOG.debug("retained partition: " + partSpec);
-          ret_parts.add(part);
+          true_parts.add(part);
         }
- else {
+ else         if (Boolean.FALSE.equals(inspectableObject.o)) {
           LOG.trace("pruned partition: " + partSpec);
         }
+ else {
+          LOG.debug("unknown partition: " + partSpec);
+          unkn_parts.add(part);
+        }
       }
- else       ret_parts.add(part);
+ else {
+        true_parts.add(part);
+      }
     }
   }
  catch (  Exception e) {
     throw new HiveException(e);
   }
-  return ret_parts;
+  return new PrunedPartitionList(true_parts,unkn_parts);
 }
