@@ -1,23 +1,54 @@
 {
-  ArrayList<exprNodeDesc> keyCols=new ArrayList<exprNodeDesc>();
   RowResolver inputRR=opParseCtx.get(input).getRR();
-  CommonTree clby=qb.getParseInfo().getClusterByForClause(dest);
-  if (clby != null) {
-    int ccount=clby.getChildCount();
+  CommonTree partitionExprs=qb.getParseInfo().getClusterByForClause(dest);
+  if (partitionExprs == null) {
+    partitionExprs=qb.getParseInfo().getDistributeByForClause(dest);
+  }
+  ArrayList<exprNodeDesc> partitionCols=new ArrayList<exprNodeDesc>();
+  if (partitionExprs != null) {
+    int ccount=partitionExprs.getChildCount();
     for (int i=0; i < ccount; ++i) {
-      CommonTree cl=(CommonTree)clby.getChild(i);
+      CommonTree cl=(CommonTree)partitionExprs.getChild(i);
       ColumnInfo colInfo=inputRR.get(qb.getParseInfo().getAlias(),unescapeIdentifier(cl.getText()));
       if (colInfo == null) {
         throw new SemanticException(ErrorMsg.INVALID_COLUMN.getMsg(cl));
       }
-      keyCols.add(new exprNodeColumnDesc(colInfo.getType(),colInfo.getInternalName()));
+      partitionCols.add(new exprNodeColumnDesc(colInfo.getType(),colInfo.getInternalName()));
+    }
+  }
+  CommonTree sortExprs=qb.getParseInfo().getClusterByForClause(dest);
+  if (sortExprs == null) {
+    sortExprs=qb.getParseInfo().getSortByForClause(dest);
+  }
+  ArrayList<exprNodeDesc> sortCols=new ArrayList<exprNodeDesc>();
+  StringBuilder order=new StringBuilder();
+  if (sortExprs != null) {
+    int ccount=sortExprs.getChildCount();
+    for (int i=0; i < ccount; ++i) {
+      CommonTree cl=(CommonTree)sortExprs.getChild(i);
+      if (cl.getType() == HiveParser.TOK_TABSORTCOLNAMEASC) {
+        order.append("+");
+        cl=(CommonTree)cl.getChild(0);
+      }
+ else       if (cl.getType() == HiveParser.TOK_TABSORTCOLNAMEDESC) {
+        order.append("-");
+        cl=(CommonTree)cl.getChild(0);
+      }
+ else {
+        order.append("+");
+      }
+      ColumnInfo colInfo=inputRR.get(qb.getParseInfo().getAlias(),unescapeIdentifier(cl.getText()));
+      if (colInfo == null) {
+        throw new SemanticException(ErrorMsg.INVALID_COLUMN.getMsg(cl));
+      }
+      sortCols.add(new exprNodeColumnDesc(colInfo.getType(),colInfo.getInternalName()));
     }
   }
   ArrayList<exprNodeDesc> valueCols=new ArrayList<exprNodeDesc>();
   for (  ColumnInfo colInfo : inputRR.getColumnInfos()) {
     valueCols.add(new exprNodeColumnDesc(colInfo.getType(),colInfo.getInternalName()));
   }
-  Operator interim=putOpInsertMap(OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(keyCols,valueCols,-1,keyCols.size(),numReducers,false),new RowSchema(inputRR.getColumnInfos()),input),inputRR);
+  Operator interim=putOpInsertMap(OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(sortCols,valueCols,-1,partitionCols,order.toString(),numReducers,false),new RowSchema(inputRR.getColumnInfos()),input),inputRR);
   RowResolver out_rwsch=new RowResolver();
   RowResolver interim_rwsch=inputRR;
   Integer pos=Integer.valueOf(0);

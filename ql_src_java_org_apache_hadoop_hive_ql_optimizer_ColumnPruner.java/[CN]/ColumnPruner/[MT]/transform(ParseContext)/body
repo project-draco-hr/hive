@@ -1,25 +1,30 @@
 {
-  this.pctx=pactx;
+  this.pGraphContext=pactx;
+  this.opToParseCtxMap=pGraphContext.getOpParseCtx();
   boolean done=true;
-  for (  String alias_id : pctx.getTopOps().keySet()) {
-    Operator<? extends Serializable> topOp=pctx.getTopOps().get(alias_id);
-    List<String> colNames=topOp.genColLists(pctx.getOpParseCtx());
+  ColumnPrunerProcessor cpp=new ColumnPrunerProcessor(opToParseCtxMap);
+  Dispatcher disp=new DefaultDispatcher(cpp);
+  OpGraphWalker ogw=new ColumnPrunerWalker(disp);
+  ogw.startWalking(pGraphContext.getTopOps().values());
+  for (  String alias_id : pGraphContext.getTopOps().keySet()) {
+    Operator<? extends Serializable> topOp=pGraphContext.getTopOps().get(alias_id);
+    List<String> colNames=cpp.getPrunedColList(topOp);
     if (pushSelect(topOp,colNames)) {
       topOp.setChildOperators(null);
       Operator select=genSelectPlan(topOp,colNames);
-      pctx.getTopSelOps().put(alias_id,select);
+      pGraphContext.getTopSelOps().put(alias_id,select);
       done=false;
     }
   }
   if (!done) {
-    SemanticAnalyzer sem=(SemanticAnalyzer)SemanticAnalyzerFactory.get(pctx.getConf(),pctx.getParseTree());
-    resetParseContext(pctx);
-    sem.init(pctx);
+    SemanticAnalyzer sem=(SemanticAnalyzer)SemanticAnalyzerFactory.get(pGraphContext.getConf(),pGraphContext.getParseTree());
+    resetParseContext(pGraphContext);
+    sem.init(pGraphContext);
     QB qb=new QB(null,null,false);
-    sem.doPhase1(pctx.getParseTree(),qb,sem.initPhase1Ctx());
+    sem.doPhase1(pGraphContext.getParseTree(),qb,sem.initPhase1Ctx());
     sem.getMetaData(qb);
     sem.genPlan(qb);
-    pctx=sem.getParseContext();
+    pGraphContext=sem.getParseContext();
   }
-  return pctx;
+  return pGraphContext;
 }

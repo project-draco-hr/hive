@@ -1,0 +1,53 @@
+{
+  mapredWork cplan=getMapRedWork();
+  ParseContext parseCtx=opProcCtx.getParseCtx();
+  Task<? extends Serializable> redTask=TaskFactory.get(cplan,parseCtx.getConf());
+  Operator<? extends Serializable> reducer=op.getChildOperators().get(0);
+  cplan.setReducer(reducer);
+  reduceSinkDesc desc=(reduceSinkDesc)op.getConf();
+  if (desc.getNumReducers() != -1)   cplan.setNumReduceTasks(new Integer(desc.getNumReducers()));
+ else   cplan.setInferNumReducers(desc.getInferNumReducers());
+  HashMap<Operator<? extends Serializable>,Task<? extends Serializable>> opTaskMap=opProcCtx.getOpTaskMap();
+  opTaskMap.put(reducer,redTask);
+  String scratchDir=opProcCtx.getScratchDir();
+  int randomid=opProcCtx.getRandomId();
+  int pathid=opProcCtx.getPathId();
+  String taskTmpDir=scratchDir + File.separator + randomid+ '.'+ pathid;
+  pathid++;
+  opProcCtx.setPathId(pathid);
+  Operator<? extends Serializable> parent=op.getParentOperators().get(0);
+  tableDesc tt_desc=PlanUtils.getBinaryTableDesc(PlanUtils.getFieldSchemasFromRowSchema(parent.getSchema(),"temporarycol"));
+  Operator<? extends Serializable> fs_op=putOpInsertMap(OperatorFactory.get(new fileSinkDesc(taskTmpDir,tt_desc),parent.getSchema()),null,parseCtx);
+  List<Operator<? extends Serializable>> childOpList=parent.getChildOperators();
+  for (int pos=0; pos < childOpList.size(); pos++) {
+    if (childOpList.get(pos) == op) {
+      childOpList.set(pos,fs_op);
+      break;
+    }
+  }
+  List<Operator<? extends Serializable>> parentOpList=new ArrayList<Operator<? extends Serializable>>();
+  parentOpList.add(parent);
+  fs_op.setParentOperators(parentOpList);
+  if (cplan.getPathToAliases().get(taskTmpDir) == null) {
+    cplan.getPathToAliases().put(taskTmpDir,new ArrayList<String>());
+  }
+  String streamDesc;
+  if (reducer.getClass() == JoinOperator.class)   streamDesc="$INTNAME";
+ else   streamDesc=taskTmpDir;
+  cplan.getPathToAliases().get(taskTmpDir).add(streamDesc);
+  cplan.getPathToPartitionInfo().put(taskTmpDir,new partitionDesc(tt_desc,null));
+  cplan.getAliasToWork().put(streamDesc,op);
+  setKeyAndValueDesc(cplan,op);
+  Task<? extends Serializable> currTask=opProcCtx.getCurrTask();
+  currTask.addDependentTask(redTask);
+  if (reducer.getClass() == JoinOperator.class)   cplan.setNeedsTagging(true);
+  Operator<? extends Serializable> currTopOp=opProcCtx.getCurrTopOp();
+  String currAliasId=opProcCtx.getCurrAliasId();
+  currTopOp=null;
+  currAliasId=null;
+  currTask=redTask;
+  opProcCtx.setCurrTask(currTask);
+  opProcCtx.setCurrTopOp(currTopOp);
+  opProcCtx.setCurrAliasId(currAliasId);
+  opProcCtx.getRootOps().add(op);
+}

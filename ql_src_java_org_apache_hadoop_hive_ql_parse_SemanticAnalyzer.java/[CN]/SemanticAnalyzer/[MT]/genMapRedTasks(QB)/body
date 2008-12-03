@@ -55,59 +55,15 @@
     mv=new moveWork(loadTableWork,loadFileWork);
     mvTask=TaskFactory.get(mv,this.conf);
   }
-  HashMap<Operator<? extends Serializable>,Task<? extends Serializable>> opTaskMap=new HashMap<Operator<? extends Serializable>,Task<? extends Serializable>>();
-  for (  String alias_id : this.topOps.keySet()) {
-    Operator<? extends Serializable> topOp=this.topOps.get(alias_id);
-    Operator<? extends Serializable> reduceSink=getReduceSink(topOp);
-    Operator<? extends Serializable> reducer=null;
-    if (reduceSink != null)     reducer=reduceSink.getChildOperators().get(0);
-    Task<? extends Serializable> rootTask=opTaskMap.get(reducer);
-    if (rootTask == null) {
-      rootTask=TaskFactory.get(getMapRedWork(),this.conf);
-      opTaskMap.put(reducer,rootTask);
-      ((mapredWork)rootTask.getWork()).setReducer(reducer);
-      reduceSinkDesc desc=(reduceSink == null) ? null : (reduceSinkDesc)reduceSink.getConf();
-      if (desc != null) {
-        if (desc.getNumReducers() != -1)         ((mapredWork)rootTask.getWork()).setNumReduceTasks(new Integer(desc.getNumReducers()));
- else         if (desc.getInferNumReducers() == true)         ((mapredWork)rootTask.getWork()).setInferNumReducers(true);
-      }
-      this.rootTasks.add(rootTask);
-    }
-    genTaskPlan(topOp,rootTask,opTaskMap,mvTask);
-    PartitionPruner pruner=this.aliasToPruner.get(alias_id);
-    Set<Partition> parts=null;
-    try {
-      PartitionPruner.PrunedPartitionList partsList=pruner.prune();
-      parts=partsList.getConfirmedPartns();
-      parts.addAll(partsList.getUnknownPartns());
-    }
- catch (    HiveException e) {
-      LOG.error(org.apache.hadoop.util.StringUtils.stringifyException(e));
-      throw new SemanticException(e.getMessage(),e);
-    }
-    SamplePruner samplePruner=this.aliasToSamplePruner.get(alias_id);
-    mapredWork plan=(mapredWork)rootTask.getWork();
-    for (    Partition part : parts) {
-      Path paths[];
-      if (samplePruner != null) {
-        paths=samplePruner.prune(part);
-      }
- else {
-        paths=part.getPath();
-      }
-      for (      Path p : paths) {
-        String path=p.toString();
-        LOG.debug("Adding " + path + " of table"+ alias_id);
-        if (plan.getPathToAliases().get(path) == null) {
-          plan.getPathToAliases().put(path,new ArrayList<String>());
-        }
-        plan.getPathToAliases().get(path).add(alias_id);
-        plan.getPathToPartitionInfo().put(path,Utilities.getPartitionDesc(part));
-        LOG.debug("Information added for path " + path);
-      }
-    }
-    plan.getAliasToWork().put(alias_id,topOp);
-    setKeyAndValueDesc(plan,topOp);
-    LOG.debug("Created Map Work for " + alias_id);
-  }
+  GenMRProcContext procCtx=new GenMRProcContext(new HashMap<Operator<? extends Serializable>,Task<? extends Serializable>>(),new ArrayList<Operator<? extends Serializable>>(),getParseContext(),mvTask,this.rootTasks,this.scratchDir,this.randomid,this.pathid,new HashMap<Operator<? extends Serializable>,GenMapRedCtx>());
+  Map<Rule,OperatorProcessor> opRules=new LinkedHashMap<Rule,OperatorProcessor>();
+  opRules.put(new RuleRegExp(new String("R0"),".*"),new GenMROperator());
+  opRules.put(new RuleRegExp(new String("R1"),"TS"),new GenMRTableScan1());
+  opRules.put(new RuleRegExp(new String("R2"),"TS.*RS"),new GenMRRedSink1());
+  opRules.put(new RuleRegExp(new String("R3"),"RS.*RS"),new GenMRRedSink2());
+  opRules.put(new RuleRegExp(new String("R4"),".*FS"),new GenMRFileSink1());
+  Dispatcher disp=new DefaultRuleDispatcher(opRules,procCtx);
+  OpGraphWalker ogw=new GenMapRedWalker(disp);
+  ogw.startWalking(this.topOps.values());
+  breakOperatorTree(procCtx.getRootOps());
 }

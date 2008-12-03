@@ -1,0 +1,43 @@
+{
+  ParseContext parseCtx=opProcCtx.getParseCtx();
+  if (!local) {
+    PartitionPruner pruner=parseCtx.getAliasToPruner().get(alias_id);
+    Set<Partition> parts=null;
+    try {
+      PartitionPruner.PrunedPartitionList partsList=pruner.prune();
+      parts=partsList.getConfirmedPartns();
+      parts.addAll(partsList.getUnknownPartns());
+    }
+ catch (    HiveException e) {
+      LOG.error(org.apache.hadoop.util.StringUtils.stringifyException(e));
+      throw new SemanticException(e.getMessage(),e);
+    }
+    SamplePruner samplePruner=parseCtx.getAliasToSamplePruner().get(alias_id);
+    for (    Partition part : parts) {
+      Path paths[];
+      if (samplePruner != null) {
+        paths=samplePruner.prune(part);
+      }
+ else {
+        paths=part.getPath();
+      }
+      for (      Path p : paths) {
+        String path=p.toString();
+        LOG.debug("Adding " + path + " of table"+ alias_id);
+        if (plan.getPathToAliases().get(path) == null) {
+          plan.getPathToAliases().put(path,new ArrayList<String>());
+        }
+        plan.getPathToAliases().get(path).add(alias_id);
+        plan.getPathToPartitionInfo().put(path,Utilities.getPartitionDesc(part));
+        LOG.debug("Information added for path " + path);
+      }
+    }
+    plan.getAliasToWork().put(alias_id,topOp);
+    setKeyAndValueDesc(plan,topOp);
+    LOG.debug("Created Map Work for " + alias_id);
+  }
+ else {
+    FileSinkOperator fOp=(FileSinkOperator)topOp;
+    fileSinkDesc fConf=(fileSinkDesc)fOp.getConf();
+  }
+}
