@@ -1,0 +1,30 @@
+{
+  try {
+    client.execute("drop table " + tableName);
+  }
+ catch (  Exception ex) {
+  }
+  client.execute("create table " + tableName + " (key int, value string)");
+  client.execute("load data local inpath '" + dataFilePath.toString() + "' into table "+ tableName);
+  String sql="select key, value from " + tableName + " where key > 10";
+  client.execute(sql);
+  DynamicSerDe ds=new DynamicSerDe();
+  Properties dsp=new Properties();
+  dsp.setProperty(Constants.SERIALIZATION_FORMAT,org.apache.hadoop.hive.serde2.thrift.TCTLSeparatedProtocol.class.getName());
+  dsp.setProperty(org.apache.hadoop.hive.metastore.api.Constants.META_TABLE_NAME,"result");
+  dsp.setProperty(Constants.SERIALIZATION_DDL,client.getSchema());
+  dsp.setProperty(Constants.SERIALIZATION_LIB,ds.getClass().toString());
+  dsp.setProperty(Constants.FIELD_DELIM,"9");
+  ds.initialize(new Configuration(),dsp);
+  String row=client.fetchOne();
+  Object o=ds.deserialize(new BytesWritable(row.getBytes()));
+  assertEquals(o.getClass().toString(),"class java.util.ArrayList");
+  List<?> lst=(List<?>)o;
+  assertEquals(lst.get(0),"238");
+  sql="select count(1) as c from " + tableName;
+  client.execute(sql);
+  row=client.fetchOne();
+  dsp.setProperty(Constants.SERIALIZATION_DDL,client.getSchema());
+  ds.initialize(new Configuration(),dsp);
+  o=ds.deserialize(new BytesWritable(row.getBytes()));
+}
