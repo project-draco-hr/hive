@@ -1,0 +1,73 @@
+{
+  Table tbl=db.getTable(alterTbl.getOldName());
+  if (alterTbl.getOp() == alterTableDesc.alterTableTypes.RENAME)   tbl.getTTable().setTableName(alterTbl.getNewName());
+ else   if (alterTbl.getOp() == alterTableDesc.alterTableTypes.ADDCOLS) {
+    List<FieldSchema> newCols=alterTbl.getNewCols();
+    List<FieldSchema> oldCols=tbl.getCols();
+    if (tbl.getSerializationLib().equals(columnsetSerDe.class.getName())) {
+      console.printInfo("Replacing columns for columnsetSerDe and changing to typed SerDe");
+      tbl.setSerializationLib(MetadataTypedColumnsetSerDe.class.getName());
+      tbl.getTTable().getSd().setCols(newCols);
+    }
+ else {
+      Iterator<FieldSchema> iterNewCols=newCols.iterator();
+      while (iterNewCols.hasNext()) {
+        FieldSchema newCol=iterNewCols.next();
+        String newColName=newCol.getName();
+        Iterator<FieldSchema> iterOldCols=oldCols.iterator();
+        while (iterOldCols.hasNext()) {
+          String oldColName=iterOldCols.next().getName();
+          if (oldColName.equalsIgnoreCase(newColName)) {
+            console.printError("Column '" + newColName + "' exists");
+            return 1;
+          }
+        }
+        oldCols.add(newCol);
+      }
+      tbl.getTTable().getSd().setCols(oldCols);
+    }
+  }
+ else   if (alterTbl.getOp() == alterTableDesc.alterTableTypes.REPLACECOLS) {
+    if (tbl.getSerializationLib().equals(columnsetSerDe.class.getName())) {
+      console.printInfo("Replacing columns for columnsetSerDe and changing to typed SerDe");
+      tbl.setSerializationLib(MetadataTypedColumnsetSerDe.class.getName());
+    }
+ else     if (!tbl.getSerializationLib().equals(MetadataTypedColumnsetSerDe.class.getName())) {
+      console.printError("Replace columns is not supported for this table. SerDe may be incompatible.");
+      return 1;
+    }
+    tbl.getTTable().getSd().setCols(alterTbl.getNewCols());
+  }
+ else   if (alterTbl.getOp() == alterTableDesc.alterTableTypes.ADDPROPS) {
+    tbl.getTTable().getParameters().putAll(alterTbl.getProps());
+  }
+ else   if (alterTbl.getOp() == alterTableDesc.alterTableTypes.ADDSERDEPROPS) {
+    tbl.getTTable().getSd().getSerdeInfo().getParameters().putAll(alterTbl.getProps());
+  }
+ else   if (alterTbl.getOp() == alterTableDesc.alterTableTypes.ADDSERDE) {
+    tbl.setSerializationLib(alterTbl.getSerdeName());
+    if ((alterTbl.getProps() != null) && (alterTbl.getProps().size() > 0))     tbl.getTTable().getSd().getSerdeInfo().getParameters().putAll(alterTbl.getProps());
+    tbl.reinitSerDe();
+    tbl.setFields(Hive.getFieldsFromDeserializer(tbl.getName(),tbl.getDeserializer()));
+  }
+ else {
+    console.printError("Unsupported Alter commnad");
+    return 1;
+  }
+  tbl.setProperty("last_modified_by",System.getProperty("user.name"));
+  tbl.setProperty("last_modified_time",Long.toString(System.currentTimeMillis() / 1000));
+  try {
+    db.alterTable(alterTbl.getOldName(),tbl);
+  }
+ catch (  InvalidOperationException e) {
+    LOG.info("alter table: " + StringUtils.stringifyException(e));
+    return 1;
+  }
+catch (  MetaException e) {
+    return 1;
+  }
+catch (  TException e) {
+    return 1;
+  }
+  return 0;
+}

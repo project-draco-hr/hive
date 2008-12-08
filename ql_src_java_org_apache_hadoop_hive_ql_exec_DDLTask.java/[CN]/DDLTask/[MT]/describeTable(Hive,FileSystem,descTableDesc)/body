@@ -1,0 +1,100 @@
+{
+  String colPath=descTbl.getTableName();
+  String tableName=colPath.substring(0,colPath.indexOf('.') == -1 ? colPath.length() : colPath.indexOf('.'));
+  Table tbl=db.getTable(tableName,false);
+  Partition part=null;
+  try {
+    if (tbl == null) {
+      DataOutput outStream=(DataOutput)fs.open(descTbl.getResFile());
+      String errMsg="Table " + tableName + " does not exist";
+      outStream.write(errMsg.getBytes("UTF-8"));
+      ((FSDataOutputStream)outStream).close();
+      return 0;
+    }
+    if (descTbl.getPartSpec() != null) {
+      part=db.getPartition(tbl,descTbl.getPartSpec(),false);
+      if (part == null) {
+        DataOutput outStream=(DataOutput)fs.open(descTbl.getResFile());
+        String errMsg="Partition " + descTbl.getPartSpec() + " for table "+ tableName+ " does not exist";
+        outStream.write(errMsg.getBytes("UTF-8"));
+        ((FSDataOutputStream)outStream).close();
+        return 0;
+      }
+      tbl=part.getTable();
+    }
+  }
+ catch (  FileNotFoundException e) {
+    LOG.info("describe table: " + StringUtils.stringifyException(e));
+    return 1;
+  }
+catch (  IOException e) {
+    LOG.info("describe table: " + StringUtils.stringifyException(e));
+    return 1;
+  }
+  try {
+    LOG.info("DDLTask: got data for " + tbl.getName());
+    DataOutput os=(DataOutput)fs.create(descTbl.getResFile());
+    List<FieldSchema> cols=null;
+    if (colPath.equals(tableName)) {
+      cols=tbl.getCols();
+      if (part != null) {
+        cols=part.getTPartition().getSd().getCols();
+      }
+    }
+ else {
+      cols=db.getFieldsFromDeserializer(colPath,tbl.getDeserializer());
+    }
+    Iterator<FieldSchema> iterCols=cols.iterator();
+    boolean firstCol=true;
+    while (iterCols.hasNext()) {
+      if (!firstCol)       os.write(terminator);
+      FieldSchema col=iterCols.next();
+      os.write(col.getName().getBytes("UTF-8"));
+      os.write(separator);
+      os.write(col.getType().getBytes("UTF-8"));
+      if (col.getComment() != null) {
+        os.write(separator);
+        os.write(singleQuote);
+        os.write(col.getComment().getBytes("UTF-8"));
+        os.write(singleQuote);
+      }
+      firstCol=false;
+    }
+    if (tableName.equals(colPath)) {
+      List<FieldSchema> partCols=tbl.getPartCols();
+      Iterator<FieldSchema> iterPartCols=partCols.iterator();
+      while (iterPartCols.hasNext()) {
+        os.write(terminator);
+        FieldSchema col=iterPartCols.next();
+        os.write(col.getName().getBytes("UTF-8"));
+        os.write(separator);
+        os.write(col.getType().getBytes("UTF-8"));
+        if (col.getComment() != null) {
+          os.write(separator);
+          os.write(col.getComment().getBytes("UTF-8"));
+        }
+      }
+      if (descTbl.isExt()) {
+        if (part != null) {
+          os.write("\n\nDetailed Partition Information:\n".getBytes("UTF-8"));
+          os.write(part.getTPartition().toString().getBytes("UTF-8"));
+        }
+ else {
+          os.write("\nDetailed Table Information:\n".getBytes("UTF-8"));
+          os.write(tbl.getTTable().toString().getBytes("UTF-8"));
+        }
+      }
+    }
+    LOG.info("DDLTask: written data for " + tbl.getName());
+    ((FSDataOutputStream)os).close();
+  }
+ catch (  FileNotFoundException e) {
+    LOG.info("describe table: " + StringUtils.stringifyException(e));
+    return 1;
+  }
+catch (  IOException e) {
+    LOG.info("describe table: " + StringUtils.stringifyException(e));
+    return 1;
+  }
+  return 0;
+}
