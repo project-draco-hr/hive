@@ -1,38 +1,3 @@
 {
-  RowResolver reduceSinkInputRowResolver=opParseCtx.get(inputOperatorInfo).getRR();
-  RowResolver reduceSinkOutputRowResolver=new RowResolver();
-  reduceSinkOutputRowResolver.setIsExprResolver(true);
-  ArrayList<exprNodeDesc> reduceKeys=new ArrayList<exprNodeDesc>();
-  List<CommonTree> grpByExprs=getGroupByForClause(parseInfo,dest);
-  for (int i=0; i < grpByExprs.size(); ++i) {
-    CommonTree grpbyExpr=grpByExprs.get(i);
-    String text=grpbyExpr.toStringTree();
-    if (reduceSinkOutputRowResolver.get("",text) == null) {
-      ColumnInfo exprInfo=reduceSinkInputRowResolver.get("",text);
-      reduceKeys.add(new exprNodeColumnDesc(exprInfo.getType(),exprInfo.getInternalName()));
-      reduceSinkOutputRowResolver.put("",text,new ColumnInfo(Utilities.ReduceField.KEY.toString() + "." + Integer.valueOf(reduceKeys.size() - 1).toString(),exprInfo.getType()));
-    }
-  }
-  if (parseInfo.getDistinctFuncExprForClause(dest) != null) {
-    CommonTree value=parseInfo.getDistinctFuncExprForClause(dest);
-    for (int i=1; i < value.getChildCount(); i++) {
-      CommonTree parameter=(CommonTree)value.getChild(i);
-      String text=parameter.toStringTree();
-      if (reduceSinkOutputRowResolver.get("",text) == null) {
-        ColumnInfo exprInfo=reduceSinkInputRowResolver.get("",text);
-        reduceKeys.add(new exprNodeColumnDesc(exprInfo.getType(),exprInfo.getInternalName()));
-        reduceSinkOutputRowResolver.put("",text,new ColumnInfo(Utilities.ReduceField.KEY.toString() + "." + Integer.valueOf(reduceKeys.size() - 1).toString(),exprInfo.getType()));
-      }
-    }
-  }
-  ArrayList<exprNodeDesc> reduceValues=new ArrayList<exprNodeDesc>();
-  HashMap<String,CommonTree> aggregationTrees=parseInfo.getAggregationExprsForClause(dest);
-  int inputField=reduceKeys.size();
-  for (  Map.Entry<String,CommonTree> entry : aggregationTrees.entrySet()) {
-    TypeInfo type=reduceSinkInputRowResolver.getColumnInfos().get(inputField).getType();
-    reduceValues.add(new exprNodeColumnDesc(type,(Integer.valueOf(inputField)).toString()));
-    inputField++;
-    reduceSinkOutputRowResolver.put("",((CommonTree)entry.getValue()).toStringTree(),new ColumnInfo(Utilities.ReduceField.VALUE.toString() + "." + (Integer.valueOf(reduceValues.size() - 1)).toString(),type));
-  }
-  return putOpInsertMap(OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(reduceKeys,reduceValues,-1,(parseInfo.getDistinctFuncExprForClause(dest) == null ? -1 : Integer.MAX_VALUE),-1,false),new RowSchema(reduceSinkOutputRowResolver.getColumnInfos()),inputOperatorInfo),reduceSinkOutputRowResolver);
+  return genGroupByPlanReduceSinkOperator(parseInfo,dest,inputOperatorInfo,-1,false);
 }
