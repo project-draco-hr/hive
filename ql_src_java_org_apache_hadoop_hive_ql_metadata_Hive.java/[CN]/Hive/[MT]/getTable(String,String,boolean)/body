@@ -1,0 +1,44 @@
+{
+  if (tableName == null || tableName.equals("")) {
+    throw new HiveException("empty table creation??");
+  }
+  Table table=new Table();
+  org.apache.hadoop.hive.metastore.api.Table tTable=null;
+  try {
+    tTable=msc.getTable(dbName,tableName);
+  }
+ catch (  NoSuchObjectException e) {
+    if (throwException) {
+      LOG.error(StringUtils.stringifyException(e));
+      throw new InvalidTableException("Table not found ",tableName);
+    }
+    return null;
+  }
+catch (  Exception e) {
+    throw new HiveException("Unable to fetch table " + tableName,e);
+  }
+  assert(tTable != null);
+  try {
+    Properties p=MetaStoreUtils.getSchema(tTable);
+    p=MetaStoreUtils.hive1Tohive3ClassNames(p);
+    table.setSchema(p);
+    table.setTTable(tTable);
+    table.setInputFormatClass((Class<? extends InputFormat<WritableComparable,Writable>>)Class.forName(table.getSchema().getProperty(org.apache.hadoop.hive.metastore.api.Constants.FILE_INPUT_FORMAT,org.apache.hadoop.mapred.SequenceFileInputFormat.class.getName())));
+    table.setOutputFormatClass((Class<? extends OutputFormat<WritableComparable,Writable>>)Class.forName(table.getSchema().getProperty(org.apache.hadoop.hive.metastore.api.Constants.FILE_OUTPUT_FORMAT,org.apache.hadoop.mapred.SequenceFileOutputFormat.class.getName())));
+    table.setDeserializer(MetaStoreUtils.getDeserializer(getConf(),p));
+    table.setDataLocation(new URI(tTable.getSd().getLocation()));
+  }
+ catch (  Exception e) {
+    LOG.error(StringUtils.stringifyException(e));
+    throw new HiveException(e);
+  }
+  String sf=table.getSerdeParam(org.apache.hadoop.hive.serde.Constants.SERIALIZATION_FORMAT);
+  if (sf != null) {
+    char[] b=sf.toCharArray();
+    if ((b.length == 1) && (b[0] < 10)) {
+      table.setSerdeParam(org.apache.hadoop.hive.serde.Constants.SERIALIZATION_FORMAT,Integer.toString(b[0]));
+    }
+  }
+  table.checkValidity();
+  return table;
+}
