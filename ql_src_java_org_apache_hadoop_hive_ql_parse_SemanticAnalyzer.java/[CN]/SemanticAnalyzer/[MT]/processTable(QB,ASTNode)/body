@@ -1,0 +1,38 @@
+{
+  boolean tableSamplePresent=false;
+  int aliasIndex=0;
+  if (tabref.getChildCount() == 2) {
+    ASTNode ct=(ASTNode)tabref.getChild(1);
+    if (ct.getToken().getType() == HiveParser.TOK_TABLESAMPLE) {
+      tableSamplePresent=true;
+    }
+ else {
+      aliasIndex=1;
+    }
+  }
+ else   if (tabref.getChildCount() == 3) {
+    aliasIndex=2;
+    tableSamplePresent=true;
+  }
+  ASTNode tableTree=(ASTNode)(tabref.getChild(0));
+  String alias=unescapeIdentifier(tabref.getChild(aliasIndex).getText());
+  if (qb.exists(alias)) {
+    throw new SemanticException(ErrorMsg.AMBIGOUS_TABLE_ALIAS.getMsg(tabref.getChild(aliasIndex)));
+  }
+  if (tableSamplePresent) {
+    ASTNode sampleClause=(ASTNode)tabref.getChild(1);
+    ArrayList<ASTNode> sampleCols=new ArrayList<ASTNode>();
+    if (sampleClause.getChildCount() > 2) {
+      for (int i=2; i < sampleClause.getChildCount(); i++) {
+        sampleCols.add((ASTNode)sampleClause.getChild(i));
+      }
+    }
+    if (sampleCols.size() > 2) {
+      throw new SemanticException(ErrorMsg.SAMPLE_RESTRICTION.getMsg(tabref.getChild(0)));
+    }
+    qb.getParseInfo().setTabSample(alias,new TableSample(unescapeIdentifier(sampleClause.getChild(0).getText()),unescapeIdentifier(sampleClause.getChild(1).getText()),sampleCols));
+  }
+  String table_name=unescapeIdentifier(tabref.getChild(0).getText());
+  qb.setTabAlias(alias,table_name);
+  qb.getParseInfo().setSrcForAlias(alias,tableTree);
+}

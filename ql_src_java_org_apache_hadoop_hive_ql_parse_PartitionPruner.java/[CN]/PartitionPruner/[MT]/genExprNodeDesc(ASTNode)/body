@@ -1,0 +1,66 @@
+{
+  exprNodeDesc desc=null;
+  desc=SemanticAnalyzer.genSimpleExprNodeDesc(expr);
+  if (desc != null) {
+    return desc;
+  }
+  int tokType=expr.getType();
+switch (tokType) {
+case HiveParser.TOK_COLREF:
+{
+      String tabAlias=null;
+      String colName=null;
+      if (expr.getChildCount() != 1) {
+        assert(expr.getChildCount() == 2);
+        tabAlias=BaseSemanticAnalyzer.unescapeIdentifier(expr.getChild(0).getText());
+        colName=BaseSemanticAnalyzer.unescapeIdentifier(expr.getChild(1).getText());
+      }
+ else {
+        colName=BaseSemanticAnalyzer.unescapeIdentifier(expr.getChild(0).getText());
+        tabAlias=SemanticAnalyzer.getTabAliasForCol(this.metaData,colName,(ASTNode)expr.getChild(0));
+      }
+      if (tabAlias.equals(tableAlias) && tab.isPartitionKey(colName)) {
+        desc=new exprNodeColumnDesc(String.class,colName);
+      }
+ else {
+        try {
+          Table t=this.metaData.getTableForAlias(tabAlias);
+          if (t.isPartitionKey(colName)) {
+            desc=new exprNodeConstantDesc(String.class,null);
+          }
+ else {
+            TypeInfo typeInfo=TypeInfoUtils.getTypeInfoFromObjectInspector(this.metaData.getTableForAlias(tabAlias).getDeserializer().getObjectInspector());
+            desc=new exprNodeConstantDesc(typeInfo.getStructFieldTypeInfo(colName),null);
+            containsPartCols=false;
+          }
+        }
+ catch (        SerDeException e) {
+          throw new RuntimeException(e);
+        }
+      }
+      break;
+    }
+default :
+{
+    boolean isFunction=(expr.getType() == HiveParser.TOK_FUNCTION);
+    int childrenBegin=(isFunction ? 1 : 0);
+    ArrayList<exprNodeDesc> children=new ArrayList<exprNodeDesc>(expr.getChildCount() - childrenBegin);
+    for (int ci=childrenBegin; ci < expr.getChildCount(); ci++) {
+      exprNodeDesc child=genExprNodeDesc((ASTNode)expr.getChild(ci));
+      assert(child.getTypeInfo() != null);
+      children.add(child);
+    }
+    desc=SemanticAnalyzer.getXpathOrFuncExprNodeDesc(expr,isFunction,children);
+    if (desc instanceof exprNodeFuncDesc && (((exprNodeFuncDesc)desc).getUDFMethod().getDeclaringClass().equals(UDFOPAnd.class) || ((exprNodeFuncDesc)desc).getUDFMethod().getDeclaringClass().equals(UDFOPOr.class) || ((exprNodeFuncDesc)desc).getUDFMethod().getDeclaringClass().equals(UDFOPNot.class))) {
+    }
+ else {
+      if (mightBeUnknown(desc)) {
+        LOG.trace("Pruner function might be unknown: " + expr.toStringTree());
+        desc=new exprNodeConstantDesc(desc.getTypeInfo(),null);
+      }
+    }
+    break;
+  }
+}
+return desc;
+}
