@@ -1,0 +1,49 @@
+{
+  hive.createDatabase(dbName,"");
+  Table table=new Table(tableName);
+  table.getTTable().setDbName(dbName);
+  table.setInputFormatClass(TextInputFormat.class);
+  table.setOutputFormatClass(TextOutputFormat.class);
+  table.setPartCols(partCols);
+  hive.createTable(table);
+  table=hive.getTable(dbName,tableName);
+  for (  Map<String,String> partSpec : parts) {
+    hive.createPartition(table,partSpec);
+  }
+  CheckResult result=new CheckResult();
+  checker.checkMetastore(dbName,tableName,null,result);
+  assertTrue(result.getTablesNotInMs().isEmpty());
+  assertTrue(result.getTablesNotOnFs().isEmpty());
+  assertTrue(result.getPartitionsNotOnFs().isEmpty());
+  assertTrue(result.getPartitionsNotInMs().isEmpty());
+  List<Partition> partitions=hive.getPartitions(table);
+  assertEquals(2,partitions.size());
+  Partition partToRemove=partitions.get(0);
+  Path partToRemovePath=new Path(partToRemove.getDataLocation().toString());
+  fs.delete(partToRemovePath,true);
+  result=new CheckResult();
+  checker.checkMetastore(dbName,tableName,null,result);
+  assertTrue(result.getTablesNotInMs().isEmpty());
+  assertTrue(result.getTablesNotOnFs().isEmpty());
+  assertEquals(1,result.getPartitionsNotOnFs().size());
+  assertEquals(partToRemove.getName(),result.getPartitionsNotOnFs().get(0).getPartitionName());
+  assertEquals(partToRemove.getTable().getName(),result.getPartitionsNotOnFs().get(0).getTableName());
+  assertTrue(result.getPartitionsNotInMs().isEmpty());
+  List<Map<String,String>> partsCopy=new ArrayList<Map<String,String>>();
+  partsCopy.add(partitions.get(1).getSpec());
+  result=new CheckResult();
+  checker.checkMetastore(dbName,tableName,partsCopy,result);
+  assertTrue(result.getTablesNotInMs().isEmpty());
+  assertTrue(result.getTablesNotOnFs().isEmpty());
+  assertTrue(result.getPartitionsNotOnFs().isEmpty());
+  assertTrue(result.getPartitionsNotInMs().isEmpty());
+  fs.mkdirs(partToRemovePath);
+  Path fakePart=new Path(table.getDataLocation().toString(),"fakepartition=fakevalue");
+  fs.mkdirs(fakePart);
+  checker.checkMetastore(dbName,tableName,null,result);
+  assertTrue(result.getTablesNotInMs().isEmpty());
+  assertTrue(result.getTablesNotOnFs().isEmpty());
+  assertTrue(result.getPartitionsNotOnFs().isEmpty());
+  assertEquals(1,result.getPartitionsNotInMs().size());
+  assertEquals(fakePart.getName(),result.getPartitionsNotInMs().get(0).getPartitionName());
+}

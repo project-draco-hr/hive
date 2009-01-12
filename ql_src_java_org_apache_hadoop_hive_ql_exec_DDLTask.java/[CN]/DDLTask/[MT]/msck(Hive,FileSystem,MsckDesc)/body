@@ -1,0 +1,42 @@
+{
+  CheckResult result=new CheckResult();
+  try {
+    HiveMetaStoreChecker checker=new HiveMetaStoreChecker(db,fs);
+    checker.checkMetastore(MetaStoreUtils.DEFAULT_DATABASE_NAME,msckDesc.getTableName(),msckDesc.getPartitionSpec(),result);
+  }
+ catch (  HiveException e) {
+    LOG.warn("Failed to run metacheck: ",e);
+    return 1;
+  }
+catch (  IOException e) {
+    LOG.warn("Failed to run metacheck: ",e);
+    return 1;
+  }
+ finally {
+    BufferedWriter resultOut=null;
+    try {
+      resultOut=new BufferedWriter(new OutputStreamWriter(fs.create(msckDesc.getResFile())));
+      boolean firstWritten=false;
+      firstWritten|=writeMsckResult(result.getTablesNotInMs(),"Tables not in metastore:",resultOut,firstWritten);
+      firstWritten|=writeMsckResult(result.getTablesNotOnFs(),"Tables missing on filesystem:",resultOut,firstWritten);
+      firstWritten|=writeMsckResult(result.getPartitionsNotInMs(),"Partitions not in metastore:",resultOut,firstWritten);
+      firstWritten|=writeMsckResult(result.getPartitionsNotOnFs(),"Partitions missing from filesystem:",resultOut,firstWritten);
+    }
+ catch (    IOException e) {
+      LOG.warn("Failed to save metacheck output: ",e);
+      return 1;
+    }
+ finally {
+      if (resultOut != null) {
+        try {
+          resultOut.close();
+        }
+ catch (        IOException e) {
+          LOG.warn("Failed to close output file: ",e);
+          return 1;
+        }
+      }
+    }
+  }
+  return 0;
+}
