@@ -1,5 +1,5 @@
 {
-  Table tbl=db.getTable(alterTbl.getOldName());
+  Table tbl=db.getTable(MetaStoreUtils.DEFAULT_DATABASE_NAME,alterTbl.getOldName());
   if (alterTbl.getOp() == alterTableDesc.alterTableTypes.RENAME)   tbl.getTTable().setTableName(alterTbl.getNewName());
  else   if (alterTbl.getOp() == alterTableDesc.alterTableTypes.ADDCOLS) {
     List<FieldSchema> newCols=alterTbl.getNewCols();
@@ -57,16 +57,21 @@
   tbl.setProperty("last_modified_by",System.getProperty("user.name"));
   tbl.setProperty("last_modified_time",Long.toString(System.currentTimeMillis() / 1000));
   try {
+    tbl.checkValidity();
+  }
+ catch (  HiveException e) {
+    console.printError("Invalid table columns : " + e.getMessage(),StringUtils.stringifyException(e));
+    return 1;
+  }
+  try {
     db.alterTable(alterTbl.getOldName(),tbl);
   }
  catch (  InvalidOperationException e) {
+    console.printError("Invalid alter operation: " + e.getMessage());
     LOG.info("alter table: " + StringUtils.stringifyException(e));
     return 1;
   }
-catch (  MetaException e) {
-    return 1;
-  }
-catch (  TException e) {
+catch (  HiveException e) {
     return 1;
   }
   return 0;
