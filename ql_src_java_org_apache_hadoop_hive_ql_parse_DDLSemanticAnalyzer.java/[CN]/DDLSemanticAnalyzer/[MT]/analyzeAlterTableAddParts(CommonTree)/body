@@ -1,0 +1,31 @@
+{
+  String tblName=unescapeIdentifier(ast.getChild(0).getText());
+  ;
+  List<Map<String,String>> partSpecs=getPartitionSpecs(ast);
+  Iterator<Map<String,String>> partIter=partSpecs.iterator();
+  String currentLocation=null;
+  Map<String,String> currentPart=null;
+  int numCh=ast.getChildCount();
+  for (int num=1; num < numCh; num++) {
+    CommonTree child=(CommonTree)ast.getChild(num);
+switch (child.getToken().getType()) {
+case HiveParser.TOK_PARTSPEC:
+      if (currentPart != null) {
+        AddPartitionDesc addPartitionDesc=new AddPartitionDesc(MetaStoreUtils.DEFAULT_DATABASE_NAME,tblName,currentPart,currentLocation);
+        rootTasks.add(TaskFactory.get(new DDLWork(addPartitionDesc),conf));
+      }
+    currentLocation=null;
+  currentPart=partIter.next();
+break;
+case HiveParser.TOK_PARTITIONLOCATION:
+currentLocation=unescapeSQLString(child.getChild(0).getText());
+break;
+default :
+throw new SemanticException("Unknown child: " + child);
+}
+}
+if (currentPart != null) {
+AddPartitionDesc addPartitionDesc=new AddPartitionDesc(MetaStoreUtils.DEFAULT_DATABASE_NAME,tblName,currentPart,currentLocation);
+rootTasks.add(TaskFactory.get(new DDLWork(addPartitionDesc),conf));
+}
+}
