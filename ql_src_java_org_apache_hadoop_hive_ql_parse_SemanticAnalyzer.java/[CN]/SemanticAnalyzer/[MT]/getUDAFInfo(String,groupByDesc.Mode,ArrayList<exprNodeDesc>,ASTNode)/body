@@ -1,0 +1,36 @@
+{
+  UDAFInfo r=new UDAFInfo();
+  ArrayList<Class<?>> aggClasses=new ArrayList<Class<?>>();
+  for (  exprNodeDesc expr : aggParameters) {
+    aggClasses.add(expr.getTypeInfo().getPrimitiveClass());
+  }
+  r.evalClass=FunctionRegistry.getUDAFEvaluator(aggName,aggClasses);
+  if (null == r.evalClass) {
+    String reason="Looking for UDAF Evaluator\"" + aggName + "\" with parameters "+ aggClasses;
+    throw new SemanticException(ErrorMsg.INVALID_FUNCTION_SIGNATURE.getMsg((ASTNode)aggTree.getChild(0),reason));
+  }
+  Method aggregateMethod=null;
+  for (  Method m : r.evalClass.getMethods()) {
+    if (m.getName().equalsIgnoreCase("iterate")) {
+      aggregateMethod=m;
+    }
+  }
+  if (null == aggregateMethod) {
+    String reason="Looking for UDAF Evaluator Iterator\"" + aggName + "\" with parameters "+ aggClasses;
+    throw new SemanticException(ErrorMsg.INVALID_FUNCTION_SIGNATURE.getMsg((ASTNode)aggTree.getChild(0),reason));
+  }
+  r.convertedParameters=convertParameters(aggregateMethod,aggParameters);
+  Method evaluateMethod=FunctionRegistry.getUDAFEvaluateMethod(aggName,mode);
+  String funcName=(mode == groupByDesc.Mode.COMPLETE || mode == groupByDesc.Mode.FINAL) ? "terminate" : "terminatePartial";
+  for (  Method m : r.evalClass.getMethods()) {
+    if (m.getName().equalsIgnoreCase(funcName)) {
+      evaluateMethod=m;
+    }
+  }
+  if (evaluateMethod == null) {
+    String reason="UDAF \"" + aggName + "\" does not have terminate()/terminatePartial() methods.";
+    throw new SemanticException(ErrorMsg.INVALID_FUNCTION.getMsg((ASTNode)aggTree.getChild(0),reason));
+  }
+  r.retType=evaluateMethod.getReturnType();
+  return r;
+}

@@ -19,12 +19,9 @@
   }
   HashMap<String,ASTNode> aggregationTrees=parseInfo.getAggregationExprsForClause(dest);
   for (  Map.Entry<String,ASTNode> entry : aggregationTrees.entrySet()) {
-    ASTNode value=entry.getValue();
-    String aggName=value.getChild(0).getText();
-    Class<? extends UDAF> aggClass=FunctionRegistry.getUDAF(aggName);
-    Method aggEvaluateMethod=FunctionRegistry.getUDAFEvaluateMethod(aggName,mode);
-    assert(aggClass != null);
     ArrayList<exprNodeDesc> aggParameters=new ArrayList<exprNodeDesc>();
+    ArrayList<Class<?>> aggParamTypes=new ArrayList<Class<?>>();
+    ASTNode value=entry.getValue();
     String text=entry.getKey();
     ColumnInfo paraExprInfo=groupByInputRowResolver2.get("",text);
     if (paraExprInfo == null) {
@@ -33,8 +30,13 @@
     String paraExpression=paraExprInfo.getInternalName();
     assert(paraExpression != null);
     aggParameters.add(new exprNodeColumnDesc(paraExprInfo.getType(),paraExpression));
-    aggregations.add(new aggregationDesc(aggClass,aggParameters,((mode == groupByDesc.Mode.FINAL) ? false : (value.getToken().getType() == HiveParser.TOK_FUNCTIONDI))));
-    groupByOutputRowResolver2.put("",value.toStringTree(),new ColumnInfo(Integer.valueOf(groupByKeys.size() + aggregations.size() - 1).toString(),aggEvaluateMethod.getReturnType()));
+    aggParamTypes.add(paraExprInfo.getType().getPrimitiveClass());
+    String aggName=value.getChild(0).getText();
+    Class<? extends UDAF> aggClass=FunctionRegistry.getUDAF(aggName);
+    assert(aggClass != null);
+    UDAFInfo udaf=getUDAFInfo(aggName,mode,aggParameters,value);
+    aggregations.add(new aggregationDesc(udaf.evalClass,udaf.convertedParameters,((mode == groupByDesc.Mode.FINAL) ? false : (value.getToken().getType() == HiveParser.TOK_FUNCTIONDI))));
+    groupByOutputRowResolver2.put("",value.toStringTree(),new ColumnInfo(Integer.valueOf(groupByKeys.size() + aggregations.size() - 1).toString(),udaf.retType));
   }
   return putOpInsertMap(OperatorFactory.getAndMakeChild(new groupByDesc(mode,groupByKeys,aggregations),new RowSchema(groupByOutputRowResolver2.getColumnInfos()),reduceSinkOperatorInfo2),groupByOutputRowResolver2);
 }

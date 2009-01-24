@@ -8,7 +8,7 @@
   List<ASTNode> grpByExprs=getGroupByForClause(parseInfo,dest);
   for (int i=0; i < grpByExprs.size(); ++i) {
     ASTNode grpbyExpr=grpByExprs.get(i);
-    exprNodeDesc grpByExprNode=genExprNodeDesc(qb.getMetaData(),grpbyExpr,groupByInputRowResolver);
+    exprNodeDesc grpByExprNode=genExprNodeDesc(grpbyExpr,groupByInputRowResolver);
     groupByKeys.add(grpByExprNode);
     String field=(Integer.valueOf(i)).toString();
     groupByOutputRowResolver.put("",grpbyExpr.toStringTree(),new ColumnInfo(field,grpByExprNode.getTypeInfo()));
@@ -20,7 +20,7 @@
       ASTNode parameter=(ASTNode)value.getChild(i);
       String text=parameter.toStringTree();
       if (groupByOutputRowResolver.get("",text) == null) {
-        exprNodeDesc distExprNode=genExprNodeDesc(qb.getMetaData(),parameter,groupByInputRowResolver);
+        exprNodeDesc distExprNode=genExprNodeDesc(parameter,groupByInputRowResolver);
         groupByKeys.add(distExprNode);
         numDistn++;
         String field=(Integer.valueOf(grpByExprs.size() + numDistn - 1)).toString();
@@ -39,13 +39,12 @@
     ArrayList<Class<?>> aggClasses=new ArrayList<Class<?>>();
     for (int i=1; i < value.getChildCount(); i++) {
       ASTNode paraExpr=(ASTNode)value.getChild(i);
-      exprNodeDesc paraExprNode=genExprNodeDesc(qb.getMetaData(),paraExpr,groupByInputRowResolver);
+      exprNodeDesc paraExprNode=genExprNodeDesc(paraExpr,groupByInputRowResolver);
       aggParameters.add(paraExprNode);
-      aggClasses.add(paraExprNode.getTypeInfo().getPrimitiveClass());
     }
-    UDAFInfo udaf=getUDAFInfo(aggName,mode,aggClasses,aggParameters,value);
-    aggregations.add(new aggregationDesc(aggClass,udaf.convertedParameters,value.getToken().getType() == HiveParser.TOK_FUNCTIONDI));
-    groupByOutputRowResolver.put("",value.toStringTree(),new ColumnInfo(Integer.valueOf(groupByKeys.size() + aggregations.size() - 1).toString(),udaf.evaluateMethod.getReturnType()));
+    UDAFInfo udaf=getUDAFInfo(aggName,mode,aggParameters,value);
+    aggregations.add(new aggregationDesc(udaf.evalClass,udaf.convertedParameters,value.getToken().getType() == HiveParser.TOK_FUNCTIONDI));
+    groupByOutputRowResolver.put("",value.toStringTree(),new ColumnInfo(Integer.valueOf(groupByKeys.size() + aggregations.size() - 1).toString(),udaf.retType));
   }
   return putOpInsertMap(OperatorFactory.getAndMakeChild(new groupByDesc(mode,groupByKeys,aggregations),new RowSchema(groupByOutputRowResolver.getColumnInfos()),inputOperatorInfo),groupByOutputRowResolver);
 }
