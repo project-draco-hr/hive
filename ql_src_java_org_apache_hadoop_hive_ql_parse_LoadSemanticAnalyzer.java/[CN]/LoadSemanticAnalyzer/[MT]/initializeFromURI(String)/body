@@ -1,34 +1,30 @@
 {
-  Path p=new Path(fromPath);
-  URI fromURI=p.toUri();
+  URI fromURI=new Path(fromPath).toUri();
   String fromScheme=fromURI.getScheme();
+  String fromAuthority=fromURI.getAuthority();
+  String path=fromURI.getPath();
+  if (!path.startsWith("/")) {
+    if (isLocal) {
+      path=new Path(System.getProperty("user.dir"),path).toString();
+    }
+ else {
+      path=new Path(new Path("/user/" + System.getProperty("user.name")),path).toString();
+    }
+  }
   if (StringUtils.isEmpty(fromScheme)) {
     if (isLocal) {
-      if (!fromPath.startsWith("/")) {
-        p=new Path(System.getProperty("user.dir"),fromPath);
-      }
       fromScheme="file";
     }
  else {
-      if (!fromPath.startsWith("/") && StringUtils.isEmpty(fromURI.getAuthority())) {
-        p=new Path(new Path("/user/" + System.getProperty("user.name")),fromPath);
-      }
+      URI defaultURI=FileSystem.get(conf).getUri();
+      fromScheme=defaultURI.getScheme();
+      fromAuthority=defaultURI.getAuthority();
     }
   }
-  fs=FileSystem.get(fromURI,conf);
-  String fromAuthority=null;
-  if (StringUtils.isEmpty(fromScheme)) {
-    fromScheme=fs.getUri().getScheme();
-    fromAuthority=fs.getUri().getAuthority();
+  if (fromScheme.equals("hdfs") && StringUtils.isEmpty(fromAuthority)) {
+    URI defaultURI=FileSystem.get(conf).getUri();
+    fromAuthority=defaultURI.getAuthority();
   }
-  if (fromScheme.equals("hdfs")) {
-    fromAuthority=StringUtils.isEmpty(fromURI.getAuthority()) ? fs.getUri().getAuthority() : fromURI.getAuthority();
-  }
-  try {
-    fromURI=new URI(fromScheme,fromAuthority,p.toString(),null,null);
-  }
- catch (  URISyntaxException e) {
-    throw new RuntimeException(e);
-  }
-  return fromURI;
+  LOG.debug(fromScheme + "@" + fromAuthority+ "@"+ path);
+  return new URI(fromScheme,fromAuthority,path,null,null);
 }
