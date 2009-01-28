@@ -1,0 +1,40 @@
+{
+  try {
+    conf=new HiveConf(HiveHistory.class);
+    fs=FileSystem.get(conf);
+    if (fs.exists(tmppath) && !fs.getFileStatus(tmppath).isDir()) {
+      throw new RuntimeException(tmpdir + " exists but is not a directory");
+    }
+    if (!fs.exists(tmppath)) {
+      if (!fs.mkdirs(tmppath)) {
+        throw new RuntimeException("Could not make scratch directory " + tmpdir);
+      }
+    }
+    int i=0;
+    Path[] hadoopDataFile=new Path[2];
+    String[] testFiles={"kv1.txt","kv2.txt"};
+    String testFileDir="file://" + conf.get("test.data.files").replace('\\','/').replace("c:","");
+    for (    String oneFile : testFiles) {
+      Path localDataFile=new Path(testFileDir,oneFile);
+      hadoopDataFile[i]=new Path(tmppath,oneFile);
+      fs.copyFromLocalFile(false,true,localDataFile,hadoopDataFile[i]);
+      i++;
+    }
+    i=0;
+    db=Hive.get(conf);
+    String[] srctables={"src","src2"};
+    LinkedList<String> cols=new LinkedList<String>();
+    cols.add("key");
+    cols.add("value");
+    for (    String src : srctables) {
+      db.dropTable(src,true,true);
+      db.createTable(src,cols,null,TextInputFormat.class,IgnoreKeyTextOutputFormat.class);
+      db.loadTable(hadoopDataFile[i],src,false);
+      i++;
+    }
+  }
+ catch (  Throwable e) {
+    e.printStackTrace();
+    throw new RuntimeException("Encountered throwable");
+  }
+}

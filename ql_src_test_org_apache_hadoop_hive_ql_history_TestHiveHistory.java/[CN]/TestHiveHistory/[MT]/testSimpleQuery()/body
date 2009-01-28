@@ -1,0 +1,40 @@
+{
+  LineageInfo lep=new LineageInfo();
+  try {
+    SessionState.initHiveLog4j();
+    CliSessionState ss=new CliSessionState(new HiveConf(SessionState.class));
+    ss.in=System.in;
+    try {
+      ss.out=new PrintStream(System.out,true,"UTF-8");
+      ss.err=new PrintStream(System.err,true,"UTF-8");
+    }
+ catch (    UnsupportedEncodingException e) {
+      System.exit(3);
+    }
+    SessionState.start(ss);
+    String cmd="select a.key from src a";
+    Driver d=new Driver();
+    int ret=d.run(cmd);
+    if (ret != 0) {
+      fail("Failed");
+    }
+    HiveHistoryViewer hv=new HiveHistoryViewer(SessionState.get().getHiveHistory().getHistFileName());
+    Map<String,QueryInfo> jobInfoMap=hv.getJobInfoMap();
+    Map<String,TaskInfo> taskInfoMap=hv.getTaskInfoMap();
+    if (jobInfoMap.size() != 1) {
+      fail("jobInfo Map size not 1");
+    }
+    if (taskInfoMap.size() != 1) {
+      fail("jobInfo Map size not 1");
+    }
+    cmd=(String)jobInfoMap.keySet().toArray()[0];
+    QueryInfo ji=jobInfoMap.get(cmd);
+    if (!ji.hm.get(Keys.QUERY_NUM_TASKS.name()).equals("1")) {
+      fail("Wrong number of tasks");
+    }
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    fail("Failed");
+  }
+}
