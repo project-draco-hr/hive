@@ -1,0 +1,55 @@
+{
+  webServer=new org.mortbay.jetty.Server();
+  listener=new SocketListener();
+  HiveConf conf=new HiveConf(this.getClass());
+  String listen=null;
+  int port=-1;
+  listen=conf.getVar(HiveConf.ConfVars.HIVEHWILISTENHOST);
+  port=conf.getIntVar(HiveConf.ConfVars.HIVEHWILISTENPORT);
+  if (listen.equals("")) {
+    l4j.warn("hive.hwi.listen.host was not specified defaulting to 0.0.0.0");
+    listen="0.0.0.0";
+  }
+  if (port == -1) {
+    l4j.warn("hive.hwi.listen.port was not specified defaulting to 9999");
+    port=9999;
+  }
+  listener.setPort(port);
+  listener.setHost(listen);
+  webServer.addListener(listener);
+  WebApplicationContext wac=new WebApplicationContext();
+  wac.setContextPath("/hwi");
+  String hwiWAR=conf.getVar(HiveConf.ConfVars.HIVEHWIWARFILE);
+  if (!new File(hwiWAR).exists()) {
+    l4j.fatal("HWI WAR file not found at " + hwiWAR);
+  }
+  wac.setWAR(hwiWAR);
+  StringBuffer sb=new StringBuffer();
+  for (int i=0; i < args.length; i++) {
+    sb.append(args[i] + " ");
+  }
+  System.setProperty("hwi-args",sb.toString());
+  webServer.addContext(wac);
+  try {
+    while (true) {
+      try {
+        webServer.start();
+        webServer.join();
+        l4j.debug(" HWI Web Server is started.");
+        break;
+      }
+ catch (      org.mortbay.util.MultiException ex) {
+        throw ex;
+      }
+    }
+  }
+ catch (  IOException ie) {
+    throw ie;
+  }
+catch (  Exception e) {
+    IOException ie=new IOException("Problem starting HWI server");
+    ie.initCause(e);
+    l4j.error("Parsing hwi.listen.port caused exception ",e);
+    throw ie;
+  }
+}

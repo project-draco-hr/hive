@@ -1,0 +1,48 @@
+{
+  l4j.debug("Entered run() thread has started");
+  while (goOn) {
+    l4j.debug("locking items");
+synchronized (items) {
+      for (      HWIAuth a : items.keySet()) {
+        for (        HWISessionItem i : items.get(a)) {
+          if (i.getStatus() == HWISessionItem.WebSessionItemStatus.QUERY_SET) {
+            l4j.debug("Starting item: " + i.getSessionName());
+            i.startIt();
+          }
+          if (i.getStatus() == HWISessionItem.WebSessionItemStatus.DESTROY) {
+            items.get(a).remove(i);
+          }
+          if (i.getStatus() == HWISessionItem.WebSessionItemStatus.KILL_QUERY) {
+            l4j.debug("Killing item: " + i.getSessionName());
+            i.killIt();
+            l4j.debug("Killed item: " + i.getSessionName());
+            items.get(a).remove(i);
+          }
+        }
+      }
+    }
+    try {
+      Thread.sleep(100);
+    }
+ catch (    InterruptedException ex) {
+      l4j.error("Could not sleep ",ex);
+    }
+  }
+  l4j.debug("goOn is false. Loop has ended.");
+synchronized (items) {
+    for (    HWIAuth a : items.keySet()) {
+      for (      HWISessionItem i : items.get(a)) {
+        try {
+          if (i.getStatus() == HWISessionItem.WebSessionItemStatus.QUERY_RUNNING) {
+            l4j.debug(i.getSessionName() + "Joining ");
+            i.runnable.join(1000);
+            l4j.debug(i.getSessionName() + "Joined ");
+          }
+        }
+ catch (        InterruptedException ex) {
+          l4j.error(i.getSessionName() + "while joining ",ex);
+        }
+      }
+    }
+  }
+}
