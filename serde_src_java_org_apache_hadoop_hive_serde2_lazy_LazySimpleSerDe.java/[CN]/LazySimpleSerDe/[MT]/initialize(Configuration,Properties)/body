@@ -1,0 +1,32 @@
+{
+  String alt_sep=tbl.getProperty(Constants.SERIALIZATION_FORMAT);
+  separator=getByte(alt_sep,DefaultSeparator);
+  String columnNameProperty=tbl.getProperty("columns");
+  String columnTypeProperty=tbl.getProperty("columns.types");
+  if (columnNameProperty == null || columnTypeProperty == null) {
+    throw new SerDeException(getClass().toString() + ": columns or columns.types property not set!");
+  }
+  nullString=tbl.getProperty(Constants.SERIALIZATION_NULL_FORMAT);
+  if (nullString == null) {
+    nullString="\\N";
+  }
+  String lastColumnTakesRestString=tbl.getProperty(Constants.SERIALIZATION_LAST_COLUMN_TAKES_REST);
+  lastColumnTakesRest=(lastColumnTakesRestString != null && lastColumnTakesRestString.equalsIgnoreCase("true"));
+  columnNames=Arrays.asList(columnNameProperty.split(","));
+  columnTypes=Arrays.asList(columnTypeProperty.split(":"));
+  if (columnNames.size() != columnTypes.size()) {
+    throw new SerDeException(getClass().toString() + ": columns has " + columnNames.size()+ " elements while columns.types has "+ columnTypes.size()+ " elements!");
+  }
+  LazyObject[] lazyPrimitives=new LazyObject[columnNames.size()];
+  ArrayList<ObjectInspector> columnObjectInspectors=new ArrayList<ObjectInspector>(columnNames.size());
+  for (int i=0; i < columnTypes.size(); i++) {
+    Class<?> primitiveClass=ObjectInspectorUtils.typeNameToClass.get(columnTypes.get(i));
+    if (primitiveClass == null) {
+      throw new SerDeException(getClass().toString() + ": type " + columnTypes.get(i)+ " not supported!");
+    }
+    columnObjectInspectors.add(ObjectInspectorFactory.getStandardPrimitiveObjectInspector(primitiveClass));
+    lazyPrimitives[i]=LazyUtils.createLazyPrimitiveClass(primitiveClass);
+  }
+  cachedObjectInspector=ObjectInspectorFactory.getLazySimpleStructObjectInspector(columnNames,columnObjectInspectors);
+  cachedLazyStruct=new LazyStruct(lazyPrimitives,separator,new Text(nullString),lastColumnTakesRest);
+}
