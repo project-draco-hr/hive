@@ -11,13 +11,14 @@
       jc=new JobConf(hconf,ExecDriver.class);
     }
     fs=FileSystem.get(hconf);
-    finalPath=new Path(conf.getDirName(),Utilities.getTaskId(hconf));
-    outPath=new Path(conf.getDirName(),"_tmp." + Utilities.getTaskId(hconf));
+    finalPath=new Path(Utilities.toTempPath(conf.getDirName()),Utilities.getTaskId(hconf));
+    outPath=new Path(Utilities.toTempPath(conf.getDirName()),Utilities.toTempPath(Utilities.getTaskId(hconf)));
+    LOG.info("Writing to temp file: " + outPath);
     OutputFormat<?,?> outputFormat=conf.getTableInfo().getOutputFileFormatClass().newInstance();
     final Class<? extends Writable> outputClass=serializer.getSerializedClass();
     boolean isCompressed=conf.getCompressed();
     if (outputFormat instanceof IgnoreKeyTextOutputFormat) {
-      finalPath=new Path(conf.getDirName(),Utilities.getTaskId(hconf) + Utilities.getFileExtension(jc,isCompressed));
+      finalPath=new Path(Utilities.toTempPath(conf.getDirName()),Utilities.getTaskId(hconf) + Utilities.getFileExtension(jc,isCompressed));
       String rowSeparatorString=conf.getTableInfo().getProperties().getProperty(Constants.LINE_DELIM,"\n");
       int rowSeparator=0;
       try {
@@ -61,6 +62,14 @@
     }
  else {
       throw new HiveException("Illegal outputformat: " + outputFormat.getClass().getName());
+    }
+    try {
+      Method deleteOnExit=FileSystem.class.getDeclaredMethod("deleteOnExit",new Class[]{Path.class});
+      deleteOnExit.setAccessible(true);
+      deleteOnExit.invoke(fs,outPath);
+      autoDelete=true;
+    }
+ catch (    Exception e) {
     }
   }
  catch (  HiveException e) {
