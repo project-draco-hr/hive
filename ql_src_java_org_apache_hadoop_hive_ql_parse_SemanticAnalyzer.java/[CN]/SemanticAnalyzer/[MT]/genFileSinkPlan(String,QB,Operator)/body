@@ -4,12 +4,16 @@
   this.pathid++;
   String dest_path=null;
   tableDesc table_desc=null;
+  int currentTableId=0;
   Integer dest_type=qb.getMetaData().getDestTypeForAlias(dest);
 switch (dest_type.intValue()) {
 case QBMetaData.DEST_TABLE:
 {
       Table dest_tab=qb.getMetaData().getDestTableForAlias(dest);
       table_desc=Utilities.getTableDesc(dest_tab);
+      this.idToTableNameMap.put(String.valueOf(this.destTableId),dest_tab.getName());
+      currentTableId=this.destTableId;
+      this.destTableId++;
       dest_path=dest_tab.getPath().toString();
       this.loadTableWork.add(new loadTableDesc(queryTmpdir,table_desc,new HashMap<String,String>()));
       break;
@@ -20,6 +24,9 @@ case QBMetaData.DEST_PARTITION:
     Table dest_tab=dest_part.getTable();
     table_desc=Utilities.getTableDesc(dest_tab);
     dest_path=dest_part.getPath()[0].toString();
+    this.idToTableNameMap.put(String.valueOf(this.destTableId),dest_tab.getName());
+    currentTableId=this.destTableId;
+    this.destTableId++;
     this.loadTableWork.add(new loadTableDesc(queryTmpdir,table_desc,dest_part.getSpec()));
     break;
   }
@@ -37,6 +44,11 @@ case QBMetaData.DEST_DFS_FILE:
     if (nm[0] == null)     cols=cols.concat(nm[1]);
  else     cols=cols.concat(nm[0] + "." + nm[1]);
   }
+  if (!dest_path.startsWith(this.scratchDir + File.separator)) {
+    this.idToTableNameMap.put(String.valueOf(this.destTableId),dest_path);
+    currentTableId=this.destTableId;
+    this.destTableId++;
+  }
   this.loadFileWork.add(new loadFileDesc(queryTmpdir,dest_path,(dest_type.intValue() == QBMetaData.DEST_DFS_FILE),cols));
   table_desc=PlanUtils.getDefaultTableDesc(Integer.toString(Utilities.ctrlaCode),cols);
   break;
@@ -45,7 +57,7 @@ default :
 throw new SemanticException("Unknown destination type: " + dest_type);
 }
 input=genConversionSelectOperator(dest,qb,input,table_desc);
-Operator output=putOpInsertMap(OperatorFactory.getAndMakeChild(new fileSinkDesc(queryTmpdir,table_desc,conf.getBoolVar(HiveConf.ConfVars.COMPRESSRESULT)),new RowSchema(inputRR.getColumnInfos()),input),inputRR);
+Operator output=putOpInsertMap(OperatorFactory.getAndMakeChild(new fileSinkDesc(queryTmpdir,table_desc,conf.getBoolVar(HiveConf.ConfVars.COMPRESSRESULT),currentTableId),new RowSchema(inputRR.getColumnInfos()),input),inputRR);
 LOG.debug("Created FileSink Plan for clause: " + dest + "dest_path: "+ dest_path+ " row schema: "+ inputRR.toString());
 return output;
 }
