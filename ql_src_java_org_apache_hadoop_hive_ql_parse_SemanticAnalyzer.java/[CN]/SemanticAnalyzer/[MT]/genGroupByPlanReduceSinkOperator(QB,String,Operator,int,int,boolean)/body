@@ -29,16 +29,27 @@
   }
   ArrayList<exprNodeDesc> reduceValues=new ArrayList<exprNodeDesc>();
   HashMap<String,ASTNode> aggregationTrees=parseInfo.getAggregationExprsForClause(dest);
-  for (  Map.Entry<String,ASTNode> entry : aggregationTrees.entrySet()) {
-    ASTNode value=entry.getValue();
-    for (int i=1; i < value.getChildCount(); i++) {
-      ASTNode parameter=(ASTNode)value.getChild(i);
-      String text=parameter.toStringTree();
-      if (reduceSinkOutputRowResolver.get("",text) == null) {
-        reduceValues.add(genExprNodeDesc(parameter,reduceSinkInputRowResolver));
-        reduceSinkOutputRowResolver.put("",text,new ColumnInfo(Utilities.ReduceField.VALUE.toString() + "." + Integer.valueOf(reduceValues.size() - 1).toString(),reduceValues.get(reduceValues.size() - 1).getTypeInfo()));
+  if (!mapAggrDone) {
+    for (    Map.Entry<String,ASTNode> entry : aggregationTrees.entrySet()) {
+      ASTNode value=entry.getValue();
+      for (int i=1; i < value.getChildCount(); i++) {
+        ASTNode parameter=(ASTNode)value.getChild(i);
+        String text=parameter.toStringTree();
+        if (reduceSinkOutputRowResolver.get("",text) == null) {
+          reduceValues.add(genExprNodeDesc(parameter,reduceSinkInputRowResolver));
+          reduceSinkOutputRowResolver.put("",text,new ColumnInfo(Utilities.ReduceField.VALUE.toString() + "." + Integer.valueOf(reduceValues.size() - 1).toString(),reduceValues.get(reduceValues.size() - 1).getTypeInfo()));
+        }
       }
     }
   }
-  return putOpInsertMap(OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(reduceKeys,reduceValues,-1,numPartitionFields,-1),new RowSchema(reduceSinkOutputRowResolver.getColumnInfos()),inputOperatorInfo),reduceSinkOutputRowResolver);
+ else {
+    int inputField=reduceKeys.size();
+    for (    Map.Entry<String,ASTNode> entry : aggregationTrees.entrySet()) {
+      TypeInfo type=reduceSinkInputRowResolver.getColumnInfos().get(inputField).getType();
+      reduceValues.add(new exprNodeColumnDesc(type,(Integer.valueOf(inputField)).toString()));
+      inputField++;
+      reduceSinkOutputRowResolver.put("",((ASTNode)entry.getValue()).toStringTree(),new ColumnInfo(Utilities.ReduceField.VALUE.toString() + "." + (Integer.valueOf(reduceValues.size() - 1)).toString(),type));
+    }
+  }
+  return putOpInsertMap(OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(reduceKeys,reduceValues,-1,numPartitionFields,numReducers),new RowSchema(reduceSinkOutputRowResolver.getColumnInfos()),inputOperatorInfo),reduceSinkOutputRowResolver);
 }
