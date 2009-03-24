@@ -1,0 +1,79 @@
+{
+  if (obj == null) {
+    sb.append(nullString);
+    return;
+  }
+switch (objInspector.getCategory()) {
+case PRIMITIVE:
+{
+      sb.append(obj.toString());
+      return;
+    }
+case LIST:
+{
+    char separator=(char)separators[level];
+    ListObjectInspector loi=(ListObjectInspector)objInspector;
+    List<?> list=loi.getList(obj);
+    ObjectInspector eoi=loi.getListElementObjectInspector();
+    if (list == null) {
+      sb.append(nullString);
+    }
+ else {
+      for (int i=0; i < list.size(); i++) {
+        if (i > 0) {
+          sb.append((char)separator);
+        }
+        serialize(sb,list.get(i),eoi,separators,level + 1,nullString);
+      }
+    }
+    return;
+  }
+case MAP:
+{
+  char separator=(char)separators[level];
+  char keyValueSeparator=(char)separators[level + 1];
+  MapObjectInspector moi=(MapObjectInspector)objInspector;
+  ObjectInspector koi=moi.getMapKeyObjectInspector();
+  ObjectInspector voi=moi.getMapValueObjectInspector();
+  Map<?,?> map=moi.getMap(obj);
+  if (map == null) {
+    sb.append(nullString);
+  }
+ else {
+    boolean first=true;
+    for (    Map.Entry<?,?> entry : map.entrySet()) {
+      if (first) {
+        first=false;
+      }
+ else {
+        sb.append((char)separator);
+      }
+      serialize(sb,entry.getKey(),koi,separators,level + 2,nullString);
+      sb.append((char)keyValueSeparator);
+      serialize(sb,entry.getValue(),voi,separators,level + 2,nullString);
+    }
+  }
+  return;
+}
+case STRUCT:
+{
+char separator=(char)separators[level];
+StructObjectInspector soi=(StructObjectInspector)objInspector;
+List<? extends StructField> fields=soi.getAllStructFieldRefs();
+List<Object> list=soi.getStructFieldsDataAsList(obj);
+if (list == null) {
+  sb.append(nullString);
+}
+ else {
+  for (int i=0; i < list.size(); i++) {
+    if (i > 0) {
+      sb.append((char)separator);
+    }
+    serialize(sb,list.get(i),fields.get(i).getFieldObjectInspector(),separators,level + 1,nullString);
+  }
+}
+return;
+}
+}
+throw new RuntimeException("Unknown category type: " + objInspector.getCategory());
+}

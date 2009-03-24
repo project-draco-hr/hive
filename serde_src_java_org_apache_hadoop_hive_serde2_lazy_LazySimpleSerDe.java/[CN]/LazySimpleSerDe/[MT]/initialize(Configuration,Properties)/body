@@ -1,43 +1,38 @@
 {
-  String alt_sep=tbl.getProperty(Constants.SERIALIZATION_FORMAT);
-  separator=getByte(alt_sep,DefaultSeparator);
-  String columnNameProperty=tbl.getProperty("columns");
-  String columnTypeProperty=tbl.getProperty("columns.types");
-  nullString=tbl.getProperty(Constants.SERIALIZATION_NULL_FORMAT);
-  if (nullString == null) {
-    nullString="\\N";
+  separators=new byte[10];
+  separators[0]=getByte(tbl.getProperty(Constants.FIELD_DELIM,tbl.getProperty(Constants.SERIALIZATION_FORMAT)),DefaultSeparators[0]);
+  separators[1]=getByte(tbl.getProperty(Constants.COLLECTION_DELIM),DefaultSeparators[1]);
+  separators[2]=getByte(tbl.getProperty(Constants.MAPKEY_DELIM),DefaultSeparators[2]);
+  for (int i=3; i < separators.length; i++) {
+    separators[i]=(byte)(i + 1);
   }
+  nullString=tbl.getProperty(Constants.SERIALIZATION_NULL_FORMAT,"\\N");
+  nullSequence=new Text(nullString);
   String lastColumnTakesRestString=tbl.getProperty(Constants.SERIALIZATION_LAST_COLUMN_TAKES_REST);
   lastColumnTakesRest=(lastColumnTakesRestString != null && lastColumnTakesRestString.equalsIgnoreCase("true"));
-  if (columnNameProperty != null) {
+  String columnNameProperty=tbl.getProperty("columns");
+  String columnTypeProperty=tbl.getProperty("columns.types");
+  List<String> columnNames;
+  if (columnNameProperty != null && columnNameProperty.length() > 0) {
     columnNames=Arrays.asList(columnNameProperty.split(","));
   }
  else {
     columnNames=new ArrayList<String>();
   }
-  if (columnTypeProperty != null) {
-    columnTypes=Arrays.asList(columnTypeProperty.split(":"));
-  }
- else {
-    columnTypes=new ArrayList<String>();
+  if (columnTypeProperty == null) {
+    StringBuilder sb=new StringBuilder();
     for (int i=0; i < columnNames.size(); i++) {
-      columnTypes.add(Constants.STRING_TYPE_NAME);
+      if (i > 0)       sb.append(":");
+      sb.append(Constants.STRING_TYPE_NAME);
     }
+    columnTypeProperty=sb.toString();
   }
+  List<TypeInfo> columnTypes=TypeInfoUtils.getTypeInfosFromTypeString(columnTypeProperty);
   if (columnNames.size() != columnTypes.size()) {
     throw new SerDeException(getClass().toString() + ": columns has " + columnNames.size()+ " elements while columns.types has "+ columnTypes.size()+ " elements!");
   }
-  LazyObject[] lazyPrimitives=new LazyObject[columnNames.size()];
-  ArrayList<ObjectInspector> columnObjectInspectors=new ArrayList<ObjectInspector>(columnNames.size());
-  for (int i=0; i < columnTypes.size(); i++) {
-    Class<?> primitiveClass=ObjectInspectorUtils.typeNameToClass.get(columnTypes.get(i));
-    if (primitiveClass == null) {
-      throw new SerDeException(getClass().toString() + ": type " + columnTypes.get(i)+ " not supported!");
-    }
-    columnObjectInspectors.add(ObjectInspectorFactory.getStandardPrimitiveObjectInspector(primitiveClass));
-    lazyPrimitives[i]=LazyUtils.createLazyPrimitiveClass(primitiveClass);
-  }
-  cachedObjectInspector=ObjectInspectorFactory.getLazySimpleStructObjectInspector(columnNames,columnObjectInspectors);
-  cachedLazyStruct=new LazyStruct(lazyPrimitives,separator,new Text(nullString),lastColumnTakesRest);
-  LOG.debug("LazySimpleSerDe initialized with: columnNames=" + columnNames + " columnTypes="+ columnTypes+ " separator="+ separator+ " nullstring="+ nullString+ " lastColumnTakesRest="+ lastColumnTakesRest);
+  rowTypeInfo=TypeInfoFactory.getStructTypeInfo(columnNames,columnTypes);
+  cachedLazyStruct=(LazyStruct)LazyFactory.createLazyObject(rowTypeInfo);
+  cachedObjectInspector=LazyFactory.createLazyStructInspector(columnNames,columnTypes,separators,nullSequence,lastColumnTakesRest);
+  LOG.debug("LazySimpleSerDe initialized with: columnNames=" + columnNames + " columnTypes="+ columnTypes+ " separator="+ Arrays.asList(separators)+ " nullstring="+ nullString+ " lastColumnTakesRest="+ lastColumnTakesRest);
 }
