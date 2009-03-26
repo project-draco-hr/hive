@@ -1,0 +1,21 @@
+def __init__(self, processor, server_address, inputProtocolFactory, outputProtocolFactory=None):
+    'Set up protocol factories and HTTP server.\n\n    See BaseHTTPServer for server_address.\n    See TServer for protocol factories.'
+    if (outputProtocolFactory is None):
+        outputProtocolFactory = inputProtocolFactory
+    TServer.TServer.__init__(self, processor, None, None, None, inputProtocolFactory, outputProtocolFactory)
+    thttpserver = self
+
+
+    class RequestHander(BaseHTTPServer.BaseHTTPRequestHandler):
+
+        def do_POST(self):
+            self.send_response(200)
+            self.send_header('content-type', 'application/x-thrift')
+            self.end_headers()
+            itrans = TTransport.TFileObjectTransport(self.rfile)
+            otrans = TTransport.TFileObjectTransport(self.wfile)
+            iprot = thttpserver.inputProtocolFactory.getProtocol(itrans)
+            oprot = thttpserver.outputProtocolFactory.getProtocol(otrans)
+            thttpserver.processor.process(iprot, oprot)
+            otrans.flush()
+    self.httpd = BaseHTTPServer.HTTPServer(server_address, RequestHander)
