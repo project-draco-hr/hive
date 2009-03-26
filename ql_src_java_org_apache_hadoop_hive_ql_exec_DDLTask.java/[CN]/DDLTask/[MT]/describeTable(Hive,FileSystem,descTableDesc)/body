@@ -33,7 +33,6 @@ catch (  IOException e) {
   }
   try {
     LOG.info("DDLTask: got data for " + tbl.getName());
-    DataOutput os=(DataOutput)fs.create(descTbl.getResFile());
     List<FieldSchema> cols=null;
     if (colPath.equals(tableName)) {
       cols=tbl.getCols();
@@ -44,49 +43,49 @@ catch (  IOException e) {
  else {
       cols=Hive.getFieldsFromDeserializer(colPath,tbl.getDeserializer());
     }
+    DataOutput outStream=(DataOutput)fs.create(descTbl.getResFile());
     Iterator<FieldSchema> iterCols=cols.iterator();
-    boolean firstCol=true;
     while (iterCols.hasNext()) {
-      if (!firstCol)       os.write(terminator);
       FieldSchema col=iterCols.next();
-      os.write(col.getName().getBytes("UTF-8"));
-      os.write(separator);
-      os.write(col.getType().getBytes("UTF-8"));
-      if (col.getComment() != null) {
-        os.write(separator);
-        os.write(singleQuote);
-        os.write(col.getComment().getBytes("UTF-8"));
-        os.write(singleQuote);
-      }
-      firstCol=false;
+      outStream.writeBytes(col.getName());
+      outStream.write(separator);
+      outStream.writeBytes(col.getType());
+      outStream.write(separator);
+      outStream.writeBytes(col.getComment() == null ? "" : col.getComment());
+      outStream.write(terminator);
     }
     if (tableName.equals(colPath)) {
       List<FieldSchema> partCols=tbl.getPartCols();
       Iterator<FieldSchema> iterPartCols=partCols.iterator();
       while (iterPartCols.hasNext()) {
-        os.write(terminator);
         FieldSchema col=iterPartCols.next();
-        os.write(col.getName().getBytes("UTF-8"));
-        os.write(separator);
-        os.write(col.getType().getBytes("UTF-8"));
-        if (col.getComment() != null) {
-          os.write(separator);
-          os.write(col.getComment().getBytes("UTF-8"));
-        }
+        outStream.writeBytes(col.getName());
+        outStream.write(separator);
+        outStream.writeBytes(col.getType());
+        outStream.write(separator);
+        outStream.writeBytes(col.getComment() == null ? "" : col.getComment());
+        outStream.write(terminator);
       }
       if (descTbl.isExt()) {
+        outStream.write(terminator);
         if (part != null) {
-          os.write("\n\nDetailed Partition Information:\n".getBytes("UTF-8"));
-          os.write(part.getTPartition().toString().getBytes("UTF-8"));
+          outStream.writeBytes("Detailed Partition Information");
+          outStream.write(separator);
+          outStream.writeBytes(part.getTPartition().toString());
+          outStream.write(separator);
+          outStream.write(terminator);
         }
  else {
-          os.write("\nDetailed Table Information:\n".getBytes("UTF-8"));
-          os.write(tbl.getTTable().toString().getBytes("UTF-8"));
+          outStream.writeBytes("Detailed Table Information");
+          outStream.write(separator);
+          outStream.writeBytes(tbl.getTTable().toString());
+          outStream.write(separator);
+          outStream.write(terminator);
         }
       }
     }
     LOG.info("DDLTask: written data for " + tbl.getName());
-    ((FSDataOutputStream)os).close();
+    ((FSDataOutputStream)outStream).close();
   }
  catch (  FileNotFoundException e) {
     LOG.info("describe table: " + StringUtils.stringifyException(e));
@@ -95,6 +94,9 @@ catch (  IOException e) {
 catch (  IOException e) {
     LOG.info("describe table: " + StringUtils.stringifyException(e));
     return 1;
+  }
+catch (  Exception e) {
+    throw new HiveException(e.toString());
   }
   return 0;
 }
