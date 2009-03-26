@@ -19,8 +19,30 @@
     Thread.sleep(1);
   }
   assertEquals(searchItem.getQueryRet(),0);
+  searchItem.clientRenew();
+  searchItem.setQuery(("load data local inpath '" + dataFilePath.toString() + "' into table "+ tableName));
+  searchItem.clientStart();
+  while (searchItem.getStatus() != HWISessionItem.WebSessionItemStatus.QUERY_COMPLETE) {
+    Thread.sleep(1);
+  }
+  assertEquals(searchItem.getQueryRet(),0);
   user1_item2.setQuery("select distinct(test_hwi_table.key) from " + tableName);
   user2_item1.setQuery("select distinct(test_hwi_table.key) from " + tableName);
+  File tmpdir=new File("/tmp/" + System.getProperty("user.name") + "/");
+  if (tmpdir.exists() && !tmpdir.isDirectory()) {
+    throw new RuntimeException(tmpdir + " exists but is not a directory");
+  }
+  if (!tmpdir.exists()) {
+    if (!tmpdir.mkdirs()) {
+      throw new RuntimeException("Could not make scratch directory " + tmpdir);
+    }
+  }
+  File result1=new File(tmpdir,"user1_item2");
+  File result2=new File(tmpdir,"user2_item1");
+  user1_item2.setResultFile(result1.toString());
+  user2_item1.setResultFile(result2.toString());
+  user1_item2.setSSIsSilent(true);
+  user2_item1.setSSIsSilent(true);
   user1_item2.clientStart();
   user2_item1.clientStart();
   while (user1_item2.getStatus() != HWISessionItem.WebSessionItemStatus.QUERY_COMPLETE) {
@@ -31,11 +53,22 @@
   }
   assertEquals(user1_item2.getQueryRet(),0);
   assertEquals(user2_item1.getQueryRet(),0);
+  assertEquals(isFileContentEqual(result1,result2),true);
+  result1.delete();
+  result2.delete();
+  user2_item1.clientRenew();
+  user2_item1.setQuery("select distinct(test_hwi_table.key) from " + tableName);
+  user2_item1.clientStart();
+  while (user2_item1.getStatus() != HWISessionItem.WebSessionItemStatus.QUERY_COMPLETE) {
+    Thread.sleep(1);
+  }
   HWISessionItem cleanup=hsm.createSession(user1,"cleanup");
   cleanup.setQuery("drop table " + tableName);
   cleanup.clientStart();
   while (cleanup.getStatus() != HWISessionItem.WebSessionItemStatus.QUERY_COMPLETE) {
     Thread.sleep(1);
   }
+  HiveHistoryViewer hhv=cleanup.getHistoryViewer();
+  assertNotNull(hhv);
   assertEquals(cleanup.getQueryRet(),0);
 }
