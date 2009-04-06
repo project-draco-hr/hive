@@ -4,21 +4,33 @@
   int pos=0;
   int outputPos=0;
   HashMap<Byte,ArrayList<exprNodeDesc>> exprMap=new HashMap<Byte,ArrayList<exprNodeDesc>>();
+  Map<String,exprNodeDesc> colExprMap=new HashMap<String,exprNodeDesc>();
+  HashMap<Integer,Set<String>> posToAliasMap=new HashMap<Integer,Set<String>>();
   for (  Operator input : right) {
     ArrayList<exprNodeDesc> keyDesc=new ArrayList<exprNodeDesc>();
     if (input == null)     input=left;
     Byte tag=Byte.valueOf((byte)(((reduceSinkDesc)(input.getConf())).getTag()));
     RowResolver inputRS=opParseCtx.get(input).getRR();
     Iterator<String> keysIter=inputRS.getTableNames().iterator();
+    Set<String> aliases=posToAliasMap.get(pos);
+    if (aliases == null) {
+      aliases=new HashSet<String>();
+      posToAliasMap.put(pos,aliases);
+    }
     while (keysIter.hasNext()) {
       String key=keysIter.next();
+      aliases.add(key);
       HashMap<String,ColumnInfo> map=inputRS.getFieldMap(key);
       Iterator<String> fNamesIter=map.keySet().iterator();
       while (fNamesIter.hasNext()) {
         String field=fNamesIter.next();
         ColumnInfo valueInfo=inputRS.get(key,field);
         keyDesc.add(new exprNodeColumnDesc(valueInfo.getType(),valueInfo.getInternalName()));
-        if (outputRS.get(key,field) == null)         outputRS.put(key,field,new ColumnInfo((Integer.valueOf(outputPos++)).toString(),valueInfo.getType()));
+        if (outputRS.get(key,field) == null) {
+          String colName=(Integer.valueOf(outputPos++)).toString();
+          colExprMap.put(colName,keyDesc.get(keyDesc.size() - 1));
+          outputRS.put(key,field,new ColumnInfo(colName,valueInfo.getType()));
+        }
       }
     }
     exprMap.put(tag,keyDesc);
@@ -29,5 +41,8 @@
     joinCond condn=join.getJoinCond()[i];
     joinCondns[i]=new org.apache.hadoop.hive.ql.plan.joinCond(condn);
   }
-  return putOpInsertMap(OperatorFactory.getAndMakeChild(new joinDesc(exprMap,joinCondns),new RowSchema(outputRS.getColumnInfos()),rightOps),outputRS);
+  JoinOperator joinOp=(JoinOperator)OperatorFactory.getAndMakeChild(new joinDesc(exprMap,joinCondns),new RowSchema(outputRS.getColumnInfos()),rightOps);
+  joinOp.setColumnExprMap(colExprMap);
+  joinOp.setPosToAliasMap(posToAliasMap);
+  return putOpInsertMap(joinOp,outputRS);
 }

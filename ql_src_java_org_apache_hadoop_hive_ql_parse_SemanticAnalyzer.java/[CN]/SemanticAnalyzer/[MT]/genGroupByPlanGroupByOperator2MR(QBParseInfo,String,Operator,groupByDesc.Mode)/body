@@ -6,6 +6,7 @@
   ArrayList<aggregationDesc> aggregations=new ArrayList<aggregationDesc>();
   ArrayList<String> evalMethods=new ArrayList<String>();
   ArrayList<String> aggMethods=new ArrayList<String>();
+  Map<String,exprNodeDesc> colExprMap=new HashMap<String,exprNodeDesc>();
   List<ASTNode> grpByExprs=getGroupByForClause(parseInfo,dest);
   for (int i=0; i < grpByExprs.size(); ++i) {
     ASTNode grpbyExpr=grpByExprs.get(i);
@@ -18,6 +19,7 @@
     groupByKeys.add(new exprNodeColumnDesc(exprInfo.getType(),expression));
     String field=(Integer.valueOf(i)).toString();
     groupByOutputRowResolver2.put("",grpbyExpr.toStringTree(),new ColumnInfo(field,exprInfo.getType()));
+    colExprMap.put(field,groupByKeys.get(groupByKeys.size() - 1));
   }
   HashMap<String,ASTNode> aggregationTrees=parseInfo.getAggregationExprsForClause(dest);
   for (  Map.Entry<String,ASTNode> entry : aggregationTrees.entrySet()) {
@@ -42,5 +44,7 @@
     aggMethods.add(udaf.aggMethod.getName());
     groupByOutputRowResolver2.put("",value.toStringTree(),new ColumnInfo(Integer.valueOf(groupByKeys.size() + aggregations.size() - 1).toString(),udaf.retType));
   }
-  return putOpInsertMap(OperatorFactory.getAndMakeChild(new groupByDesc(mode,groupByKeys,aggregations,evalMethods,aggMethods),new RowSchema(groupByOutputRowResolver2.getColumnInfos()),reduceSinkOperatorInfo2),groupByOutputRowResolver2);
+  Operator op=putOpInsertMap(OperatorFactory.getAndMakeChild(new groupByDesc(mode,groupByKeys,aggregations,evalMethods,aggMethods),new RowSchema(groupByOutputRowResolver2.getColumnInfos()),reduceSinkOperatorInfo2),groupByOutputRowResolver2);
+  op.setColumnExprMap(colExprMap);
+  return op;
 }

@@ -2,14 +2,18 @@
   RowResolver reduceSinkInputRowResolver2=opParseCtx.get(groupByOperatorInfo).getRR();
   RowResolver reduceSinkOutputRowResolver2=new RowResolver();
   reduceSinkOutputRowResolver2.setIsExprResolver(true);
+  Map<String,exprNodeDesc> colExprMap=new HashMap<String,exprNodeDesc>();
   ArrayList<exprNodeDesc> reduceKeys=new ArrayList<exprNodeDesc>();
   List<ASTNode> grpByExprs=getGroupByForClause(parseInfo,dest);
   for (int i=0; i < grpByExprs.size(); ++i) {
     ASTNode grpbyExpr=grpByExprs.get(i);
     String field=(Integer.valueOf(i)).toString();
     TypeInfo typeInfo=reduceSinkInputRowResolver2.get("",grpbyExpr.toStringTree()).getType();
-    reduceKeys.add(new exprNodeColumnDesc(typeInfo,field));
-    reduceSinkOutputRowResolver2.put("",grpbyExpr.toStringTree(),new ColumnInfo(Utilities.ReduceField.KEY.toString() + "." + field,typeInfo));
+    exprNodeColumnDesc inputExpr=new exprNodeColumnDesc(typeInfo,field);
+    reduceKeys.add(inputExpr);
+    ColumnInfo colInfo=new ColumnInfo(Utilities.ReduceField.KEY.toString() + "." + field,typeInfo);
+    reduceSinkOutputRowResolver2.put("",grpbyExpr.toStringTree(),colInfo);
+    colExprMap.put(colInfo.getInternalName(),inputExpr);
   }
   ArrayList<exprNodeDesc> reduceValues=new ArrayList<exprNodeDesc>();
   int inputField=reduceKeys.size();
@@ -22,5 +26,7 @@
     inputField++;
     reduceSinkOutputRowResolver2.put("",t.toStringTree(),new ColumnInfo(Utilities.ReduceField.VALUE.toString() + "." + (Integer.valueOf(reduceValues.size() - 1)).toString(),typeInfo));
   }
-  return putOpInsertMap(OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(reduceKeys,reduceValues,-1,numPartitionFields,numReducers),new RowSchema(reduceSinkOutputRowResolver2.getColumnInfos()),groupByOperatorInfo),reduceSinkOutputRowResolver2);
+  ReduceSinkOperator rsOp=(ReduceSinkOperator)putOpInsertMap(OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(reduceKeys,reduceValues,-1,numPartitionFields,numReducers),new RowSchema(reduceSinkOutputRowResolver2.getColumnInfos()),groupByOperatorInfo),reduceSinkOutputRowResolver2);
+  rsOp.setColumnExprMap(colExprMap);
+  return rsOp;
 }

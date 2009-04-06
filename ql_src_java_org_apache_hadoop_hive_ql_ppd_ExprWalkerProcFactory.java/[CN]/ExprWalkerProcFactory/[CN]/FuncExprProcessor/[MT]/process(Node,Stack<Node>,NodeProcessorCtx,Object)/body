@@ -1,0 +1,33 @@
+{
+  ExprWalkerInfo ctx=(ExprWalkerInfo)procCtx;
+  String alias=null;
+  exprNodeFuncDesc expr=(exprNodeFuncDesc)nd;
+  UDFType note=expr.getUDFClass().getAnnotation(UDFType.class);
+  if (note != null && !note.deterministic()) {
+    ctx.setIsCandidate(expr,false);
+    return false;
+  }
+  boolean isCandidate=true;
+  for (int i=0; i < nd.getChildren().size(); i++) {
+    exprNodeDesc ch=(exprNodeDesc)nd.getChildren().get(i);
+    exprNodeDesc newCh=ctx.getConvertedNode(ch);
+    if (newCh != null) {
+      expr.getChildExprs().set(i,newCh);
+      ch=newCh;
+    }
+    String chAlias=ctx.getAlias(ch);
+    isCandidate=isCandidate && ctx.isCandidate(ch);
+    if (isCandidate && chAlias != null) {
+      if (alias == null) {
+        alias=chAlias;
+      }
+ else       if (!chAlias.equalsIgnoreCase(alias)) {
+        isCandidate=false;
+      }
+    }
+    if (!isCandidate)     break;
+  }
+  ctx.addAlias(expr,alias);
+  ctx.setIsCandidate(expr,isCandidate);
+  return isCandidate;
+}
