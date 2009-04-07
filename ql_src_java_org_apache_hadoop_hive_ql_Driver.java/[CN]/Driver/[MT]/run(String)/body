@@ -1,7 +1,6 @@
 {
   boolean noName=StringUtils.isEmpty(conf.getVar(HiveConf.ConfVars.HADOOPJOBNAME));
   int maxlen=conf.getIntVar(HiveConf.ConfVars.HIVEJOBNAMELENGTH);
-  int jobs=0;
   conf.setVar(HiveConf.ConfVars.HIVEQUERYSTRING,command);
   String queryId=makeQueryId();
   conf.setVar(HiveConf.ConfVars.HIVEQUERYID,queryId);
@@ -20,7 +19,7 @@
     sem=SemanticAnalyzerFactory.get(conf,tree);
     sem.analyze(tree,ctx);
     LOG.info("Semantic Analysis Completed");
-    jobs=countJobs(sem.getRootTasks());
+    int jobs=countJobs(sem.getRootTasks());
     if (jobs > 0) {
       console.printInfo("Total MapReduce jobs = " + jobs);
     }
@@ -29,16 +28,7 @@
       SessionState.get().getHiveHistory().setIdToTableMap(sem.getIdToTableNameMap());
     }
     String jobname=Utilities.abbreviate(command,maxlen - 6);
-    int curJob=0;
-    for (    Task<? extends Serializable> rootTask : sem.getRootTasks()) {
-      if (rootTask.isMapRedTask()) {
-        curJob++;
-        if (noName) {
-          conf.setVar(HiveConf.ConfVars.HADOOPJOBNAME,jobname + "(" + curJob+ "/"+ jobs+ ")");
-        }
-      }
-      rootTask.initialize(conf);
-    }
+    int curJobNo=0;
     Queue<Task<? extends Serializable>> runnable=new LinkedList<Task<? extends Serializable>>();
     for (    Task<? extends Serializable> rootTask : sem.getRootTasks()) {
       if (runnable.offer(rootTask) == false) {
@@ -49,6 +39,13 @@
     while (runnable.peek() != null) {
       Task<? extends Serializable> tsk=runnable.remove();
       if (SessionState.get() != null)       SessionState.get().getHiveHistory().startTask(queryId,tsk,tsk.getClass().getName());
+      if (tsk.isMapRedTask()) {
+        curJobNo++;
+        if (noName) {
+          conf.setVar(HiveConf.ConfVars.HADOOPJOBNAME,jobname + "(" + curJobNo+ "/"+ jobs+ ")");
+        }
+      }
+      tsk.initialize(conf);
       int exitVal=tsk.execute();
       if (SessionState.get() != null) {
         SessionState.get().getHiveHistory().setTaskProperty(queryId,tsk.getId(),Keys.TASK_RET_CODE,String.valueOf(exitVal));
