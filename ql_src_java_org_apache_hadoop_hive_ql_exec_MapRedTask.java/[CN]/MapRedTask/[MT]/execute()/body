@@ -21,7 +21,21 @@
       cmdLine=cmdLine + " -files " + files;
     }
     LOG.info("Executing: " + cmdLine);
-    Process executor=Runtime.getRuntime().exec(cmdLine);
+    Process executor=null;
+    int hadoopMem=conf.getIntVar(HiveConf.ConfVars.HIVEHADOOPMAXMEM);
+    if (hadoopMem == 0)     executor=Runtime.getRuntime().exec(cmdLine);
+ else {
+      Map<String,String> variables=System.getenv();
+      String[] env=new String[variables.size() + 1];
+      int pos=0;
+      for (      Map.Entry<String,String> entry : variables.entrySet()) {
+        String name=entry.getKey();
+        String value=entry.getValue();
+        env[pos++]=name + "=" + value;
+      }
+      env[pos]=new String("HADOOP_HEAPSIZE=" + hadoopMem);
+      executor=Runtime.getRuntime().exec(cmdLine,env);
+    }
     StreamPrinter outPrinter=new StreamPrinter(executor.getInputStream(),null,System.out);
     StreamPrinter errPrinter=new StreamPrinter(executor.getErrorStream(),null,System.err);
     outPrinter.start();
