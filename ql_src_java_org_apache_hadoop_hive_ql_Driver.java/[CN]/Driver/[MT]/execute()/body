@@ -1,0 +1,80 @@
+{
+  boolean noName=StringUtils.isEmpty(conf.getVar(HiveConf.ConfVars.HADOOPJOBNAME));
+  int maxlen=conf.getIntVar(HiveConf.ConfVars.HIVEJOBNAMELENGTH);
+  String queryId=plan.getQueryId();
+  String queryStr=plan.getQueryStr();
+  conf.setVar(HiveConf.ConfVars.HIVEQUERYID,queryId);
+  conf.setVar(HiveConf.ConfVars.HIVEQUERYSTRING,queryStr);
+  try {
+    LOG.info("Starting command: " + queryStr);
+    if (SessionState.get() != null)     SessionState.get().getHiveHistory().startQuery(queryStr,conf.getVar(HiveConf.ConfVars.HIVEQUERYID));
+    resStream=null;
+    BaseSemanticAnalyzer sem=plan.getPlan();
+    int jobs=countJobs(sem.getRootTasks());
+    if (jobs > 0) {
+      console.printInfo("Total MapReduce jobs = " + jobs);
+    }
+    if (SessionState.get() != null) {
+      SessionState.get().getHiveHistory().setQueryProperty(queryId,Keys.QUERY_NUM_TASKS,String.valueOf(jobs));
+      SessionState.get().getHiveHistory().setIdToTableMap(sem.getIdToTableNameMap());
+    }
+    String jobname=Utilities.abbreviate(queryStr,maxlen - 6);
+    int curJobNo=0;
+    Queue<Task<? extends Serializable>> runnable=new LinkedList<Task<? extends Serializable>>();
+    for (    Task<? extends Serializable> rootTask : sem.getRootTasks()) {
+      if (runnable.offer(rootTask) == false) {
+        LOG.error("Could not insert the first task into the queue");
+        return (1);
+      }
+    }
+    while (runnable.peek() != null) {
+      Task<? extends Serializable> tsk=runnable.remove();
+      if (SessionState.get() != null)       SessionState.get().getHiveHistory().startTask(queryId,tsk,tsk.getClass().getName());
+      if (tsk.isMapRedTask()) {
+        curJobNo++;
+        if (noName) {
+          conf.setVar(HiveConf.ConfVars.HADOOPJOBNAME,jobname + "(" + curJobNo+ "/"+ jobs+ ")");
+        }
+      }
+      tsk.initialize(conf);
+      int exitVal=tsk.execute();
+      if (SessionState.get() != null) {
+        SessionState.get().getHiveHistory().setTaskProperty(queryId,tsk.getId(),Keys.TASK_RET_CODE,String.valueOf(exitVal));
+        SessionState.get().getHiveHistory().endTask(queryId,tsk);
+      }
+      if (exitVal != 0) {
+        console.printError("FAILED: Execution Error, return code " + exitVal + " from "+ tsk.getClass().getName());
+        return 9;
+      }
+      tsk.setDone();
+      if (tsk.getChildTasks() == null) {
+        continue;
+      }
+      for (      Task<? extends Serializable> child : tsk.getChildTasks()) {
+        if (!child.isRunnable()) {
+          continue;
+        }
+        if (runnable.offer(child) == false) {
+          LOG.error("Could not add child task to queue");
+        }
+      }
+    }
+    if (SessionState.get() != null) {
+      SessionState.get().getHiveHistory().setQueryProperty(queryId,Keys.QUERY_RET_CODE,String.valueOf(0));
+      SessionState.get().getHiveHistory().printRowCount(queryId);
+    }
+  }
+ catch (  Exception e) {
+    if (SessionState.get() != null)     SessionState.get().getHiveHistory().setQueryProperty(queryId,Keys.QUERY_RET_CODE,String.valueOf(12));
+    console.printError("FAILED: Unknown exception : " + e.getMessage(),"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
+    return (12);
+  }
+ finally {
+    if (SessionState.get() != null)     SessionState.get().getHiveHistory().endQuery(queryId);
+    if (noName) {
+      conf.setVar(HiveConf.ConfVars.HADOOPJOBNAME,"");
+    }
+  }
+  console.printInfo("OK");
+  return (0);
+}
