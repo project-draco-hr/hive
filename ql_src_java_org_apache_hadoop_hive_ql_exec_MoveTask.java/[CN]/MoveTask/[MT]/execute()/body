@@ -32,7 +32,6 @@
       String mesg_detail=" from " + tbd.getSourceDir();
       console.printInfo(mesg,mesg_detail);
       if (work.getCheckFileFormat()) {
-        boolean tableIsSequenceFile=tbd.getTable().getInputFileFormatClass().equals(SequenceFileInputFormat.class);
         FileStatus[] dirs;
         ArrayList<FileStatus> files;
         try {
@@ -47,23 +46,7 @@
  catch (        IOException e) {
           throw new HiveException("addFiles: filesystem error in check phase",e);
         }
-        if (files.size() > 0) {
-          int fileId=0;
-          boolean fileIsSequenceFile=true;
-          try {
-            SequenceFile.Reader reader=new SequenceFile.Reader(fs,files.get(fileId).getPath(),conf);
-            reader.close();
-          }
- catch (          IOException e) {
-            fileIsSequenceFile=false;
-          }
-          if (!fileIsSequenceFile && tableIsSequenceFile) {
-            throw new HiveException("Cannot load text files into a table stored as SequenceFile.");
-          }
-          if (fileIsSequenceFile && !tableIsSequenceFile) {
-            throw new HiveException("Cannot load SequenceFiles into a table stored as TextFile.");
-          }
-        }
+        HiveFileFormatUtils.checkInputFormat(fs,conf,tbd.getTable().getInputFileFormatClass(),files);
       }
       if (tbd.getPartitionSpec().size() == 0) {
         db.loadTable(new Path(tbd.getSourceDir()),tbd.getTable().getTableName(),tbd.getReplace());
