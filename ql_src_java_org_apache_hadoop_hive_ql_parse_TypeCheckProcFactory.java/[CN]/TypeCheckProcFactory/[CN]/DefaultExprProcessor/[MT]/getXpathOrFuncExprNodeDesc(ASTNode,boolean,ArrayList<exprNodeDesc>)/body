@@ -16,12 +16,12 @@
     TypeInfo objectTypeInfo=object.getTypeInfo();
     boolean isList=(object.getTypeInfo().getCategory() == ObjectInspector.Category.LIST);
     if (isList) {
-      objectTypeInfo=objectTypeInfo.getListElementTypeInfo();
+      objectTypeInfo=((ListTypeInfo)objectTypeInfo).getListElementTypeInfo();
     }
     if (objectTypeInfo.getCategory() != Category.STRUCT) {
       throw new SemanticException(ErrorMsg.INVALID_DOT.getMsg(expr));
     }
-    TypeInfo t=objectTypeInfo.getStructFieldTypeInfo(fieldNameString);
+    TypeInfo t=((StructTypeInfo)objectTypeInfo).getStructFieldTypeInfo(fieldNameString);
     if (isList) {
       t=TypeInfoFactory.getListTypeInfo(t);
     }
@@ -31,20 +31,20 @@
     assert(children.size() == 2);
     TypeInfo myt=children.get(0).getTypeInfo();
     if (myt.getCategory() == Category.LIST) {
-      if (!(children.get(1) instanceof exprNodeConstantDesc) || !(((exprNodeConstantDesc)children.get(1)).getValue() instanceof Integer)) {
+      if (!(children.get(1) instanceof exprNodeConstantDesc) || !(((exprNodeConstantDesc)children.get(1)).getTypeInfo().equals(TypeInfoFactory.intTypeInfo))) {
         throw new SemanticException(ErrorMsg.INVALID_ARRAYINDEX_CONSTANT.getMsg(expr));
       }
-      TypeInfo t=myt.getListElementTypeInfo();
+      TypeInfo t=((ListTypeInfo)myt).getListElementTypeInfo();
       desc=new exprNodeIndexDesc(t,children.get(0),children.get(1));
     }
  else     if (myt.getCategory() == Category.MAP) {
       if (!(children.get(1) instanceof exprNodeConstantDesc)) {
         throw new SemanticException(ErrorMsg.INVALID_MAPINDEX_CONSTANT.getMsg(expr));
       }
-      if (!(((exprNodeConstantDesc)children.get(1)).getValue().getClass() == myt.getMapKeyTypeInfo().getPrimitiveClass())) {
+      if (!(((exprNodeConstantDesc)children.get(1)).getTypeInfo().equals(((MapTypeInfo)myt).getMapKeyTypeInfo()))) {
         throw new SemanticException(ErrorMsg.INVALID_MAPINDEX_TYPE.getMsg(expr));
       }
-      TypeInfo t=myt.getMapValueTypeInfo();
+      TypeInfo t=((MapTypeInfo)myt).getMapValueTypeInfo();
       desc=new exprNodeIndexDesc(t,children.get(0),children.get(1));
     }
  else {
@@ -61,7 +61,7 @@
     if (desc == null) {
       ArrayList<Class<?>> argumentClasses=new ArrayList<Class<?>>(children.size());
       for (int i=0; i < children.size(); i++) {
-        argumentClasses.add(children.get(i).getTypeInfo().getPrimitiveClass());
+        argumentClasses.add(((PrimitiveTypeInfo)children.get(i).getTypeInfo()).getPrimitiveWritableClass());
       }
       if (isFunction) {
         String reason="Looking for UDF \"" + expr.getChild(0).getText() + "\" with parameters "+ argumentClasses;

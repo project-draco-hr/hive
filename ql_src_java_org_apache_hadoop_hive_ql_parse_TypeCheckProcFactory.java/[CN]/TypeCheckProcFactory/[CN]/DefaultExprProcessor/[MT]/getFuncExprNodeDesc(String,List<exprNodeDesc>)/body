@@ -1,67 +1,19 @@
 {
-  ArrayList<Class<?>> argumentClasses=new ArrayList<Class<?>>(children.size());
+  ArrayList<TypeInfo> argumentTypeInfos=new ArrayList<TypeInfo>(children.size());
   for (int i=0; i < children.size(); i++) {
     exprNodeDesc child=children.get(i);
-    assert(child != null);
-    TypeInfo childTypeInfo=child.getTypeInfo();
-    assert(childTypeInfo != null);
-switch (childTypeInfo.getCategory()) {
-case PRIMITIVE:
-{
-        argumentClasses.add(childTypeInfo.getPrimitiveClass());
-        break;
-      }
-case MAP:
-{
-      argumentClasses.add(Map.class);
-      break;
-    }
-case LIST:
-{
-    argumentClasses.add(List.class);
-    break;
+    argumentTypeInfos.add(child.getTypeInfo());
   }
-case STRUCT:
-{
-  argumentClasses.add(Object.class);
-  break;
-}
-default :
-{
-assert(false);
-}
-}
-}
-Method udfMethod=FunctionRegistry.getUDFMethod(udfName,argumentClasses);
-if (udfMethod == null) return null;
-ArrayList<exprNodeDesc> ch=new ArrayList<exprNodeDesc>();
-Class<?>[] pTypes=udfMethod.getParameterTypes();
-for (int i=0; i < children.size(); i++) {
-exprNodeDesc desc=children.get(i);
-Class<?> pType=ObjectInspectorUtils.generalizePrimitive(pTypes[i]);
-if (desc instanceof exprNodeNullDesc) {
-exprNodeConstantDesc newCh=new exprNodeConstantDesc(TypeInfoFactory.getPrimitiveTypeInfo(pType),null);
-ch.add(newCh);
-}
- else if (pType.isAssignableFrom(argumentClasses.get(i))) {
-ch.add(desc);
-}
+  Method udfMethod=FunctionRegistry.getUDFMethod(udfName,argumentTypeInfos);
+  if (udfMethod == null)   return null;
+  ArrayList<exprNodeDesc> ch=SemanticAnalyzer.convertParameters(udfMethod,children);
+  TypeInfo resultTypeInfo=null;
+  if (PrimitiveObjectInspectorUtils.isPrimitiveWritableClass(udfMethod.getReturnType())) {
+    resultTypeInfo=TypeInfoFactory.getPrimitiveTypeInfoFromPrimitiveWritable(udfMethod.getReturnType());
+  }
  else {
-Class<?> from=argumentClasses.get(i);
-Class<?> to=pType;
-if (!FunctionRegistry.implicitConvertable(from,to)) {
-System.err.println("cannot implicitly convert from " + from + " to "+ to);
-throw new RuntimeException("cannot implicitly convert from " + from + " to "+ to);
-}
-Method m=FunctionRegistry.getUDFMethod(to.getName(),from);
-assert(m != null);
-Class<? extends UDF> c=FunctionRegistry.getUDFClass(to.getName());
-assert(c != null);
-ArrayList<exprNodeDesc> conversionArg=new ArrayList<exprNodeDesc>(1);
-conversionArg.add(desc);
-ch.add(new exprNodeFuncDesc(TypeInfoFactory.getPrimitiveTypeInfo(pType),c,m,conversionArg));
-}
-}
-exprNodeFuncDesc desc=new exprNodeFuncDesc(TypeInfoFactory.getPrimitiveTypeInfo(udfMethod.getReturnType()),FunctionRegistry.getUDFClass(udfName),udfMethod,ch);
-return desc;
+    resultTypeInfo=TypeInfoFactory.getPrimitiveTypeInfoFromJavaPrimitive(udfMethod.getReturnType());
+  }
+  exprNodeFuncDesc desc=new exprNodeFuncDesc(resultTypeInfo,FunctionRegistry.getUDFClass(udfName),udfMethod,ch);
+  return desc;
 }
