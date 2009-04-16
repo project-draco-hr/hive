@@ -10,13 +10,18 @@
   Task<? extends Serializable> currTask=mapredCtx.getCurrTask();
   mapredWork plan=(mapredWork)currTask.getWork();
   HashMap<Operator<? extends Serializable>,Task<? extends Serializable>> opTaskMap=ctx.getOpTaskMap();
-  opTaskMap.put(reducer,currTask);
-  plan.setReducer(reducer);
-  reduceSinkDesc desc=(reduceSinkDesc)op.getConf();
-  plan.setNumReduceTasks(desc.getNumReducers());
-  if (reducer.getClass() == JoinOperator.class)   plan.setNeedsTagging(true);
+  Task<? extends Serializable> opMapTask=opTaskMap.get(reducer);
   ctx.setCurrTask(currTask);
-  ctx.setCurrTopOp(null);
-  ctx.setCurrAliasId(null);
+  if (opMapTask == null) {
+    if (plan.getReducer() == null)     GenMapRedUtils.initUnionPlan(op,ctx);
+ else     GenMapRedUtils.splitPlan(op,ctx);
+  }
+ else   if (plan.getReducer() == reducer)   GenMapRedUtils.initUnionPlan(op,ctx);
+ else {
+    GenMapRedUtils.initUnionPlan(ctx,currTask);
+    GenMapRedUtils.joinPlan(op,currTask,opMapTask,ctx);
+  }
+  mapCurrCtx.put(op,new GenMapRedCtx(ctx.getCurrTask(),ctx.getCurrTopOp(),ctx.getCurrAliasId()));
+  ctx.setCurrUnionOp(null);
   return null;
 }
