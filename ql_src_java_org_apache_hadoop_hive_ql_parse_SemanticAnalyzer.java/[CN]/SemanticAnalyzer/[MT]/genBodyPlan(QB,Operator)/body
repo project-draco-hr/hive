@@ -18,18 +18,22 @@
     }
     curr=genSelectPlan(dest,qb,curr);
     Integer limit=qbp.getDestLimit(dest);
-    if (qbp.getClusterByForClause(dest) != null || qbp.getDistributeByForClause(dest) != null || qbp.getSortByForClause(dest) != null) {
-      curr=genReduceSinkPlan(dest,qb,curr,-1);
+    if (qbp.getClusterByForClause(dest) != null || qbp.getDistributeByForClause(dest) != null || qbp.getOrderByForClause(dest) != null || qbp.getSortByForClause(dest) != null) {
+      int numReducers=-1;
+      if (qbp.getOrderByForClause(dest) != null)       numReducers=1;
+      curr=genReduceSinkPlan(dest,qb,curr,numReducers);
     }
     if (qbp.getIsSubQ()) {
       if (limit != null) {
-        curr=genLimitMapRedPlan(dest,qb,curr,limit.intValue(),false);
+        curr=genLimitMapRedPlan(dest,qb,curr,limit.intValue(),qbp.getOrderByForClause(dest) != null ? false : true);
       }
     }
  else {
       curr=genConversionOps(dest,qb,curr);
       if (limit != null) {
-        curr=genLimitMapRedPlan(dest,qb,curr,limit.intValue(),qb.getIsQuery());
+        boolean extraMRStep=true;
+        if (qb.getIsQuery() && qbp.getClusterByForClause(dest) == null && qbp.getSortByForClause(dest) == null)         extraMRStep=false;
+        curr=genLimitMapRedPlan(dest,qb,curr,limit.intValue(),extraMRStep);
         qb.getParseInfo().setOuterQueryLimit(limit.intValue());
       }
       curr=genFileSinkPlan(dest,qb,curr);
