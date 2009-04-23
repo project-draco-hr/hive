@@ -2,6 +2,7 @@
   try {
     aliasField.evaluate(row,rowInspector,tempAliasInspectableObject);
     Byte alias=(Byte)((PrimitiveObjectInspector)tempAliasInspectableObject.oi).getPrimitiveJavaObject(tempAliasInspectableObject.o);
+    if ((lastAlias == null) || (!lastAlias.equals(alias)))     nextSz=joinEmitInterval;
     JoinExprMap exmap=joinExprs.get(alias);
     ExprNodeEvaluator[] valueFields=exmap.getValueFields();
     ArrayList<Object> nr=new ArrayList<Object>(valueFields.length);
@@ -9,15 +10,19 @@
       vField.evaluate(row,rowInspector,tempAliasInspectableObject);
       nr.add(ObjectInspectorUtils.copyToStandardObject(tempAliasInspectableObject.o,tempAliasInspectableObject.oi));
     }
-    if (storage.get(alias).size() == joinEmitInterval) {
-      if (alias == numValues - 1) {
+    int sz=storage.get(alias).size();
+    if (alias == numValues - 1) {
+      if (sz == joinEmitInterval) {
         checkAndGenObject();
         storage.get(alias).clear();
       }
+    }
  else {
+      if (sz == nextSz) {
         InspectableObject io=new InspectableObject();
         keyField.evaluate(row,rowInspector,io);
-        LOG.warn("table " + alias + " has more than joinEmitInterval rows for join key "+ io.o);
+        LOG.warn("table " + alias + " has "+ sz+ " rows for join key "+ io.o);
+        nextSz=getNextSize(nextSz);
       }
     }
     storage.get(alias).add(nr);
