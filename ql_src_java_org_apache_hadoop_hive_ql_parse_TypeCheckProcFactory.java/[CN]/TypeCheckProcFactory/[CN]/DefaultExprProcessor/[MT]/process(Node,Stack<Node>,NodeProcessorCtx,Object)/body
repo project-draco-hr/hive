@@ -1,11 +1,26 @@
 {
-  ASTNode expr=(ASTNode)nd;
-  if (conversionFunctionTextHashMap.keySet().contains(expr.getType()) || specialFunctionTextHashMap.keySet().contains(expr.getType()) || expr.getToken().getType() == HiveParser.CharSetName || expr.getToken().getType() == HiveParser.CharSetLiteral) {
-    return null;
-  }
+  TypeCheckCtx ctx=(TypeCheckCtx)procCtx;
   exprNodeDesc desc=TypeCheckProcFactory.processGByExpr(nd,procCtx);
   if (desc != null) {
+    ctx.setError(null);
     return desc;
+  }
+  if (ctx.getError() != null) {
+    return null;
+  }
+  ASTNode expr=(ASTNode)nd;
+  if (expr.getType() == HiveParser.DOT && expr.getChild(0).getType() == HiveParser.TOK_TABLE_OR_COL && nodeOutputs[0] == null) {
+    RowResolver input=ctx.getInputRR();
+    String tableAlias=SemanticAnalyzer.unescapeIdentifier(expr.getChild(0).getChild(0).getText());
+    ColumnInfo colInfo=input.get(tableAlias,((exprNodeConstantDesc)nodeOutputs[1]).getValue().toString());
+    if (colInfo == null) {
+      ctx.setError(ErrorMsg.INVALID_COLUMN.getMsg(expr.getChild(1)));
+      return null;
+    }
+    return new exprNodeColumnDesc(colInfo.getType(),colInfo.getInternalName());
+  }
+  if (conversionFunctionTextHashMap.keySet().contains(expr.getType()) || specialFunctionTextHashMap.keySet().contains(expr.getType()) || expr.getToken().getType() == HiveParser.CharSetName || expr.getToken().getType() == HiveParser.CharSetLiteral) {
+    return null;
   }
   boolean isFunction=(expr.getType() == HiveParser.TOK_FUNCTION);
   int childrenBegin=(isFunction ? 1 : 0);

@@ -2,25 +2,33 @@
   int tokType=expr.getType();
   boolean hasPPred=false;
 switch (tokType) {
-case HiveParser.TOK_COLREF:
+case HiveParser.TOK_TABLE_OR_COL:
 {
-      assert(expr.getChildCount() == 2);
-      String tabAlias=BaseSemanticAnalyzer.unescapeIdentifier(expr.getChild(0).getText());
-      String colName=BaseSemanticAnalyzer.unescapeIdentifier(expr.getChild(1).getText());
-      if (tabAlias.equalsIgnoreCase(tableAlias) && tab.isPartitionKey(colName)) {
-        hasPPred=true;
-      }
-      break;
+      String colName=BaseSemanticAnalyzer.unescapeIdentifier(expr.getChild(0).getText());
+      return tab.isPartitionKey(colName);
     }
+case HiveParser.DOT:
+{
+    assert(expr.getChildCount() == 2);
+    ASTNode left=(ASTNode)expr.getChild(0);
+    ASTNode right=(ASTNode)expr.getChild(1);
+    if (left.getType() == HiveParser.TOK_TABLE_OR_COL) {
+      String tableOrCol=BaseSemanticAnalyzer.unescapeIdentifier(left.getChild(0).getText());
+      if (metaData.getAliasToTable().get(tableOrCol.toLowerCase()) != null) {
+        String colName=BaseSemanticAnalyzer.unescapeIdentifier(right.getText());
+        return tableAlias.equalsIgnoreCase(tableOrCol) && tab.isPartitionKey(colName);
+      }
+    }
+  }
 default :
 {
-    boolean isFunction=(expr.getType() == HiveParser.TOK_FUNCTION);
-    int childrenBegin=(isFunction ? 1 : 0);
-    for (int ci=childrenBegin; ci < expr.getChildCount(); ci++) {
-      hasPPred=(hasPPred || hasPartitionPredicate((ASTNode)expr.getChild(ci)));
-    }
-    break;
+  boolean isFunction=(expr.getType() == HiveParser.TOK_FUNCTION);
+  int childrenBegin=(isFunction ? 1 : 0);
+  for (int ci=childrenBegin; ci < expr.getChildCount(); ci++) {
+    hasPPred=(hasPPred || hasPartitionPredicate((ASTNode)expr.getChild(ci)));
   }
+  break;
+}
 }
 return hasPPred;
 }

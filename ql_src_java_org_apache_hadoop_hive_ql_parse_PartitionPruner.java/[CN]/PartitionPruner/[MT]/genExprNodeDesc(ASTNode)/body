@@ -1,42 +1,21 @@
 {
-  exprNodeDesc desc=null;
-  desc=SemanticAnalyzer.genSimpleExprNodeDesc(expr);
-  if (desc != null) {
-    return desc;
+  ExprNodeTempDesc tempDesc=genSimpleExprNodeDesc(expr);
+  if (tempDesc != null) {
+    return tempDesc;
   }
   int tokType=expr.getType();
 switch (tokType) {
-case HiveParser.TOK_COLREF:
+case HiveParser.TOK_TABLE_OR_COL:
 {
-      String tabAlias=null;
-      String colName=null;
-      if (expr.getChildCount() != 1) {
-        assert(expr.getChildCount() == 2);
-        tabAlias=BaseSemanticAnalyzer.unescapeIdentifier(expr.getChild(0).getText());
-        colName=BaseSemanticAnalyzer.unescapeIdentifier(expr.getChild(1).getText());
+      String tableOrCol=BaseSemanticAnalyzer.unescapeIdentifier(expr.getChild(0).getText());
+      if (metaData.getAliasToTable().get(tableOrCol.toLowerCase()) != null) {
+        tempDesc=new ExprNodeTempDesc(tableOrCol);
       }
  else {
-        colName=BaseSemanticAnalyzer.unescapeIdentifier(expr.getChild(0).getText());
-        tabAlias=SemanticAnalyzer.getTabAliasForCol(this.metaData,colName,(ASTNode)expr.getChild(0));
-      }
-      if (tabAlias.equalsIgnoreCase(tableAlias) && tab.isPartitionKey(colName)) {
-        desc=new exprNodeColumnDesc(TypeInfoFactory.stringTypeInfo,colName);
-      }
- else {
-        try {
-          Table t=this.metaData.getTableForAlias(tabAlias);
-          if (t.isPartitionKey(colName)) {
-            desc=new exprNodeConstantDesc(TypeInfoFactory.stringTypeInfo,null);
-          }
- else {
-            TypeInfo typeInfo=TypeInfoUtils.getTypeInfoFromObjectInspector(this.metaData.getTableForAlias(tabAlias).getDeserializer().getObjectInspector());
-            desc=new exprNodeConstantDesc(((StructTypeInfo)typeInfo).getStructFieldTypeInfo(colName),null);
-            containsPartCols=false;
-          }
-        }
- catch (        SerDeException e) {
-          throw new RuntimeException(e);
-        }
+        String colName=tableOrCol;
+        String tabAlias=SemanticAnalyzer.getTabAliasForCol(this.metaData,colName,(ASTNode)expr.getChild(0));
+        LOG.debug("getTableColumnDesc(" + tabAlias + ", "+ colName);
+        tempDesc=getTableColumnDesc(tabAlias,colName);
       }
       break;
     }
@@ -44,21 +23,32 @@ default :
 {
     boolean isFunction=(expr.getType() == HiveParser.TOK_FUNCTION);
     int childrenBegin=(isFunction ? 1 : 0);
-    ArrayList<exprNodeDesc> children=new ArrayList<exprNodeDesc>(expr.getChildCount() - childrenBegin);
+    ArrayList<ExprNodeTempDesc> tempChildren=new ArrayList<ExprNodeTempDesc>(expr.getChildCount() - childrenBegin);
     for (int ci=childrenBegin; ci < expr.getChildCount(); ci++) {
-      exprNodeDesc child=genExprNodeDesc((ASTNode)expr.getChild(ci));
-      assert(child.getTypeInfo() != null);
-      children.add(child);
+      ExprNodeTempDesc child=genExprNodeDesc((ASTNode)expr.getChild(ci));
+      tempChildren.add(child);
     }
-    desc=TypeCheckProcFactory.DefaultExprProcessor.getXpathOrFuncExprNodeDesc(expr,isFunction,children);
-    if (desc instanceof exprNodeFuncDesc && (((exprNodeFuncDesc)desc).getUDFMethod().getDeclaringClass().equals(UDFOPAnd.class) || ((exprNodeFuncDesc)desc).getUDFMethod().getDeclaringClass().equals(UDFOPOr.class) || ((exprNodeFuncDesc)desc).getUDFMethod().getDeclaringClass().equals(UDFOPNot.class))) {
+    if (expr.getType() == HiveParser.DOT && tempChildren.get(0).getIsTableName()) {
+      String tabAlias=tempChildren.get(0).getTableName();
+      String colName=((exprNodeConstantDesc)tempChildren.get(1).getDesc()).getValue().toString();
+      tempDesc=getTableColumnDesc(tabAlias,colName);
     }
- else     if ((desc instanceof exprNodeFuncDesc && ((exprNodeFuncDesc)desc).getUDFClass().getAnnotation(UDFType.class) != null && ((exprNodeFuncDesc)desc).getUDFClass().getAnnotation(UDFType.class).deterministic() == false) || mightBeUnknown(desc)) {
-      LOG.trace("Pruner function might be unknown: " + expr.toStringTree());
-      desc=new exprNodeConstantDesc(desc.getTypeInfo(),null);
+ else {
+      ArrayList<exprNodeDesc> children=new ArrayList<exprNodeDesc>(expr.getChildCount() - childrenBegin);
+      for (int ci=0; ci < tempChildren.size(); ci++) {
+        children.add(tempChildren.get(ci).getDesc());
+      }
+      exprNodeDesc desc=TypeCheckProcFactory.DefaultExprProcessor.getXpathOrFuncExprNodeDesc(expr,isFunction,children);
+      if (desc instanceof exprNodeFuncDesc && (((exprNodeFuncDesc)desc).getUDFMethod().getDeclaringClass().equals(UDFOPAnd.class) || ((exprNodeFuncDesc)desc).getUDFMethod().getDeclaringClass().equals(UDFOPOr.class) || ((exprNodeFuncDesc)desc).getUDFMethod().getDeclaringClass().equals(UDFOPNot.class))) {
+      }
+ else       if ((desc instanceof exprNodeFuncDesc && ((exprNodeFuncDesc)desc).getUDFClass().getAnnotation(UDFType.class) != null && ((exprNodeFuncDesc)desc).getUDFClass().getAnnotation(UDFType.class).deterministic() == false) || mightBeUnknown(desc)) {
+        LOG.trace("Pruner function might be unknown: " + expr.toStringTree());
+        desc=new exprNodeConstantDesc(desc.getTypeInfo(),null);
+      }
+      tempDesc=new ExprNodeTempDesc(desc);
     }
     break;
   }
 }
-return desc;
+return tempDesc;
 }

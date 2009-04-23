@@ -1,40 +1,45 @@
 {
+  TypeCheckCtx ctx=(TypeCheckCtx)procCtx;
+  if (ctx.getError() != null) {
+    return null;
+  }
   exprNodeDesc desc=TypeCheckProcFactory.processGByExpr(nd,procCtx);
   if (desc != null) {
     return desc;
   }
   ASTNode expr=(ASTNode)nd;
-  TypeCheckCtx ctx=(TypeCheckCtx)procCtx;
   RowResolver input=ctx.getInputRR();
-  if (expr.getType() != HiveParser.TOK_COLREF) {
+  if (expr.getType() != HiveParser.TOK_TABLE_OR_COL) {
     ctx.setError(ErrorMsg.INVALID_COLUMN.getMsg(expr));
     return null;
   }
-  String tabAlias=null;
-  String colName=null;
-  if (expr.getChildCount() != 1) {
-    tabAlias=BaseSemanticAnalyzer.unescapeIdentifier(expr.getChild(0).getText());
-    colName=BaseSemanticAnalyzer.unescapeIdentifier(expr.getChild(1).getText());
+  assert(expr.getChildCount() == 1);
+  String tableOrCol=BaseSemanticAnalyzer.unescapeIdentifier(expr.getChild(0).getText());
+  boolean isTableAlias=input.hasTableAlias(tableOrCol);
+  ColumnInfo colInfo=input.get(null,tableOrCol);
+  if (isTableAlias) {
+    if (colInfo != null) {
+      ctx.setError(ErrorMsg.AMBIGUOUS_TABLE_OR_COLUMN.getMsg(expr));
+      return null;
+    }
+ else {
+      return null;
+    }
   }
  else {
-    colName=BaseSemanticAnalyzer.unescapeIdentifier(expr.getChild(0).getText());
+    if (colInfo == null) {
+      if (input.getIsExprResolver()) {
+        ctx.setError(ErrorMsg.NON_KEY_EXPR_IN_GROUPBY.getMsg(expr));
+        return null;
+      }
+ else {
+        ctx.setError(ErrorMsg.INVALID_TABLE_OR_COLUMN.getMsg(expr.getChild(0)));
+        LOG.debug(ErrorMsg.INVALID_TABLE_OR_COLUMN.toString() + ":" + input.toString());
+        return null;
+      }
+    }
+ else {
+      return new exprNodeColumnDesc(colInfo.getType(),colInfo.getInternalName());
+    }
   }
-  if (colName == null) {
-    ctx.setError(ErrorMsg.INVALID_XPATH.getMsg(expr));
-    return null;
-  }
-  ColumnInfo colInfo=input.get(tabAlias,colName);
-  if (colInfo == null && input.getIsExprResolver()) {
-    ctx.setError(ErrorMsg.NON_KEY_EXPR_IN_GROUPBY.getMsg(expr));
-    return null;
-  }
- else   if (tabAlias != null && !input.hasTableAlias(tabAlias)) {
-    ctx.setError(ErrorMsg.INVALID_TABLE_ALIAS.getMsg(expr.getChild(0)));
-    return null;
-  }
- else   if (colInfo == null) {
-    ctx.setError(ErrorMsg.INVALID_COLUMN.getMsg(tabAlias == null ? expr.getChild(0) : expr.getChild(1)));
-    return null;
-  }
-  return new exprNodeColumnDesc(colInfo.getType(),colInfo.getInternalName());
 }
