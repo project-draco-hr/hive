@@ -1,0 +1,27 @@
+{
+  PageCursor curs=new PageCursor(pageman,rowid.getBlock());
+  BlockIo block=file.get(curs.getCurrent());
+  RecordHeader hdr=new RecordHeader(block,rowid.getOffset());
+  hdr.setCurrentSize(length);
+  if (length == 0) {
+    file.release(curs.getCurrent(),true);
+    return;
+  }
+  int offsetInBuffer=start;
+  int leftToWrite=length;
+  short dataOffset=(short)(rowid.getOffset() + RecordHeader.SIZE);
+  while (leftToWrite > 0) {
+    int toCopy=RecordFile.BLOCK_SIZE - dataOffset;
+    if (leftToWrite < toCopy) {
+      toCopy=leftToWrite;
+    }
+    System.arraycopy(data,offsetInBuffer,block.getData(),dataOffset,toCopy);
+    leftToWrite-=toCopy;
+    offsetInBuffer+=toCopy;
+    file.release(curs.getCurrent(),true);
+    if (leftToWrite > 0) {
+      block=file.get(curs.next());
+      dataOffset=DataPage.O_DATA;
+    }
+  }
+}

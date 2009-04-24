@@ -1,0 +1,30 @@
+{
+  if (!inUse.isEmpty() && inUse.size() > 1) {
+    showList(inUse.values().iterator());
+    throw new Error("in use list not empty at commit time (" + inUse.size() + ")");
+  }
+  if (dirty.size() == 0) {
+    return;
+  }
+  if (!transactionsDisabled) {
+    txnMgr.start();
+  }
+  for (Iterator i=dirty.values().iterator(); i.hasNext(); ) {
+    BlockIo node=(BlockIo)i.next();
+    i.remove();
+    if (transactionsDisabled) {
+      long offset=node.getBlockId() * BLOCK_SIZE;
+      file.seek(offset);
+      file.write(node.getData());
+      node.setClean();
+      free.add(node);
+    }
+ else {
+      txnMgr.add(node);
+      inTxn.put(new Long(node.getBlockId()),node);
+    }
+  }
+  if (!transactionsDisabled) {
+    txnMgr.commit();
+  }
+}

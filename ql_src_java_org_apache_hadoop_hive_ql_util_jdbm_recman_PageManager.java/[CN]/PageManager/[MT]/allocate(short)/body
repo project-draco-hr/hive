@@ -1,0 +1,32 @@
+{
+  if (type == Magic.FREE_PAGE)   throw new Error("allocate of free page?");
+  long retval=header.getFirstOf(Magic.FREE_PAGE);
+  boolean isNew=false;
+  if (retval != 0) {
+    header.setFirstOf(Magic.FREE_PAGE,getNext(retval));
+  }
+ else {
+    retval=header.getLastOf(Magic.FREE_PAGE);
+    if (retval == 0)     retval=1;
+    header.setLastOf(Magic.FREE_PAGE,retval + 1);
+    isNew=true;
+  }
+  BlockIo buf=file.get(retval);
+  PageHeader pageHdr=isNew ? new PageHeader(buf,type) : PageHeader.getView(buf);
+  long oldLast=header.getLastOf(type);
+  System.arraycopy(RecordFile.cleanData,0,buf.getData(),0,RecordFile.BLOCK_SIZE);
+  pageHdr.setType(type);
+  pageHdr.setPrev(oldLast);
+  pageHdr.setNext(0);
+  if (oldLast == 0)   header.setFirstOf(type,retval);
+  header.setLastOf(type,retval);
+  file.release(retval,true);
+  if (oldLast != 0) {
+    buf=file.get(oldLast);
+    pageHdr=PageHeader.getView(buf);
+    pageHdr.setNext(retval);
+    file.release(oldLast,true);
+  }
+  buf.setView(null);
+  return retval;
+}

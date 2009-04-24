@@ -1,0 +1,26 @@
+{
+  FreePhysicalRowId free=null;
+  PageCursor curs=new PageCursor(_pageman,Magic.FREEPHYSIDS_PAGE);
+  long freePage=0;
+  while (curs.next() != 0) {
+    freePage=curs.getCurrent();
+    BlockIo curBlock=_file.get(freePage);
+    FreePhysicalRowIdPage fp=FreePhysicalRowIdPage.getFreePhysicalRowIdPageView(curBlock);
+    int slot=fp.getFirstFree();
+    if (slot != -1) {
+      free=fp.alloc(slot);
+      break;
+    }
+    _file.release(curBlock);
+  }
+  if (free == null) {
+    freePage=_pageman.allocate(Magic.FREEPHYSIDS_PAGE);
+    BlockIo curBlock=_file.get(freePage);
+    FreePhysicalRowIdPage fp=FreePhysicalRowIdPage.getFreePhysicalRowIdPageView(curBlock);
+    free=fp.alloc(0);
+  }
+  free.setBlock(rowid.getBlock());
+  free.setOffset(rowid.getOffset());
+  free.setSize(size);
+  _file.release(freePage,true);
+}

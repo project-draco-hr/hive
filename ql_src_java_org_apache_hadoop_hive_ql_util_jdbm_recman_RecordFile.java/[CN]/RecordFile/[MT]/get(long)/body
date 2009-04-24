@@ -1,0 +1,38 @@
+{
+  Long key=new Long(blockid);
+  BlockIo node=(BlockIo)inTxn.get(key);
+  if (node != null) {
+    inTxn.remove(key);
+    inUse.put(key,node);
+    return node;
+  }
+  node=(BlockIo)dirty.get(key);
+  if (node != null) {
+    dirty.remove(key);
+    inUse.put(key,node);
+    return node;
+  }
+  for (Iterator i=free.iterator(); i.hasNext(); ) {
+    BlockIo cur=(BlockIo)i.next();
+    if (cur.getBlockId() == blockid) {
+      node=cur;
+      i.remove();
+      inUse.put(key,node);
+      return node;
+    }
+  }
+  if (inUse.get(key) != null) {
+    throw new Error("double get for block " + blockid);
+  }
+  node=getNewNode(blockid);
+  long offset=blockid * BLOCK_SIZE;
+  if (file.length() > 0 && offset <= file.length()) {
+    read(file,offset,node.getData(),BLOCK_SIZE);
+  }
+ else {
+    System.arraycopy(cleanData,0,node.getData(),0,BLOCK_SIZE);
+  }
+  inUse.put(key,node);
+  node.setClean();
+  return node;
+}

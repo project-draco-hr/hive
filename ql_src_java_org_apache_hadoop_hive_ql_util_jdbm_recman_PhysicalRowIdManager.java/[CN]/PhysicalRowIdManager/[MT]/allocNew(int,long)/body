@@ -1,0 +1,68 @@
+{
+  BlockIo curBlock;
+  DataPage curPage;
+  if (start == 0) {
+    start=pageman.allocate(Magic.USED_PAGE);
+    curBlock=file.get(start);
+    curPage=DataPage.getDataPageView(curBlock);
+    curPage.setFirst(DataPage.O_DATA);
+    RecordHeader hdr=new RecordHeader(curBlock,DataPage.O_DATA);
+    hdr.setAvailableSize(0);
+    hdr.setCurrentSize(0);
+  }
+ else {
+    curBlock=file.get(start);
+    curPage=DataPage.getDataPageView(curBlock);
+  }
+  short pos=curPage.getFirst();
+  if (pos == 0) {
+    file.release(curBlock);
+    return allocNew(size,0);
+  }
+  RecordHeader hdr=new RecordHeader(curBlock,pos);
+  while (hdr.getAvailableSize() != 0 && pos < RecordFile.BLOCK_SIZE) {
+    pos+=hdr.getAvailableSize() + RecordHeader.SIZE;
+    if (pos == RecordFile.BLOCK_SIZE) {
+      file.release(curBlock);
+      return allocNew(size,0);
+    }
+    hdr=new RecordHeader(curBlock,pos);
+  }
+  if (pos == RecordHeader.SIZE) {
+    file.release(curBlock);
+  }
+  Location retval=new Location(start,pos);
+  int freeHere=RecordFile.BLOCK_SIZE - pos - RecordHeader.SIZE;
+  if (freeHere < size) {
+    int lastSize=(size - freeHere) % DataPage.DATA_PER_PAGE;
+    if ((DataPage.DATA_PER_PAGE - lastSize) < (RecordHeader.SIZE + 16)) {
+      size+=(DataPage.DATA_PER_PAGE - lastSize);
+    }
+    hdr.setAvailableSize(size);
+    file.release(start,true);
+    int neededLeft=size - freeHere;
+    while (neededLeft >= DataPage.DATA_PER_PAGE) {
+      start=pageman.allocate(Magic.USED_PAGE);
+      curBlock=file.get(start);
+      curPage=DataPage.getDataPageView(curBlock);
+      curPage.setFirst((short)0);
+      file.release(start,true);
+      neededLeft-=DataPage.DATA_PER_PAGE;
+    }
+    if (neededLeft > 0) {
+      start=pageman.allocate(Magic.USED_PAGE);
+      curBlock=file.get(start);
+      curPage=DataPage.getDataPageView(curBlock);
+      curPage.setFirst((short)(DataPage.O_DATA + neededLeft));
+      file.release(start,true);
+    }
+  }
+ else {
+    if (freeHere - size <= (16 + RecordHeader.SIZE)) {
+      size=freeHere;
+    }
+    hdr.setAvailableSize(size);
+    file.release(start,true);
+  }
+  return retval;
+}
