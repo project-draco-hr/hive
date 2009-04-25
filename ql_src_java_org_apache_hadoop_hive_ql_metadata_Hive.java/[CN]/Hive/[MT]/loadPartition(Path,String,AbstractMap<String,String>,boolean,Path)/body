@@ -1,10 +1,22 @@
 {
-  Table tbl=getTable(tableName);
-  Partition part=getPartition(tbl,partSpec,true);
-  if (replace) {
-    part.replaceFiles(loadPath,tmpDirPath);
-  }
+  Table tbl=getTable(MetaStoreUtils.DEFAULT_DATABASE_NAME,tableName);
+  try {
+    FileSystem fs=FileSystem.get(tbl.getDataLocation(),getConf());
+    Path partPath=new Path(tbl.getDataLocation().getPath(),Warehouse.makePartName(partSpec));
+    if (replace) {
+      Hive.replaceFiles(loadPath,partPath,fs,tmpDirPath);
+    }
  else {
-    part.copyFiles(loadPath);
+      Hive.copyFiles(loadPath,partPath,fs);
+    }
+    getPartition(tbl,partSpec,true);
+  }
+ catch (  IOException e) {
+    LOG.error(StringUtils.stringifyException(e));
+    throw new HiveException(e);
+  }
+catch (  MetaException e) {
+    LOG.error(StringUtils.stringifyException(e));
+    throw new HiveException(e);
   }
 }
