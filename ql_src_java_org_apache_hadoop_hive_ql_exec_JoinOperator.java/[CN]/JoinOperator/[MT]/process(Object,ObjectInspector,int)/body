@@ -1,0 +1,41 @@
+{
+  try {
+    Byte alias=(byte)tag;
+    if ((lastAlias == null) || (!lastAlias.equals(alias)))     nextSz=joinEmitInterval;
+    JoinExprMap exmap=joinExprs.get(alias);
+    ExprNodeEvaluator[] valueFields=exmap.getValueFields();
+    ObjectInspector[] valueFieldOI=joinExprsObjectInspectors.get(alias);
+    if (valueFieldOI == null) {
+      valueFieldOI=new ObjectInspector[valueFields.length];
+      for (int i=0; i < valueFields.length; i++) {
+        valueFieldOI[i]=valueFields[i].initialize(rowInspector);
+      }
+      joinExprsObjectInspectors.put(alias,valueFieldOI);
+    }
+    ArrayList<Object> nr=new ArrayList<Object>(valueFields.length);
+    for (int i=0; i < valueFields.length; i++) {
+      nr.add(ObjectInspectorUtils.copyToStandardObject(valueFields[i].evaluate(row),valueFieldOI[i]));
+    }
+    int sz=storage.get(alias).size();
+    if (alias == numValues - 1) {
+      if (sz == joinEmitInterval) {
+        checkAndGenObject();
+        storage.get(alias).clear();
+      }
+    }
+ else {
+      if (sz == nextSz) {
+        StructObjectInspector soi=(StructObjectInspector)rowInspector;
+        StructField sf=soi.getStructFieldRef(Utilities.ReduceField.KEY.toString());
+        Object keyObject=soi.getStructFieldData(row,sf);
+        LOG.warn("table " + alias + " has "+ sz+ " rows for join key "+ keyObject);
+        nextSz=getNextSize(nextSz);
+      }
+    }
+    storage.get(alias).add(nr);
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    throw new HiveException(e);
+  }
+}

@@ -1,0 +1,39 @@
+{
+  if (hashAggr) {
+    numRowsInput++;
+    if (numRowsInput == numRowsCompareHashAggr) {
+      numRowsCompareHashAggr+=groupbyMapAggrInterval;
+      if ((numRowsHashTbl * 2) > numRowsInput) {
+        LOG.warn("Disable Hash Aggr: #hash table = " + numRowsHashTbl + " #total = "+ numRowsInput);
+        flush(true);
+        hashAggr=false;
+      }
+ else       LOG.trace("Hash Aggr Enabled: #hash table = " + numRowsHashTbl + " #total = "+ numRowsInput);
+    }
+  }
+  try {
+    newKeys.clear();
+    for (int i=0; i < keyFields.length; i++) {
+      if (keyObjectInspectors[i] == null) {
+        keyObjectInspectors[i]=keyFields[i].initialize(rowInspector);
+      }
+      keyObjects[i]=keyFields[i].evaluate(row);
+      newKeys.add(keyObjects[i]);
+      if (firstRow) {
+        objectInspectors.set(i,keyObjectInspectors[i]);
+      }
+    }
+    if (firstRow) {
+      firstRow=false;
+      outputObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(fieldNames,objectInspectors);
+    }
+    if (hashAggr)     processHashAggr(row,rowInspector,newKeys);
+ else     processAggr(row,rowInspector,newKeys);
+  }
+ catch (  HiveException e) {
+    throw e;
+  }
+catch (  Exception e) {
+    throw new HiveException(e);
+  }
+}

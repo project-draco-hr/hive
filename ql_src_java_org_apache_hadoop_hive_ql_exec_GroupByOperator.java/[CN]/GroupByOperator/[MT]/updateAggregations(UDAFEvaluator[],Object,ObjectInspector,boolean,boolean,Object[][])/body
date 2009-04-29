@@ -2,9 +2,13 @@
   for (int ai=0; ai < aggs.length; ai++) {
     Object[] o=new Object[aggregationParameterFields[ai].length];
     for (int pi=0; pi < aggregationParameterFields[ai].length; pi++) {
-      aggregationParameterFields[ai][pi].evaluate(row,rowInspector,aggregationParameterInspectableObject[ai][pi]);
-      PrimitiveObjectInspector poi=(PrimitiveObjectInspector)aggregationParameterInspectableObject[ai][pi].oi;
-      o[pi]=poi.getPrimitiveWritableObject(aggregationParameterInspectableObject[ai][pi].o);
+      ObjectInspector oi=aggregationParameterObjectInspectors[ai][pi];
+      if (oi == null) {
+        oi=aggregationParameterFields[ai][pi].initialize(rowInspector);
+        aggregationParameterObjectInspectors[ai][pi]=oi;
+      }
+      PrimitiveObjectInspector poi=(PrimitiveObjectInspector)oi;
+      o[pi]=poi.getPrimitiveWritableObject(aggregationParameterFields[ai][pi].evaluate(row));
     }
     if (aggregationIsDistinct[ai]) {
       if (hashAggr) {
@@ -35,7 +39,7 @@
             lastInvoke[ai]=new Object[o.length];
           }
           for (int pi=0; pi < o.length; pi++) {
-            lastInvoke[ai][pi]=ObjectInspectorUtils.copyToStandardObject(o[pi],aggregationParameterInspectableObject[ai][pi].oi);
+            lastInvoke[ai][pi]=ObjectInspectorUtils.copyToStandardObject(o[pi],aggregationParameterObjectInspectors[ai][pi]);
           }
         }
       }

@@ -7,9 +7,6 @@
   try {
     StructObjectInspector rowObjectInspector=(StructObjectInspector)this.tab.getDeserializer().getObjectInspector();
     Object[] rowWithPart=new Object[2];
-    InspectableObject inspectableObject=new InspectableObject();
-    ExprNodeEvaluator evaluator=null;
-    if (this.prunerExpr != null)     evaluator=ExprNodeEvaluatorFactory.get(this.prunerExpr);
     for (    Partition part : Hive.get().getPartitions(this.tab)) {
       LinkedHashMap<String,String> partSpec=part.getSpec();
       ArrayList<String> partNames=new ArrayList<String>();
@@ -26,9 +23,11 @@
       ois.add(rowObjectInspector);
       ois.add(partObjectInspector);
       StructObjectInspector rowWithPartObjectInspector=ObjectInspectorFactory.getUnionStructObjectInspector(ois);
-      if (evaluator != null) {
-        evaluator.evaluate(rowWithPart,rowWithPartObjectInspector,inspectableObject);
-        Boolean r=(Boolean)((PrimitiveObjectInspector)inspectableObject.oi).getPrimitiveJavaObject(inspectableObject.o);
+      if (this.prunerExpr != null) {
+        ExprNodeEvaluator evaluator=ExprNodeEvaluatorFactory.get(this.prunerExpr);
+        ObjectInspector evaluateResultOI=evaluator.initialize(rowWithPartObjectInspector);
+        Object evaluateResultO=evaluator.evaluate(rowWithPart);
+        Boolean r=(Boolean)((PrimitiveObjectInspector)evaluateResultOI).getPrimitiveJavaObject(evaluateResultO);
         LOG.trace("prune result for partition " + partSpec + ": "+ r);
         if (Boolean.TRUE.equals(r)) {
           LOG.debug("retained partition: " + partSpec);
