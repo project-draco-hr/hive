@@ -1,0 +1,32 @@
+{
+  if (objInspector.getCategory() != Category.STRUCT) {
+    throw new SerDeException(getClass().toString() + " can only serialize struct types, but we got: " + objInspector.getTypeName());
+  }
+  StructObjectInspector soi=(StructObjectInspector)objInspector;
+  List<? extends StructField> fields=soi.getAllStructFieldRefs();
+  List<Object> list=soi.getStructFieldsDataAsList(obj);
+  List<? extends StructField> declaredFields=(serdeParams.getRowTypeInfo() != null && ((StructTypeInfo)serdeParams.getRowTypeInfo()).getAllStructFieldNames().size() > 0) ? ((StructObjectInspector)getObjectInspector()).getAllStructFieldRefs() : null;
+  try {
+    serializeStream.reset();
+    int count=0;
+    for (int i=0; i < fields.size(); i++) {
+      ObjectInspector foi=fields.get(i).getFieldObjectInspector();
+      Object f=(list == null ? null : list.get(i));
+      if (declaredFields != null && i >= declaredFields.size()) {
+        throw new SerDeException("Error: expecting " + declaredFields.size() + " but asking for field "+ i+ "\n"+ "data="+ obj+ "\n"+ "tableType="+ serdeParams.getRowTypeInfo().toString()+ "\n"+ "dataType="+ TypeInfoUtils.getTypeInfoFromObjectInspector(objInspector));
+      }
+      if (!foi.getCategory().equals(Category.PRIMITIVE) && (declaredFields == null || declaredFields.get(i).getFieldObjectInspector().getCategory().equals(Category.PRIMITIVE))) {
+        LazySimpleSerDe.serialize(serializeStream,SerDeUtils.getJSONString(f,foi),PrimitiveObjectInspectorFactory.javaStringObjectInspector,serdeParams.getSeparators(),1,serdeParams.getNullSequence());
+      }
+ else {
+        LazySimpleSerDe.serialize(serializeStream,f,foi,serdeParams.getSeparators(),1,serdeParams.getNullSequence());
+      }
+      field[i].set(serializeStream.getData(),count,serializeStream.getCount() - count);
+      count=serializeStream.getCount();
+    }
+  }
+ catch (  IOException e) {
+    throw new SerDeException(e);
+  }
+  return serializeCache;
+}

@@ -1,0 +1,50 @@
+{
+  key.numberRows=bufferedRecords;
+  value.keyBuffer=key;
+  int valueLength=0;
+  for (int columnIndex=0; columnIndex < columnNumber; columnIndex++) {
+    ColumnBuffer currentBuf=columnBuffers[columnIndex];
+    DataOutputBuffer columnValue=currentBuf.columnValBuffer;
+    if (isCompressed()) {
+      compressionBuffer[columnIndex].reset();
+      deflateFilter[columnIndex].resetState();
+      deflateOut[columnIndex].write(columnValue.getData(),0,columnValue.getLength());
+      deflateOut[columnIndex].flush();
+      deflateFilter[columnIndex].finish();
+      int colLen=compressionBuffer[columnIndex].getLength();
+      key.setColumnLenInfo(colLen,currentBuf.valLenBuffer,columnValuePlainLength[columnIndex],columnIndex);
+      value.setColumnValueBuffer(compressionBuffer[columnIndex],columnIndex);
+      valueLength+=colLen;
+    }
+ else {
+      int colLen=columnValuePlainLength[columnIndex];
+      key.setColumnLenInfo(colLen,currentBuf.valLenBuffer,colLen,columnIndex);
+      value.setColumnValueBuffer(columnValue,columnIndex);
+      valueLength+=colLen;
+    }
+    columnValuePlainLength[columnIndex]=0;
+  }
+  int keyLength=key.getSize();
+  if (keyLength < 0)   throw new IOException("negative length keys not allowed: " + key);
+  checkAndWriteSync();
+  out.writeInt(keyLength + valueLength);
+  out.writeInt(keyLength);
+  if (!isCompressed()) {
+    out.writeInt(keyLength);
+    key.write(out);
+  }
+ else {
+    keyCompressionBuffer.reset();
+    keyDeflateFilter.resetState();
+    key.write(keyDeflateOut);
+    keyDeflateOut.flush();
+    keyDeflateFilter.finish();
+    int compressedKeyLen=keyCompressionBuffer.getLength();
+    out.writeInt(compressedKeyLen);
+    out.write(keyCompressionBuffer.getData(),0,compressedKeyLen);
+  }
+  value.write(out);
+  clearColumnBuffers();
+  bufferedRecords=0;
+  columnBufferSize=0;
+}

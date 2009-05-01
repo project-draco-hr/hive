@@ -1,0 +1,35 @@
+{
+  seekToNextKeyBuffer();
+  currentRecordLength=readRecordLength();
+  if (currentRecordLength == -1) {
+    keyInit=false;
+    return -1;
+  }
+  currentKeyLength=in.readInt();
+  compressedKeyLen=in.readInt();
+  if (decompress) {
+    keyTempBuffer.reset();
+    keyTempBuffer.write(in,compressedKeyLen);
+    keyDecompressBuffer.reset(keyTempBuffer.getData(),compressedKeyLen);
+    CompressionInputStream deflatFilter=codec.createInputStream(keyDecompressBuffer,keyDecompressor);
+    DataInputStream compressedIn=new DataInputStream(deflatFilter);
+    deflatFilter.resetState();
+    keyDecompressedData.reset();
+    keyDecompressedData.write(compressedIn,currentKeyLength);
+    keyDataIn.reset(keyDecompressedData.getData(),currentKeyLength);
+    currentKey.readFields(keyDataIn);
+  }
+ else {
+    currentKey.readFields(in);
+  }
+  keyInit=true;
+  currentValue.inited=false;
+  readRowsIndexInBuffer=0;
+  recordsNumInValBuffer=currentKey.numberRows;
+  for (int i=0; i < columnNumber; i++) {
+    if (skippedColIDs[i])     continue;
+    colValLenBufferReadIn[i].reset(currentKey.allCellValLenBuffer[i].getData(),currentKey.allCellValLenBuffer[i].getLength());
+    columnRowReadIndex[i]=0;
+  }
+  return currentKeyLength;
+}

@@ -1,0 +1,43 @@
+{
+  byte[] versionBlock=new byte[VERSION.length];
+  in.readFully(versionBlock);
+  if ((versionBlock[0] != VERSION[0]) || (versionBlock[1] != VERSION[1]) || (versionBlock[2] != VERSION[2]))   throw new IOException(file + " not a RCFile");
+  version=versionBlock[3];
+  if (version > VERSION[3])   throw new VersionMismatchException(VERSION[3],version);
+  try {
+    Class<?> keyCls=Class.forName(Text.readString(in));
+    Class<?> valCls=Class.forName(Text.readString(in));
+    if (!keyCls.equals(KeyBuffer.class) || !valCls.equals(ValueBuffer.class))     throw new IOException(file + " not a RCFile");
+  }
+ catch (  ClassNotFoundException e) {
+    throw new IOException(file + " not a RCFile",e);
+  }
+  if (version > 2) {
+    decompress=in.readBoolean();
+  }
+ else {
+    decompress=false;
+  }
+  boolean blkCompressed=in.readBoolean();
+  if (blkCompressed) {
+    throw new IOException(file + " not a RCFile.");
+  }
+  if (decompress) {
+    String codecClassname=Text.readString(in);
+    try {
+      Class<? extends CompressionCodec> codecClass=conf.getClassByName(codecClassname).asSubclass(CompressionCodec.class);
+      codec=(CompressionCodec)ReflectionUtils.newInstance(codecClass,conf);
+    }
+ catch (    ClassNotFoundException cnfe) {
+      throw new IllegalArgumentException("Unknown codec: " + codecClassname,cnfe);
+    }
+    keyDecompressor=CodecPool.getDecompressor(codec);
+  }
+  metadata=new Metadata();
+  if (version >= VERSION_WITH_METADATA) {
+    metadata.readFields(in);
+  }
+  if (version > 1) {
+    in.readFully(sync);
+  }
+}

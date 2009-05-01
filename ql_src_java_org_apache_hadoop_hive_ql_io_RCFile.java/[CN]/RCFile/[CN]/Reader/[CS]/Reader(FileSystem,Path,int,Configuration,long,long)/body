@@ -1,0 +1,38 @@
+{
+  conf.setInt("io.file.buffer.size",bufferSize);
+  this.file=file;
+  in=fs.open(file,bufferSize);
+  this.conf=conf;
+  end=start + length;
+  if (start > 0) {
+    seek(0);
+    init();
+    seek(start);
+  }
+ else {
+    init();
+  }
+  columnNumber=Integer.parseInt(metadata.get(new Text(COLUMN_NUMBER_METADATA_STR)).toString());
+  int[] skipIDs=getSkipColumnIDs(conf);
+  skippedColIDs=new boolean[columnNumber];
+  for (int i=0; i < skippedColIDs.length; i++) {
+    skippedColIDs[i]=false;
+  }
+  for (  int skip : skipIDs) {
+    if (skip < columnNumber)     skippedColIDs[skip]=true;
+  }
+  loadColumnNum=columnNumber;
+  if (skippedColIDs != null && skippedColIDs.length > 0) {
+    for (int i=0; i < skippedColIDs.length; i++) {
+      if (skippedColIDs[i])       loadColumnNum-=1;
+    }
+  }
+  colValLenBufferReadIn=new DataInputBuffer[columnNumber];
+  columnRowReadIndex=new int[columnNumber];
+  for (int i=0; i < columnNumber; i++) {
+    columnRowReadIndex[i]=0;
+    if (!skippedColIDs[i])     colValLenBufferReadIn[i]=new DataInputBuffer();
+  }
+  currentKey=createKeyBuffer();
+  currentValue=new ValueBuffer(null,columnNumber,skippedColIDs,codec);
+}
