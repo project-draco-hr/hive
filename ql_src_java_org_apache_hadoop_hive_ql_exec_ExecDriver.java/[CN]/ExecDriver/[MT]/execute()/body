@@ -17,8 +17,8 @@
     FileInputFormat.addInputPaths(job,onefile);
   }
   String hiveScratchDir=HiveConf.getVar(job,HiveConf.ConfVars.SCRATCHDIR);
-  String jobScratchDir=hiveScratchDir + Utilities.randGen.nextInt();
-  FileOutputFormat.setOutputPath(job,new Path(jobScratchDir));
+  Path jobScratchDir=new Path(hiveScratchDir + Utilities.randGen.nextInt());
+  FileOutputFormat.setOutputPath(job,jobScratchDir);
   job.setMapperClass(ExecMapper.class);
   job.setMapOutputKeyClass(HiveKey.class);
   job.setMapOutputValueClass(Text.class);
@@ -33,16 +33,15 @@
     job.set("tmpjars",auxJars);
   }
   int returnVal=0;
-  FileSystem fs=null;
   RunningJob rj=null, orig_rj=null;
   boolean success=false;
   try {
-    fs=FileSystem.get(job);
     Path[] inputPaths=FileInputFormat.getInputPaths(job);
     boolean emptyInput=true;
     for (    Path inputP : inputPaths) {
-      if (!fs.exists(inputP))       continue;
-      FileStatus[] fStats=fs.listStatus(inputP);
+      FileSystem inputFs=inputP.getFileSystem(job);
+      if (!inputFs.exists(inputP))       continue;
+      FileStatus[] fStats=inputFs.listStatus(inputP);
       for (      FileStatus fStat : fStats) {
         if (fStat.getLen() > 0) {
           emptyInput=false;
@@ -95,7 +94,8 @@
  finally {
     Utilities.clearMapRedWork(job);
     try {
-      fs.delete(new Path(jobScratchDir),true);
+      FileSystem fs=jobScratchDir.getFileSystem(job);
+      fs.delete(jobScratchDir,true);
       if (returnVal != 0 && rj != null) {
         rj.killJob();
       }
