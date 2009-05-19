@@ -1,0 +1,42 @@
+{
+  int lines=10;
+  List<String> extraArgs=new ArrayList<String>();
+  for (int ai=0; ai < args.length; ai++) {
+    if (args[ai].equals("-line") && ai + 1 < args.length) {
+      lines=Integer.parseInt(args[ai + 1]);
+      ai++;
+    }
+ else {
+      extraArgs.add(args[ai]);
+    }
+  }
+  if (extraArgs.size() != 1) {
+    usage();
+  }
+  JobConf conf=new JobConf(CreateSequenceFile.class);
+  ThriftSerializer serializer=new ThriftSerializer();
+  SequenceFile.Writer writer=new SequenceFile.Writer(FileSystem.get(conf),conf,new Path(extraArgs.get(0)),BytesWritable.class,BytesWritable.class);
+  BytesWritable key=new BytesWritable();
+  Random rand=new Random(20081215);
+  for (int i=0; i < lines; i++) {
+    ArrayList<Integer> alist=new ArrayList<Integer>();
+    alist.add(i);
+    alist.add(i * 2);
+    alist.add(i * 3);
+    ArrayList<String> slist=new ArrayList<String>();
+    slist.add("" + i * 10);
+    slist.add("" + i * 100);
+    slist.add("" + i * 1000);
+    ArrayList<IntString> islist=new ArrayList<IntString>();
+    islist.add(new IntString(i * i,"" + i * i * i));
+    HashMap<String,String> hash=new HashMap<String,String>();
+    hash.put("key_" + i,"value_" + i);
+    Complex complex=new Complex(rand.nextInt(),"record_" + (new Integer(i)).toString(),alist,slist,islist,hash);
+    Writable value=serializer.serialize(complex);
+    writer.append(key,value);
+  }
+  Complex complex=new Complex(0,null,null,null,null,null);
+  Writable value=serializer.serialize(complex);
+  writer.append(key,value);
+  writer.close();
+}
