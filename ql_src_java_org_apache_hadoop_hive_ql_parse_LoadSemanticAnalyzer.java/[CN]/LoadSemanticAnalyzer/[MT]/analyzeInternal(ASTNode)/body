@@ -1,0 +1,49 @@
+{
+  isLocal=isOverWrite=false;
+  Tree from_t=ast.getChild(0);
+  Tree table_t=ast.getChild(1);
+  if (ast.getChildCount() == 4) {
+    isOverWrite=isLocal=true;
+  }
+  if (ast.getChildCount() == 3) {
+    if (ast.getChild(2).getText().toLowerCase().equals("local")) {
+      isLocal=true;
+    }
+ else {
+      isOverWrite=true;
+    }
+  }
+  URI fromURI;
+  try {
+    String fromPath=stripQuotes(from_t.getText());
+    fromURI=initializeFromURI(fromPath);
+  }
+ catch (  IOException e) {
+    throw new SemanticException(ErrorMsg.INVALID_PATH.getMsg(from_t,e.getMessage()),e);
+  }
+catch (  URISyntaxException e) {
+    throw new SemanticException(ErrorMsg.INVALID_PATH.getMsg(from_t,e.getMessage()),e);
+  }
+  tableSpec ts=new tableSpec(db,conf,(ASTNode)table_t);
+  URI toURI=(ts.partHandle != null) ? ts.partHandle.getDataLocation() : ts.tableHandle.getDataLocation();
+  applyConstraints(fromURI,toURI,from_t,isLocal);
+  Task<? extends Serializable> rTask=null;
+  if (isLocal) {
+    String copyURIStr=ctx.getExternalTmpFileURI(toURI);
+    URI copyURI=URI.create(copyURIStr);
+    rTask=TaskFactory.get(new copyWork(fromURI.toString(),copyURIStr),this.conf);
+    fromURI=copyURI;
+  }
+  List<loadTableDesc> loadTableWork=new ArrayList<loadTableDesc>();
+  List<loadFileDesc> loadFileWork=new ArrayList<loadFileDesc>();
+  String loadTmpPath;
+  loadTmpPath=ctx.getExternalTmpFileURI(toURI);
+  loadTableWork.add(new loadTableDesc(fromURI.toString(),loadTmpPath,Utilities.getTableDesc(ts.tableHandle),(ts.partSpec != null) ? ts.partSpec : new HashMap<String,String>(),isOverWrite));
+  if (rTask != null) {
+    rTask.addDependentTask(TaskFactory.get(new moveWork(loadTableWork,loadFileWork,true),this.conf));
+  }
+ else {
+    rTask=TaskFactory.get(new moveWork(loadTableWork,loadFileWork,true),this.conf);
+  }
+  rootTasks.add(rTask);
+}
