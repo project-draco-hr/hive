@@ -61,8 +61,37 @@
     }
  else {
       LOG.info("Need sample filter");
-      exprNodeDesc samplePredicate=genSamplePredicate(ts,tabBucketCols,colsEqual,alias,rwsch,qb.getMetaData());
+      exprNodeDesc samplePredicate=genSamplePredicate(ts,tabBucketCols,colsEqual,alias,rwsch,qb.getMetaData(),null);
       tableOp=OperatorFactory.getAndMakeChild(new filterDesc(samplePredicate),top);
+    }
+  }
+ else {
+    boolean testMode=conf.getBoolVar(HiveConf.ConfVars.HIVETESTMODE);
+    if (testMode) {
+      String tabName=tab.getName();
+      String unSampleTblList=conf.getVar(HiveConf.ConfVars.HIVETESTMODENOSAMPLE);
+      String[] unSampleTbls=unSampleTblList.split(",");
+      boolean unsample=false;
+      for (      String unSampleTbl : unSampleTbls)       if (tabName.equalsIgnoreCase(unSampleTbl))       unsample=true;
+      if (!unsample) {
+        int numBuckets=tab.getNumBuckets();
+        if (numBuckets > 0) {
+          TableSample tsSample=new TableSample(1,numBuckets);
+          tsSample.setInputPruning(true);
+          qb.getParseInfo().setTabSample(alias,tsSample);
+          LOG.info("No need for sample filter");
+        }
+ else {
+          int freq=conf.getIntVar(HiveConf.ConfVars.HIVETESTMODESAMPLEFREQ);
+          TableSample tsSample=new TableSample(1,freq);
+          tsSample.setInputPruning(false);
+          qb.getParseInfo().setTabSample(alias,tsSample);
+          LOG.info("Need sample filter");
+          exprNodeDesc randFunc=TypeCheckProcFactory.DefaultExprProcessor.getFuncExprNodeDesc("rand",new exprNodeConstantDesc(Integer.valueOf(460476415)));
+          exprNodeDesc samplePred=genSamplePredicate(tsSample,null,false,alias,rwsch,qb.getMetaData(),randFunc);
+          tableOp=OperatorFactory.getAndMakeChild(new filterDesc(samplePred),top);
+        }
+      }
     }
   }
   Operator output=putOpInsertMap(tableOp,rwsch);
