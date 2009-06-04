@@ -4,6 +4,32 @@
       oc=output;
       mo.setOutputCollector(oc);
       mo.initialize(jc,reporter,null);
+      if (fetchOperators != null) {
+        mapredWork mrwork=Utilities.getMapRedWork(jc);
+        mapredLocalWork localWork=mrwork.getMapLocalWork();
+        Iterator<Map.Entry<String,FetchOperator>> fetchOps=fetchOperators.entrySet().iterator();
+        while (fetchOps.hasNext()) {
+          Map.Entry<String,FetchOperator> entry=fetchOps.next();
+          String alias=entry.getKey();
+          FetchOperator fetchOp=entry.getValue();
+          Operator<? extends Serializable> forwardOp=localWork.getAliasToWork().get(alias);
+          forwardOp.initialize(jc,reporter,new ObjectInspector[]{fetchOp.getOutputObjectInspector()});
+        }
+        fetchOps=fetchOperators.entrySet().iterator();
+        while (fetchOps.hasNext()) {
+          Map.Entry<String,FetchOperator> entry=fetchOps.next();
+          String alias=entry.getKey();
+          FetchOperator fetchOp=entry.getValue();
+          Operator<? extends Serializable> forwardOp=localWork.getAliasToWork().get(alias);
+          while (true) {
+            InspectableObject row=fetchOp.getNextRow();
+            if (row == null) {
+              break;
+            }
+            forwardOp.process(row.o,row.oi,0);
+          }
+        }
+      }
       rp=reporter;
     }
  catch (    HiveException e) {

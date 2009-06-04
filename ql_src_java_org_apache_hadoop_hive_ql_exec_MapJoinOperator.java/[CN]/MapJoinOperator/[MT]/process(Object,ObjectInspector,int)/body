@@ -1,0 +1,91 @@
+{
+  try {
+    alias=(byte)tag;
+    if ((lastAlias == null) || (!lastAlias.equals(alias)))     nextSz=joinEmitInterval;
+    ArrayList<Object> key=computeValues(row,rowInspector,joinKeys.get(alias),joinKeysObjectInspectors);
+    ArrayList<Object> value=computeValues(row,rowInspector,joinValues.get(alias),joinValuesObjectInspectors);
+    int keyPos=0;
+    for (    Object keyElem : key) {
+      PrimitiveObjectInspector poi=(PrimitiveObjectInspector)joinKeysObjectInspectors.get(alias).get(keyPos);
+      if (!poi.isWritable()) {
+        key.set(keyPos,ObjectInspectorUtils.copyToStandardObject(key.get(keyPos),poi,ObjectInspectorCopyOption.WRITABLE));
+      }
+      keyPos++;
+    }
+    if (tag != posBigTable) {
+      if (firstRow) {
+        metadataKeyTag=nextVal++;
+        tableDesc keyTableDesc=conf.getKeyTblDesc();
+        Serializer keySerializer=(Serializer)keyTableDesc.getDeserializerClass().newInstance();
+        keySerializer.initialize(null,keyTableDesc.getProperties());
+        ExprNodeEvaluator[] keyEval=new ExprNodeEvaluator[conf.getKeys().get(new Byte((byte)tag)).size()];
+        int i=0;
+        for (        exprNodeDesc e : conf.getKeys().get(new Byte((byte)tag))) {
+          keyEval[i++]=ExprNodeEvaluatorFactory.get(e);
+        }
+        ObjectInspector keyObjectInspector=initEvaluatorsAndReturnStruct(keyEval,rowInspector);
+        Deserializer deserializer=(Deserializer)ReflectionUtils.newInstance(keyTableDesc.getDeserializerClass(),null);
+        deserializer.initialize(null,keyTableDesc.getProperties());
+        mapMetadata.put(new Integer(metadataKeyTag),new MapJoinObjectCtx(keyObjectInspector,keySerializer,deserializer.getObjectInspector(),deserializer));
+        firstRow=false;
+      }
+      HTree hashTable=mapJoinTables.get(alias);
+      MapJoinObject keyMap=new MapJoinObject(metadataKeyTag,1,key);
+      MapJoinObject o=(MapJoinObject)hashTable.get(keyMap);
+      Vector<ArrayList<Object>> res=null;
+      if (o == null) {
+        res=new Vector<ArrayList<Object>>();
+      }
+ else {
+        res=(Vector<ArrayList<Object>>)o.getObj();
+      }
+      res.add(value);
+      if (metadataValueTag[tag] == -1) {
+        metadataValueTag[tag]=nextVal++;
+        tableDesc valueTableDesc=conf.getValueTblDescs().get(tag);
+        Serializer valueSerializer=(Serializer)valueTableDesc.getDeserializerClass().newInstance();
+        valueSerializer.initialize(null,valueTableDesc.getProperties());
+        ExprNodeEvaluator[] valueEval=new ExprNodeEvaluator[conf.getExprs().get(new Byte((byte)tag)).size()];
+        int i=0;
+        for (        exprNodeDesc e : conf.getExprs().get(new Byte((byte)tag))) {
+          valueEval[i++]=ExprNodeEvaluatorFactory.get(e);
+        }
+        ObjectInspector valueObjectInspector=initEvaluatorsAndReturnStruct(valueEval,rowInspector);
+        Deserializer deserializer=(Deserializer)ReflectionUtils.newInstance(valueTableDesc.getDeserializerClass(),null);
+        deserializer.initialize(null,valueTableDesc.getProperties());
+        mapMetadata.put(new Integer((byte)metadataValueTag[tag]),new MapJoinObjectCtx(valueObjectInspector,valueSerializer,deserializer.getObjectInspector(),deserializer));
+      }
+      MapJoinObject keyObj=new MapJoinObject();
+      keyObj.setMetadataTag(metadataKeyTag);
+      keyObj.setObjectTypeTag(1);
+      keyObj.setObj(key);
+      MapJoinObject valueObj=new MapJoinObject();
+      valueObj.setMetadataTag(metadataValueTag[tag]);
+      valueObj.setObjectTypeTag(2);
+      valueObj.setObj(res);
+      if (res.size() > 1)       hashTable.remove(keyObj);
+      hashTable.put(keyObj,valueObj);
+      return;
+    }
+    storage.get(alias).add(value);
+    for (    Byte pos : order) {
+      if (pos.intValue() != tag) {
+        MapJoinObject keyMap=new MapJoinObject(metadataKeyTag,1,key);
+        MapJoinObject o=(MapJoinObject)mapJoinTables.get(pos).get(keyMap);
+        if (o == null) {
+          storage.put(pos,new Vector<ArrayList<Object>>());
+        }
+ else {
+          storage.put(pos,(Vector<ArrayList<Object>>)o.getObj());
+        }
+      }
+    }
+    checkAndGenObject();
+    storage.get(alias).clear();
+    for (    Byte pos : order)     if (pos.intValue() != tag)     storage.put(pos,null);
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    throw new HiveException(e);
+  }
+}

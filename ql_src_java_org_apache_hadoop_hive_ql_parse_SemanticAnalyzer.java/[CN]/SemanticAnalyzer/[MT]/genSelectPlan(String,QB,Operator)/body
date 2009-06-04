@@ -7,13 +7,18 @@
   Integer pos=Integer.valueOf(0);
   RowResolver inputRR=opParseCtx.get(input).getRR();
   boolean selectStar=false;
-  boolean isInTransform=(selExprList.getChild(0).getChild(0).getType() == HiveParser.TOK_TRANSFORM);
+  int posn=0;
+  boolean hintPresent=(selExprList.getChild(0).getType() == HiveParser.TOK_HINTLIST);
+  if (hintPresent) {
+    posn++;
+  }
+  boolean isInTransform=(selExprList.getChild(posn).getChild(0).getType() == HiveParser.TOK_TRANSFORM);
   if (isInTransform) {
-    trfm=(ASTNode)selExprList.getChild(0).getChild(0);
+    trfm=(ASTNode)selExprList.getChild(posn).getChild(0);
   }
   ASTNode exprList=(isInTransform ? (ASTNode)trfm.getChild(0) : selExprList);
   LOG.debug("genSelectPlan: input = " + inputRR.toString());
-  for (int i=0; i < exprList.getChildCount(); ++i) {
+  for (int i=posn; i < exprList.getChildCount(); ++i) {
     ASTNode child=(ASTNode)exprList.getChild(i);
     boolean hasAsClause=(!isInTransform) && (child.getChildCount() == 2);
     ASTNode expr;
@@ -50,7 +55,7 @@
       pos=Integer.valueOf(pos.intValue() + 1);
     }
   }
-  selectStar=selectStar && exprList.getChildCount() == 1;
+  selectStar=selectStar && exprList.getChildCount() == posn + 1;
   Map<String,exprNodeDesc> colExprMap=new HashMap<String,exprNodeDesc>();
   for (int i=0; i < col_list.size(); i++) {
     if (col_list.get(i) instanceof exprNodeNullDesc) {
