@@ -6,6 +6,7 @@
   ArrayList<aggregationDesc> aggregations=new ArrayList<aggregationDesc>();
   ArrayList<String> evalMethods=new ArrayList<String>();
   ArrayList<String> aggMethods=new ArrayList<String>();
+  ArrayList<String> outputColumnNames=new ArrayList<String>();
   Map<String,exprNodeDesc> colExprMap=new HashMap<String,exprNodeDesc>();
   List<ASTNode> grpByExprs=getGroupByForClause(parseInfo,dest);
   for (int i=0; i < grpByExprs.size(); ++i) {
@@ -16,7 +17,8 @@
       throw new SemanticException(ErrorMsg.INVALID_COLUMN.getMsg(grpbyExpr));
     }
     groupByKeys.add(new exprNodeColumnDesc(exprInfo.getType(),exprInfo.getInternalName()));
-    String field=(Integer.valueOf(i)).toString();
+    String field=getColumnInternalName(i);
+    outputColumnNames.add(field);
     groupByOutputRowResolver.put("",grpbyExpr.toStringTree(),new ColumnInfo(field,exprInfo.getType()));
     colExprMap.put(field,groupByKeys.get(groupByKeys.size() - 1));
   }
@@ -43,9 +45,11 @@
     aggregations.add(new aggregationDesc(udaf.evalClass,udaf.convertedParameters,value.getToken().getType() == HiveParser.TOK_FUNCTIONDI));
     evalMethods.add(udaf.evalMethod.getName());
     aggMethods.add(udaf.aggMethod.getName());
-    groupByOutputRowResolver.put("",value.toStringTree(),new ColumnInfo(Integer.valueOf(groupByKeys.size() + aggregations.size() - 1).toString(),udaf.retType));
+    String field=getColumnInternalName(groupByKeys.size() + aggregations.size() - 1);
+    outputColumnNames.add(field);
+    groupByOutputRowResolver.put("",value.toStringTree(),new ColumnInfo(field,udaf.retType));
   }
-  Operator op=putOpInsertMap(OperatorFactory.getAndMakeChild(new groupByDesc(mode,groupByKeys,aggregations,evalMethods,aggMethods),new RowSchema(groupByOutputRowResolver.getColumnInfos()),reduceSinkOperatorInfo),groupByOutputRowResolver);
+  Operator op=putOpInsertMap(OperatorFactory.getAndMakeChild(new groupByDesc(mode,outputColumnNames,groupByKeys,aggregations,evalMethods,aggMethods),new RowSchema(groupByOutputRowResolver.getColumnInfos()),reduceSinkOperatorInfo),groupByOutputRowResolver);
   op.setColumnExprMap(colExprMap);
   return op;
 }

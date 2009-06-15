@@ -1,6 +1,7 @@
 {
   RowResolver inputRS=opParseCtx.get(child).getRR();
   RowResolver outputRS=new RowResolver();
+  ArrayList<String> outputColumns=new ArrayList<String>();
   ArrayList<exprNodeDesc> reduceKeys=new ArrayList<exprNodeDesc>();
   Vector<ASTNode> exprs=joinTree.getExpressions().get(pos);
   for (int i=0; i < exprs.size(); i++) {
@@ -19,7 +20,9 @@
       exprNodeColumnDesc inputExpr=new exprNodeColumnDesc(valueInfo.getType(),valueInfo.getInternalName());
       reduceValues.add(inputExpr);
       if (outputRS.get(src,field) == null) {
-        ColumnInfo newColInfo=new ColumnInfo(Utilities.ReduceField.VALUE.toString() + "." + Integer.valueOf(reduceValues.size() - 1).toString(),valueInfo.getType());
+        String col=getColumnInternalName(reduceValues.size() - 1);
+        outputColumns.add(col);
+        ColumnInfo newColInfo=new ColumnInfo(Utilities.ReduceField.VALUE.toString() + "." + col,valueInfo.getType());
         colExprMap.put(newColInfo.getInternalName(),inputExpr);
         outputRS.put(src,field,newColInfo);
       }
@@ -30,7 +33,7 @@
     numReds=1;
     if (conf.getVar(HiveConf.ConfVars.HIVEMAPREDMODE).equalsIgnoreCase("strict"))     throw new SemanticException(ErrorMsg.NO_CARTESIAN_PRODUCT.getMsg());
   }
-  ReduceSinkOperator rsOp=(ReduceSinkOperator)putOpInsertMap(OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(reduceKeys,reduceValues,joinTree.getNextTag(),reduceKeys.size(),numReds),new RowSchema(outputRS.getColumnInfos()),child),outputRS);
+  ReduceSinkOperator rsOp=(ReduceSinkOperator)putOpInsertMap(OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(reduceKeys,reduceValues,outputColumns,false,joinTree.getNextTag(),reduceKeys.size(),numReds),new RowSchema(outputRS.getColumnInfos()),child),outputRS);
   rsOp.setColumnExprMap(colExprMap);
   return rsOp;
 }

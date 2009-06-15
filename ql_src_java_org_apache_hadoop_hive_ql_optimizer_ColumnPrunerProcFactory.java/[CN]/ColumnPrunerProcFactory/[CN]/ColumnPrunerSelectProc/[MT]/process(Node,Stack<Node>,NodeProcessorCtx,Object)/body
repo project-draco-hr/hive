@@ -4,7 +4,7 @@
   List<String> cols=new ArrayList<String>();
   if (op.getChildOperators() != null) {
     for (    Operator<? extends Serializable> child : op.getChildOperators()) {
-      if ((child instanceof FileSinkOperator) || (child instanceof ScriptOperator)) {
+      if ((child instanceof FileSinkOperator) || (child instanceof ScriptOperator) || (child instanceof LimitOperator)|| (child instanceof UnionOperator)) {
         cppCtx.getPrunedColLists().put(op,cppCtx.getColsFromSelectExpr(op));
         return null;
       }
@@ -12,10 +12,32 @@
     }
   }
   selectDesc conf=op.getConf();
-  if (conf.isSelectStar() && !cols.isEmpty()) {
-    cppCtx.getPrunedColLists().put(op,cppCtx.getSelectColsFromChildren(op,cols));
-    return null;
+  cppCtx.getPrunedColLists().put(op,cppCtx.getSelectColsFromChildren(op,cols));
+  List<exprNodeDesc> originalColList=op.getConf().getColList();
+  List<String> columns=new ArrayList<String>();
+  for (  exprNodeDesc expr : originalColList)   Utilities.mergeUniqElems(columns,expr.getCols());
+  ArrayList<String> originalOutputColumnNames=conf.getOutputColumnNames();
+  if (cols.size() < originalOutputColumnNames.size()) {
+    ArrayList<exprNodeDesc> newColList=new ArrayList<exprNodeDesc>();
+    ArrayList<String> newOutputColumnNames=new ArrayList<String>();
+    Vector<ColumnInfo> rs_oldsignature=op.getSchema().getSignature();
+    Vector<ColumnInfo> rs_newsignature=new Vector<ColumnInfo>();
+    RowResolver old_rr=cppCtx.getOpToParseCtxMap().get(op).getRR();
+    RowResolver new_rr=new RowResolver();
+    for (    String col : cols) {
+      int index=originalOutputColumnNames.indexOf(col);
+      newOutputColumnNames.add(col);
+      newColList.add(originalColList.get(index));
+      rs_newsignature.add(rs_oldsignature.get(index));
+      String[] tabcol=old_rr.reverseLookup(col);
+      ColumnInfo columnInfo=old_rr.get(tabcol[0],tabcol[1]);
+      new_rr.put(tabcol[0],tabcol[1],columnInfo);
+    }
+    cppCtx.getOpToParseCtxMap().get(op).setRR(new_rr);
+    op.getSchema().setSignature(rs_newsignature);
+    conf.setColList(newColList);
+    conf.setOutputColumnNames(newOutputColumnNames);
+    handleChildren(op,cols);
   }
-  cppCtx.getPrunedColLists().put(op,cppCtx.getColsFromSelectExpr(op));
   return null;
 }
