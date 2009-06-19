@@ -1,2 +1,41 @@
 {
+  super.initializeOp(hconf,reporter,inputObjInspector);
+  firstRow=true;
+  try {
+    joinKeys=new HashMap<Byte,List<ExprNodeEvaluator>>();
+    populateJoinKeyValue(joinKeys,conf.getKeys());
+    joinKeysObjectInspectors=getObjectInspectorsFromEvaluators(joinKeys,inputObjInspector);
+    joinKeysStandardObjectInspectors=getStandardObjectInspectors(joinKeysObjectInspectors);
+    posBigTable=conf.getPosBigTable();
+    metadataValueTag=new int[numAliases];
+    for (int pos=0; pos < numAliases; pos++)     metadataValueTag[pos]=-1;
+    mapJoinTables=new HashMap<Byte,HTree>();
+    hTables=new ArrayList<File>();
+    for (int pos=0; pos < numAliases; pos++) {
+      if (pos == posBigTable)       continue;
+      Properties props=new Properties();
+      props.setProperty(RecordManagerOptions.CACHE_SIZE,String.valueOf(HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVEMAPJOINCACHEROWS)));
+      Random rand=new Random();
+      File newDir=new File("/tmp/" + rand.nextInt());
+      String newDirName=null;
+      while (true) {
+        if (newDir.mkdir()) {
+          newDirName=newDir.getAbsolutePath();
+          hTables.add(newDir);
+          break;
+        }
+        newDir=new File("/tmp" + rand.nextInt());
+      }
+      RecordManager recman=RecordManagerFactory.createRecordManager(newDirName + "/" + pos,props);
+      HTree hashTable=HTree.createInstance(recman);
+      mapJoinTables.put(Byte.valueOf((byte)pos),hashTable);
+    }
+    storage.put((byte)posBigTable,new Vector<ArrayList<Object>>());
+    mapJoinRowsKey=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVEMAPJOINROWSIZE);
+    initializeChildren(hconf,reporter,new ObjectInspector[]{joinOutputObjectInspector});
+  }
+ catch (  IOException e) {
+    e.printStackTrace();
+    throw new HiveException(e);
+  }
 }

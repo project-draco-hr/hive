@@ -2,35 +2,15 @@
   try {
     alias=(byte)tag;
     if ((lastAlias == null) || (!lastAlias.equals(alias)))     nextSz=joinEmitInterval;
-    ArrayList<Object> key=computeValues(row,rowInspector,joinKeys.get(alias),joinKeysObjectInspectors);
-    ArrayList<Object> value=computeValues(row,rowInspector,joinValues.get(alias),joinValuesObjectInspectors);
-    int keyPos=0;
-    for (    Object keyElem : key) {
-      PrimitiveObjectInspector poi=(PrimitiveObjectInspector)joinKeysObjectInspectors.get(alias).get(keyPos);
-      if (!poi.isWritable()) {
-        key.set(keyPos,ObjectInspectorUtils.copyToStandardObject(key.get(keyPos),poi,ObjectInspectorCopyOption.WRITABLE));
-      }
-      keyPos++;
-    }
+    ArrayList<Object> key=computeValues(row,joinKeys.get(alias),joinKeysObjectInspectors.get(alias));
+    ArrayList<Object> value=computeValues(row,joinValues.get(alias),joinValuesObjectInspectors.get(alias));
     if (tag != posBigTable) {
       if (firstRow) {
         metadataKeyTag=nextVal++;
         tableDesc keyTableDesc=conf.getKeyTblDesc();
-        Serializer keySerializer=(Serializer)keyTableDesc.getDeserializerClass().newInstance();
+        SerDe keySerializer=(SerDe)ReflectionUtils.newInstance(keyTableDesc.getDeserializerClass(),null);
         keySerializer.initialize(null,keyTableDesc.getProperties());
-        ExprNodeEvaluator[] keyEval=new ExprNodeEvaluator[conf.getKeys().get(new Byte((byte)tag)).size()];
-        int i=0;
-        for (        exprNodeDesc e : conf.getKeys().get(new Byte((byte)tag))) {
-          keyEval[i++]=ExprNodeEvaluatorFactory.get(e);
-        }
-        List<String> keyOutputCols=new ArrayList<String>();
-        for (int k=0; k < keyEval.length; k++) {
-          keyOutputCols.add(HiveConf.getColumnInternalName(k));
-        }
-        ObjectInspector keyObjectInspector=initEvaluatorsAndReturnStruct(keyEval,keyOutputCols,rowInspector);
-        Deserializer deserializer=(Deserializer)ReflectionUtils.newInstance(keyTableDesc.getDeserializerClass(),null);
-        deserializer.initialize(null,keyTableDesc.getProperties());
-        mapMetadata.put(new Integer(metadataKeyTag),new MapJoinObjectCtx(keyObjectInspector,keySerializer,deserializer.getObjectInspector(),deserializer));
+        mapMetadata.put(Integer.valueOf(metadataKeyTag),new MapJoinObjectCtx(ObjectInspectorUtils.getStandardObjectInspector(keySerializer.getObjectInspector(),ObjectInspectorCopyOption.WRITABLE),keySerializer));
         firstRow=false;
       }
       HTree hashTable=mapJoinTables.get(alias);
@@ -47,21 +27,9 @@
       if (metadataValueTag[tag] == -1) {
         metadataValueTag[tag]=nextVal++;
         tableDesc valueTableDesc=conf.getValueTblDescs().get(tag);
-        Serializer valueSerializer=(Serializer)valueTableDesc.getDeserializerClass().newInstance();
-        valueSerializer.initialize(null,valueTableDesc.getProperties());
-        ExprNodeEvaluator[] valueEval=new ExprNodeEvaluator[conf.getExprs().get(new Byte((byte)tag)).size()];
-        int i=0;
-        for (        exprNodeDesc e : conf.getExprs().get(new Byte((byte)tag))) {
-          valueEval[i++]=ExprNodeEvaluatorFactory.get(e);
-        }
-        List<String> tagOutputCols=new ArrayList<String>();
-        int start=0;
-        for (int k=0; k < tag; k++)         start+=conf.getExprs().get(new Byte((byte)k)).size();
-        for (int k=0; k < conf.getExprs().get(new Byte((byte)tag)).size(); k++)         tagOutputCols.add(HiveConf.getColumnInternalName(k));
-        ObjectInspector valueObjectInspector=initEvaluatorsAndReturnStruct(valueEval,tagOutputCols,rowInspector);
-        Deserializer deserializer=(Deserializer)ReflectionUtils.newInstance(valueTableDesc.getDeserializerClass(),null);
-        deserializer.initialize(null,valueTableDesc.getProperties());
-        mapMetadata.put(new Integer((byte)metadataValueTag[tag]),new MapJoinObjectCtx(valueObjectInspector,valueSerializer,deserializer.getObjectInspector(),deserializer));
+        SerDe valueSerDe=(SerDe)ReflectionUtils.newInstance(valueTableDesc.getDeserializerClass(),null);
+        valueSerDe.initialize(null,valueTableDesc.getProperties());
+        mapMetadata.put(Integer.valueOf(metadataValueTag[tag]),new MapJoinObjectCtx(ObjectInspectorUtils.getStandardObjectInspector(valueSerDe.getObjectInspector(),ObjectInspectorCopyOption.WRITABLE),valueSerDe));
       }
       MapJoinObjectKey keyObj=new MapJoinObjectKey(metadataKeyTag,key);
       MapJoinObjectValue valueObj=new MapJoinObjectValue(metadataValueTag[tag],res);
@@ -89,7 +57,11 @@
     storage.get(alias).clear();
     for (    Byte pos : order)     if (pos.intValue() != tag)     storage.put(pos,null);
   }
- catch (  Exception e) {
+ catch (  SerDeException e) {
+    e.printStackTrace();
+    throw new HiveException(e);
+  }
+catch (  IOException e) {
     e.printStackTrace();
     throw new HiveException(e);
   }
