@@ -1,0 +1,53 @@
+{
+  Task<? extends Serializable> currTask=ctx.getCurrTask();
+  RowSchema fsRS=fsOp.getSchema();
+  ArrayList<exprNodeDesc> keyCols=new ArrayList<exprNodeDesc>();
+  keyCols.add(TypeCheckProcFactory.DefaultExprProcessor.getFuncExprNodeDesc("rand"));
+  ArrayList<exprNodeDesc> valueCols=new ArrayList<exprNodeDesc>();
+  for (  ColumnInfo ci : fsRS.getSignature()) {
+    valueCols.add(new exprNodeColumnDesc(ci.getType(),ci.getInternalName()));
+  }
+  Operator<? extends Serializable> ts_op=OperatorFactory.get(tableScanDesc.class,fsRS);
+  ArrayList<String> outputColumns=new ArrayList<String>();
+  for (int i=0; i < valueCols.size(); i++)   outputColumns.add(SemanticAnalyzer.getColumnInternalName(i));
+  reduceSinkDesc rsDesc=PlanUtils.getReduceSinkDesc(new ArrayList<exprNodeDesc>(),valueCols,outputColumns,false,-1,-1,-1);
+  ReduceSinkOperator rsOp=(ReduceSinkOperator)OperatorFactory.getAndMakeChild(rsDesc,fsRS,ts_op);
+  mapredWork cplan=GenMapRedUtils.getMapRedWork();
+  ParseContext parseCtx=ctx.getParseCtx();
+  Task<? extends Serializable> mergeTask=TaskFactory.get(cplan,parseCtx.getConf());
+  fileSinkDesc fsConf=fsOp.getConf();
+  RowResolver out_rwsch=new RowResolver();
+  RowResolver interim_rwsch=ctx.getParseCtx().getOpParseCtx().get(fsOp).getRR();
+  Integer pos=Integer.valueOf(0);
+  for (  ColumnInfo colInfo : interim_rwsch.getColumnInfos()) {
+    String[] info=interim_rwsch.reverseLookup(colInfo.getInternalName());
+    out_rwsch.put(info[0],info[1],new ColumnInfo(pos.toString(),colInfo.getType()));
+    pos=Integer.valueOf(pos.intValue() + 1);
+  }
+  Operator extract=OperatorFactory.getAndMakeChild(new extractDesc(new exprNodeColumnDesc(TypeInfoFactory.stringTypeInfo,Utilities.ReduceField.VALUE.toString())),new RowSchema(out_rwsch.getColumnInfos()));
+  FileSinkOperator newOutput=(FileSinkOperator)OperatorFactory.getAndMakeChild(new fileSinkDesc(finalName,fsConf.getTableInfo(),parseCtx.getConf().getBoolVar(HiveConf.ConfVars.COMPRESSINTERMEDIATE)),fsRS,extract);
+  cplan.setReducer(extract);
+  ArrayList<String> aliases=new ArrayList<String>();
+  aliases.add(fsConf.getDirName());
+  cplan.getPathToAliases().put(fsConf.getDirName(),aliases);
+  cplan.getAliasToWork().put(fsConf.getDirName(),ts_op);
+  cplan.getPathToPartitionInfo().put(fsConf.getDirName(),new partitionDesc(fsConf.getTableInfo(),null));
+  cplan.setNumReduceTasks(-1);
+  moveWork dummyMv=new moveWork(null,new loadFileDesc(fsOp.getConf().getDirName(),finalName,true,null),false);
+  Task<? extends Serializable> dummyMergeTask=TaskFactory.get(dummyMv,ctx.getConf());
+  List<Serializable> listWorks=new ArrayList<Serializable>();
+  listWorks.add(dummyMv);
+  listWorks.add(mergeTask.getWork());
+  ConditionalWork cndWork=new ConditionalWork(listWorks);
+  ConditionalTask cndTsk=(ConditionalTask)TaskFactory.get(cndWork,ctx.getConf());
+  List<Task<? extends Serializable>> listTasks=new ArrayList<Task<? extends Serializable>>();
+  listTasks.add(dummyMergeTask);
+  listTasks.add(mergeTask);
+  cndTsk.setListTasks(listTasks);
+  cndTsk.setResolver(new ConditionalResolverMergeFiles());
+  cndTsk.setResolverCtx(new ConditionalResolverMergeFilesCtx(ctx,listTasks,fsOp.getConf().getDirName()));
+  currTask.addDependentTask(cndTsk);
+  List<Task<? extends Serializable>> mvTasks=ctx.getMvTask();
+  Task<? extends Serializable> mvTask=findMoveTask(mvTasks,newOutput);
+  if (mvTask != null)   cndTsk.addDependentTask(mvTask);
+}

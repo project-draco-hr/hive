@@ -1,0 +1,31 @@
+{
+  ConditionalResolverMergeFilesCtx ctx=(ConditionalResolverMergeFilesCtx)objCtx;
+  String dirName=ctx.getDir();
+  GenMRProcContext opProcCtx=ctx.getCtx();
+  HiveConf conf=opProcCtx.getConf();
+  long trgtSize=conf.getLongVar(HiveConf.ConfVars.HIVEMERGEMAPFILESSIZE);
+  try {
+    Path dirPath=new Path(dirName);
+    FileSystem inpFs=dirPath.getFileSystem(conf);
+    if (inpFs.exists(dirPath)) {
+      FileStatus[] fStats=inpFs.listStatus(dirPath);
+      long totalSz=0;
+      for (      FileStatus fStat : fStats)       totalSz+=fStat.getLen();
+      long currSz=totalSz / fStats.length;
+      if ((currSz < trgtSize) && (fStats.length > 1)) {
+        Task<? extends Serializable> tsk=ctx.getListTasks().get(1);
+        mapredWork work=(mapredWork)tsk.getWork();
+        int maxReducers=conf.getIntVar(HiveConf.ConfVars.MAXREDUCERS);
+        int reducers=(int)((totalSz + trgtSize - 1) / trgtSize);
+        reducers=Math.max(1,reducers);
+        reducers=Math.min(maxReducers,reducers);
+        work.setNumReduceTasks(reducers);
+        return 1;
+      }
+    }
+  }
+ catch (  IOException e) {
+    e.printStackTrace();
+  }
+  return 0;
+}
