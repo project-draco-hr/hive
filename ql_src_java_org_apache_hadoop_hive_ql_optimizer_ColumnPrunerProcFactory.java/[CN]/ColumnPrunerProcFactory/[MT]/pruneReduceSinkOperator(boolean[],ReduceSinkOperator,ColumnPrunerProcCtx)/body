@@ -1,0 +1,47 @@
+{
+  reduceSinkDesc reduceConf=reduce.getConf();
+  Map<String,exprNodeDesc> oldMap=reduce.getColumnExprMap();
+  Map<String,exprNodeDesc> newMap=new HashMap<String,exprNodeDesc>();
+  Vector<ColumnInfo> sig=new Vector<ColumnInfo>();
+  RowResolver oldRR=cppCtx.getOpToParseCtxMap().get(reduce).getRR();
+  RowResolver newRR=new RowResolver();
+  ArrayList<String> originalValueOutputColNames=reduceConf.getOutputValueColumnNames();
+  java.util.ArrayList<exprNodeDesc> originalValueEval=reduceConf.getValueCols();
+  ArrayList<String> newOutputColNames=new ArrayList<String>();
+  java.util.ArrayList<exprNodeDesc> newValueEval=new ArrayList<exprNodeDesc>();
+  for (int i=0; i < retainFlags.length; i++) {
+    if (retainFlags[i]) {
+      newValueEval.add(originalValueEval.get(i));
+      String outputCol=originalValueOutputColNames.get(i);
+      newOutputColNames.add(outputCol);
+      String[] nm=oldRR.reverseLookup(outputCol);
+      if (nm == null) {
+        outputCol=Utilities.ReduceField.VALUE.toString() + "." + outputCol;
+        nm=oldRR.reverseLookup(outputCol);
+      }
+      newMap.put(outputCol,oldMap.get(outputCol));
+      ColumnInfo colInfo=oldRR.get(nm[0],nm[1]);
+      newRR.put(nm[0],nm[1],colInfo);
+      sig.add(colInfo);
+    }
+  }
+  ArrayList<exprNodeDesc> keyCols=reduceConf.getKeyCols();
+  List<String> keys=new ArrayList<String>();
+  RowResolver parResover=cppCtx.getOpToParseCtxMap().get(reduce.getParentOperators().get(0)).getRR();
+  for (int i=0; i < keyCols.size(); i++) {
+    keys=Utilities.mergeUniqElems(keys,keyCols.get(i).getCols());
+  }
+  for (int i=0; i < keys.size(); i++) {
+    String outputCol=keys.get(i);
+    String[] nm=parResover.reverseLookup(outputCol);
+    ColumnInfo colInfo=oldRR.get(nm[0],nm[1]);
+    if (colInfo != null)     newRR.put(nm[0],nm[1],colInfo);
+  }
+  cppCtx.getOpToParseCtxMap().get(reduce).setRR(newRR);
+  reduce.setColumnExprMap(newMap);
+  reduce.getSchema().setSignature(sig);
+  reduceConf.setOutputValueColumnNames(newOutputColNames);
+  reduceConf.setValueCols(newValueEval);
+  tableDesc newValueTable=PlanUtils.getLazySimpleSerDeTableDesc(PlanUtils.getFieldSchemasFromColumnList(reduceConf.getValueCols(),newOutputColNames,0,""));
+  reduceConf.setValueSerializeInfo(newValueTable);
+}
