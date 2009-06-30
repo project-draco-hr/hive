@@ -60,16 +60,23 @@
   boolean localMode=HiveConf.getVar(conf,HiveConf.ConfVars.HADOOPJT).equals("local");
   if (localMode) {
     String auxJars=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEAUXJARS);
-    if (StringUtils.isNotBlank(auxJars)) {
-      try {
-        Utilities.addToClassPath(StringUtils.split(auxJars,","));
+    String addedJars=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEADDEDJARS);
+    try {
+      ClassLoader loader=conf.getClassLoader();
+      if (StringUtils.isNotBlank(auxJars)) {
+        loader=Utilities.addToClassPath(loader,StringUtils.split(auxJars,","));
       }
- catch (      Exception e) {
-        throw new HiveException(e.getMessage(),e);
+      if (StringUtils.isNotBlank(addedJars)) {
+        loader=Utilities.addToClassPath(loader,StringUtils.split(addedJars,","));
       }
+      conf.setClassLoader(loader);
+      Thread.currentThread().setContextClassLoader(loader);
+    }
+ catch (    Exception e) {
+      throw new HiveException(e.getMessage(),e);
     }
   }
-  mapredWork plan=Utilities.deserializeMapRedWork(pathData);
+  mapredWork plan=Utilities.deserializeMapRedWork(pathData,conf);
   ExecDriver ed=new ExecDriver(plan,conf,isSilent);
   int ret=ed.execute();
   if (ret != 0) {
