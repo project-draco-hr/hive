@@ -1,5 +1,5 @@
 {
-  String schema="";
+  Schema schema;
   try {
     if (plan != null && plan.getPlan().getFetchTask() != null) {
       BaseSemanticAnalyzer sem=plan.getPlan();
@@ -9,12 +9,21 @@
       }
       FetchTask ft=(FetchTask)sem.getFetchTask();
       tableDesc td=ft.getTblDesc();
+      if (td == null && ft.getWork() != null && ft.getWork().getPartDesc() != null) {
+        if (ft.getWork().getPartDesc().size() > 0) {
+          td=ft.getWork().getPartDesc().get(0).getTableDesc();
+        }
+      }
+      if (td == null) {
+        throw new Exception("No table description found for fetch task: " + ft);
+      }
       String tableName="result";
       List<FieldSchema> lst=MetaStoreUtils.getFieldsFromDeserializer(tableName,td.getDeserializer());
-      schema=MetaStoreUtils.getFullDDLFromFieldSchema(tableName,lst);
+      for (      FieldSchema f : lst)       f.setType(MetaStoreUtils.typeToThriftType(f.getType()));
+      schema=new Schema(lst,null);
     }
  else {
-      schema="struct result { string empty }";
+      schema=new Schema();
     }
   }
  catch (  Exception e) {

@@ -12,7 +12,16 @@
   Properties dsp=new Properties();
   dsp.setProperty(Constants.SERIALIZATION_FORMAT,org.apache.hadoop.hive.serde2.thrift.TCTLSeparatedProtocol.class.getName());
   dsp.setProperty(org.apache.hadoop.hive.metastore.api.Constants.META_TABLE_NAME,"result");
-  dsp.setProperty(Constants.SERIALIZATION_DDL,client.getSchema().split("#")[0]);
+  String serDDL=new String("struct result { ");
+  List<FieldSchema> schema=client.getSchema().getFieldSchemas();
+  for (int pos=0; pos < schema.size(); pos++) {
+    if (pos != 0)     serDDL=serDDL.concat(",");
+    serDDL=serDDL.concat(schema.get(pos).getType());
+    serDDL=serDDL.concat(" ");
+    serDDL=serDDL.concat(schema.get(pos).getName());
+  }
+  serDDL=serDDL.concat("}");
+  dsp.setProperty(Constants.SERIALIZATION_DDL,serDDL);
   dsp.setProperty(Constants.SERIALIZATION_LIB,ds.getClass().toString());
   dsp.setProperty(Constants.FIELD_DELIM,"9");
   ds.initialize(new Configuration(),dsp);
@@ -20,11 +29,20 @@
   Object o=ds.deserialize(new BytesWritable(row.getBytes()));
   assertEquals(o.getClass().toString(),"class java.util.ArrayList");
   List<?> lst=(List<?>)o;
-  assertEquals(lst.get(0),"238");
+  assertEquals(lst.get(0),238);
   sql="select count(1) as c from " + tableName;
   client.execute(sql);
   row=client.fetchOne();
-  dsp.setProperty(Constants.SERIALIZATION_DDL,client.getSchema().split("#")[0]);
+  serDDL=new String("struct result { ");
+  schema=client.getSchema().getFieldSchemas();
+  for (int pos=0; pos < schema.size(); pos++) {
+    if (pos != 0)     serDDL=serDDL.concat(",");
+    serDDL=serDDL.concat(schema.get(pos).getType());
+    serDDL=serDDL.concat(" ");
+    serDDL=serDDL.concat(schema.get(pos).getName());
+  }
+  serDDL=serDDL.concat("}");
+  dsp.setProperty(Constants.SERIALIZATION_DDL,serDDL);
   ds=new DynamicSerDe();
   ds.initialize(new Configuration(),dsp);
   o=ds.deserialize(new BytesWritable(row.getBytes()));
