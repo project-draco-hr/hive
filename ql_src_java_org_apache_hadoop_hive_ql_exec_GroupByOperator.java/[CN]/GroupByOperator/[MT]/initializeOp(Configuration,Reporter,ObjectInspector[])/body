@@ -11,17 +11,21 @@
     keyObjects[i]=null;
   }
   newKeys=new ArrayList<Object>(keyFields.length);
+  currentKeyObjectInspectors=new ObjectInspector[conf.getKeys().size()];
   aggregationParameterFields=new ExprNodeEvaluator[conf.getAggregators().size()][];
   aggregationParameterObjectInspectors=new ObjectInspector[conf.getAggregators().size()][];
+  aggregationParameterStandardObjectInspectors=new ObjectInspector[conf.getAggregators().size()][];
   aggregationParameterObjects=new Object[conf.getAggregators().size()][];
   for (int i=0; i < aggregationParameterFields.length; i++) {
     ArrayList<exprNodeDesc> parameters=conf.getAggregators().get(i).getParameters();
     aggregationParameterFields[i]=new ExprNodeEvaluator[parameters.size()];
     aggregationParameterObjectInspectors[i]=new ObjectInspector[parameters.size()];
+    aggregationParameterStandardObjectInspectors[i]=new ObjectInspector[parameters.size()];
     aggregationParameterObjects[i]=new Object[parameters.size()];
     for (int j=0; j < parameters.size(); j++) {
       aggregationParameterFields[i][j]=ExprNodeEvaluatorFactory.get(parameters.get(j));
       aggregationParameterObjectInspectors[i][j]=null;
+      aggregationParameterStandardObjectInspectors[i][j]=null;
       aggregationParameterObjects[i][j]=null;
     }
   }
@@ -86,9 +90,16 @@
   for (int i=0; i < keyFields.length; i++) {
     if (keyObjectInspectors[i] == null) {
       keyObjectInspectors[i]=keyFields[i].initialize(inputObjInspector[0]);
+      currentKeyObjectInspectors[i]=ObjectInspectorUtils.getStandardObjectInspector(keyObjectInspectors[i],ObjectInspectorCopyOption.WRITABLE);
     }
-    objectInspectors.set(i,keyObjectInspectors[i]);
+    objectInspectors.set(i,currentKeyObjectInspectors[i]);
   }
+  ArrayList<String> keyNames=new ArrayList<String>(keyFields.length);
+  for (int i=0; i < keyFields.length; i++) {
+    keyNames.add(fieldNames.get(i));
+  }
+  newKeyObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(keyNames,Arrays.asList(keyObjectInspectors));
+  currentKeyObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(keyNames,Arrays.asList(currentKeyObjectInspectors));
   outputObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(fieldNames,objectInspectors);
   firstRow=true;
   if (conf.getMode() == groupByDesc.Mode.HASH)   computeMaxEntriesHashAggr(hconf);

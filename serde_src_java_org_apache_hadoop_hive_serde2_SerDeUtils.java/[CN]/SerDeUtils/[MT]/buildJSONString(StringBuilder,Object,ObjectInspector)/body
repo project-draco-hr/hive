@@ -6,87 +6,123 @@ case PRIMITIVE:
       if (o == null) {
         sb.append("null");
       }
- else       if (oi.getTypeName().equals(Constants.STRING_TYPE_NAME)) {
-        String s=(String)poi.getPrimitiveJavaObject(o);
-        sb.append(QUOTE);
-        sb.append(escapeString(s));
-        sb.append(QUOTE);
-      }
- else       if (oi.getTypeName().equals(Constants.BOOLEAN_TYPE_NAME)) {
-        Boolean b=(Boolean)poi.getPrimitiveJavaObject(o);
-        sb.append(b.booleanValue() ? "True" : "False");
-      }
  else {
-        sb.append(o.toString());
+switch (poi.getPrimitiveCategory()) {
+case BOOLEAN:
+{
+            boolean b=((BooleanObjectInspector)poi).get(o);
+            sb.append(b ? "true" : "false");
+            break;
+          }
+case BYTE:
+{
+          sb.append(((ByteObjectInspector)poi).get(o));
+          break;
+        }
+case SHORT:
+{
+        sb.append(((ShortObjectInspector)poi).get(o));
+        break;
       }
+case INT:
+{
+      sb.append(((IntObjectInspector)poi).get(o));
       break;
     }
-case LIST:
+case LONG:
 {
-    ListObjectInspector loi=(ListObjectInspector)oi;
-    ObjectInspector listElementObjectInspector=loi.getListElementObjectInspector();
-    List<?> olist=loi.getList(o);
-    if (olist == null) {
-      sb.append("null");
-    }
- else {
-      sb.append(LBRACKET);
-      for (int i=0; i < olist.size(); i++) {
-        if (i > 0)         sb.append(COMMA);
-        buildJSONString(sb,olist.get(i),listElementObjectInspector);
-      }
-      sb.append(RBRACKET);
-    }
+    sb.append(((LongObjectInspector)poi).get(o));
     break;
   }
+case FLOAT:
+{
+  sb.append(((FloatObjectInspector)poi).get(o));
+  break;
+}
+case DOUBLE:
+{
+sb.append(((DoubleObjectInspector)poi).get(o));
+break;
+}
+case STRING:
+{
+sb.append('"');
+sb.append(escapeString(((StringObjectInspector)poi).getPrimitiveJavaObject(o)));
+sb.append('"');
+break;
+}
+default :
+throw new RuntimeException("Unknown primitive type: " + poi.getPrimitiveCategory());
+}
+}
+break;
+}
+case LIST:
+{
+ListObjectInspector loi=(ListObjectInspector)oi;
+ObjectInspector listElementObjectInspector=loi.getListElementObjectInspector();
+List<?> olist=loi.getList(o);
+if (olist == null) {
+sb.append("null");
+}
+ else {
+sb.append(LBRACKET);
+for (int i=0; i < olist.size(); i++) {
+if (i > 0) sb.append(COMMA);
+buildJSONString(sb,olist.get(i),listElementObjectInspector);
+}
+sb.append(RBRACKET);
+}
+break;
+}
 case MAP:
 {
-  MapObjectInspector moi=(MapObjectInspector)oi;
-  ObjectInspector mapKeyObjectInspector=moi.getMapKeyObjectInspector();
-  ObjectInspector mapValueObjectInspector=moi.getMapValueObjectInspector();
-  Map<?,?> omap=moi.getMap(o);
-  if (omap == null) {
-    sb.append("null");
-  }
+MapObjectInspector moi=(MapObjectInspector)oi;
+ObjectInspector mapKeyObjectInspector=moi.getMapKeyObjectInspector();
+ObjectInspector mapValueObjectInspector=moi.getMapValueObjectInspector();
+Map<?,?> omap=moi.getMap(o);
+if (omap == null) {
+sb.append("null");
+}
  else {
-    sb.append(LBRACE);
-    boolean first=true;
-    for (    Object entry : omap.entrySet()) {
-      if (first) {
-        first=false;
-      }
+sb.append(LBRACE);
+boolean first=true;
+for (Object entry : omap.entrySet()) {
+if (first) {
+first=false;
+}
  else {
-        sb.append(COMMA);
-      }
-      Map.Entry<?,?> e=(Map.Entry<?,?>)entry;
-      buildJSONString(sb,e.getKey(),mapKeyObjectInspector);
-      sb.append(COLON);
-      buildJSONString(sb,e.getValue(),mapValueObjectInspector);
-    }
-    sb.append(RBRACE);
-  }
-  break;
+sb.append(COMMA);
+}
+Map.Entry<?,?> e=(Map.Entry<?,?>)entry;
+buildJSONString(sb,e.getKey(),mapKeyObjectInspector);
+sb.append(COLON);
+buildJSONString(sb,e.getValue(),mapValueObjectInspector);
+}
+sb.append(RBRACE);
+}
+break;
 }
 case STRUCT:
 {
 StructObjectInspector soi=(StructObjectInspector)oi;
 List<? extends StructField> structFields=soi.getAllStructFieldRefs();
 if (structFields == null) {
-  sb.append("null");
+sb.append("null");
 }
  else {
-  sb.append(LBRACE);
-  for (int i=0; i < structFields.size(); i++) {
-    if (i > 0) {
-      sb.append(COMMA);
-    }
-    sb.append(QUOTE);
-    sb.append(structFields.get(i).getFieldName());
-    sb.append(QUOTE);
-    sb.append(COLON);
-    buildJSONString(sb,soi.getStructFieldData(o,structFields.get(i)),structFields.get(i).getFieldObjectInspector());
-  }
-  sb.append(RBRACE);
+sb.append(LBRACE);
+for (int i=0; i < structFields.size(); i++) {
+if (i > 0) {
+sb.append(COMMA);
+}
+sb.append(QUOTE);
+sb.append(structFields.get(i).getFieldName());
+sb.append(QUOTE);
+sb.append(COLON);
+buildJSONString(sb,soi.getStructFieldData(o,structFields.get(i)),structFields.get(i).getFieldObjectInspector());
+}
+sb.append(RBRACE);
 }
 break;
 }
