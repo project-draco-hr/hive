@@ -1,0 +1,200 @@
+{
+  byte isNull=buffer.read(invert);
+  if (isNull == 0) {
+    return null;
+  }
+  assert(isNull == 1);
+switch (type.getCategory()) {
+case PRIMITIVE:
+{
+      PrimitiveTypeInfo ptype=(PrimitiveTypeInfo)type;
+switch (ptype.getPrimitiveCategory()) {
+case VOID:
+{
+          return null;
+        }
+case BOOLEAN:
+{
+        BooleanWritable r=reuse == null ? new BooleanWritable() : (BooleanWritable)reuse;
+        byte b=buffer.read(invert);
+        assert(b == 1 || b == 2);
+        r.set(b == 2);
+        return r;
+      }
+case BYTE:
+{
+      ByteWritable r=reuse == null ? new ByteWritable() : (ByteWritable)reuse;
+      r.set((byte)(buffer.read(invert) ^ 0x80));
+      return r;
+    }
+case SHORT:
+{
+    ShortWritable r=reuse == null ? new ShortWritable() : (ShortWritable)reuse;
+    int v=buffer.read(invert) ^ 0x80;
+    v=(v << 8) + (buffer.read(invert) & 0xff);
+    r.set((short)v);
+    return r;
+  }
+case INT:
+{
+  IntWritable r=reuse == null ? new IntWritable() : (IntWritable)reuse;
+  int v=buffer.read(invert) ^ 0x80;
+  for (int i=0; i < 3; i++) {
+    v=(v << 8) + (buffer.read(invert) & 0xff);
+  }
+  r.set(v);
+  return r;
+}
+case LONG:
+{
+LongWritable r=reuse == null ? new LongWritable() : (LongWritable)reuse;
+long v=buffer.read(invert) ^ 0x80;
+for (int i=0; i < 7; i++) {
+  v=(v << 8) + (buffer.read(invert) & 0xff);
+}
+r.set(v);
+return r;
+}
+case FLOAT:
+{
+FloatWritable r=reuse == null ? new FloatWritable() : (FloatWritable)reuse;
+int v=0;
+for (int i=0; i < 4; i++) {
+v=(v << 8) + (buffer.read(invert) & 0xff);
+}
+if ((v & (1 << 31)) == 0) {
+v=v ^ Integer.MAX_VALUE;
+}
+ else {
+v=v ^ (1 << 31);
+}
+r.set(Float.intBitsToFloat(v));
+return r;
+}
+case DOUBLE:
+{
+DoubleWritable r=reuse == null ? new DoubleWritable() : (DoubleWritable)reuse;
+long v=0;
+for (int i=0; i < 8; i++) {
+v=(v << 8) + (buffer.read(invert) & 0xff);
+}
+if ((v & (1L << 63)) == 0) {
+v=v ^ Long.MAX_VALUE;
+}
+ else {
+v=v ^ (1L << 63);
+}
+r.set(Double.longBitsToDouble(v));
+return r;
+}
+case STRING:
+{
+Text r=reuse == null ? new Text() : (Text)reuse;
+int start=buffer.tell();
+int length=0;
+do {
+byte b=buffer.read(invert);
+if (b == 0) {
+break;
+}
+if (b == 1) {
+buffer.read(invert);
+}
+length++;
+}
+ while (true);
+if (length == buffer.tell() - start) {
+r.set(buffer.getData(),start,length);
+}
+ else {
+r.set(buffer.getData(),start,length);
+buffer.seek(start);
+byte[] rdata=r.getBytes();
+for (int i=0; i < length; i++) {
+byte b=buffer.read(invert);
+if (b == 1) {
+b=(byte)(buffer.read(invert) - 1);
+}
+rdata[i]=b;
+}
+byte b=buffer.read(invert);
+assert(b == 0);
+}
+return r;
+}
+default :
+{
+throw new RuntimeException("Unrecognized type: " + ptype.getPrimitiveCategory());
+}
+}
+}
+case LIST:
+{
+ListTypeInfo ltype=(ListTypeInfo)type;
+TypeInfo etype=ltype.getListElementTypeInfo();
+ArrayList<Object> r=reuse == null ? new ArrayList<Object>() : (ArrayList<Object>)reuse;
+int size=0;
+while (true) {
+int more=buffer.read(invert);
+if (more == 0) {
+break;
+}
+assert(more == 1);
+if (size == r.size()) {
+r.add(null);
+}
+r.set(size,deserialize(buffer,etype,invert,r.get(size)));
+size++;
+}
+while (r.size() > size) {
+r.remove(r.size() - 1);
+}
+return r;
+}
+case MAP:
+{
+MapTypeInfo mtype=(MapTypeInfo)type;
+TypeInfo ktype=mtype.getMapKeyTypeInfo();
+TypeInfo vtype=mtype.getMapValueTypeInfo();
+Map<Object,Object> r;
+if (reuse == null) {
+r=new HashMap<Object,Object>();
+}
+ else {
+r=(HashMap<Object,Object>)reuse;
+r.clear();
+}
+int size=0;
+while (true) {
+int more=buffer.read(invert);
+if (more == 0) {
+break;
+}
+assert(more == 1);
+Object k=deserialize(buffer,ktype,invert,null);
+Object v=deserialize(buffer,vtype,invert,null);
+r.put(k,v);
+}
+return r;
+}
+case STRUCT:
+{
+StructTypeInfo stype=(StructTypeInfo)type;
+List<TypeInfo> fieldTypes=stype.getAllStructFieldTypeInfos();
+int size=fieldTypes.size();
+ArrayList<Object> r=reuse == null ? new ArrayList<Object>(size) : (ArrayList<Object>)reuse;
+assert(r.size() <= size);
+while (r.size() < size) {
+r.add(null);
+}
+for (int eid=0; eid < size; eid++) {
+r.set(eid,deserialize(buffer,fieldTypes.get(eid),invert,r.get(eid)));
+}
+return r;
+}
+default :
+{
+throw new RuntimeException("Unrecognized type: " + type.getCategory());
+}
+}
+}

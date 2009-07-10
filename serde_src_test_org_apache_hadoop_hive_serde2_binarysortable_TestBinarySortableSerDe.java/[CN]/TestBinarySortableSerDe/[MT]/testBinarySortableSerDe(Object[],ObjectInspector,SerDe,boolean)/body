@@ -1,0 +1,30 @@
+{
+  ObjectInspector serdeOI=serde.getObjectInspector();
+  BytesWritable bytes[]=new BytesWritable[rows.length];
+  for (int i=0; i < rows.length; i++) {
+    BytesWritable s=(BytesWritable)serde.serialize(rows[i],rowOI);
+    bytes[i]=new BytesWritable();
+    bytes[i].set(s);
+    if (i > 0) {
+      int compareResult=bytes[i - 1].compareTo(bytes[i]);
+      if ((compareResult < 0 && !ascending) || (compareResult > 0 && ascending)) {
+        System.out.println("Test failed in " + (ascending ? "ascending" : "descending") + " order with "+ (i - 1)+ " and "+ i);
+        System.out.println("serialized data [" + (i - 1) + "] = "+ hexString(bytes[i - 1]));
+        System.out.println("serialized data [" + i + "] = "+ hexString(bytes[i]));
+        System.out.println("deserialized data [" + (i - 1) + " = "+ SerDeUtils.getJSONString(rows[i - 1],rowOI));
+        System.out.println("deserialized data [" + i + " = "+ SerDeUtils.getJSONString(rows[i],rowOI));
+        fail("Sort order of serialized " + (i - 1) + " and "+ i+ " are reversed!");
+      }
+    }
+  }
+  Object[] deserialized=new Object[rows.length];
+  for (int i=0; i < rows.length; i++) {
+    deserialized[i]=serde.deserialize(bytes[i]);
+    if (0 != ObjectInspectorUtils.compare(rows[i],rowOI,deserialized[i],serdeOI)) {
+      System.out.println("structs[" + i + "] = "+ SerDeUtils.getJSONString(rows[i],rowOI));
+      System.out.println("deserialized[" + i + "] = "+ SerDeUtils.getJSONString(deserialized[i],serdeOI));
+      System.out.println("serialized[" + i + "] = "+ hexString(bytes[i]));
+      assertEquals(rows[i],deserialized[i]);
+    }
+  }
+}
