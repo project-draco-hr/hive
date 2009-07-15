@@ -2,16 +2,19 @@
   totalMemory=Runtime.getRuntime().totalMemory();
   numRowsInput=0;
   numRowsHashTbl=0;
+  assert(inputObjInspector.length == 1);
+  ObjectInspector rowInspector=inputObjInspector[0];
   keyFields=new ExprNodeEvaluator[conf.getKeys().size()];
   keyObjectInspectors=new ObjectInspector[conf.getKeys().size()];
+  currentKeyObjectInspectors=new ObjectInspector[conf.getKeys().size()];
   keyObjects=new Object[conf.getKeys().size()];
   for (int i=0; i < keyFields.length; i++) {
     keyFields[i]=ExprNodeEvaluatorFactory.get(conf.getKeys().get(i));
-    keyObjectInspectors[i]=null;
+    keyObjectInspectors[i]=keyFields[i].initialize(rowInspector);
+    currentKeyObjectInspectors[i]=ObjectInspectorUtils.getStandardObjectInspector(keyObjectInspectors[i],ObjectInspectorCopyOption.WRITABLE);
     keyObjects[i]=null;
   }
   newKeys=new ArrayList<Object>(keyFields.length);
-  currentKeyObjectInspectors=new ObjectInspector[conf.getKeys().size()];
   aggregationParameterFields=new ExprNodeEvaluator[conf.getAggregators().size()][];
   aggregationParameterObjectInspectors=new ObjectInspector[conf.getAggregators().size()][];
   aggregationParameterStandardObjectInspectors=new ObjectInspector[conf.getAggregators().size()][];
@@ -24,8 +27,8 @@
     aggregationParameterObjects[i]=new Object[parameters.size()];
     for (int j=0; j < parameters.size(); j++) {
       aggregationParameterFields[i][j]=ExprNodeEvaluatorFactory.get(parameters.get(j));
-      aggregationParameterObjectInspectors[i][j]=null;
-      aggregationParameterStandardObjectInspectors[i][j]=null;
+      aggregationParameterObjectInspectors[i][j]=aggregationParameterFields[i][j].initialize(rowInspector);
+      aggregationParameterStandardObjectInspectors[i][j]=ObjectInspectorUtils.getStandardObjectInspector(aggregationParameterObjectInspectors[i][j],ObjectInspectorCopyOption.WRITABLE);
       aggregationParameterObjects[i][j]=null;
     }
   }
@@ -33,35 +36,10 @@
   for (int i=0; i < aggregationIsDistinct.length; i++) {
     aggregationIsDistinct[i]=conf.getAggregators().get(i).getDistinct();
   }
-  aggregationClasses=(Class<? extends UDAFEvaluator>[])new Class[conf.getAggregators().size()];
-  for (int i=0; i < conf.getAggregators().size(); i++) {
+  aggregationEvaluators=new GenericUDAFEvaluator[conf.getAggregators().size()];
+  for (int i=0; i < aggregationEvaluators.length; i++) {
     aggregationDesc agg=conf.getAggregators().get(i);
-    aggregationClasses[i]=agg.getAggregationClass();
-  }
-  aggregationsAggregateMethods=new Method[aggregationClasses.length];
-  aggregationsEvaluateMethods=new Method[aggregationClasses.length];
-  for (int i=0; i < aggregationClasses.length; i++) {
-    String evaluateMethodName=conf.getEvalMethods().get(i);
-    String aggregateMethodName=conf.getAggMethods().get(i);
-    for (    Method m : aggregationClasses[i].getMethods()) {
-      if (m.getName().equals(aggregateMethodName) && m.getParameterTypes().length == aggregationParameterFields[i].length) {
-        aggregationsAggregateMethods[i]=m;
-        break;
-      }
-    }
-    if (null == aggregationsAggregateMethods[i]) {
-      throw new HiveException("Cannot find " + aggregateMethodName + " method of UDAF class "+ aggregationClasses[i].getName()+ " that accepts "+ aggregationParameterFields[i].length+ " parameters!");
-    }
-    try {
-      aggregationsEvaluateMethods[i]=aggregationClasses[i].getMethod(evaluateMethodName);
-    }
- catch (    Exception e) {
-      throw new HiveException("Unable to get the method named " + evaluateMethodName + " from "+ aggregationClasses[i]+ ": "+ e.getMessage());
-    }
-    if (null == aggregationsEvaluateMethods[i]) {
-      throw new HiveException("Cannot find " + evaluateMethodName + " method of UDAF class "+ aggregationClasses[i].getName()+ "!");
-    }
-    assert(aggregationsEvaluateMethods[i] != null);
+    aggregationEvaluators[i]=agg.createGenericUDAFEvaluator();
   }
   aggregationsParametersLastInvoke=new Object[conf.getAggregators().size()][];
   if (conf.getMode() != groupByDesc.Mode.HASH) {
@@ -69,7 +47,7 @@
     hashAggr=false;
   }
  else {
-    hashAggregations=new HashMap<ArrayList<Object>,UDAFEvaluator[]>();
+    hashAggregations=new HashMap<ArrayList<Object>,AggregationBuffer[]>();
     aggregations=newAggregations();
     hashAggr=true;
     keyPositionsSize=new ArrayList<Integer>();
@@ -78,20 +56,17 @@
     numRowsCompareHashAggr=groupbyMapAggrInterval;
     minReductionHashAggr=HiveConf.getFloatVar(hconf,HiveConf.ConfVars.HIVEMAPAGGRHASHMINREDUCTION);
   }
-  int totalFields=keyFields.length + aggregationClasses.length;
+  int totalFields=keyFields.length + aggregationEvaluators.length;
   objectInspectors=new ArrayList<ObjectInspector>(totalFields);
   for (int i=0; i < keyFields.length; i++) {
     objectInspectors.add(null);
   }
-  for (int i=0; i < aggregationClasses.length; i++) {
-    objectInspectors.add(PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(PrimitiveObjectInspectorUtils.getTypeEntryFromPrimitiveWritableClass(aggregationsEvaluateMethods[i].getReturnType()).primitiveCategory));
+  for (int i=0; i < aggregationEvaluators.length; i++) {
+    ObjectInspector roi=aggregationEvaluators[i].init(conf.getAggregators().get(i).getMode(),aggregationParameterObjectInspectors[i]);
+    objectInspectors.add(roi);
   }
   fieldNames=conf.getOutputColumnNames();
   for (int i=0; i < keyFields.length; i++) {
-    if (keyObjectInspectors[i] == null) {
-      keyObjectInspectors[i]=keyFields[i].initialize(inputObjInspector[0]);
-      currentKeyObjectInspectors[i]=ObjectInspectorUtils.getStandardObjectInspector(keyObjectInspectors[i],ObjectInspectorCopyOption.WRITABLE);
-    }
     objectInspectors.set(i,currentKeyObjectInspectors[i]);
   }
   ArrayList<String> keyNames=new ArrayList<String>(keyFields.length);

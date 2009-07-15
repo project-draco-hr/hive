@@ -1,0 +1,65 @@
+{
+  RowResolver groupByInputRowResolver=opParseCtx.get(inputOperatorInfo).getRR();
+  QBParseInfo parseInfo=qb.getParseInfo();
+  RowResolver groupByOutputRowResolver=new RowResolver();
+  groupByOutputRowResolver.setIsExprResolver(true);
+  ArrayList<exprNodeDesc> groupByKeys=new ArrayList<exprNodeDesc>();
+  ArrayList<String> outputColumnNames=new ArrayList<String>();
+  ArrayList<aggregationDesc> aggregations=new ArrayList<aggregationDesc>();
+  Map<String,exprNodeDesc> colExprMap=new HashMap<String,exprNodeDesc>();
+  List<ASTNode> grpByExprs=getGroupByForClause(parseInfo,dest);
+  for (int i=0; i < grpByExprs.size(); ++i) {
+    ASTNode grpbyExpr=grpByExprs.get(i);
+    exprNodeDesc grpByExprNode=genExprNodeDesc(grpbyExpr,groupByInputRowResolver);
+    groupByKeys.add(grpByExprNode);
+    String field=getColumnInternalName(i);
+    outputColumnNames.add(field);
+    groupByOutputRowResolver.put("",grpbyExpr.toStringTree(),new ColumnInfo(field,grpByExprNode.getTypeInfo()));
+    colExprMap.put(field,groupByKeys.get(groupByKeys.size() - 1));
+  }
+  if (parseInfo.getDistinctFuncExprForClause(dest) != null) {
+    ASTNode value=parseInfo.getDistinctFuncExprForClause(dest);
+    int numDistn=0;
+    for (int i=1; i < value.getChildCount(); i++) {
+      ASTNode parameter=(ASTNode)value.getChild(i);
+      String text=parameter.toStringTree();
+      if (groupByOutputRowResolver.get("",text) == null) {
+        exprNodeDesc distExprNode=genExprNodeDesc(parameter,groupByInputRowResolver);
+        groupByKeys.add(distExprNode);
+        numDistn++;
+        String field=getColumnInternalName(grpByExprs.size() + numDistn - 1);
+        outputColumnNames.add(field);
+        groupByOutputRowResolver.put("",text,new ColumnInfo(field,distExprNode.getTypeInfo()));
+        colExprMap.put(field,groupByKeys.get(groupByKeys.size() - 1));
+      }
+    }
+  }
+  HashMap<String,ASTNode> aggregationTrees=parseInfo.getAggregationExprsForClause(dest);
+  assert(aggregationTrees != null);
+  for (  Map.Entry<String,ASTNode> entry : aggregationTrees.entrySet()) {
+    ASTNode value=entry.getValue();
+    String aggName=value.getChild(0).getText();
+    ArrayList<exprNodeDesc> aggParameters=new ArrayList<exprNodeDesc>();
+    ArrayList<Class<?>> aggClasses=new ArrayList<Class<?>>();
+    for (int i=1; i < value.getChildCount(); i++) {
+      ASTNode paraExpr=(ASTNode)value.getChild(i);
+      exprNodeDesc paraExprNode=genExprNodeDesc(paraExpr,groupByInputRowResolver);
+      aggParameters.add(paraExprNode);
+    }
+    boolean isDistinct=value.getType() == HiveParser.TOK_FUNCTIONDI;
+    Mode amode=groupByDescModeToUDAFMode(mode,isDistinct);
+    GenericUDAFEvaluator genericUDAFEvaluator=getGenericUDAFEvaluator(aggName,aggParameters,value);
+    assert(genericUDAFEvaluator != null);
+    GenericUDAFInfo udaf=getGenericUDAFInfo(genericUDAFEvaluator,amode,aggParameters);
+    aggregations.add(new aggregationDesc(aggName.toLowerCase(),udaf.genericUDAFEvaluator,udaf.convertedParameters,isDistinct,amode));
+    String field=getColumnInternalName(groupByKeys.size() + aggregations.size() - 1);
+    outputColumnNames.add(field);
+    groupByOutputRowResolver.put("",value.toStringTree(),new ColumnInfo(field,udaf.returnType));
+    if (genericUDAFEvaluators != null) {
+      genericUDAFEvaluators.put(entry.getKey(),genericUDAFEvaluator);
+    }
+  }
+  Operator op=putOpInsertMap(OperatorFactory.getAndMakeChild(new groupByDesc(mode,outputColumnNames,groupByKeys,aggregations),new RowSchema(groupByOutputRowResolver.getColumnInfos()),inputOperatorInfo),groupByOutputRowResolver);
+  op.setColumnExprMap(colExprMap);
+  return op;
+}

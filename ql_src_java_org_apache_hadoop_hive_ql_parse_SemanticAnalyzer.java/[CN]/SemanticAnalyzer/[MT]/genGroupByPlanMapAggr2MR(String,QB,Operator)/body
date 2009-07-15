@@ -1,17 +1,18 @@
 {
   QBParseInfo parseInfo=qb.getParseInfo();
-  Operator groupByOperatorInfo=genGroupByPlanMapGroupByOperator(qb,dest,inputOperatorInfo,groupByDesc.Mode.HASH);
+  Map<String,GenericUDAFEvaluator> genericUDAFEvaluators=new LinkedHashMap<String,GenericUDAFEvaluator>();
+  GroupByOperator groupByOperatorInfo=(GroupByOperator)genGroupByPlanMapGroupByOperator(qb,dest,inputOperatorInfo,groupByDesc.Mode.HASH,genericUDAFEvaluators);
   if (!optimizeMapAggrGroupBy(dest,qb)) {
     Operator reduceSinkOperatorInfo=genGroupByPlanReduceSinkOperator(qb,dest,groupByOperatorInfo,(parseInfo.getDistinctFuncExprForClause(dest) == null ? -1 : Integer.MAX_VALUE),-1,true);
-    Operator groupByOperatorInfo2=genGroupByPlanGroupByOperator1(parseInfo,dest,reduceSinkOperatorInfo,groupByDesc.Mode.PARTIAL2);
+    Operator groupByOperatorInfo2=genGroupByPlanGroupByOperator1(parseInfo,dest,reduceSinkOperatorInfo,groupByDesc.Mode.PARTIALS,genericUDAFEvaluators);
     int numReducers=-1;
     List<ASTNode> grpByExprs=getGroupByForClause(parseInfo,dest);
     if (grpByExprs.isEmpty())     numReducers=1;
     Operator reduceSinkOperatorInfo2=genGroupByPlanReduceSinkOperator2MR(parseInfo,dest,groupByOperatorInfo2,grpByExprs.size(),numReducers);
-    return genGroupByPlanGroupByOperator2MR(parseInfo,dest,reduceSinkOperatorInfo2,groupByDesc.Mode.FINAL);
+    return genGroupByPlanGroupByOperator2MR(parseInfo,dest,reduceSinkOperatorInfo2,groupByDesc.Mode.FINAL,genericUDAFEvaluators);
   }
  else {
     Operator reduceSinkOperatorInfo=genGroupByPlanReduceSinkOperator(qb,dest,groupByOperatorInfo,getGroupByForClause(parseInfo,dest).size(),1,true);
-    return genGroupByPlanGroupByOperator2MR(parseInfo,dest,reduceSinkOperatorInfo,groupByDesc.Mode.FINAL);
+    return genGroupByPlanGroupByOperator2MR(parseInfo,dest,reduceSinkOperatorInfo,groupByDesc.Mode.FINAL,genericUDAFEvaluators);
   }
 }
