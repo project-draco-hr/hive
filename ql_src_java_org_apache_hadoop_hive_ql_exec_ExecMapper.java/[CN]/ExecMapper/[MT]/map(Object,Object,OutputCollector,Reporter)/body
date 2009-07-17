@@ -1,23 +1,13 @@
 {
   if (oc == null) {
-    try {
-      oc=output;
-      mo.setOutputCollector(oc);
-      mo.initialize(jc,reporter,null);
-      if (fetchOperators != null) {
-        mapredWork mrwork=Utilities.getMapRedWork(jc);
-        mapredLocalWork localWork=mrwork.getMapLocalWork();
-        Iterator<Map.Entry<String,FetchOperator>> fetchOps=fetchOperators.entrySet().iterator();
-        while (fetchOps.hasNext()) {
-          Map.Entry<String,FetchOperator> entry=fetchOps.next();
-          String alias=entry.getKey();
-          FetchOperator fetchOp=entry.getValue();
-          Operator<? extends Serializable> forwardOp=localWork.getAliasToWork().get(alias);
-          forwardOp.initialize(jc,reporter,new ObjectInspector[]{fetchOp.getOutputObjectInspector()});
-        }
-        fetchOps=fetchOperators.entrySet().iterator();
-        while (fetchOps.hasNext()) {
-          Map.Entry<String,FetchOperator> entry=fetchOps.next();
+    oc=output;
+    rp=reporter;
+    mo.setOutputCollector(oc);
+    mo.setReporter(rp);
+    if (fetchOperators != null) {
+      try {
+        mapredLocalWork localWork=mo.getConf().getMapLocalWork();
+        for (        Map.Entry<String,FetchOperator> entry : fetchOperators.entrySet()) {
           String alias=entry.getKey();
           FetchOperator fetchOp=entry.getValue();
           Operator<? extends Serializable> forwardOp=localWork.getAliasToWork().get(alias);
@@ -26,20 +16,18 @@
             if (row == null) {
               break;
             }
-            forwardOp.process(row.o,row.oi,0);
+            forwardOp.process(row.o,0);
           }
         }
       }
-      rp=reporter;
-    }
- catch (    Throwable e) {
-      abort=true;
-      e.printStackTrace();
-      if (e instanceof OutOfMemoryError) {
-        throw (OutOfMemoryError)e;
-      }
+ catch (      Throwable e) {
+        abort=true;
+        if (e instanceof OutOfMemoryError) {
+          throw (OutOfMemoryError)e;
+        }
  else {
-        throw new RuntimeException("Map operator initialization failed",e);
+          throw new RuntimeException("Map local work failed",e);
+        }
       }
     }
   }

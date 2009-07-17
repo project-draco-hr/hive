@@ -1,0 +1,55 @@
+{
+  super.initializeOp(hconf);
+  numMapRowsRead=0;
+  firstRow=true;
+  try {
+    heartbeatInterval=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVESENDHEARTBEAT);
+    joinKeys=new HashMap<Byte,List<ExprNodeEvaluator>>();
+    populateJoinKeyValue(joinKeys,conf.getKeys());
+    joinKeysObjectInspectors=getObjectInspectorsFromEvaluators(joinKeys,inputObjInspectors);
+    joinKeysStandardObjectInspectors=getStandardObjectInspectors(joinKeysObjectInspectors);
+    posBigTable=conf.getPosBigTable();
+    metadataValueTag=new int[numAliases];
+    for (int pos=0; pos < numAliases; pos++)     metadataValueTag[pos]=-1;
+    mapJoinTables=new HashMap<Byte,HTree>();
+    hTables=new ArrayList<File>();
+    for (int pos=0; pos < numAliases; pos++) {
+      if (pos == posBigTable)       continue;
+      Properties props=new Properties();
+      props.setProperty(RecordManagerOptions.CACHE_SIZE,String.valueOf(HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVEMAPJOINCACHEROWS)));
+      Random rand=new Random();
+      File newDir=new File("/tmp/" + rand.nextInt());
+      String newDirName=null;
+      while (true) {
+        if (newDir.mkdir()) {
+          newDirName=newDir.getAbsolutePath();
+          hTables.add(newDir);
+          break;
+        }
+        newDir=new File("/tmp" + rand.nextInt());
+      }
+      RecordManager recman=RecordManagerFactory.createRecordManager(newDirName + "/" + pos,props);
+      HTree hashTable=HTree.createInstance(recman);
+      mapJoinTables.put(Byte.valueOf((byte)pos),hashTable);
+    }
+    storage.put((byte)posBigTable,new ArrayList<ArrayList<Object>>());
+    mapJoinRowsKey=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVEMAPJOINROWSIZE);
+    List<? extends StructField> structFields=((StructObjectInspector)outputObjInspector).getAllStructFieldRefs();
+    if (conf.getOutputColumnNames().size() < structFields.size()) {
+      List<ObjectInspector> structFieldObjectInspectors=new ArrayList<ObjectInspector>();
+      for (      Byte alias : order) {
+        int sz=conf.getExprs().get(alias).size();
+        List<Integer> retained=conf.getRetainList().get(alias);
+        for (int i=0; i < sz; i++) {
+          int pos=retained.get(i);
+          structFieldObjectInspectors.add(structFields.get(pos).getFieldObjectInspector());
+        }
+      }
+      outputObjInspector=ObjectInspectorFactory.getStandardStructObjectInspector(conf.getOutputColumnNames(),structFieldObjectInspectors);
+    }
+    initializeChildren(hconf);
+  }
+ catch (  IOException e) {
+    throw new HiveException(e);
+  }
+}

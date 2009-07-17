@@ -7,26 +7,35 @@
     l4j.info("cannot get classpath: " + e.getMessage());
   }
   try {
-    init();
     jc=job;
     mapredWork mrwork=Utilities.getMapRedWork(job);
     mo=new MapOperator();
     mo.setConf(mrwork);
-    mapredLocalWork mlo=mrwork.getMapLocalWork();
-    if (mlo != null) {
-      fetchOperators=new HashMap<String,FetchOperator>();
-      Map<String,fetchWork> aliasToFetchWork=mlo.getAliasToFetchWork();
-      Iterator<Map.Entry<String,fetchWork>> fetchWorkSet=aliasToFetchWork.entrySet().iterator();
-      while (fetchWorkSet.hasNext()) {
-        Map.Entry<String,fetchWork> entry=fetchWorkSet.next();
-        String alias=entry.getKey();
-        fetchWork fWork=entry.getValue();
-        fetchOperators.put(alias,new FetchOperator(fWork,job));
-        l4j.info("fetchoperator for " + alias + " initialized");
-      }
+    mo.setChildren(job);
+    l4j.info(mo.dump(0));
+    mo.initialize(jc,null);
+    mapredLocalWork localWork=mrwork.getMapLocalWork();
+    if (localWork == null) {
+      return;
+    }
+    fetchOperators=new HashMap<String,FetchOperator>();
+    for (    Map.Entry<String,fetchWork> entry : localWork.getAliasToFetchWork().entrySet()) {
+      fetchOperators.put(entry.getKey(),new FetchOperator(entry.getValue(),job));
+      l4j.info("fetchoperator for " + entry.getKey() + " created");
+    }
+    for (    Map.Entry<String,FetchOperator> entry : fetchOperators.entrySet()) {
+      Operator<? extends Serializable> forwardOp=localWork.getAliasToWork().get(entry.getKey());
+      forwardOp.initialize(jc,new ObjectInspector[]{entry.getValue().getOutputObjectInspector()});
+      l4j.info("fetchoperator for " + entry.getKey() + " initialized");
     }
   }
- catch (  Exception e) {
-    throw new RuntimeException(e);
+ catch (  Throwable e) {
+    abort=true;
+    if (e instanceof OutOfMemoryError) {
+      throw (OutOfMemoryError)e;
+    }
+ else {
+      throw new RuntimeException("Map operator initialization failed",e);
+    }
   }
 }
