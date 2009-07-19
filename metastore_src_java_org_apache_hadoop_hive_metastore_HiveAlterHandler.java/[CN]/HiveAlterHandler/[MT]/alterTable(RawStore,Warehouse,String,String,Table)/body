@@ -1,0 +1,86 @@
+{
+  if (newt == null) {
+    throw new InvalidOperationException("New table is invalid: " + newt);
+  }
+  if (!MetaStoreUtils.validateName(newt.getTableName()) || !MetaStoreUtils.validateColNames(newt.getSd().getCols())) {
+    throw new InvalidOperationException(newt.getTableName() + " is not a valid object name");
+  }
+  Path srcPath=null;
+  FileSystem srcFs=null;
+  Path destPath=null;
+  FileSystem destFs=null;
+  boolean success=false;
+  String oldTblLoc=null;
+  String newTblLoc=null;
+  boolean moveData=false;
+  boolean rename=false;
+  try {
+    msdb.openTransaction();
+    name=name.toLowerCase();
+    dbname=dbname.toLowerCase();
+    if (!newt.getTableName().equalsIgnoreCase(name) || !newt.getDbName().equalsIgnoreCase(dbname)) {
+      if (msdb.getTable(newt.getDbName(),newt.getTableName()) != null) {
+        throw new InvalidOperationException("new table " + newt.getDbName() + "."+ newt.getTableName()+ " already exists");
+      }
+      rename=true;
+    }
+    Table oldt=msdb.getTable(dbname,name);
+    if (oldt == null) {
+      throw new InvalidOperationException("table " + newt.getDbName() + "."+ newt.getTableName()+ " doesn't exist");
+    }
+    if (oldt.getPartitionKeys().size() != newt.getPartitionKeys().size() || !oldt.getPartitionKeys().containsAll(newt.getPartitionKeys())) {
+      throw new InvalidOperationException("partition keys can not be changed.");
+    }
+    if (rename && (oldt.getSd().getLocation().compareTo(newt.getSd().getLocation()) == 0 || StringUtils.isEmpty(newt.getSd().getLocation())) && !oldt.getParameters().containsKey("EXTERNAL")) {
+      newTblLoc=wh.getDefaultTablePath(newt.getDbName(),newt.getTableName()).toString();
+      newt.getSd().setLocation(newTblLoc);
+      oldTblLoc=oldt.getSd().getLocation();
+      moveData=true;
+      srcPath=new Path(oldTblLoc);
+      srcFs=wh.getFs(srcPath);
+      destPath=new Path(newTblLoc);
+      destFs=wh.getFs(destPath);
+      if (srcFs != destFs) {
+        throw new InvalidOperationException("table new location " + destPath + " is on a different file system than the old location "+ srcPath+ ". This operation is not supported");
+      }
+      try {
+        srcFs.exists(srcPath);
+        if (destFs.exists(destPath)) {
+          throw new InvalidOperationException("New location for this table " + newt.getDbName() + "."+ newt.getTableName()+ " already exists : "+ destPath);
+        }
+      }
+ catch (      IOException e) {
+        throw new InvalidOperationException("Unable to access new location " + destPath + " for table "+ newt.getDbName()+ "."+ newt.getTableName());
+      }
+      List<Partition> parts=msdb.getPartitions(dbname,name,0);
+      for (      Partition part : parts) {
+        String oldPartLoc=part.getSd().getLocation();
+        if (oldPartLoc.contains(oldTblLoc)) {
+          part.getSd().setLocation(part.getSd().getLocation().replace(oldTblLoc,newTblLoc));
+          msdb.alterPartition(dbname,name,part);
+        }
+      }
+    }
+    msdb.alterTable(dbname,name,newt);
+    success=msdb.commitTransaction();
+  }
+ catch (  InvalidObjectException e) {
+    LOG.debug(e);
+    throw new InvalidOperationException("Unable to change partition or table." + " Check metastore logs for detailed stack." + e.getMessage());
+  }
+ finally {
+    if (!success) {
+      msdb.rollbackTransaction();
+    }
+    if (success && moveData) {
+      try {
+        if (srcFs.exists(srcPath)) {
+          srcFs.rename(srcPath,destPath);
+        }
+      }
+ catch (      IOException e) {
+        throw new InvalidOperationException("Unable to access old location " + srcPath + " for table "+ dbname+ "."+ name);
+      }
+    }
+  }
+}
