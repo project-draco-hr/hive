@@ -1,0 +1,61 @@
+{
+  List<ASTNode> distExprs=getCommonDistinctExprs(qb,input);
+  QBParseInfo qbp=qb.getParseInfo();
+  TreeSet<String> ks=new TreeSet<String>();
+  ks.addAll(qbp.getClauseNames());
+  RowResolver inputRR=opParseCtx.get(input).getRR();
+  RowResolver reduceSinkOutputRowResolver=new RowResolver();
+  reduceSinkOutputRowResolver.setIsExprResolver(true);
+  ArrayList<exprNodeDesc> reduceKeys=new ArrayList<exprNodeDesc>();
+  ArrayList<exprNodeDesc> reduceValues=new ArrayList<exprNodeDesc>();
+  Map<String,exprNodeDesc> colExprMap=new HashMap<String,exprNodeDesc>();
+  List<String> outputColumnNames=new ArrayList<String>();
+  for (  ASTNode distn : distExprs) {
+    exprNodeDesc distExpr=genExprNodeDesc(distn,inputRR);
+    reduceKeys.add(distExpr);
+    String text=distn.toStringTree();
+    if (reduceSinkOutputRowResolver.get("",text) == null) {
+      outputColumnNames.add(getColumnInternalName(reduceKeys.size() - 1));
+      String field=Utilities.ReduceField.KEY.toString() + "." + getColumnInternalName(reduceKeys.size() - 1);
+      ColumnInfo colInfo=new ColumnInfo(field,reduceKeys.get(reduceKeys.size() - 1).getTypeInfo());
+      reduceSinkOutputRowResolver.put("",text,colInfo);
+      colExprMap.put(colInfo.getInternalName(),distExpr);
+    }
+  }
+  for (  String dest : ks) {
+    List<ASTNode> grpByExprs=getGroupByForClause(qbp,dest);
+    for (int i=0; i < grpByExprs.size(); ++i) {
+      ASTNode grpbyExpr=grpByExprs.get(i);
+      String text=grpbyExpr.toStringTree();
+      if (reduceSinkOutputRowResolver.get("",text) == null) {
+        exprNodeDesc grpByExprNode=genExprNodeDesc(grpbyExpr,inputRR);
+        reduceValues.add(grpByExprNode);
+        String field=Utilities.ReduceField.VALUE.toString() + "." + getColumnInternalName(reduceValues.size() - 1);
+        ColumnInfo colInfo=new ColumnInfo(field,reduceValues.get(reduceValues.size() - 1).getTypeInfo());
+        reduceSinkOutputRowResolver.put("",text,colInfo);
+        outputColumnNames.add(getColumnInternalName(reduceValues.size() - 1));
+      }
+    }
+    HashMap<String,ASTNode> aggregationTrees=qbp.getAggregationExprsForClause(dest);
+    assert(aggregationTrees != null);
+    for (    Map.Entry<String,ASTNode> entry : aggregationTrees.entrySet()) {
+      ASTNode value=entry.getValue();
+      String aggName=value.getChild(0).getText();
+      for (int i=1; i < value.getChildCount(); i++) {
+        ASTNode paraExpr=(ASTNode)value.getChild(i);
+        String text=paraExpr.toStringTree();
+        if (reduceSinkOutputRowResolver.get("",text) == null) {
+          exprNodeDesc paraExprNode=genExprNodeDesc(paraExpr,inputRR);
+          reduceValues.add(paraExprNode);
+          String field=Utilities.ReduceField.VALUE.toString() + "." + getColumnInternalName(reduceValues.size() - 1);
+          ColumnInfo colInfo=new ColumnInfo(field,reduceValues.get(reduceValues.size() - 1).getTypeInfo());
+          reduceSinkOutputRowResolver.put("",text,colInfo);
+          outputColumnNames.add(getColumnInternalName(reduceValues.size() - 1));
+        }
+      }
+    }
+  }
+  ReduceSinkOperator rsOp=(ReduceSinkOperator)putOpInsertMap(OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(reduceKeys,reduceValues,outputColumnNames,true,-1,reduceKeys.size(),-1),new RowSchema(reduceSinkOutputRowResolver.getColumnInfos()),input),reduceSinkOutputRowResolver);
+  rsOp.setColumnExprMap(colExprMap);
+  return rsOp;
+}

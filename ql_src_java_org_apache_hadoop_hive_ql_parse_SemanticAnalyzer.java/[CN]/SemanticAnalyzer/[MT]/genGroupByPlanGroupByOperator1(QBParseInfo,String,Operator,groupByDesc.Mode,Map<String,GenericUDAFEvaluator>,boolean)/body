@@ -25,7 +25,8 @@
     ASTNode value=entry.getValue();
     String aggName=value.getChild(0).getText();
     ArrayList<exprNodeDesc> aggParameters=new ArrayList<exprNodeDesc>();
-    if (value.getToken().getType() == HiveParser.TOK_FUNCTIONDI) {
+    boolean partialAggDone=!(distPartAgg || (value.getToken().getType() == HiveParser.TOK_FUNCTIONDI));
+    if (!partialAggDone) {
       for (int i=1; i < value.getChildCount(); i++) {
         String text=value.getChild(i).toStringTree();
         ASTNode paraExpr=(ASTNode)value.getChild(i);
@@ -50,15 +51,23 @@
     }
     boolean isDistinct=(value.getType() == HiveParser.TOK_FUNCTIONDI);
     Mode amode=groupByDescModeToUDAFMode(mode,isDistinct);
-    GenericUDAFEvaluator genericUDAFEvaluator=genericUDAFEvaluators.get(entry.getKey());
-    assert(genericUDAFEvaluator != null);
+    GenericUDAFEvaluator genericUDAFEvaluator=null;
+    if (distPartAgg) {
+      genericUDAFEvaluator=getGenericUDAFEvaluator(aggName,aggParameters,value);
+      assert(genericUDAFEvaluator != null);
+      genericUDAFEvaluators.put(entry.getKey(),genericUDAFEvaluator);
+    }
+ else {
+      genericUDAFEvaluator=genericUDAFEvaluators.get(entry.getKey());
+      assert(genericUDAFEvaluator != null);
+    }
     GenericUDAFInfo udaf=getGenericUDAFInfo(genericUDAFEvaluator,amode,aggParameters);
     aggregations.add(new aggregationDesc(aggName.toLowerCase(),udaf.genericUDAFEvaluator,udaf.convertedParameters,(mode != groupByDesc.Mode.FINAL && isDistinct),amode));
     String field=getColumnInternalName(groupByKeys.size() + aggregations.size() - 1);
     outputColumnNames.add(field);
     groupByOutputRowResolver.put("",value.toStringTree(),new ColumnInfo(field,udaf.returnType));
   }
-  Operator op=putOpInsertMap(OperatorFactory.getAndMakeChild(new groupByDesc(mode,outputColumnNames,groupByKeys,aggregations),new RowSchema(groupByOutputRowResolver.getColumnInfos()),reduceSinkOperatorInfo),groupByOutputRowResolver);
+  Operator op=putOpInsertMap(OperatorFactory.getAndMakeChild(new groupByDesc(mode,outputColumnNames,groupByKeys,aggregations,distPartAgg),new RowSchema(groupByOutputRowResolver.getColumnInfos()),reduceSinkOperatorInfo),groupByOutputRowResolver);
   op.setColumnExprMap(colExprMap);
   return op;
 }
