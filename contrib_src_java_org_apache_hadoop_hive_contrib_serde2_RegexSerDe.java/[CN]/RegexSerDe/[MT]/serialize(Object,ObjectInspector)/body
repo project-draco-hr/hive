@@ -1,0 +1,25 @@
+{
+  if (outputFormatString == null) {
+    throw new SerDeException("Cannot write data into table because \"output.format.string\"" + " is not specified in serde properties of the table.");
+  }
+  StructObjectInspector outputRowOI=(StructObjectInspector)objInspector;
+  List<? extends StructField> outputFieldRefs=outputRowOI.getAllStructFieldRefs();
+  if (outputFieldRefs.size() != numColumns) {
+    throw new SerDeException("Cannot serialize the object because there are " + outputFieldRefs.size() + " fields but the table has "+ numColumns+ " columns.");
+  }
+  for (int c=0; c < numColumns; c++) {
+    Object field=outputRowOI.getStructFieldData(obj,outputFieldRefs.get(c));
+    ObjectInspector fieldOI=outputFieldRefs.get(c).getFieldObjectInspector();
+    StringObjectInspector fieldStringOI=(StringObjectInspector)fieldOI;
+    outputFields[c]=fieldStringOI.getPrimitiveJavaObject(field);
+  }
+  String outputRowString=null;
+  try {
+    outputRowString=String.format(outputFormatString,outputFields);
+  }
+ catch (  MissingFormatArgumentException e) {
+    throw new SerDeException("The table contains " + numColumns + " columns, but the outputFormatString is asking for more.",e);
+  }
+  outputRowText.set(outputRowString);
+  return outputRowText;
+}
