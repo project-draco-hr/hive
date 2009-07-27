@@ -35,13 +35,18 @@
     scriptErr=new DataInputStream(new BufferedInputStream(scriptPid.getErrorStream()));
     outThread=new StreamThread(scriptIn,new OutputStreamProcessor(scriptOutputDeserializer.getObjectInspector()),"OutputProcessor");
     errThread=new StreamThread(scriptErr,new ErrorStreamProcessor(HiveConf.getIntVar(hconf,HiveConf.ConfVars.SCRIPTERRORLIMIT)),"ErrorProcessor");
-    Integer exp_interval=null;
-    int exp_int;
-    exp_interval=Integer.decode(hconf.get("mapred.tasktracker.expiry.interval"));
-    if (exp_interval != null)     exp_int=exp_interval.intValue() / 2;
- else     exp_int=300000;
-    rpTimer=new Timer(true);
-    rpTimer.scheduleAtFixedRate(new ReporterTask(reporter),0,exp_interval);
+    if (HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVESCRIPTAUTOPROGRESS)) {
+      Integer expInterval=Integer.decode(hconf.get("mapred.tasktracker.expiry.interval"));
+      int notificationInterval;
+      if (expInterval != null) {
+        notificationInterval=expInterval.intValue() / 2;
+      }
+ else {
+        notificationInterval=5 * 60 * 1000;
+      }
+      rpTimer=new Timer(true);
+      rpTimer.scheduleAtFixedRate(new ReporterTask(reporter),0,notificationInterval);
+    }
     initializeChildren(hconf);
     outThread.start();
     errThread.start();
