@@ -1,0 +1,49 @@
+{
+  List<? extends StructField> fieldRefs=((StructObjectInspector)oi).getAllStructFieldRefs();
+  if (fields == null) {
+    fields=new LazyBinaryObject[fieldRefs.size()];
+    for (int i=0; i < fields.length; i++) {
+      fields[i]=LazyBinaryFactory.createLazyBinaryObject(fieldRefs.get(i).getFieldObjectInspector());
+    }
+    fieldInited=new boolean[fields.length];
+    fieldIsNull=new boolean[fields.length];
+    fieldStart=new int[fields.length];
+    fieldLength=new int[fields.length];
+  }
+  int fieldId=0;
+  int structByteEnd=start + length;
+  byte[] bytes=this.bytes.getData();
+  byte nullByte=bytes[start];
+  int lastFieldByteEnd=start + 1;
+  for (int i=0; i < fields.length; i++) {
+    fieldIsNull[i]=true;
+    if ((nullByte & (1 << (i % 8))) != 0) {
+      fieldIsNull[i]=false;
+      LazyBinaryUtils.checkObjectByteInfo(fieldRefs.get(i).getFieldObjectInspector(),bytes,lastFieldByteEnd,recordInfo);
+      fieldStart[i]=lastFieldByteEnd + recordInfo.elementOffset;
+      fieldLength[i]=recordInfo.elementSize;
+      lastFieldByteEnd=fieldStart[i] + fieldLength[i];
+    }
+    if (lastFieldByteEnd <= structByteEnd)     fieldId++;
+    if (7 == (i % 8)) {
+      if (lastFieldByteEnd < structByteEnd) {
+        nullByte=bytes[lastFieldByteEnd];
+        lastFieldByteEnd++;
+      }
+ else {
+        nullByte=0;
+        lastFieldByteEnd++;
+      }
+    }
+  }
+  if (!extraFieldWarned && lastFieldByteEnd < structByteEnd) {
+    extraFieldWarned=true;
+    LOG.warn("Extra bytes detected at the end of the row! Ignoring similar " + "problems.");
+  }
+  if (!missingFieldWarned && lastFieldByteEnd > structByteEnd) {
+    missingFieldWarned=true;
+    LOG.warn("Missing fields! Expected " + fields.length + " fields but "+ "only got "+ fieldId+ "! Ignoring similar problems.");
+  }
+  Arrays.fill(fieldInited,false);
+  parsed=true;
+}

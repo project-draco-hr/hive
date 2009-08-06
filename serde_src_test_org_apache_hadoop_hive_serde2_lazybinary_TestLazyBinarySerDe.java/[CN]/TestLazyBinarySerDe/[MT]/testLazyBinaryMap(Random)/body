@@ -1,0 +1,51 @@
+{
+  StructObjectInspector rowOI=(StructObjectInspector)ObjectInspectorFactory.getReflectionObjectInspector(MyTestClassBigger.class,ObjectInspectorOptions.JAVA);
+  String fieldNames=ObjectInspectorUtils.getFieldNames(rowOI);
+  String fieldTypes=ObjectInspectorUtils.getFieldTypes(rowOI);
+  SerDe serde=getSerDe(fieldNames,fieldTypes);
+  ObjectInspector serdeOI=serde.getObjectInspector();
+  StructObjectInspector soi1=(StructObjectInspector)serdeOI;
+  List<? extends StructField> fields1=soi1.getAllStructFieldRefs();
+  LazyBinaryMapObjectInspector lazympoi=(LazyBinaryMapObjectInspector)fields1.get(9).getFieldObjectInspector();
+  ObjectInspector lazympkeyoi=lazympoi.getMapKeyObjectInspector();
+  ObjectInspector lazympvalueoi=lazympoi.getMapValueObjectInspector();
+  StructObjectInspector soi2=(StructObjectInspector)rowOI;
+  List<? extends StructField> fields2=soi2.getAllStructFieldRefs();
+  MapObjectInspector inputmpoi=(MapObjectInspector)fields2.get(9).getFieldObjectInspector();
+  ObjectInspector inputmpkeyoi=inputmpoi.getMapKeyObjectInspector();
+  ObjectInspector inputmpvalueoi=inputmpoi.getMapValueObjectInspector();
+  int num=100;
+  for (int testi=0; testi < num; testi++) {
+    Map<String,List<MyTestInnerStruct>> mp=new LinkedHashMap<String,List<MyTestInnerStruct>>();
+    int randFields=r.nextInt(10);
+    for (int i=0; i < randFields; i++) {
+      String key=TestBinarySortableSerDe.getRandString(r);
+      int randField=r.nextInt(10);
+      List<MyTestInnerStruct> value=randField > 4 ? null : getRandStructArray(r);
+      mp.put(key,value);
+    }
+    MyTestClassBigger input=new MyTestClassBigger(null,null,null,null,null,null,null,null,null,mp);
+    BytesWritable bw=(BytesWritable)serde.serialize(input,rowOI);
+    Object output=serde.deserialize(bw);
+    Object lazyobj=soi1.getStructFieldData(output,fields1.get(9));
+    Map<?,?> outputmp=lazympoi.getMap(lazyobj);
+    if (outputmp.size() != mp.size()) {
+      throw new RuntimeException("Map size changed from " + mp.size() + " to "+ outputmp.size()+ " after serialization!");
+    }
+    for (    Map.Entry<?,?> entryinput : mp.entrySet()) {
+      boolean bEqual=false;
+      for (      Map.Entry<?,?> entryoutput : outputmp.entrySet()) {
+        if (0 == ObjectInspectorUtils.compare(entryoutput.getKey(),lazympkeyoi,entryinput.getKey(),inputmpkeyoi)) {
+          if (0 != ObjectInspectorUtils.compare(entryoutput.getValue(),lazympvalueoi,entryinput.getValue(),inputmpvalueoi)) {
+            assertEquals(entryoutput.getValue(),entryinput.getValue());
+          }
+ else {
+            bEqual=true;
+          }
+          break;
+        }
+      }
+      if (!bEqual)       throw new RuntimeException("Could not find matched key in deserialized map : " + entryinput.getKey());
+    }
+  }
+}

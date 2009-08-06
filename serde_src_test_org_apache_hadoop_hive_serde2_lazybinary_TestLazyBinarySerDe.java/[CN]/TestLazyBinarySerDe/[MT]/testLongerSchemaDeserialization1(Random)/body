@@ -1,0 +1,33 @@
+{
+  StructObjectInspector rowOI1=(StructObjectInspector)ObjectInspectorFactory.getReflectionObjectInspector(MyTestClassSmaller.class,ObjectInspectorOptions.JAVA);
+  String fieldNames1=ObjectInspectorUtils.getFieldNames(rowOI1);
+  String fieldTypes1=ObjectInspectorUtils.getFieldTypes(rowOI1);
+  SerDe serde1=getSerDe(fieldNames1,fieldTypes1);
+  ObjectInspector serdeOI1=serde1.getObjectInspector();
+  StructObjectInspector rowOI2=(StructObjectInspector)ObjectInspectorFactory.getReflectionObjectInspector(MyTestClass.class,ObjectInspectorOptions.JAVA);
+  String fieldNames2=ObjectInspectorUtils.getFieldNames(rowOI2);
+  String fieldTypes2=ObjectInspectorUtils.getFieldTypes(rowOI2);
+  SerDe serde2=getSerDe(fieldNames2,fieldTypes2);
+  ObjectInspector serdeOI2=serde2.getObjectInspector();
+  int num=100;
+  for (int itest=0; itest < num; itest++) {
+    int randField=r.nextInt(9);
+    Byte b=randField > 0 ? null : Byte.valueOf((byte)r.nextInt());
+    Short s=randField > 1 ? null : Short.valueOf((short)r.nextInt());
+    Integer n=randField > 2 ? null : Integer.valueOf(r.nextInt());
+    Long l=randField > 3 ? null : Long.valueOf(r.nextLong());
+    Float f=randField > 4 ? null : Float.valueOf(r.nextFloat());
+    Double d=randField > 5 ? null : Double.valueOf(r.nextDouble());
+    String st=randField > 6 ? null : TestBinarySortableSerDe.getRandString(r);
+    MyTestInnerStruct is=randField > 7 ? null : new MyTestInnerStruct(r.nextInt(5) - 2,r.nextInt(5) - 2);
+    MyTestClassSmaller input=new MyTestClassSmaller(b,s,n,l,f,d,st,is);
+    BytesWritable bw=(BytesWritable)serde1.serialize(input,rowOI1);
+    Object output=serde2.deserialize(bw);
+    if (0 != compareDiffSizedStructs(input,rowOI1,output,serdeOI2)) {
+      System.out.println("structs      = " + SerDeUtils.getJSONString(input,rowOI1));
+      System.out.println("deserialized = " + SerDeUtils.getJSONString(output,serdeOI2));
+      System.out.println("serialized   = " + TestBinarySortableSerDe.hexString(bw));
+      assertEquals(input,output);
+    }
+  }
+}

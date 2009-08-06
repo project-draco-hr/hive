@@ -1,0 +1,30 @@
+{
+  byte[] bytes=this.bytes.getData();
+  LazyBinaryUtils.readVInt(bytes,start,vInt);
+  arraySize=vInt.value;
+  if (0 == arraySize) {
+    parsed=true;
+    return;
+  }
+  adjustArraySize(arraySize);
+  int arryByteStart=start + vInt.length;
+  int nullByteCur=arryByteStart;
+  int nullByteEnd=arryByteStart + (arraySize + 7) / 8;
+  int lastElementByteEnd=nullByteEnd;
+  ObjectInspector listEleObjectInspector=((ListObjectInspector)oi).getListElementObjectInspector();
+  for (int i=0; i < arraySize; i++) {
+    elementIsNull[i]=true;
+    if ((bytes[nullByteCur] & (1 << (i % 8))) != 0) {
+      elementIsNull[i]=false;
+      LazyBinaryUtils.checkObjectByteInfo(listEleObjectInspector,bytes,lastElementByteEnd,recordInfo);
+      elementStart[i]=lastElementByteEnd + recordInfo.elementOffset;
+      elementLength[i]=recordInfo.elementSize;
+      lastElementByteEnd=elementStart[i] + elementLength[i];
+    }
+    if (7 == (i % 8)) {
+      nullByteCur++;
+    }
+  }
+  Arrays.fill(elementInited,0,arraySize,false);
+  parsed=true;
+}

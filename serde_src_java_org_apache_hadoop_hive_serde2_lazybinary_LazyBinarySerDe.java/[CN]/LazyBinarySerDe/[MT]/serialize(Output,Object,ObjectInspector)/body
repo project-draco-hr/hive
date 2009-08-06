@@ -1,0 +1,192 @@
+{
+  if (null == obj)   return;
+switch (objInspector.getCategory()) {
+case PRIMITIVE:
+{
+      PrimitiveObjectInspector poi=(PrimitiveObjectInspector)objInspector;
+switch (poi.getPrimitiveCategory()) {
+case VOID:
+{
+          return;
+        }
+case BOOLEAN:
+{
+        BooleanObjectInspector boi=(BooleanObjectInspector)poi;
+        boolean v=((BooleanObjectInspector)poi).get(obj);
+        byteStream.write((byte)(v ? 1 : 0));
+        return;
+      }
+case BYTE:
+{
+      ByteObjectInspector boi=(ByteObjectInspector)poi;
+      byte v=boi.get(obj);
+      byteStream.write(v);
+      return;
+    }
+case SHORT:
+{
+    ShortObjectInspector spoi=(ShortObjectInspector)poi;
+    short v=spoi.get(obj);
+    byteStream.write((byte)(v >> 8));
+    byteStream.write((byte)(v));
+    return;
+  }
+case INT:
+{
+  IntObjectInspector ioi=(IntObjectInspector)poi;
+  int v=ioi.get(obj);
+  LazyBinaryUtils.writeVInt(byteStream,v);
+  return;
+}
+case LONG:
+{
+LongObjectInspector loi=(LongObjectInspector)poi;
+long v=loi.get(obj);
+LazyBinaryUtils.writeVLong(byteStream,v);
+return;
+}
+case FLOAT:
+{
+FloatObjectInspector foi=(FloatObjectInspector)poi;
+int v=Float.floatToIntBits(foi.get(obj));
+byteStream.write((byte)(v >> 24));
+byteStream.write((byte)(v >> 16));
+byteStream.write((byte)(v >> 8));
+byteStream.write((byte)(v));
+return;
+}
+case DOUBLE:
+{
+DoubleObjectInspector doi=(DoubleObjectInspector)poi;
+long v=Double.doubleToLongBits(doi.get(obj));
+byteStream.write((byte)(v >> 56));
+byteStream.write((byte)(v >> 48));
+byteStream.write((byte)(v >> 40));
+byteStream.write((byte)(v >> 32));
+byteStream.write((byte)(v >> 24));
+byteStream.write((byte)(v >> 16));
+byteStream.write((byte)(v >> 8));
+byteStream.write((byte)(v));
+return;
+}
+case STRING:
+{
+StringObjectInspector soi=(StringObjectInspector)poi;
+Text t=soi.getPrimitiveWritableObject(obj);
+int length=t.getLength();
+LazyBinaryUtils.writeVInt(byteStream,length);
+byte[] data=t.getBytes();
+byteStream.write(data,0,length);
+return;
+}
+default :
+{
+throw new RuntimeException("Unrecognized type: " + poi.getPrimitiveCategory());
+}
+}
+}
+case LIST:
+{
+ListObjectInspector loi=(ListObjectInspector)objInspector;
+ObjectInspector eoi=loi.getListElementObjectInspector();
+int byteSizeStart=byteStream.getCount();
+byteStream.write((byte)0);
+byteStream.write((byte)0);
+byteStream.write((byte)0);
+byteStream.write((byte)0);
+int listStart=byteStream.getCount();
+int size=loi.getListLength(obj);
+LazyBinaryUtils.writeVInt(byteStream,size);
+byte nullByte=0;
+for (int eid=0; eid < size; eid++) {
+if (null != loi.getListElement(obj,eid)) {
+nullByte|=1 << (eid % 8);
+}
+if (7 == eid % 8 || eid == size - 1) {
+byteStream.write(nullByte);
+nullByte=0;
+}
+}
+for (int eid=0; eid < size; eid++) {
+serialize(byteStream,loi.getListElement(obj,eid),eoi);
+}
+int listEnd=byteStream.getCount();
+int listSize=listEnd - listStart;
+byte[] bytes=byteStream.getData();
+bytes[byteSizeStart]=(byte)(listSize >> 24);
+bytes[byteSizeStart + 1]=(byte)(listSize >> 16);
+bytes[byteSizeStart + 2]=(byte)(listSize >> 8);
+bytes[byteSizeStart + 3]=(byte)(listSize);
+return;
+}
+case MAP:
+{
+MapObjectInspector moi=(MapObjectInspector)objInspector;
+ObjectInspector koi=moi.getMapKeyObjectInspector();
+ObjectInspector voi=moi.getMapValueObjectInspector();
+Map<?,?> map=moi.getMap(obj);
+int byteSizeStart=byteStream.getCount();
+byteStream.write((byte)0);
+byteStream.write((byte)0);
+byteStream.write((byte)0);
+byteStream.write((byte)0);
+int mapStart=byteStream.getCount();
+int size=map.size();
+LazyBinaryUtils.writeVInt(byteStream,size);
+int b=0;
+byte nullByte=0;
+for (Map.Entry<?,?> entry : map.entrySet()) {
+if (null != entry.getKey()) {
+nullByte|=1 << (b % 8);
+}
+ else if (!nullMapKey) {
+nullMapKey=true;
+LOG.warn("Null map key encountered! Ignoring similar problems.");
+}
+b++;
+if (null != entry.getValue()) {
+nullByte|=1 << (b % 8);
+}
+b++;
+if (0 == b % 8 || b == size * 2) {
+byteStream.write(nullByte);
+nullByte=0;
+}
+}
+for (Map.Entry<?,?> entry : map.entrySet()) {
+serialize(byteStream,entry.getKey(),koi);
+serialize(byteStream,entry.getValue(),voi);
+}
+int mapEnd=byteStream.getCount();
+int mapSize=mapEnd - mapStart;
+byte[] bytes=byteStream.getData();
+bytes[byteSizeStart]=(byte)(mapSize >> 24);
+bytes[byteSizeStart + 1]=(byte)(mapSize >> 16);
+bytes[byteSizeStart + 2]=(byte)(mapSize >> 8);
+bytes[byteSizeStart + 3]=(byte)(mapSize);
+return;
+}
+case STRUCT:
+{
+int byteSizeStart=byteStream.getCount();
+byteStream.write((byte)0);
+byteStream.write((byte)0);
+byteStream.write((byte)0);
+byteStream.write((byte)0);
+int structStart=byteStream.getCount();
+serializeStruct(byteStream,obj,(StructObjectInspector)objInspector);
+int structEnd=byteStream.getCount();
+int structSize=structEnd - structStart;
+byte[] bytes=byteStream.getData();
+bytes[byteSizeStart]=(byte)(structSize >> 24);
+bytes[byteSizeStart + 1]=(byte)(structSize >> 16);
+bytes[byteSizeStart + 2]=(byte)(structSize >> 8);
+bytes[byteSizeStart + 3]=(byte)(structSize);
+return;
+}
+default :
+{
+throw new RuntimeException("Unrecognized type: " + objInspector.getCategory());
+}
+}
+}

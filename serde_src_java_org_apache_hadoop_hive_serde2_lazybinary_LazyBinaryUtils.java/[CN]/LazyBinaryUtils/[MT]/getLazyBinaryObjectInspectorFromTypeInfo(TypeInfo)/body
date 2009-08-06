@@ -1,0 +1,44 @@
+{
+  ObjectInspector result=cachedLazyBinaryObjectInspector.get(typeInfo);
+  if (result == null) {
+switch (typeInfo.getCategory()) {
+case PRIMITIVE:
+{
+        result=PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(((PrimitiveTypeInfo)typeInfo).getPrimitiveCategory());
+        break;
+      }
+case LIST:
+{
+      ObjectInspector elementObjectInspector=getLazyBinaryObjectInspectorFromTypeInfo(((ListTypeInfo)typeInfo).getListElementTypeInfo());
+      result=LazyBinaryObjectInspectorFactory.getLazyBinaryListObjectInspector(elementObjectInspector);
+      break;
+    }
+case MAP:
+{
+    MapTypeInfo mapTypeInfo=(MapTypeInfo)typeInfo;
+    ObjectInspector keyObjectInspector=getLazyBinaryObjectInspectorFromTypeInfo(mapTypeInfo.getMapKeyTypeInfo());
+    ObjectInspector valueObjectInspector=getLazyBinaryObjectInspectorFromTypeInfo(mapTypeInfo.getMapValueTypeInfo());
+    result=LazyBinaryObjectInspectorFactory.getLazyBinaryMapObjectInspector(keyObjectInspector,valueObjectInspector);
+    break;
+  }
+case STRUCT:
+{
+  StructTypeInfo structTypeInfo=(StructTypeInfo)typeInfo;
+  List<String> fieldNames=structTypeInfo.getAllStructFieldNames();
+  List<TypeInfo> fieldTypeInfos=structTypeInfo.getAllStructFieldTypeInfos();
+  List<ObjectInspector> fieldObjectInspectors=new ArrayList<ObjectInspector>(fieldTypeInfos.size());
+  for (int i=0; i < fieldTypeInfos.size(); i++) {
+    fieldObjectInspectors.add(getLazyBinaryObjectInspectorFromTypeInfo(fieldTypeInfos.get(i)));
+  }
+  result=LazyBinaryObjectInspectorFactory.getLazyBinaryStructObjectInspector(fieldNames,fieldObjectInspectors);
+  break;
+}
+default :
+{
+result=null;
+}
+}
+cachedLazyBinaryObjectInspector.put(typeInfo,result);
+}
+return result;
+}
