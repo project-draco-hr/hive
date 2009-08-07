@@ -1,0 +1,38 @@
+{
+  String name=descFunc.getName();
+  try {
+    FileSystem fs=descFunc.getResFile().getFileSystem(conf);
+    DataOutput outStream=(DataOutput)fs.create(descFunc.getResFile());
+    description desc=null;
+    FunctionInfo fi=FunctionRegistry.getFunctionInfo(name);
+    if (fi.getUDFClass() != null) {
+      desc=fi.getUDFClass().getAnnotation(description.class);
+    }
+ else     if (fi.getGenericUDFClass() != null) {
+      desc=fi.getGenericUDFClass().getAnnotation(description.class);
+    }
+    if (desc != null) {
+      outStream.writeBytes(desc.value().replace("_FUNC_",name));
+      if (descFunc.isExtended() && desc.extended().length() > 0) {
+        outStream.writeBytes("\n" + desc.extended().replace("_FUNC_",name));
+      }
+    }
+ else {
+      outStream.writeBytes("Function " + name + " does not exist or cannot"+ " find documentation for it.");
+    }
+    outStream.write(terminator);
+    ((FSDataOutputStream)outStream).close();
+  }
+ catch (  FileNotFoundException e) {
+    LOG.warn("describe function: " + StringUtils.stringifyException(e));
+    return 1;
+  }
+catch (  IOException e) {
+    LOG.warn("describe function: " + StringUtils.stringifyException(e));
+    return 1;
+  }
+catch (  Exception e) {
+    throw new HiveException(e.toString());
+  }
+  return 0;
+}
