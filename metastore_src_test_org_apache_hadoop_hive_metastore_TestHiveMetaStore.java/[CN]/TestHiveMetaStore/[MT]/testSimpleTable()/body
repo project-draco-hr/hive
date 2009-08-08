@@ -32,6 +32,8 @@
     sd.getSerdeInfo().setName(tbl.getTableName());
     sd.getSerdeInfo().setParameters(new HashMap<String,String>());
     sd.getSerdeInfo().getParameters().put(org.apache.hadoop.hive.serde.Constants.SERIALIZATION_FORMAT,"1");
+    sd.getSerdeInfo().setSerializationLib(org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe.class.getName());
+    tbl.setPartitionKeys(new ArrayList<FieldSchema>());
     client.createTable(tbl);
     Table tbl2=client.getTable(dbName,tblName);
     assertNotNull(tbl2);
@@ -48,6 +50,21 @@
     tbl2.setParameters(new HashMap<String,String>());
     tbl2.getParameters().put("EXTERNAL","TRUE");
     tbl2.getSd().setLocation(tbl.getSd().getLocation() + "-2");
+    List<FieldSchema> fieldSchemas=client.getFields(dbName,tblName);
+    assertNotNull(fieldSchemas);
+    assertEquals(fieldSchemas.size(),tbl.getSd().getCols().size());
+    for (    FieldSchema fs : tbl.getSd().getCols()) {
+      assertTrue(fieldSchemas.contains(fs));
+    }
+    List<FieldSchema> fieldSchemasFull=client.getSchema(dbName,tblName);
+    assertNotNull(fieldSchemasFull);
+    assertEquals(fieldSchemasFull.size(),tbl.getSd().getCols().size() + tbl.getPartitionKeys().size());
+    for (    FieldSchema fs : tbl.getSd().getCols()) {
+      assertTrue(fieldSchemasFull.contains(fs));
+    }
+    for (    FieldSchema fs : tbl.getPartitionKeys()) {
+      assertTrue(fieldSchemasFull.contains(fs));
+    }
     client.createTable(tbl2);
     Table tbl3=client.getTable(dbName,tblName2);
     assertNotNull(tbl3);
@@ -58,6 +75,21 @@
     assertEquals(tbl3.getSd().getNumBuckets(),1);
     assertEquals(tbl3.getSd().getLocation(),tbl2.getSd().getLocation());
     assertEquals(tbl3.getParameters(),tbl2.getParameters());
+    fieldSchemas=client.getFields(dbName,tblName2);
+    assertNotNull(fieldSchemas);
+    assertEquals(fieldSchemas.size(),tbl2.getSd().getCols().size());
+    for (    FieldSchema fs : tbl2.getSd().getCols()) {
+      assertTrue(fieldSchemas.contains(fs));
+    }
+    fieldSchemasFull=client.getSchema(dbName,tblName2);
+    assertNotNull(fieldSchemasFull);
+    assertEquals(fieldSchemasFull.size(),tbl2.getSd().getCols().size() + tbl2.getPartitionKeys().size());
+    for (    FieldSchema fs : tbl2.getSd().getCols()) {
+      assertTrue(fieldSchemasFull.contains(fs));
+    }
+    for (    FieldSchema fs : tbl2.getPartitionKeys()) {
+      assertTrue(fieldSchemasFull.contains(fs));
+    }
     assertEquals("Use this for comments etc",tbl2.getSd().getParameters().get("test_param_1"));
     assertEquals("name",tbl2.getSd().getBucketCols().get(0));
     assertTrue("Partition key list is not empty",(tbl2.getPartitionKeys() == null) || (tbl2.getPartitionKeys().size() == 0));
