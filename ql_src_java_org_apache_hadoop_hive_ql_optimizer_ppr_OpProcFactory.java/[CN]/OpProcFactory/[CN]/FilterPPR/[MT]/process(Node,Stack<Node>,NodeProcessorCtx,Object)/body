@@ -1,0 +1,28 @@
+{
+  OpWalkerCtx owc=(OpWalkerCtx)procCtx;
+  FilterOperator fop=(FilterOperator)nd;
+  FilterOperator fop2=null;
+  Node tmp=stack.pop();
+  Node tmp2=stack.pop();
+  TableScanOperator top=null;
+  if (tmp2 instanceof TableScanOperator) {
+    top=(TableScanOperator)tmp2;
+  }
+ else {
+    top=(TableScanOperator)stack.peek();
+    fop2=(FilterOperator)tmp2;
+  }
+  stack.push(tmp2);
+  stack.push(tmp);
+  if (fop2 != null && !fop2.getConf().getIsSamplingPred())   return null;
+  if (fop.getConf().getIsSamplingPred()) {
+    return null;
+  }
+  exprNodeDesc predicate=fop.getConf().getPredicate();
+  String alias=top.getConf().getAlias();
+  boolean hasNonPartCols=false;
+  exprNodeDesc ppr_pred=ExprProcFactory.genPruner(alias,predicate,hasNonPartCols);
+  owc.addHasNonPartCols(hasNonPartCols);
+  addPruningPred(owc.getOpToPartPruner(),top,ppr_pred);
+  return null;
+}

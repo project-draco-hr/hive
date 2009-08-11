@@ -5,7 +5,7 @@
   keyCols.add(TypeCheckProcFactory.DefaultExprProcessor.getFuncExprNodeDesc("rand"));
   ArrayList<exprNodeDesc> valueCols=new ArrayList<exprNodeDesc>();
   for (  ColumnInfo ci : fsRS.getSignature()) {
-    valueCols.add(new exprNodeColumnDesc(ci.getType(),ci.getInternalName()));
+    valueCols.add(new exprNodeColumnDesc(ci.getType(),ci.getInternalName(),ci.getTabAlias(),ci.getIsPartitionCol()));
   }
   Operator<? extends Serializable> ts_op=OperatorFactory.get(tableScanDesc.class,fsRS);
   ArrayList<String> outputColumns=new ArrayList<String>();
@@ -21,10 +21,10 @@
   Integer pos=Integer.valueOf(0);
   for (  ColumnInfo colInfo : interim_rwsch.getColumnInfos()) {
     String[] info=interim_rwsch.reverseLookup(colInfo.getInternalName());
-    out_rwsch.put(info[0],info[1],new ColumnInfo(pos.toString(),colInfo.getType()));
+    out_rwsch.put(info[0],info[1],new ColumnInfo(pos.toString(),colInfo.getType(),info[0],colInfo.getIsPartitionCol()));
     pos=Integer.valueOf(pos.intValue() + 1);
   }
-  Operator extract=OperatorFactory.getAndMakeChild(new extractDesc(new exprNodeColumnDesc(TypeInfoFactory.stringTypeInfo,Utilities.ReduceField.VALUE.toString())),new RowSchema(out_rwsch.getColumnInfos()));
+  Operator extract=OperatorFactory.getAndMakeChild(new extractDesc(new exprNodeColumnDesc(TypeInfoFactory.stringTypeInfo,Utilities.ReduceField.VALUE.toString(),"",false)),new RowSchema(out_rwsch.getColumnInfos()));
   tableDesc ts=(tableDesc)fsConf.getTableInfo().clone();
   fsConf.getTableInfo().getProperties().remove(org.apache.hadoop.hive.metastore.api.Constants.META_TABLE_PARTITION_COLUMNS);
   FileSinkOperator newOutput=(FileSinkOperator)OperatorFactory.getAndMakeChild(new fileSinkDesc(finalName,ts,parseCtx.getConf().getBoolVar(HiveConf.ConfVars.COMPRESSINTERMEDIATE)),fsRS,extract);

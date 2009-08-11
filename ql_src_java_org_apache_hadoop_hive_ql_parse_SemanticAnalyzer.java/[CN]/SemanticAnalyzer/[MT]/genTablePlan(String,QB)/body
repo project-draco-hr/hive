@@ -11,7 +11,7 @@
       StructObjectInspector rowObjectInspector=(StructObjectInspector)tab.getDeserializer().getObjectInspector();
       List<? extends StructField> fields=rowObjectInspector.getAllStructFieldRefs();
       for (int i=0; i < fields.size(); i++) {
-        rwsch.put(alias,fields.get(i).getFieldName(),new ColumnInfo(fields.get(i).getFieldName(),TypeInfoUtils.getTypeInfoFromObjectInspector(fields.get(i).getFieldObjectInspector())));
+        rwsch.put(alias,fields.get(i).getFieldName(),new ColumnInfo(fields.get(i).getFieldName(),TypeInfoUtils.getTypeInfoFromObjectInspector(fields.get(i).getFieldObjectInspector()),alias,false));
       }
     }
  catch (    SerDeException e) {
@@ -19,10 +19,11 @@
     }
     for (    FieldSchema part_col : tab.getPartCols()) {
       LOG.trace("Adding partition col: " + part_col);
-      rwsch.put(alias,part_col.getName(),new ColumnInfo(part_col.getName(),TypeInfoFactory.stringTypeInfo));
+      rwsch.put(alias,part_col.getName(),new ColumnInfo(part_col.getName(),TypeInfoFactory.stringTypeInfo,alias,true));
     }
-    top=putOpInsertMap(OperatorFactory.get(tableScanDesc.class,new RowSchema(rwsch.getColumnInfos())),rwsch);
+    top=putOpInsertMap(OperatorFactory.get(new tableScanDesc(alias),new RowSchema(rwsch.getColumnInfos())),rwsch);
     this.topOps.put(alias_id,top);
+    this.topToTable.put((TableScanOperator)top,tab);
   }
  else {
     rwsch=opParseCtx.get(top).getRR();
@@ -59,12 +60,12 @@
     if ((sampleExprs == null || sampleExprs.size() == 0 || colsEqual) && (num == den || den <= numBuckets && numBuckets % den == 0)) {
       LOG.info("No need for sample filter");
       exprNodeDesc samplePredicate=genSamplePredicate(ts,tabBucketCols,colsEqual,alias,rwsch,qb.getMetaData(),null);
-      tableOp=OperatorFactory.getAndMakeChild(new filterDesc(samplePredicate),top);
+      tableOp=OperatorFactory.getAndMakeChild(new filterDesc(samplePredicate,true),top);
     }
  else {
       LOG.info("Need sample filter");
       exprNodeDesc samplePredicate=genSamplePredicate(ts,tabBucketCols,colsEqual,alias,rwsch,qb.getMetaData(),null);
-      tableOp=OperatorFactory.getAndMakeChild(new filterDesc(samplePredicate),top);
+      tableOp=OperatorFactory.getAndMakeChild(new filterDesc(samplePredicate,true),top);
     }
   }
  else {
@@ -91,7 +92,7 @@
           LOG.info("Need sample filter");
           exprNodeDesc randFunc=TypeCheckProcFactory.DefaultExprProcessor.getFuncExprNodeDesc("rand",new exprNodeConstantDesc(Integer.valueOf(460476415)));
           exprNodeDesc samplePred=genSamplePredicate(tsSample,null,false,alias,rwsch,qb.getMetaData(),randFunc);
-          tableOp=OperatorFactory.getAndMakeChild(new filterDesc(samplePred),top);
+          tableOp=OperatorFactory.getAndMakeChild(new filterDesc(samplePred,true),top);
         }
       }
     }
