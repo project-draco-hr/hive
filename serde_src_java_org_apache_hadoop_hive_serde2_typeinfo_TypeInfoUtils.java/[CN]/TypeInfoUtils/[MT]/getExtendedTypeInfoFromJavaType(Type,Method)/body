@@ -1,0 +1,36 @@
+{
+  if (t == Object.class) {
+    return TypeInfoFactory.unknownTypeInfo;
+  }
+  if (t instanceof ParameterizedType) {
+    ParameterizedType pt=(ParameterizedType)t;
+    if (List.class == (Class<?>)pt.getRawType() || ArrayList.class == (Class<?>)pt.getRawType()) {
+      return TypeInfoFactory.getListTypeInfo(getExtendedTypeInfoFromJavaType(pt.getActualTypeArguments()[0],m));
+    }
+    if (Map.class == (Class<?>)pt.getRawType() || HashMap.class == (Class<?>)pt.getRawType()) {
+      return TypeInfoFactory.getMapTypeInfo(getExtendedTypeInfoFromJavaType(pt.getActualTypeArguments()[0],m),getExtendedTypeInfoFromJavaType(pt.getActualTypeArguments()[1],m));
+    }
+    t=pt.getRawType();
+  }
+  if (!(t instanceof Class)) {
+    throw new RuntimeException("Hive does not understand type " + t + " from "+ m);
+  }
+  Class<?> c=(Class<?>)t;
+  if (PrimitiveObjectInspectorUtils.isPrimitiveJavaType(c)) {
+    return TypeInfoUtils.getTypeInfoFromObjectInspector(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveObjectInspectorUtils.getTypeEntryFromPrimitiveJavaType(c).primitiveCategory));
+  }
+  if (PrimitiveObjectInspectorUtils.isPrimitiveJavaClass(c)) {
+    return TypeInfoUtils.getTypeInfoFromObjectInspector(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveObjectInspectorUtils.getTypeEntryFromPrimitiveJavaClass(c).primitiveCategory));
+  }
+  if (PrimitiveObjectInspectorUtils.isPrimitiveWritableClass(c)) {
+    return TypeInfoUtils.getTypeInfoFromObjectInspector(PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(PrimitiveObjectInspectorUtils.getTypeEntryFromPrimitiveWritableClass(c).primitiveCategory));
+  }
+  Field[] fields=ObjectInspectorUtils.getDeclaredNonStaticFields(c);
+  ArrayList<String> fieldNames=new ArrayList<String>(fields.length);
+  ArrayList<TypeInfo> fieldTypeInfos=new ArrayList<TypeInfo>(fields.length);
+  for (int i=0; i < fields.length; i++) {
+    fieldNames.add(fields[i].getName());
+    fieldTypeInfos.add(getExtendedTypeInfoFromJavaType(fields[i].getGenericType(),m));
+  }
+  return TypeInfoFactory.getStructTypeInfo(fieldNames,fieldTypeInfos);
+}

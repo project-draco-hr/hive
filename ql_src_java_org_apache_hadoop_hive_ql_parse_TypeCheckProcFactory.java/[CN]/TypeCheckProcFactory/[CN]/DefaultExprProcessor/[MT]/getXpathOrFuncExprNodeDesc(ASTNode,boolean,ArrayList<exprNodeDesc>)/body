@@ -35,7 +35,7 @@
         throw new SemanticException(ErrorMsg.INVALID_ARRAYINDEX_CONSTANT.getMsg(expr));
       }
       TypeInfo t=((ListTypeInfo)myt).getListElementTypeInfo();
-      desc=new exprNodeGenericFuncDesc(t,FunctionRegistry.getGenericUDFClassForIndex(),children);
+      desc=new exprNodeGenericFuncDesc(t,FunctionRegistry.getGenericUDFForIndex(),children);
     }
  else     if (myt.getCategory() == Category.MAP) {
       if (!(children.get(1) instanceof exprNodeConstantDesc)) {
@@ -45,7 +45,7 @@
         throw new SemanticException(ErrorMsg.INVALID_MAPINDEX_TYPE.getMsg(expr));
       }
       TypeInfo t=((MapTypeInfo)myt).getMapValueTypeInfo();
-      desc=new exprNodeGenericFuncDesc(t,FunctionRegistry.getGenericUDFClassForIndex(),children);
+      desc=new exprNodeGenericFuncDesc(t,FunctionRegistry.getGenericUDFForIndex(),children);
     }
  else {
       throw new SemanticException(ErrorMsg.NON_COLLECTION_TYPE.getMsg(expr,myt.getTypeName()));
@@ -57,28 +57,27 @@
       if (isFunction)       throw new SemanticException(ErrorMsg.INVALID_FUNCTION.getMsg((ASTNode)expr.getChild(0)));
  else       throw new SemanticException(ErrorMsg.INVALID_FUNCTION.getMsg((ASTNode)expr));
     }
-    desc=getFuncExprNodeDesc(funcText,children);
-    if (desc == null) {
+    try {
+      desc=getFuncExprNodeDesc(funcText,children);
+    }
+ catch (    AmbiguousMethodException e) {
       ArrayList<Class<?>> argumentClasses=new ArrayList<Class<?>>(children.size());
       for (int i=0; i < children.size(); i++) {
         argumentClasses.add(((PrimitiveTypeInfo)children.get(i).getTypeInfo()).getPrimitiveWritableClass());
       }
       if (isFunction) {
         String reason="Looking for UDF \"" + expr.getChild(0).getText() + "\" with parameters "+ argumentClasses;
-        throw new SemanticException(ErrorMsg.INVALID_FUNCTION_SIGNATURE.getMsg((ASTNode)expr.getChild(0),reason));
+        throw new SemanticException(ErrorMsg.INVALID_FUNCTION_SIGNATURE.getMsg((ASTNode)expr.getChild(0),reason),e);
       }
  else {
         String reason="Looking for Operator \"" + expr.getText() + "\" with parameters "+ argumentClasses;
-        throw new SemanticException(ErrorMsg.INVALID_OPERATOR_SIGNATURE.getMsg(expr,reason));
+        throw new SemanticException(ErrorMsg.INVALID_OPERATOR_SIGNATURE.getMsg(expr,reason),e);
       }
     }
   }
-  if (desc instanceof exprNodeFuncDesc) {
-    exprNodeFuncDesc funcDesc=(exprNodeFuncDesc)desc;
-    if (funcDesc.getUDFClass().equals(UDFOPPositive.class)) {
-      assert(funcDesc.getChildren().size() == 1);
-      desc=funcDesc.getChildExprs().get(0);
-    }
+  if (FunctionRegistry.isOpPositive(desc)) {
+    assert(desc.getChildren().size() == 1);
+    desc=desc.getChildren().get(0);
   }
   assert(desc != null);
   return desc;

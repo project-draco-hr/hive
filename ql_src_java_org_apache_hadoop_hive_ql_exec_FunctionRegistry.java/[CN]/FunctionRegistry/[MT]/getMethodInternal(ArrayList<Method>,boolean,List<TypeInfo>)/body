@@ -1,42 +1,31 @@
 {
-  int leastImplicitConversions=Integer.MAX_VALUE;
+  int leastConversionCost=Integer.MAX_VALUE;
   Method udfMethod=null;
   for (  Method m : mlist) {
-    List<TypeInfo> argumentsAccepted=TypeInfoUtils.getParameterTypeInfos(m);
+    List<TypeInfo> argumentsAccepted=TypeInfoUtils.getParameterTypeInfos(m,argumentsPassed.size());
+    if (argumentsAccepted == null) {
+      continue;
+    }
     boolean match=(argumentsAccepted.size() == argumentsPassed.size());
-    int implicitConversions=0;
+    int conversionCost=0;
     for (int i=0; i < argumentsPassed.size() && match; i++) {
-      TypeInfo argumentPassed=argumentsPassed.get(i);
-      TypeInfo argumentAccepted=argumentsAccepted.get(i);
-      if (argumentPassed.equals(TypeInfoFactory.voidTypeInfo)) {
-        continue;
-      }
-      if (argumentAccepted.equals(TypeInfoFactory.unknownTypeInfo)) {
-        continue;
-      }
-      if (argumentPassed.getCategory().equals(Category.LIST) && argumentAccepted.equals(TypeInfoFactory.unknownListTypeInfo)) {
-        continue;
-      }
-      if (argumentPassed.getCategory().equals(Category.MAP) && argumentAccepted.equals(TypeInfoFactory.unknownMapTypeInfo)) {
-        continue;
-      }
-      TypeInfo accepted=argumentsAccepted.get(i);
-      if (accepted.equals(argumentsPassed.get(i))) {
-      }
- else       if (!exact && implicitConvertable(argumentsPassed.get(i),accepted)) {
-        implicitConversions++;
-      }
- else {
+      int cost=matchCost(argumentsPassed.get(i),argumentsAccepted.get(i),exact);
+      if (cost == -1) {
         match=false;
       }
-    }
-    if (match) {
-      if (implicitConversions < leastImplicitConversions) {
-        udfMethod=m;
-        leastImplicitConversions=implicitConversions;
-        if (leastImplicitConversions == 0)         break;
+ else {
+        conversionCost+=cost;
       }
- else       if (implicitConversions == leastImplicitConversions) {
+    }
+    LOG.info("Method " + (match ? "did" : "didn't") + " match: passed = "+ argumentsPassed+ " accepted = "+ argumentsAccepted+ " method = "+ m);
+    if (match) {
+      if (conversionCost < leastConversionCost) {
+        udfMethod=m;
+        leastConversionCost=conversionCost;
+        if (leastConversionCost == 0)         break;
+      }
+ else       if (conversionCost == leastConversionCost) {
+        LOG.info("Ambigious methods: passed = " + argumentsPassed + " method 1 = "+ udfMethod+ " method 2 = "+ m);
         udfMethod=null;
       }
  else {

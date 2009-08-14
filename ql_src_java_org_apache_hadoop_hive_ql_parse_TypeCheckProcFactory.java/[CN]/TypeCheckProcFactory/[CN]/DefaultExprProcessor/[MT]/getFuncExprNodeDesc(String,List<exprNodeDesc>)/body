@@ -1,25 +1,11 @@
 {
   FunctionInfo fi=FunctionRegistry.getFunctionInfo(udfName);
-  if (fi == null)   return null;
-  Class<? extends GenericUDF> genericUDFClass=fi.getGenericUDFClass();
-  if (genericUDFClass != null) {
-    return exprNodeGenericFuncDesc.newInstance(genericUDFClass,children);
+  if (fi == null) {
+    throw new UDFArgumentException("udf:" + udfName + " not found.");
   }
-  ArrayList<TypeInfo> argumentTypeInfos=new ArrayList<TypeInfo>(children.size());
-  for (int i=0; i < children.size(); i++) {
-    exprNodeDesc child=children.get(i);
-    argumentTypeInfos.add(child.getTypeInfo());
+  GenericUDF genericUDF=fi.getGenericUDF();
+  if (genericUDF == null) {
+    throw new UDFArgumentException("udf:" + udfName + " is an aggregation function.");
   }
-  Method udfMethod=FunctionRegistry.getUDFMethod(udfName,argumentTypeInfos);
-  if (udfMethod == null)   return null;
-  ArrayList<exprNodeDesc> ch=SemanticAnalyzer.convertParameters(udfMethod,children);
-  TypeInfo resultTypeInfo=null;
-  if (PrimitiveObjectInspectorUtils.isPrimitiveWritableClass(udfMethod.getReturnType())) {
-    resultTypeInfo=TypeInfoFactory.getPrimitiveTypeInfoFromPrimitiveWritable(udfMethod.getReturnType());
-  }
- else {
-    resultTypeInfo=TypeInfoFactory.getPrimitiveTypeInfoFromJavaPrimitive(udfMethod.getReturnType());
-  }
-  exprNodeFuncDesc desc=new exprNodeFuncDesc(udfName,resultTypeInfo,FunctionRegistry.getUDFClass(udfName),udfMethod,ch);
-  return desc;
+  return exprNodeGenericFuncDesc.newInstance(genericUDF,children);
 }
