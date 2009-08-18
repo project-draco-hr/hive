@@ -9,7 +9,13 @@
   String taskTmpDir=baseCtx.getMRTmpFileURI();
   Operator<? extends Serializable> parent=op.getParentOperators().get(posn);
   tableDesc tt_desc=PlanUtils.getIntermediateFileTableDesc(PlanUtils.getFieldSchemasFromRowSchema(parent.getSchema(),"temporarycol"));
-  Operator<? extends Serializable> fs_op=putOpInsertMap(OperatorFactory.get(new fileSinkDesc(taskTmpDir,tt_desc,parseCtx.getConf().getBoolVar(HiveConf.ConfVars.COMPRESSINTERMEDIATE)),parent.getSchema()),null,parseCtx);
+  boolean compressIntermediate=parseCtx.getConf().getBoolVar(HiveConf.ConfVars.COMPRESSINTERMEDIATE);
+  fileSinkDesc desc=new fileSinkDesc(taskTmpDir,tt_desc,compressIntermediate);
+  if (compressIntermediate) {
+    desc.setCompressCodec(parseCtx.getConf().getVar(HiveConf.ConfVars.COMPRESSINTERMEDIATECODEC));
+    desc.setCompressType(parseCtx.getConf().getVar(HiveConf.ConfVars.COMPRESSINTERMEDIATETYPE));
+  }
+  Operator<? extends Serializable> fs_op=putOpInsertMap(OperatorFactory.get(desc,parent.getSchema()),null,parseCtx);
   List<Operator<? extends Serializable>> childOpList=parent.getChildOperators();
   for (int pos=0; pos < childOpList.size(); pos++) {
     if (childOpList.get(pos) == op) {
