@@ -1,0 +1,55 @@
+{
+  Queue<Task<? extends Serializable>> tasksToVisit=new LinkedList<Task<? extends Serializable>>();
+  Set<Task<? extends Serializable>> tasksVisited=new HashSet<Task<? extends Serializable>>();
+  tasksToVisit.addAll(plan.getRootTasks());
+  while (tasksToVisit.peek() != null) {
+    Task<? extends Serializable> task=tasksToVisit.remove();
+    tasksVisited.add(task);
+    if (task.getChildTasks() != null) {
+      for (      Task<? extends Serializable> childTask : task.getChildTasks()) {
+        if (!tasksVisited.contains(childTask)) {
+          tasksToVisit.add(childTask);
+        }
+      }
+    }
+    if (started.contains(task.getId()) && done.contains(task.getId())) {
+      continue;
+    }
+    counters.put(task.getId(),task.getCounters());
+    if (task.started()) {
+      started.add(task.getId());
+    }
+    if (task.done()) {
+      done.add(task.getId());
+    }
+    if (task instanceof ExecDriver) {
+      ExecDriver mrTask=(ExecDriver)task;
+      extractOperatorCounters(mrTask.getWork().getAliasToWork().values(),task.getId() + "_MAP");
+      if (mrTask.mapStarted()) {
+        started.add(task.getId() + "_MAP");
+      }
+      if (mrTask.mapDone()) {
+        done.add(task.getId() + "_MAP");
+      }
+      if (mrTask.hasReduce()) {
+        Collection<Operator<? extends Serializable>> reducerTopOps=new ArrayList<Operator<? extends Serializable>>();
+        reducerTopOps.add(mrTask.getWork().getReducer());
+        extractOperatorCounters(reducerTopOps,task.getId() + "_REDUCE");
+        if (mrTask.reduceStarted()) {
+          started.add(task.getId() + "_REDUCE");
+        }
+        if (mrTask.reduceDone()) {
+          done.add(task.getId() + "_REDUCE");
+        }
+      }
+    }
+ else     if (task instanceof ConditionalTask) {
+      ConditionalTask cTask=(ConditionalTask)task;
+      for (      Task<? extends Serializable> listTask : cTask.getListTasks()) {
+        if (!tasksVisited.contains(listTask)) {
+          tasksToVisit.add(listTask);
+        }
+      }
+    }
+  }
+}

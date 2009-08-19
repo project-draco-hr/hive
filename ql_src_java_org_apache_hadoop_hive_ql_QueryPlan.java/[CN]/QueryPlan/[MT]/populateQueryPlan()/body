@@ -1,0 +1,75 @@
+{
+  query.setStageGraph(new org.apache.hadoop.hive.ql.plan.api.Graph());
+  query.getStageGraph().setNodeType(NodeType.STAGE);
+  Queue<Task<? extends Serializable>> tasksToVisit=new LinkedList<Task<? extends Serializable>>();
+  Set<Task<? extends Serializable>> tasksVisited=new HashSet<Task<? extends Serializable>>();
+  tasksToVisit.addAll(plan.getRootTasks());
+  while (tasksToVisit.size() != 0) {
+    Task<? extends Serializable> task=tasksToVisit.remove();
+    tasksVisited.add(task);
+    org.apache.hadoop.hive.ql.plan.api.Stage stage=new org.apache.hadoop.hive.ql.plan.api.Stage();
+    stage.setStageId(task.getId());
+    stage.setStageType(getStageType(task));
+    query.addToStageList(stage);
+    if (task instanceof ExecDriver) {
+      ExecDriver mrTask=(ExecDriver)task;
+      org.apache.hadoop.hive.ql.plan.api.Task mapTask=new org.apache.hadoop.hive.ql.plan.api.Task();
+      mapTask.setTaskId(stage.getStageId() + "_MAP");
+      mapTask.setTaskType(TaskType.MAP);
+      stage.addToTaskList(mapTask);
+      populateOperatorGraph(mapTask,mrTask.getWork().getAliasToWork().values());
+      if (mrTask.hasReduce()) {
+        org.apache.hadoop.hive.ql.plan.api.Task reduceTask=new org.apache.hadoop.hive.ql.plan.api.Task();
+        reduceTask.setTaskId(stage.getStageId() + "_REDUCE");
+        reduceTask.setTaskType(TaskType.REDUCE);
+        stage.addToTaskList(reduceTask);
+        Collection<Operator<? extends Serializable>> reducerTopOps=new ArrayList<Operator<? extends Serializable>>();
+        reducerTopOps.add(mrTask.getWork().getReducer());
+        populateOperatorGraph(reduceTask,reducerTopOps);
+      }
+    }
+ else {
+      org.apache.hadoop.hive.ql.plan.api.Task otherTask=new org.apache.hadoop.hive.ql.plan.api.Task();
+      otherTask.setTaskId(stage.getStageId() + "_OTHER");
+      otherTask.setTaskType(TaskType.OTHER);
+      stage.addToTaskList(otherTask);
+    }
+    if (task instanceof ConditionalTask) {
+      org.apache.hadoop.hive.ql.plan.api.Adjacency listEntry=new org.apache.hadoop.hive.ql.plan.api.Adjacency();
+      listEntry.setAdjacencyType(AdjacencyType.DISJUNCTIVE);
+      listEntry.setNode(task.getId());
+      ConditionalTask t=(ConditionalTask)task;
+      for (      Task<? extends Serializable> listTask : t.getListTasks()) {
+        if (t.getChildTasks() != null) {
+          org.apache.hadoop.hive.ql.plan.api.Adjacency childEntry=new org.apache.hadoop.hive.ql.plan.api.Adjacency();
+          childEntry.setAdjacencyType(AdjacencyType.DISJUNCTIVE);
+          childEntry.setNode(listTask.getId());
+          for (          Task<? extends Serializable> childTask : t.getChildTasks()) {
+            childEntry.addToChildren(childTask.getId());
+            if (!tasksVisited.contains(childTask)) {
+              tasksToVisit.add(childTask);
+            }
+          }
+          query.getStageGraph().addToAdjacencyList(childEntry);
+        }
+        listEntry.addToChildren(listTask.getId());
+        if (!tasksVisited.contains(listTask)) {
+          tasksToVisit.add(listTask);
+        }
+      }
+      query.getStageGraph().addToAdjacencyList(listEntry);
+    }
+ else     if (task.getChildTasks() != null) {
+      org.apache.hadoop.hive.ql.plan.api.Adjacency entry=new org.apache.hadoop.hive.ql.plan.api.Adjacency();
+      entry.setAdjacencyType(AdjacencyType.CONJUNCTIVE);
+      entry.setNode(task.getId());
+      for (      Task<? extends Serializable> childTask : task.getChildTasks()) {
+        entry.addToChildren(childTask.getId());
+        if (!tasksVisited.contains(childTask)) {
+          tasksToVisit.add(childTask);
+        }
+      }
+      query.getStageGraph().addToAdjacencyList(entry);
+    }
+  }
+}

@@ -7,7 +7,11 @@
   conf.setVar(HiveConf.ConfVars.HIVEQUERYSTRING,queryStr);
   try {
     LOG.info("Starting command: " + queryStr);
-    if (SessionState.get() != null)     SessionState.get().getHiveHistory().startQuery(queryStr,conf.getVar(HiveConf.ConfVars.HIVEQUERYID));
+    plan.setStarted();
+    if (SessionState.get() != null) {
+      SessionState.get().getHiveHistory().startQuery(queryStr,conf.getVar(HiveConf.ConfVars.HIVEQUERYID));
+      SessionState.get().getHiveHistory().logPlanProgress(plan);
+    }
     resStream=null;
     BaseSemanticAnalyzer sem=plan.getPlan();
     for (    PreExecute peh : getPreExecHooks()) {
@@ -32,15 +36,17 @@
     }
     while (runnable.peek() != null) {
       Task<? extends Serializable> tsk=runnable.remove();
-      if (SessionState.get() != null)       SessionState.get().getHiveHistory().startTask(queryId,tsk,tsk.getClass().getName());
+      if (SessionState.get() != null) {
+        SessionState.get().getHiveHistory().startTask(queryId,tsk,tsk.getClass().getName());
+      }
       if (tsk.isMapRedTask()) {
         curJobNo++;
         if (noName) {
           conf.setVar(HiveConf.ConfVars.HADOOPJOBNAME,jobname + "(" + curJobNo+ "/"+ jobs+ ")");
         }
       }
-      tsk.initialize(conf);
-      int exitVal=tsk.execute();
+      tsk.initialize(conf,plan);
+      int exitVal=tsk.executeTask();
       if (SessionState.get() != null) {
         SessionState.get().getHiveHistory().setTaskProperty(queryId,tsk.getId(),Keys.TASK_RET_CODE,String.valueOf(exitVal));
         SessionState.get().getHiveHistory().endTask(queryId,tsk);
@@ -49,7 +55,6 @@
         console.printError("FAILED: Execution Error, return code " + exitVal + " from "+ tsk.getClass().getName());
         return 9;
       }
-      tsk.setDone();
       if (tsk.getChildTasks() == null) {
         continue;
       }
@@ -73,9 +78,19 @@
     return (12);
   }
  finally {
-    if (SessionState.get() != null)     SessionState.get().getHiveHistory().endQuery(queryId);
+    if (SessionState.get() != null) {
+      SessionState.get().getHiveHistory().endQuery(queryId);
+    }
     if (noName) {
       conf.setVar(HiveConf.ConfVars.HADOOPJOBNAME,"");
+    }
+  }
+  plan.setDone();
+  if (SessionState.get() != null) {
+    try {
+      SessionState.get().getHiveHistory().logPlanProgress(plan);
+    }
+ catch (    Exception e) {
     }
   }
   console.printInfo("OK");
