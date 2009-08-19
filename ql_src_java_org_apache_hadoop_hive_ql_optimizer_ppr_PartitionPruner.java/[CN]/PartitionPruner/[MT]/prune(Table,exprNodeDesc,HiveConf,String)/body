@@ -25,6 +25,11 @@
         ois.add(rowObjectInspector);
         ois.add(partObjectInspector);
         StructObjectInspector rowWithPartObjectInspector=ObjectInspectorFactory.getUnionStructObjectInspector(ois);
+        if ("strict".equalsIgnoreCase(HiveConf.getVar(conf,HiveConf.ConfVars.HIVEMAPREDMODE))) {
+          if (!hasColumnExpr(prunerExpr)) {
+            throw new SemanticException(ErrorMsg.NO_PARTITION_PREDICATE.getMsg("for Alias \"" + alias + "\" Table \""+ tab.getName()+ "\""));
+          }
+        }
         if (prunerExpr != null) {
           ExprNodeEvaluator evaluator=ExprNodeEvaluatorFactory.get(prunerExpr);
           ObjectInspector evaluateResultOI=evaluator.initialize(rowWithPartObjectInspector);
@@ -59,7 +64,10 @@
       true_parts.addAll(Hive.get().getPartitions(tab));
     }
   }
- catch (  Exception e) {
+ catch (  HiveException e) {
+    throw e;
+  }
+catch (  Exception e) {
     throw new HiveException(e);
   }
   return new PrunedPartitionList(true_parts,unkn_parts,denied_parts);
