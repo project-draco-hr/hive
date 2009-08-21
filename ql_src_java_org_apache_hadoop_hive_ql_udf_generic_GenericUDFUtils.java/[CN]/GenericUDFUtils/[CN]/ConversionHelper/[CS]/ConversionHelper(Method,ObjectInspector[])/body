@@ -1,2 +1,60 @@
 {
+  this.m=m;
+  this.givenParameterOIs=parameterOIs;
+  methodParameterTypes=m.getGenericParameterTypes();
+  lastParaElementType=TypeInfoUtils.getArrayElementType(methodParameterTypes.length == 0 ? null : methodParameterTypes[methodParameterTypes.length - 1]);
+  isVariableLengthArgument=(lastParaElementType != null);
+  ObjectInspector[] methodParameterOIs=new ObjectInspector[parameterOIs.length];
+  if (isVariableLengthArgument) {
+    if (parameterOIs.length < methodParameterTypes.length - 1) {
+      throw new UDFArgumentLengthException(m.toString() + " requires at least " + (methodParameterTypes.length - 1)+ " arguments but only "+ parameterOIs.length+ " are passed in.");
+    }
+    for (int i=0; i < methodParameterTypes.length - 1; i++) {
+      if (methodParameterTypes[i] == Object.class) {
+        methodParameterOIs[i]=ObjectInspectorUtils.getStandardObjectInspector(parameterOIs[i],ObjectInspectorCopyOption.JAVA);
+      }
+ else {
+        methodParameterOIs[i]=ObjectInspectorFactory.getReflectionObjectInspector(methodParameterTypes[i],ObjectInspectorOptions.JAVA);
+      }
+    }
+    if (lastParaElementType == Object.class) {
+      for (int i=methodParameterTypes.length - 1; i < parameterOIs.length; i++) {
+        methodParameterOIs[i]=ObjectInspectorUtils.getStandardObjectInspector(parameterOIs[i],ObjectInspectorCopyOption.JAVA);
+      }
+    }
+ else {
+      ObjectInspector oi=ObjectInspectorFactory.getReflectionObjectInspector(lastParaElementType,ObjectInspectorOptions.JAVA);
+      for (int i=methodParameterTypes.length - 1; i < parameterOIs.length; i++) {
+        methodParameterOIs[i]=oi;
+      }
+    }
+  }
+ else {
+    if (methodParameterTypes.length != parameterOIs.length) {
+      throw new UDFArgumentLengthException(m.toString() + " requires " + methodParameterTypes.length+ " arguments but "+ parameterOIs.length+ " are passed in.");
+    }
+    for (int i=0; i < methodParameterTypes.length; i++) {
+      if (methodParameterTypes[i] == Object.class) {
+        methodParameterOIs[i]=ObjectInspectorUtils.getStandardObjectInspector(parameterOIs[i],ObjectInspectorCopyOption.JAVA);
+      }
+ else {
+        methodParameterOIs[i]=ObjectInspectorFactory.getReflectionObjectInspector(methodParameterTypes[i],ObjectInspectorOptions.JAVA);
+      }
+    }
+  }
+  conversionNeeded=false;
+  converters=new Converter[parameterOIs.length];
+  for (int i=0; i < parameterOIs.length; i++) {
+    Converter pc=ObjectInspectorConverters.getConverter(parameterOIs[i],methodParameterOIs[i]);
+    converters[i]=pc;
+    conversionNeeded=conversionNeeded || (!(pc instanceof IdentityConverter));
+  }
+  if (isVariableLengthArgument) {
+    convertedParameters=new Object[methodParameterTypes.length];
+    convertedParametersInArray=(Object[])Array.newInstance(getClassFromType(lastParaElementType),parameterOIs.length - methodParameterTypes.length + 1);
+    convertedParameters[convertedParameters.length - 1]=convertedParametersInArray;
+  }
+ else {
+    convertedParameters=new Object[parameterOIs.length];
+  }
 }
