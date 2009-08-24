@@ -33,8 +33,12 @@
     scriptOut=new DataOutputStream(new BufferedOutputStream(scriptPid.getOutputStream()));
     scriptIn=new DataInputStream(new BufferedInputStream(scriptPid.getInputStream()));
     scriptErr=new DataInputStream(new BufferedInputStream(scriptPid.getErrorStream()));
-    outThread=new StreamThread(scriptIn,new OutputStreamProcessor(scriptOutputDeserializer.getObjectInspector()),"OutputProcessor");
-    errThread=new StreamThread(scriptErr,new ErrorStreamProcessor(HiveConf.getIntVar(hconf,HiveConf.ConfVars.SCRIPTERRORLIMIT)),"ErrorProcessor");
+    RecordReader scriptOutputReader=conf.getOutRecordReaderClass().newInstance();
+    scriptOutputReader.initialize(scriptIn,hconf);
+    outThread=new StreamThread(scriptOutputReader,new OutputStreamProcessor(scriptOutputDeserializer.getObjectInspector()),"OutputProcessor");
+    RecordReader scriptErrReader=conf.getOutRecordReaderClass().newInstance();
+    scriptErrReader.initialize(scriptErr,hconf);
+    errThread=new StreamThread(scriptErrReader,new ErrorStreamProcessor(HiveConf.getIntVar(hconf,HiveConf.ConfVars.SCRIPTERRORLIMIT)),"ErrorProcessor");
     if (HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVESCRIPTAUTOPROGRESS)) {
       Integer expInterval=Integer.decode(hconf.get("mapred.tasktracker.expiry.interval"));
       int notificationInterval;
