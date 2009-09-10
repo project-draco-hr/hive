@@ -1,17 +1,41 @@
 {
-  for (int i=0; i < numAliases; i++) {
-    Byte alias=order[i];
-    if (storage.get(alias).iterator().hasNext() == false) {
-      if (noOuterJoin) {
-        LOG.trace("No data for alias=" + i);
-        return;
-      }
- else {
+  if (condn[0].getType() == joinDesc.UNIQUE_JOIN) {
+    IntermediateObject intObj=new IntermediateObject(new ArrayList[numAliases],0);
+    boolean preserve=false;
+    boolean hasNulls=false;
+    for (int i=0; i < numAliases; i++) {
+      Byte alias=order[i];
+      Iterator<ArrayList<Object>> aliasRes=storage.get(alias).iterator();
+      if (aliasRes.hasNext() == false) {
         storage.put(alias,dummyObjVectors[i]);
+        hasNulls=true;
+      }
+ else       if (condn[i].getPreserved()) {
+        preserve=true;
       }
     }
+    if (hasNulls && !preserve) {
+      return;
+    }
+    LOG.trace("calling genUniqueJoinObject");
+    genUniqueJoinObject(0,new IntermediateObject(new ArrayList[numAliases],0));
+    LOG.trace("called genUniqueJoinObject");
   }
-  LOG.trace("calling genObject");
-  genObject(null,0,new IntermediateObject(new ArrayList[numAliases],0),true);
-  LOG.trace("called genObject");
+ else {
+    for (int i=0; i < numAliases; i++) {
+      Byte alias=order[i];
+      if (storage.get(alias).iterator().hasNext() == false) {
+        if (noOuterJoin) {
+          LOG.trace("No data for alias=" + i);
+          return;
+        }
+ else {
+          storage.put(alias,dummyObjVectors[i]);
+        }
+      }
+    }
+    LOG.trace("calling genObject");
+    genObject(null,0,new IntermediateObject(new ArrayList[numAliases],0),true);
+    LOG.trace("called genObject");
+  }
 }
