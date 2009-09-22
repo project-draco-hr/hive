@@ -4,12 +4,18 @@
   session.out=null;
   session.err=null;
   SessionState.start(session);
+  String originalUri=uri;
   if (!uri.startsWith(URI_PREFIX)) {
-    throw new Exception("Invalid URL: " + uri);
+    throw new SQLException("Invalid URL: " + uri,"08S01");
   }
   uri=uri.substring(URI_PREFIX.length());
   if (uri.isEmpty()) {
-    client=new HiveServer.HiveServerHandler();
+    try {
+      client=new HiveServer.HiveServerHandler();
+    }
+ catch (    MetaException e) {
+      throw new SQLException("Error accessing Hive metastore: " + e.getMessage(),"08S01");
+    }
   }
  else {
     String[] parts=uri.split("/");
@@ -26,7 +32,12 @@
     transport=new TSocket(host,port);
     TProtocol protocol=new TBinaryProtocol(transport);
     client=new HiveClient(protocol);
-    transport.open();
+    try {
+      transport.open();
+    }
+ catch (    TTransportException e) {
+      throw new SQLException("Could not establish connecton to " + originalUri + ": "+ e.getMessage(),"08S01");
+    }
   }
   isClosed=false;
 }

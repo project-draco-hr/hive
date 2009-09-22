@@ -5,12 +5,17 @@
   String[] tokens=cmd_trimmed.split("\\s");
   String cmd_1=cmd_trimmed.substring(tokens[0].length()).trim();
   int ret=0;
+  String errorMessage="";
+  String SQLState=null;
   try {
     CommandProcessor proc=CommandProcessorFactory.get(tokens[0]);
     if (proc != null) {
       if (proc instanceof Driver) {
         isHiveQuery=true;
-        ret=driver.run(cmd);
+        Driver.DriverResponse response=driver.runCommand(cmd);
+        ret=response.getResponseCode();
+        SQLState=response.getSQLState();
+        errorMessage=response.getErrorMessage();
       }
  else {
         isHiveQuery=false;
@@ -19,9 +24,11 @@
     }
   }
  catch (  Exception e) {
-    throw new HiveServerException("Error running query: " + e.toString());
+    HiveServerException ex=new HiveServerException();
+    ex.setMessage("Error running query: " + e.toString());
+    throw ex;
   }
   if (ret != 0) {
-    throw new HiveServerException("Query returned non-zero code: " + ret);
+    throw new HiveServerException("Query returned non-zero code: " + ret + ", cause: "+ errorMessage,ret,SQLState);
   }
 }
