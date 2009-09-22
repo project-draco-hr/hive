@@ -17,20 +17,44 @@ catch (    java.io.UnsupportedEncodingException uex) {
   }
   l4j.debug(this.getSessionName() + " state is now QUERY_RUNNING.");
   this.status=WebSessionItemStatus.QUERY_RUNNING;
-  queryRet=qp.run(this.query);
-  Vector<String> res=new Vector<String>();
-  try {
-    while (qp.getResults(res)) {
-      for (      String row : res) {
-        if (ss.out != null) {
-          ss.out.println(row);
+  queryRet=new ArrayList<Integer>(this.queries.size());
+  for (int i=0; i < this.queries.size(); i++) {
+    String cmd=queries.get(i);
+    String cmd_trimmed=cmd.trim();
+    String[] tokens=cmd_trimmed.split("\\s+");
+    String cmd_1=cmd_trimmed.substring(tokens[0].length()).trim();
+    CommandProcessor proc=CommandProcessorFactory.get(tokens[0]);
+    if (proc != null) {
+      if (proc instanceof Driver) {
+        Driver qp=(Driver)proc;
+        queryRet.add(new Integer(qp.run(cmd)));
+        Vector<String> res=new Vector<String>();
+        try {
+          while (qp.getResults(res)) {
+            resultBucket.add(res);
+            if (resultBucket.size() > resultBucketMaxSize)             resultBucket.remove(0);
+            for (            String row : res) {
+              if (ss != null) {
+                if (ss.out != null)                 ss.out.println(row);
+              }
+ else {
+                throw new RuntimeException("ss was null");
+              }
+            }
+          }
         }
+ catch (        IOException ex) {
+          l4j.error(this.getSessionName() + " getting results " + this.getResultFile()+ " caused exception.",ex);
+        }
+        qp.close();
       }
-      res.clear();
+ else {
+        queryRet.add(new Integer(proc.run(cmd_1)));
+      }
     }
-  }
- catch (  IOException ex) {
-    l4j.error(this.getSessionName() + " getting results " + this.getResultFile()+ " caused exception.",ex);
+ else {
+      l4j.error(this.getSessionName() + " query processor was not found for query " + cmd);
+    }
   }
   try {
     if (fos != null) {
@@ -40,6 +64,9 @@ catch (    java.io.UnsupportedEncodingException uex) {
  catch (  IOException ex) {
     l4j.error(this.getSessionName() + " closing result file " + this.getResultFile()+ " caused exception.",ex);
   }
-  this.status=WebSessionItemStatus.QUERY_COMPLETE;
-  l4j.debug(this.getSessionName() + " state is now QUERY_COMPLETE.");
+  this.status=WebSessionItemStatus.READY;
+  l4j.debug(this.getSessionName() + " state is now READY");
+synchronized (this.runnable) {
+    this.runnable.notifyAll();
+  }
 }
