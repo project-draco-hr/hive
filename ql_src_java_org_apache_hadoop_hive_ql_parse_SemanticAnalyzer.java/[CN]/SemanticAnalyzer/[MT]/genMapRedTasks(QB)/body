@@ -61,7 +61,24 @@
  else {
     List<moveWork> mv=new ArrayList<moveWork>();
     for (    loadTableDesc ltd : loadTableWork)     mvTask.add(TaskFactory.get(new moveWork(null,null,ltd,null,false),this.conf));
-    for (    loadFileDesc lfd : loadFileWork)     mvTask.add(TaskFactory.get(new moveWork(null,null,null,lfd,false),this.conf));
+    boolean oneLoadFile=true;
+    for (    loadFileDesc lfd : loadFileWork) {
+      if (qb.isCTAS()) {
+        assert(oneLoadFile);
+        String location=qb.getTableDesc().getLocation();
+        if (location == null) {
+          location=conf.getVar(HiveConf.ConfVars.METASTOREWAREHOUSE);
+          assert(location.length() > 0);
+          if (location.charAt(location.length() - 1) != '/') {
+            location+='/';
+          }
+          location+=qb.getTableDesc().getTableName();
+        }
+        lfd.setTargetDir(location);
+        oneLoadFile=false;
+      }
+      mvTask.add(TaskFactory.get(new moveWork(null,null,null,lfd,false),this.conf));
+    }
   }
   GenMRProcContext procCtx=new GenMRProcContext(conf,new HashMap<Operator<? extends Serializable>,Task<? extends Serializable>>(),new ArrayList<Operator<? extends Serializable>>(),getParseContext(),mvTask,this.rootTasks,new LinkedHashMap<Operator<? extends Serializable>,GenMapRedCtx>(),inputs,outputs);
   Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
@@ -85,4 +102,16 @@
   for (  Task<? extends Serializable> rootTask : rootTasks)   breakTaskTree(rootTask);
   for (  Task<? extends Serializable> rootTask : rootTasks)   setKeyDescTaskTree(rootTask);
   if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVEJOBPROGRESS))   for (  Task<? extends Serializable> rootTask : rootTasks)   generateCountersTask(rootTask);
+  if (qb.isCTAS()) {
+    createTableDesc crtTblDesc=qb.getTableDesc();
+    validateCreateTable(crtTblDesc);
+    getOutputs().clear();
+    Task<? extends Serializable> crtTblTask=TaskFactory.get(new DDLWork(getInputs(),getOutputs(),crtTblDesc),this.conf);
+    HashSet<Task<? extends Serializable>> leaves=new HashSet<Task<? extends Serializable>>();
+    getLeafTasks(rootTasks,leaves);
+    assert(leaves.size() > 0);
+    for (    Task<? extends Serializable> task : leaves) {
+      task.addDependentTask(crtTblTask);
+    }
+  }
 }

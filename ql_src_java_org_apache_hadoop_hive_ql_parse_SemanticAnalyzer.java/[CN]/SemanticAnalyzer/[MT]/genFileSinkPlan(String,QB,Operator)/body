@@ -61,9 +61,26 @@ if (isLocal) {
 String cols=new String();
 String colTypes=new String();
 Vector<ColumnInfo> colInfos=inputRR.getColumnInfos();
+List<FieldSchema> field_schemas=null;
+createTableDesc tblDesc=qb.getTableDesc();
+if (tblDesc != null) field_schemas=new ArrayList<FieldSchema>();
 boolean first=true;
 for (ColumnInfo colInfo : colInfos) {
   String[] nm=inputRR.reverseLookup(colInfo.getInternalName());
+  if (nm[1] != null) {
+    colInfo.setAlias(nm[1]);
+  }
+  if (field_schemas != null) {
+    FieldSchema col=new FieldSchema();
+    if (nm[1] != null) {
+      col.setName(colInfo.getAlias());
+    }
+ else {
+      col.setName(colInfo.getInternalName());
+    }
+    col.setType(colInfo.getType().getTypeName());
+    field_schemas.add(col);
+  }
   if (!first) {
     cols=cols.concat(",");
     colTypes=colTypes.concat(":");
@@ -74,6 +91,7 @@ for (ColumnInfo colInfo : colInfos) {
   if (tName.equals(Constants.VOID_TYPE_NAME))   colTypes=colTypes.concat(Constants.STRING_TYPE_NAME);
  else   colTypes=colTypes.concat(tName);
 }
+if (tblDesc != null) tblDesc.setCols(field_schemas);
 if (!ctx.isMRTmpFileURI(destStr)) {
   this.idToTableNameMap.put(String.valueOf(this.destTableId),destStr);
   currentTableId=this.destTableId;
@@ -81,7 +99,12 @@ if (!ctx.isMRTmpFileURI(destStr)) {
 }
 boolean isDfsDir=(dest_type.intValue() == QBMetaData.DEST_DFS_FILE);
 this.loadFileWork.add(new loadFileDesc(queryTmpdir,destStr,isDfsDir,cols,colTypes));
-table_desc=PlanUtils.getDefaultTableDesc(Integer.toString(Utilities.ctrlaCode),cols,colTypes,false);
+if (tblDesc == null) {
+  table_desc=PlanUtils.getDefaultTableDesc(Integer.toString(Utilities.ctrlaCode),cols,colTypes,false);
+}
+ else {
+  table_desc=PlanUtils.getTableDesc(tblDesc,cols,colTypes);
+}
 outputs.add(new WriteEntity(destStr,!isDfsDir));
 break;
 }
