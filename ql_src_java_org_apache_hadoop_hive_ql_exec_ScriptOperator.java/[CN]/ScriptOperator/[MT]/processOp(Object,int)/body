@@ -13,8 +13,17 @@
     throw new HiveException(e);
   }
 catch (  IOException e) {
-    LOG.error("Error in writing to script: " + e.getMessage());
-    scriptError=e;
-    throw new HiveException(e);
+    if (isBrokenPipeException(e) && allowPartialConsumption()) {
+      setDone(true);
+      LOG.warn("Got broken pipe during write: ignoring exception and setting operator to done");
+    }
+ else {
+      LOG.error("Error in writing to script: " + e.getMessage());
+      if (isBrokenPipeException(e)) {
+        displayBrokenPipeInfo();
+      }
+      scriptError=e;
+      throw new HiveException(e);
+    }
   }
 }
