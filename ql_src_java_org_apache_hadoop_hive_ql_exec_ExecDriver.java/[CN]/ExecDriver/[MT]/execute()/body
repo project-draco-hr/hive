@@ -12,7 +12,24 @@
     throw new RuntimeException("Plan invalid, Reason: " + invalidReason);
   }
   String hiveScratchDir=HiveConf.getVar(job,HiveConf.ConfVars.SCRATCHDIR);
-  Path jobScratchDir=new Path(hiveScratchDir + Utilities.randGen.nextInt());
+  String jobScratchDirStr=hiveScratchDir + File.separator + Utilities.randGen.nextInt();
+  Path jobScratchDir=new Path(jobScratchDirStr);
+  String emptyScratchDirStr=null;
+  Path emptyScratchDir=null;
+  int numTries=3;
+  while (numTries > 0) {
+    emptyScratchDirStr=hiveScratchDir + File.separator + Utilities.randGen.nextInt();
+    emptyScratchDir=new Path(emptyScratchDirStr);
+    try {
+      FileSystem fs=emptyScratchDir.getFileSystem(job);
+      fs.mkdirs(emptyScratchDir);
+      break;
+    }
+ catch (    Exception e) {
+      if (numTries > 0)       numTries--;
+ else       throw new RuntimeException("Failed to make dir " + emptyScratchDir.toString() + " : "+ e.getMessage());
+    }
+  }
   FileOutputFormat.setOutputPath(job,jobScratchDir);
   job.setMapperClass(ExecMapper.class);
   job.setMapOutputKeyClass(HiveKey.class);
@@ -49,7 +66,7 @@
   RunningJob rj=null, orig_rj=null;
   boolean success=false;
   try {
-    addInputPaths(job,work,hiveScratchDir.toString());
+    addInputPaths(job,work,emptyScratchDirStr);
     Utilities.setMapRedWork(job,work);
     String pwd=job.get(HiveConf.ConfVars.METASTOREPWD.varname);
     if (pwd != null)     job.set(HiveConf.ConfVars.METASTOREPWD.varname,"HIVE");
@@ -95,6 +112,7 @@
     try {
       FileSystem fs=jobScratchDir.getFileSystem(job);
       fs.delete(jobScratchDir,true);
+      fs.delete(emptyScratchDir,true);
       if (returnVal != 0 && rj != null) {
         rj.killJob();
       }
