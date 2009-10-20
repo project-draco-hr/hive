@@ -1,8 +1,21 @@
 {
   CheckResult result=new CheckResult();
+  List<String> repairOutput=new ArrayList<String>();
   try {
     HiveMetaStoreChecker checker=new HiveMetaStoreChecker(db);
     checker.checkMetastore(MetaStoreUtils.DEFAULT_DATABASE_NAME,msckDesc.getTableName(),msckDesc.getPartitionSpec(),result);
+    if (msckDesc.isRepairPartitions()) {
+      Table table=db.getTable(MetaStoreUtils.DEFAULT_DATABASE_NAME,msckDesc.getTableName());
+      for (      CheckResult.PartitionResult part : result.getPartitionsNotInMs()) {
+        try {
+          db.createPartition(table,Warehouse.makeSpecFromName(part.getPartitionName()));
+          repairOutput.add("Repair: Added partition to metastore " + msckDesc.getTableName() + ':'+ part.getPartitionName());
+        }
+ catch (        Exception e) {
+          LOG.warn("Repair error, could not add partition to metastore: ",e);
+        }
+      }
+    }
   }
  catch (  HiveException e) {
     LOG.warn("Failed to run metacheck: ",e);
@@ -22,6 +35,15 @@ catch (  IOException e) {
       firstWritten|=writeMsckResult(result.getTablesNotOnFs(),"Tables missing on filesystem:",resultOut,firstWritten);
       firstWritten|=writeMsckResult(result.getPartitionsNotInMs(),"Partitions not in metastore:",resultOut,firstWritten);
       firstWritten|=writeMsckResult(result.getPartitionsNotOnFs(),"Partitions missing from filesystem:",resultOut,firstWritten);
+      for (      String rout : repairOutput) {
+        if (firstWritten) {
+          resultOut.write(terminator);
+        }
+ else {
+          firstWritten=true;
+        }
+        resultOut.write(rout);
+      }
     }
  catch (    IOException e) {
       LOG.warn("Failed to save metacheck output: ",e);
