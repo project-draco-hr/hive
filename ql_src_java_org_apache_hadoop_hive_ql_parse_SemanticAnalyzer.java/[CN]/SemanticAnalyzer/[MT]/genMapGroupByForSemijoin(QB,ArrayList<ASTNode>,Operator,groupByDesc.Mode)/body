@@ -1,0 +1,23 @@
+{
+  RowResolver groupByInputRowResolver=opParseCtx.get(inputOperatorInfo).getRR();
+  RowResolver groupByOutputRowResolver=new RowResolver();
+  ArrayList<exprNodeDesc> groupByKeys=new ArrayList<exprNodeDesc>();
+  ArrayList<String> outputColumnNames=new ArrayList<String>();
+  ArrayList<aggregationDesc> aggregations=new ArrayList<aggregationDesc>();
+  Map<String,exprNodeDesc> colExprMap=new HashMap<String,exprNodeDesc>();
+  QBParseInfo parseInfo=qb.getParseInfo();
+  groupByOutputRowResolver.setIsExprResolver(true);
+  for (int i=0; i < fields.size(); ++i) {
+    ASTNode colName=fields.get(i);
+    exprNodeDesc grpByExprNode=genExprNodeDesc(colName,groupByInputRowResolver);
+    groupByKeys.add(grpByExprNode);
+    String field=getColumnInternalName(i);
+    outputColumnNames.add(field);
+    ColumnInfo colInfo2=new ColumnInfo(field,grpByExprNode.getTypeInfo(),"",false);
+    groupByOutputRowResolver.put("",colName.toStringTree(),colInfo2);
+    colExprMap.put(field,grpByExprNode);
+  }
+  Operator op=putOpInsertMap(OperatorFactory.getAndMakeChild(new groupByDesc(mode,outputColumnNames,groupByKeys,aggregations,false),new RowSchema(groupByOutputRowResolver.getColumnInfos()),inputOperatorInfo),groupByOutputRowResolver);
+  op.setColumnExprMap(colExprMap);
+  return op;
+}
