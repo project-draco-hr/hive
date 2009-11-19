@@ -16,15 +16,46 @@
   if (isInTransform) {
     trfm=(ASTNode)selExprList.getChild(posn).getChild(0);
   }
-  ASTNode exprList=(isInTransform ? (ASTNode)trfm.getChild(0) : selExprList);
+  boolean isUDTF=false;
+  String udtfOutputColAlias=null;
+  ASTNode udtfExpr=(ASTNode)selExprList.getChild(posn).getChild(0);
+  GenericUDTF genericUDTF=null;
+  if (udtfExpr.getType() == HiveParser.TOK_FUNCTION) {
+    String funcName=TypeCheckProcFactory.DefaultExprProcessor.getFunctionText(udtfExpr,true);
+    FunctionInfo fi=FunctionRegistry.getFunctionInfo(funcName);
+    if (fi != null) {
+      genericUDTF=fi.getGenericUDTF();
+    }
+    isUDTF=(genericUDTF != null);
+  }
+  if (isUDTF) {
+    if (selExprList.getChildCount() > 1) {
+      throw new SemanticException(ErrorMsg.UDTF_MULTIPLE_EXPR.getMsg());
+    }
+    if (((ASTNode)selExprList.getChild(posn)).getChildCount() != 2 || selExprList.getChild(posn).getChild(1).getType() != HiveParser.Identifier) {
+      throw new SemanticException(ErrorMsg.UDTF_REQUIRE_AS.getMsg());
+    }
+    udtfOutputColAlias=unescapeIdentifier(selExprList.getChild(posn).getChild(1).getText());
+  }
+  ASTNode exprList;
+  if (isInTransform) {
+    exprList=(ASTNode)trfm.getChild(0);
+  }
+ else   if (isUDTF) {
+    exprList=(ASTNode)udtfExpr;
+  }
+ else {
+    exprList=selExprList;
+  }
   LOG.debug("genSelectPlan: input = " + inputRR.toString());
-  for (int i=posn; i < exprList.getChildCount(); ++i) {
+  int startPosn=isUDTF ? posn + 1 : posn;
+  for (int i=startPosn; i < exprList.getChildCount(); ++i) {
     ASTNode child=(ASTNode)exprList.getChild(i);
     boolean hasAsClause=(!isInTransform) && (child.getChildCount() == 2);
     ASTNode expr;
     String tabAlias;
     String colAlias;
-    if (isInTransform) {
+    if (isInTransform || isUDTF) {
       tabAlias=null;
       colAlias="_C" + i;
       expr=child;
@@ -70,6 +101,9 @@
   output.setColumnExprMap(colExprMap);
   if (isInTransform) {
     output=genScriptPlan(trfm,qb,output);
+  }
+  if (isUDTF) {
+    output=genUDTFPlan(genericUDTF,udtfOutputColAlias,qb,output);
   }
   LOG.debug("Created Select Plan for clause: " + dest + " row schema: "+ out_rwsch.toString());
   return output;

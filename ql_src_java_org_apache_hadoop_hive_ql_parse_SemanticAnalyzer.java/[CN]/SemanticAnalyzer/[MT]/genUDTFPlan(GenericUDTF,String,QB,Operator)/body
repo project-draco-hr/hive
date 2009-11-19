@@ -1,0 +1,29 @@
+{
+  QBParseInfo qbp=qb.getParseInfo();
+  if (!qbp.getDestToGroupBy().isEmpty()) {
+    throw new SemanticException(ErrorMsg.UDTF_NO_GROUP_BY.getMsg());
+  }
+  if (!qbp.getDestToDistributeBy().isEmpty()) {
+    throw new SemanticException(ErrorMsg.UDTF_NO_DISTRIBUTE_BY.getMsg());
+  }
+  if (!qbp.getDestToSortBy().isEmpty()) {
+    throw new SemanticException(ErrorMsg.UDTF_NO_SORT_BY.getMsg());
+  }
+  if (!qbp.getDestToClusterBy().isEmpty()) {
+    throw new SemanticException(ErrorMsg.UDTF_NO_CLUSTER_BY.getMsg());
+  }
+  RowResolver selectRR=opParseCtx.get(input).getRR();
+  Vector<ColumnInfo> inputCols=selectRR.getColumnInfos();
+  ArrayList<String> colNames=new ArrayList<String>();
+  ObjectInspector[] colOIs=new ObjectInspector[inputCols.size()];
+  for (int i=0; i < inputCols.size(); i++) {
+    colNames.add(inputCols.get(i).getInternalName());
+    colOIs[i]=TypeInfoUtils.getStandardWritableObjectInspectorFromTypeInfo(inputCols.get(i).getType());
+  }
+  ObjectInspector outputOI=genericUDTF.initialize(colOIs);
+  ColumnInfo outputCol=new ColumnInfo(udtfOutputColumnAlias,TypeInfoUtils.getTypeInfoFromObjectInspector(outputOI),null,false);
+  RowResolver out_rwsch=new RowResolver();
+  out_rwsch.put(null,outputCol.getInternalName(),outputCol);
+  Operator udtf=putOpInsertMap(OperatorFactory.getAndMakeChild(new udtfDesc(genericUDTF,udtfOutputColumnAlias),new RowSchema(out_rwsch.getColumnInfos()),input),out_rwsch);
+  return udtf;
+}
