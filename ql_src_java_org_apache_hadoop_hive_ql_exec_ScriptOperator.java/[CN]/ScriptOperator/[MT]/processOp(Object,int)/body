@@ -1,4 +1,51 @@
 {
+  if (firstRow) {
+    firstRow=false;
+    try {
+      String[] cmdArgs=splitArgs(conf.getScriptCmd());
+      String prog=cmdArgs[0];
+      File currentDir=new File(".").getAbsoluteFile();
+      if (!new File(prog).isAbsolute()) {
+        PathFinder finder=new PathFinder("PATH");
+        finder.prependPathComponent(currentDir.toString());
+        File f=finder.getAbsolutePath(prog);
+        if (f != null) {
+          cmdArgs[0]=f.getAbsolutePath();
+        }
+        f=null;
+      }
+      String[] wrappedCmdArgs=addWrapper(cmdArgs);
+      LOG.info("Executing " + Arrays.asList(wrappedCmdArgs));
+      LOG.info("tablename=" + hconf.get(HiveConf.ConfVars.HIVETABLENAME.varname));
+      LOG.info("partname=" + hconf.get(HiveConf.ConfVars.HIVEPARTITIONNAME.varname));
+      LOG.info("alias=" + alias);
+      ProcessBuilder pb=new ProcessBuilder(wrappedCmdArgs);
+      Map<String,String> env=pb.environment();
+      addJobConfToEnvironment(hconf,env);
+      env.put(safeEnvVarName(HiveConf.ConfVars.HIVEALIAS.varname),String.valueOf(alias));
+      scriptPid=pb.start();
+      DataOutputStream scriptOut=new DataOutputStream(new BufferedOutputStream(scriptPid.getOutputStream()));
+      DataInputStream scriptIn=new DataInputStream(new BufferedInputStream(scriptPid.getInputStream()));
+      DataInputStream scriptErr=new DataInputStream(new BufferedInputStream(scriptPid.getErrorStream()));
+      scriptOutWriter=conf.getInRecordWriterClass().newInstance();
+      scriptOutWriter.initialize(scriptOut,hconf);
+      RecordReader scriptOutputReader=conf.getOutRecordReaderClass().newInstance();
+      scriptOutputReader.initialize(scriptIn,hconf);
+      outThread=new StreamThread(scriptOutputReader,new OutputStreamProcessor(scriptOutputDeserializer.getObjectInspector()),"OutputProcessor");
+      RecordReader scriptErrReader=conf.getOutRecordReaderClass().newInstance();
+      scriptErrReader.initialize(scriptErr,hconf);
+      errThread=new StreamThread(scriptErrReader,new ErrorStreamProcessor(HiveConf.getIntVar(hconf,HiveConf.ConfVars.SCRIPTERRORLIMIT)),"ErrorProcessor");
+      if (HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVESCRIPTAUTOPROGRESS)) {
+        autoProgressor=new AutoProgressor(this.getClass().getName(),reporter,Utilities.getDefaultNotificationInterval(hconf));
+        autoProgressor.go();
+      }
+      outThread.start();
+      errThread.start();
+    }
+ catch (    Exception e) {
+      throw new HiveException("Cannot initialize ScriptOperator",e);
+    }
+  }
   if (scriptError != null) {
     throw new HiveException(scriptError);
   }
