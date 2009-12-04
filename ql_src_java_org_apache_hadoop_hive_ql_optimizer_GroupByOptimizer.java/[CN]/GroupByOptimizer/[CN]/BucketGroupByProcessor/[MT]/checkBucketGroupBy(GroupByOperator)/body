@@ -1,0 +1,67 @@
+{
+  if (curr.getConf().getMode() != groupByDesc.Mode.HASH)   return;
+  Set<String> tblNames=this.pGraphContext.getGroupOpToInputTables().get(curr);
+  if (tblNames == null || tblNames.size() == 0)   return;
+  boolean bucketGroupBy=true;
+  groupByDesc desc=curr.getConf();
+  List<exprNodeDesc> groupByKeys=new LinkedList<exprNodeDesc>();
+  groupByKeys.addAll(desc.getKeys());
+  List<String> groupByCols=new ArrayList<String>();
+  while (groupByKeys.size() > 0) {
+    exprNodeDesc node=groupByKeys.remove(0);
+    if (node instanceof exprNodeColumnDesc) {
+      groupByCols.addAll(node.getCols());
+    }
+ else     if ((node instanceof exprNodeConstantDesc) || (node instanceof exprNodeNullDesc)) {
+    }
+ else     if (node instanceof exprNodeFieldDesc) {
+      groupByKeys.add(0,((exprNodeFieldDesc)node).getDesc());
+      continue;
+    }
+ else     if (node instanceof exprNodeGenericFuncDesc) {
+      exprNodeGenericFuncDesc udfNode=((exprNodeGenericFuncDesc)node);
+      GenericUDF udf=udfNode.getGenericUDF();
+      if (!FunctionRegistry.isDeterministic(udf))       return;
+      groupByKeys.addAll(0,udfNode.getChildExprs());
+    }
+ else {
+      return;
+    }
+  }
+  if (groupByCols.size() == 0)   return;
+  for (  String table : tblNames) {
+    Operator<? extends Serializable> topOp=this.pGraphContext.getTopOps().get(table);
+    if (topOp == null || (!(topOp instanceof TableScanOperator))) {
+      return;
+    }
+    TableScanOperator ts=(TableScanOperator)topOp;
+    Table destTable=this.pGraphContext.getTopToTable().get(ts);
+    if (destTable == null)     return;
+    if (!destTable.isPartitioned()) {
+      List<String> bucketCols=destTable.getBucketCols();
+      List<String> sortCols=Utilities.getColumnNamesFromSortCols(destTable.getSortCols());
+      bucketGroupBy=matchBucketOrSortedColumns(groupByCols,bucketCols,sortCols);
+      if (!bucketGroupBy)       return;
+    }
+ else {
+      PrunedPartitionList partsList=null;
+      try {
+        partsList=PartitionPruner.prune(destTable,this.pGraphContext.getOpToPartPruner().get(ts),this.pGraphContext.getConf(),table,this.pGraphContext.getPrunedPartitions());
+      }
+ catch (      HiveException e) {
+        LOG.error(org.apache.hadoop.util.StringUtils.stringifyException(e));
+        throw new SemanticException(e.getMessage(),e);
+      }
+      List<Partition> parts=new ArrayList<Partition>();
+      parts.addAll(partsList.getConfirmedPartns());
+      parts.addAll(partsList.getUnknownPartns());
+      for (      Partition part : parts) {
+        List<String> bucketCols=part.getBucketCols();
+        List<String> sortCols=Utilities.getColumnNamesFromSortCols(part.getTPartition().getSd().getSortCols());
+        bucketGroupBy=matchBucketOrSortedColumns(groupByCols,bucketCols,sortCols);
+        if (!bucketGroupBy)         return;
+      }
+    }
+  }
+  curr.getConf().setBucketGroup(bucketGroupBy);
+}
