@@ -1,6 +1,7 @@
 {
   boolean noName=StringUtils.isEmpty(conf.getVar(HiveConf.ConfVars.HADOOPJOBNAME));
   int maxlen=conf.getIntVar(HiveConf.ConfVars.HIVEJOBNAMELENGTH);
+  int curJobNo=0;
   String queryId=plan.getQueryId();
   String queryStr=plan.getQueryStr();
   conf.setVar(HiveConf.ConfVars.HIVEQUERYID,queryId);
@@ -26,46 +27,38 @@
       SessionState.get().getHiveHistory().setIdToTableMap(sem.getIdToTableNameMap());
     }
     String jobname=Utilities.abbreviate(queryStr,maxlen - 6);
-    int curJobNo=0;
     Queue<Task<? extends Serializable>> runnable=new LinkedList<Task<? extends Serializable>>();
-    for (    Task<? extends Serializable> rootTask : sem.getRootTasks()) {
-      if (runnable.offer(rootTask) == false) {
-        LOG.error("Could not insert the first task into the queue");
-        return (1);
-      }
+    Map<TaskResult,TaskRunner> running=new HashMap<TaskResult,TaskRunner>();
+    for (    Task<? extends Serializable> tsk : sem.getRootTasks()) {
+      addToRunnable(runnable,tsk);
     }
-    while (runnable.peek() != null) {
-      Task<? extends Serializable> tsk=runnable.remove();
-      if (SessionState.get() != null) {
-        SessionState.get().getHiveHistory().startTask(queryId,tsk,tsk.getClass().getName());
+    while (running.size() != 0 || runnable.peek() != null) {
+      while (runnable.peek() != null && running.size() < maxthreads) {
+        Task<? extends Serializable> tsk=runnable.remove();
+        curJobNo=launchTask(tsk,queryId,noName,running,jobname,jobs,curJobNo);
       }
-      if (tsk.isMapRedTask()) {
-        curJobNo++;
-        if (noName) {
-          conf.setVar(HiveConf.ConfVars.HADOOPJOBNAME,jobname + "(" + curJobNo+ "/"+ jobs+ ")");
-        }
-      }
-      tsk.initialize(conf,plan);
-      int exitVal=tsk.executeTask();
-      if (SessionState.get() != null) {
-        SessionState.get().getHiveHistory().setTaskProperty(queryId,tsk.getId(),Keys.TASK_RET_CODE,String.valueOf(exitVal));
-        SessionState.get().getHiveHistory().endTask(queryId,tsk);
-      }
+      TaskResult tskRes=pollTasks(running.keySet());
+      TaskRunner tskRun=running.remove(tskRes);
+      Task<? extends Serializable> tsk=tskRun.getTask();
+      int exitVal=tskRes.getExitVal();
       if (exitVal != 0) {
         errorMessage="FAILED: Execution Error, return code " + exitVal + " from "+ tsk.getClass().getName();
         SQLState="08S01";
         console.printError(errorMessage);
+        if (running.size() != 0) {
+          taskCleanup();
+        }
         return 9;
       }
-      if (tsk.getChildTasks() == null) {
-        continue;
+      if (SessionState.get() != null) {
+        SessionState.get().getHiveHistory().setTaskProperty(queryId,tsk.getId(),Keys.TASK_RET_CODE,String.valueOf(exitVal));
+        SessionState.get().getHiveHistory().endTask(queryId,tsk);
       }
-      for (      Task<? extends Serializable> child : tsk.getChildTasks()) {
-        if (!child.isRunnable()) {
-          continue;
-        }
-        if (runnable.offer(child) == false) {
-          LOG.error("Could not add child task to queue");
+      if (tsk.getChildTasks() != null) {
+        for (        Task<? extends Serializable> child : tsk.getChildTasks()) {
+          if (isLaunchable(child)) {
+            addToRunnable(runnable,child);
+          }
         }
       }
     }
