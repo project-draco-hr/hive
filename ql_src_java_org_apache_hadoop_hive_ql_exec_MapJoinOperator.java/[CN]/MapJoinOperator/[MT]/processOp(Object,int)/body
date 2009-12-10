@@ -15,17 +15,23 @@
       }
       numMapRowsRead++;
       if (((numMapRowsRead % heartbeatInterval) == 0) && (reporter != null))       reporter.progress();
-      HTree hashTable=mapJoinTables.get(alias);
+      HashMapWrapper<MapJoinObjectKey,MapJoinObjectValue> hashTable=mapJoinTables.get(alias);
       MapJoinObjectKey keyMap=new MapJoinObjectKey(metadataKeyTag,key);
-      MapJoinObjectValue o=(MapJoinObjectValue)hashTable.get(keyMap);
+      MapJoinObjectValue o=hashTable.get(keyMap);
       ArrayList<ArrayList<Object>> res=null;
+      boolean needNewKey=true;
       if (o == null) {
         res=new ArrayList<ArrayList<Object>>();
+        res.add(value);
       }
  else {
         res=o.getObj();
+        res.add(value);
+        if (hashTable.cacheSize() > 0) {
+          o.setObj(res);
+          needNewKey=false;
+        }
       }
-      res.add(value);
       if (metadataValueTag[tag] == -1) {
         metadataValueTag[tag]=nextVal++;
         tableDesc valueTableDesc=conf.getValueTblDescs().get(tag);
@@ -33,18 +39,16 @@
         valueSerDe.initialize(null,valueTableDesc.getProperties());
         mapMetadata.put(Integer.valueOf(metadataValueTag[tag]),new MapJoinObjectCtx(ObjectInspectorUtils.getStandardObjectInspector(valueSerDe.getObjectInspector(),ObjectInspectorCopyOption.WRITABLE),valueSerDe));
       }
-      MapJoinObjectKey keyObj=new MapJoinObjectKey(metadataKeyTag,key);
-      MapJoinObjectValue valueObj=new MapJoinObjectValue(metadataValueTag[tag],res);
-      if (res.size() > 1)       hashTable.remove(keyObj);
-      if (res.size() > mapJoinRowsKey) {
-        if (res.size() % 100 == 0) {
-          LOG.warn("Number of values for a given key " + keyObj + " are "+ res.size());
-          LOG.warn("used memory " + Runtime.getRuntime().totalMemory());
+      if (needNewKey) {
+        MapJoinObjectKey keyObj=new MapJoinObjectKey(metadataKeyTag,key);
+        MapJoinObjectValue valueObj=new MapJoinObjectValue(metadataValueTag[tag],res);
+        if (res.size() > mapJoinRowsKey) {
+          if (res.size() % 100 == 0) {
+            LOG.warn("Number of values for a given key " + keyObj + " are "+ res.size());
+            LOG.warn("used memory " + Runtime.getRuntime().totalMemory());
+          }
         }
-      }
-      hashTable.put(keyObj,valueObj);
-      if ((res.size() % 100 == 0) && recman != null) {
-        recman.commit();
+        hashTable.put(keyObj,valueObj);
       }
       return;
     }
@@ -66,10 +70,6 @@
     for (    Byte pos : order)     if (pos.intValue() != tag)     storage.put(pos,null);
   }
  catch (  SerDeException e) {
-    e.printStackTrace();
-    throw new HiveException(e);
-  }
-catch (  IOException e) {
     e.printStackTrace();
     throw new HiveException(e);
   }

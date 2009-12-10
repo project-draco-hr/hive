@@ -1,0 +1,57 @@
+{
+  int mm_size=mHash.size();
+  MRUItem itm=mHash.get(key);
+  if (mm_size < threshold) {
+    if (itm != null) {
+      itm.value=value;
+      MRUList.moveToHead(itm);
+      if (!mHash.get(key).value.equals(value))       LOG.error("HashMapWrapper.put() reuse MRUItem inconsistency [1].");
+      assert(mHash.get(key).value.equals(value));
+    }
+ else {
+      try {
+        if (pHash != null && pHash.get(key) != null) {
+          pHash.remove(key);
+          pHash.put(key,value);
+          recman.commit();
+          return;
+        }
+      }
+ catch (      Exception e) {
+        e.printStackTrace();
+        throw new HiveException(e);
+      }
+      itm=new MRUItem(key,value);
+      MRUList.put(itm);
+      mHash.put(key,itm);
+    }
+  }
+ else {
+    if (itm != null) {
+      itm.value=value;
+      MRUList.moveToHead(itm);
+      if (!mHash.get(key).value.equals(value))       LOG.error("HashMapWrapper.put() reuse MRUItem inconsistency [2].");
+      assert(mHash.get(key).value.equals(value));
+    }
+ else {
+      try {
+        if (pHash == null) {
+          if (tmpFile != null)           tmpFile.delete();
+          tmpFile=File.createTempFile("HashMapWrapper",".tmp");
+          tmpFile.deleteOnExit();
+          Properties props=new Properties();
+          props.setProperty(RecordManagerOptions.CACHE_TYPE,RecordManagerOptions.NO_CACHE);
+          props.setProperty(RecordManagerOptions.DISABLE_TRANSACTIONS,"true");
+          recman=RecordManagerFactory.createRecordManager(tmpFile,props);
+          pHash=HTree.createInstance(recman);
+        }
+        pHash.put(key,value);
+        recman.commit();
+      }
+ catch (      Exception e) {
+        LOG.warn(e.toString());
+        throw new HiveException(e);
+      }
+    }
+  }
+}
