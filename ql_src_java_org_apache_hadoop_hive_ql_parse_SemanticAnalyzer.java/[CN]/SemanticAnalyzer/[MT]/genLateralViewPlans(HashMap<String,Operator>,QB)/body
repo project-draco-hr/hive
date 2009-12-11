@@ -1,0 +1,24 @@
+{
+  Map<String,ArrayList<ASTNode>> aliasToLateralViews=qb.getParseInfo().getAliasToLateralViews();
+  for (  Entry<String,Operator> e : aliasToOpInfo.entrySet()) {
+    String alias=e.getKey();
+    ArrayList<ASTNode> lateralViews=aliasToLateralViews.get(alias);
+    if (lateralViews != null) {
+      Operator op=e.getValue();
+      for (      ASTNode lateralViewTree : aliasToLateralViews.get(alias)) {
+        RowResolver allPathRR=opParseCtx.get(op).getRR();
+        Operator allPath=putOpInsertMap(OperatorFactory.getAndMakeChild(new selectDesc(true),new RowSchema(allPathRR.getColumnInfos()),op),allPathRR);
+        QB blankQb=new QB(null,null,false);
+        Operator udtfPath=genSelectPlan((ASTNode)lateralViewTree.getChild(0),blankQb,op);
+        RowResolver udtfPathRR=opParseCtx.get(udtfPath).getRR();
+        RowResolver lateralViewRR=new RowResolver();
+        ArrayList<String> outputInternalColNames=new ArrayList<String>();
+        LVmergeRowResolvers(allPathRR,lateralViewRR,outputInternalColNames);
+        LVmergeRowResolvers(udtfPathRR,lateralViewRR,outputInternalColNames);
+        Operator lateralViewJoin=putOpInsertMap(OperatorFactory.getAndMakeChild(new lateralViewJoinDesc(outputInternalColNames),new RowSchema(lateralViewRR.getColumnInfos()),allPath,udtfPath),lateralViewRR);
+        op=lateralViewJoin;
+      }
+      e.setValue(op);
+    }
+  }
+}
