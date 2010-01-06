@@ -6,6 +6,8 @@
   SimpleDateFormat dateFormat=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS");
   long reportTime=System.currentTimeMillis();
   long maxReportInterval=60 * 1000;
+  boolean fatal=false;
+  StringBuffer errMsg=new StringBuffer();
   while (!rj.isComplete()) {
     try {
       Thread.sleep(1000);
@@ -13,6 +15,14 @@
  catch (    InterruptedException e) {
     }
     th.setRunningJob(jc.getJob(rj.getJobID()));
+    if (fatal)     continue;
+    if (fatal=checkFatalErrors(th,errMsg)) {
+      success=false;
+      console.printError("[Fatal Error] " + errMsg.toString() + ". Killing the job.");
+      rj.killJob();
+      continue;
+    }
+    errMsg.setLength(0);
     updateCounters(th);
     String report=" " + getId() + " map = "+ this.mapProgress+ "%,  reduce = "+ this.reduceProgress+ "%";
     if (!report.equals(lastReport) || System.currentTimeMillis() >= reportTime + maxReportInterval) {
@@ -29,6 +39,11 @@
       reportTime=System.currentTimeMillis();
     }
   }
+  if (!fatal && (fatal=checkFatalErrors(th,errMsg))) {
+    console.printError("[Fatal Error] " + errMsg.toString());
+    success=false;
+  }
+ else   success=rj.isSuccessful();
   setDone();
   th.setRunningJob(jc.getJob(rj.getJobID()));
   updateCounters(th);
