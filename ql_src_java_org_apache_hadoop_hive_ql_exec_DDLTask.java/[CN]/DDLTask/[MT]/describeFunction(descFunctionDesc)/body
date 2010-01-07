@@ -1,31 +1,30 @@
 {
-  String name=descFunc.getName();
+  String funcName=descFunc.getName();
   try {
     FileSystem fs=descFunc.getResFile().getFileSystem(conf);
     DataOutput outStream=(DataOutput)fs.create(descFunc.getResFile());
     description desc=null;
-    FunctionInfo fi=FunctionRegistry.getFunctionInfo(name);
     Class<?> funcClass=null;
-    GenericUDF udf=fi.getGenericUDF();
-    if (udf != null) {
-      if (udf instanceof GenericUDFBridge) {
-        funcClass=((GenericUDFBridge)udf).getUdfClass();
-      }
- else {
-        funcClass=udf.getClass();
-      }
+    FunctionInfo functionInfo=FunctionRegistry.getFunctionInfo(funcName);
+    if (functionInfo != null) {
+      funcClass=functionInfo.getFunctionClass();
     }
     if (funcClass != null) {
       desc=funcClass.getAnnotation(description.class);
     }
     if (desc != null) {
-      outStream.writeBytes(desc.value().replace("_FUNC_",name));
+      outStream.writeBytes(desc.value().replace("_FUNC_",funcName));
       if (descFunc.isExtended() && desc.extended().length() > 0) {
-        outStream.writeBytes("\n" + desc.extended().replace("_FUNC_",name));
+        outStream.writeBytes("\n" + desc.extended().replace("_FUNC_",funcName));
       }
     }
  else {
-      outStream.writeBytes("Function " + name + " does not exist or cannot"+ " find documentation for it.");
+      if (funcClass != null) {
+        outStream.writeBytes("There is no documentation for function " + funcName);
+      }
+ else {
+        outStream.writeBytes("Function " + funcName + " does not exist.");
+      }
     }
     outStream.write(terminator);
     ((FSDataOutputStream)outStream).close();
