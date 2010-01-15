@@ -46,20 +46,42 @@
     }
     LOG.info("Executing: " + cmdLine);
     Process executor=null;
-    int hadoopMem=conf.getIntVar(HiveConf.ConfVars.HIVEHADOOPMAXMEM);
-    if (hadoopMem == 0)     executor=Runtime.getRuntime().exec(cmdLine);
+    String hadoopOpts;
+{
+      StringBuilder sb=new StringBuilder();
+      Properties p=System.getProperties();
+      for (int k=0; k < HIVE_SYS_PROP.length; k++) {
+        if (p.containsKey(HIVE_SYS_PROP[k])) {
+          sb.append(" -D" + HIVE_SYS_PROP[k] + "="+ p.getProperty(HIVE_SYS_PROP[k]));
+        }
+      }
+      hadoopOpts=sb.toString();
+    }
+    String[] env;
+{
+      Map<String,String> variables=new HashMap(System.getenv());
+      int hadoopMem=conf.getIntVar(HiveConf.ConfVars.HIVEHADOOPMAXMEM);
+      if (hadoopMem == 0) {
+        variables.remove(hadoopMemKey);
+      }
  else {
-      Map<String,String> variables=System.getenv();
-      String[] env=new String[variables.size() + 1];
+        variables.put(hadoopMemKey,String.valueOf(hadoopMem));
+      }
+      if (variables.containsKey(hadoopOptsKey)) {
+        variables.put(hadoopOptsKey,variables.get(hadoopOptsKey) + hadoopOpts);
+      }
+ else {
+        variables.put(hadoopOptsKey,hadoopOpts);
+      }
+      env=new String[variables.size()];
       int pos=0;
       for (      Map.Entry<String,String> entry : variables.entrySet()) {
         String name=entry.getKey();
         String value=entry.getValue();
         env[pos++]=name + "=" + value;
       }
-      env[pos]=new String("HADOOP_HEAPSIZE=" + hadoopMem);
-      executor=Runtime.getRuntime().exec(cmdLine,env);
     }
+    executor=Runtime.getRuntime().exec(cmdLine,env);
     StreamPrinter outPrinter=new StreamPrinter(executor.getInputStream(),null,System.out);
     StreamPrinter errPrinter=new StreamPrinter(executor.getErrorStream(),null,System.err);
     outPrinter.start();
