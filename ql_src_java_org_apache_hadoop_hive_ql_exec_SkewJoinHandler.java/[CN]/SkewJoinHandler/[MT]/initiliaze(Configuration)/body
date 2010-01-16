@@ -1,0 +1,48 @@
+{
+  this.hconf=hconf;
+  joinDesc desc=joinOp.getConf();
+  skewKeyDefinition=desc.getSkewKeyDefinition();
+  skewKeysTableObjectInspector=new HashMap<Byte,StructObjectInspector>(numAliases);
+  tblDesc=desc.getSkewKeysValuesTables();
+  tblSerializers=new HashMap<Byte,SerDe>(numAliases);
+  bigKeysExistingMap=new HashMap<Byte,Boolean>(numAliases);
+  taskId=Utilities.getTaskId(hconf);
+  for (int i=0; i < numAliases; i++) {
+    Byte alias=conf.getTagOrder()[i];
+    List<ObjectInspector> skewTableKeyInspectors=new ArrayList<ObjectInspector>();
+    StructObjectInspector soi=(StructObjectInspector)this.joinOp.inputObjInspectors[alias];
+    StructField sf=soi.getStructFieldRef(Utilities.ReduceField.KEY.toString());
+    List<? extends StructField> keyFields=((StructObjectInspector)sf.getFieldObjectInspector()).getAllStructFieldRefs();
+    int keyFieldSize=keyFields.size();
+    for (int k=0; k < keyFieldSize; k++) {
+      skewTableKeyInspectors.add(keyFields.get(k).getFieldObjectInspector());
+    }
+    tableDesc joinKeyDesc=desc.getKeyTableDesc();
+    List<String> keyColNames=Utilities.getColumnNames(joinKeyDesc.getProperties());
+    StructObjectInspector structTblKeyInpector=ObjectInspectorFactory.getStandardStructObjectInspector(keyColNames,skewTableKeyInspectors);
+    try {
+      SerDe serializer=(SerDe)ReflectionUtils.newInstance(tblDesc.get(alias).getDeserializerClass(),null);
+      serializer.initialize(null,tblDesc.get(alias).getProperties());
+      tblSerializers.put((byte)i,serializer);
+    }
+ catch (    SerDeException e) {
+      LOG.error("Skewjoin will be disabled due to " + e.getMessage(),e);
+      this.joinOp.handleSkewJoin=false;
+      break;
+    }
+    tableDesc valTblDesc=this.joinOp.getSpillTableDesc(alias);
+    List<String> valColNames=new ArrayList<String>();
+    if (valTblDesc != null)     valColNames=Utilities.getColumnNames(valTblDesc.getProperties());
+    StructObjectInspector structTblValInpector=ObjectInspectorFactory.getStandardStructObjectInspector(valColNames,this.joinOp.joinValuesStandardObjectInspectors.get((byte)i));
+    StructObjectInspector structTblInpector=ObjectInspectorFactory.getUnionStructObjectInspector(Arrays.asList(new StructObjectInspector[]{structTblValInpector,structTblKeyInpector}));
+    skewKeysTableObjectInspector.put((byte)i,structTblInpector);
+  }
+  for (int i=0; i < numAliases; i++) {
+    Byte alias=conf.getTagOrder()[i];
+    RowContainer<ArrayList<Object>> rc=joinOp.storage.get(Byte.valueOf((byte)i));
+    if (rc != null) {
+      rc.setSerDe(tblSerializers.get((byte)i),skewKeysTableObjectInspector.get((byte)i));
+      rc.setTableDesc(tblDesc.get(alias));
+    }
+  }
+}

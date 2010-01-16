@@ -1,0 +1,51 @@
+{
+  try {
+    if (tmpFile == null) {
+      String suffix=".tmp";
+      if (this.keyObject != null)       suffix="." + this.keyObject.toString() + suffix;
+      while (true) {
+        String parentId="hive-rowcontainer" + Utilities.randGen.nextInt();
+        parentFile=new File("/tmp/" + parentId);
+        boolean success=parentFile.mkdir();
+        if (success)         break;
+        LOG.debug("retry creating tmp row-container directory...");
+      }
+      tmpFile=File.createTempFile("RowContainer",suffix,parentFile);
+      LOG.info("RowContainer created temp file " + tmpFile.getAbsolutePath());
+      parentFile.deleteOnExit();
+      tmpFile.deleteOnExit();
+      HiveOutputFormat<?,?> hiveOutputFormat=tblDesc.getOutputFileFormatClass().newInstance();
+      tempOutPath=new Path(tmpFile.toString());
+      rw=HiveFileFormatUtils.getRecordWriter(this.jobCloneUsingLocalFs,hiveOutputFormat,serde.getSerializedClass(),false,tblDesc.getProperties(),tempOutPath);
+    }
+ else     if (rw == null) {
+      throw new HiveException("RowContainer has already been closed for writing.");
+    }
+    row.clear();
+    row.add(null);
+    row.add(null);
+    if (this.keyObject != null) {
+      row.set(1,this.keyObject);
+      for (int i=0; i < length; ++i) {
+        Row currentValRow=block[i];
+        row.set(0,currentValRow);
+        Writable outVal=serde.serialize(row,standardOI);
+        rw.write(outVal);
+      }
+    }
+ else {
+      for (int i=0; i < length; ++i) {
+        Row currentValRow=block[i];
+        Writable outVal=serde.serialize(currentValRow,standardOI);
+        rw.write(outVal);
+      }
+    }
+    if (block == this.currentWriteBlock)     this.addCursor=0;
+    this.numFlushedBlocks++;
+  }
+ catch (  Exception e) {
+    clear();
+    LOG.error(e.toString(),e);
+    throw new HiveException(e);
+  }
+}

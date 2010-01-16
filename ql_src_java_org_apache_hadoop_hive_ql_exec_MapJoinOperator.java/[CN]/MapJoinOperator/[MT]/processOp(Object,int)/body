@@ -10,7 +10,7 @@
         tableDesc keyTableDesc=conf.getKeyTblDesc();
         SerDe keySerializer=(SerDe)ReflectionUtils.newInstance(keyTableDesc.getDeserializerClass(),null);
         keySerializer.initialize(null,keyTableDesc.getProperties());
-        mapMetadata.put(Integer.valueOf(metadataKeyTag),new MapJoinObjectCtx(ObjectInspectorUtils.getStandardObjectInspector(keySerializer.getObjectInspector(),ObjectInspectorCopyOption.WRITABLE),keySerializer));
+        mapMetadata.put(Integer.valueOf(metadataKeyTag),new MapJoinObjectCtx(ObjectInspectorUtils.getStandardObjectInspector(keySerializer.getObjectInspector(),ObjectInspectorCopyOption.WRITABLE),keySerializer,keyTableDesc,hconf));
         firstRow=false;
       }
       numMapRowsRead++;
@@ -27,7 +27,7 @@
       RowContainer res=null;
       boolean needNewKey=true;
       if (o == null) {
-        res=new RowContainer();
+        res=getRowContainer(this.hconf,(byte)tag,order[tag],joinCacheSize);
         res.add(value);
       }
  else {
@@ -43,11 +43,12 @@
         tableDesc valueTableDesc=conf.getValueTblDescs().get(tag);
         SerDe valueSerDe=(SerDe)ReflectionUtils.newInstance(valueTableDesc.getDeserializerClass(),null);
         valueSerDe.initialize(null,valueTableDesc.getProperties());
-        mapMetadata.put(Integer.valueOf(metadataValueTag[tag]),new MapJoinObjectCtx(ObjectInspectorUtils.getStandardObjectInspector(valueSerDe.getObjectInspector(),ObjectInspectorCopyOption.WRITABLE),valueSerDe));
+        mapMetadata.put(Integer.valueOf(metadataValueTag[tag]),new MapJoinObjectCtx(ObjectInspectorUtils.getStandardObjectInspector(valueSerDe.getObjectInspector(),ObjectInspectorCopyOption.WRITABLE),valueSerDe,valueTableDesc,hconf));
       }
       if (needNewKey) {
         MapJoinObjectKey keyObj=new MapJoinObjectKey(metadataKeyTag,key);
         MapJoinObjectValue valueObj=new MapJoinObjectValue(metadataValueTag[tag],res);
+        valueObj.setConf(this.hconf);
         if (res.size() > mapJoinRowsKey) {
           if (res.size() % 100 == 0) {
             LOG.warn("Number of values for a given key " + keyObj + " are "+ res.size());
@@ -64,7 +65,8 @@
         MapJoinObjectKey keyMap=new MapJoinObjectKey(metadataKeyTag,key);
         MapJoinObjectValue o=(MapJoinObjectValue)mapJoinTables.get(pos).get(keyMap);
         if (o == null) {
-          storage.put(pos,dummyObjVectors[pos.intValue()]);
+          if (noOuterJoin)           storage.put(pos,emptyList);
+ else           storage.put(pos,dummyObjVectors[pos.intValue()]);
         }
  else {
           storage.put(pos,o.getObj());

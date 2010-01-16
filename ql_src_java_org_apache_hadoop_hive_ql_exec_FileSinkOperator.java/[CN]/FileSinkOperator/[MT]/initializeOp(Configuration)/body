@@ -24,26 +24,11 @@
     outPath=new Path(tmpPath,Utilities.toTempPath(taskId));
     LOG.info("Writing to temp file: FS " + outPath);
     HiveOutputFormat<?,?> hiveOutputFormat=conf.getTableInfo().getOutputFileFormatClass().newInstance();
-    final Class<? extends Writable> outputClass=serializer.getSerializedClass();
     boolean isCompressed=conf.getCompressed();
     Path parent=Utilities.toTempPath(specPath);
     finalPath=HiveFileFormatUtils.getOutputFormatFinalPath(parent,jc,hiveOutputFormat,isCompressed,finalPath);
-    tableDesc tableInfo=conf.getTableInfo();
-    JobConf jc_output=jc;
-    if (isCompressed) {
-      jc_output=new JobConf(jc);
-      String codecStr=conf.getCompressCodec();
-      if (codecStr != null && !codecStr.trim().equals("")) {
-        Class<? extends CompressionCodec> codec=(Class<? extends CompressionCodec>)Class.forName(codecStr);
-        FileOutputFormat.setOutputCompressorClass(jc_output,codec);
-      }
-      String type=conf.getCompressType();
-      if (type != null && !type.trim().equals("")) {
-        CompressionType style=CompressionType.valueOf(type);
-        SequenceFileOutputFormat.setOutputCompressionType(jc,style);
-      }
-    }
-    outWriter=getRecordWriter(jc_output,hiveOutputFormat,outputClass,isCompressed,tableInfo.getProperties(),outPath);
+    final Class<? extends Writable> outputClass=serializer.getSerializedClass();
+    outWriter=HiveFileFormatUtils.getHiveRecordWriter(jc,conf.getTableInfo(),outputClass,conf,outPath);
     autoDelete=ShimLoader.getHadoopShims().fileSystemDeleteOnExit(fs,outPath);
     initializeChildren(hconf);
   }
