@@ -1,0 +1,30 @@
+{
+  ParseDriver pd=new ParseDriver();
+  ASTNode viewTree;
+  final ASTNodeOrigin viewOrigin=new ASTNodeOrigin("VIEW",tab.getName(),tab.getViewExpandedText(),alias,qb.getParseInfo().getSrcForAlias(alias));
+  try {
+    String viewText=tab.getViewExpandedText();
+    ASTNode tree=pd.parse(viewText,null);
+    tree=ParseUtils.findRootNonNullToken(tree);
+    viewTree=tree;
+    Dispatcher nodeOriginDispatcher=new Dispatcher(){
+      public Object dispatch(      Node nd,      java.util.Stack<Node> stack,      Object... nodeOutputs){
+        ((ASTNode)nd).setOrigin(viewOrigin);
+        return null;
+      }
+    }
+;
+    GraphWalker nodeOriginTagger=new DefaultGraphWalker(nodeOriginDispatcher);
+    nodeOriginTagger.startWalking(java.util.Collections.<Node>singleton(viewTree),null);
+  }
+ catch (  ParseException e) {
+    LOG.error(org.apache.hadoop.util.StringUtils.stringifyException(e));
+    StringBuilder sb=new StringBuilder();
+    sb.append(e.getMessage());
+    ErrorMsg.renderOrigin(sb,viewOrigin);
+    throw new SemanticException(sb.toString(),e);
+  }
+  QBExpr qbexpr=new QBExpr(alias);
+  doPhase1QBExpr(viewTree,qbexpr,qb.getId(),alias);
+  qb.rewriteViewToSubq(alias,tab_name,qbexpr);
+}

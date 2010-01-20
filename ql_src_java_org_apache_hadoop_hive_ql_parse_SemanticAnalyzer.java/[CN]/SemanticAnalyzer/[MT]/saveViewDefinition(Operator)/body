@@ -1,0 +1,42 @@
+{
+  List<FieldSchema> derivedSchema=convertRowSchemaToViewSchema(opParseCtx.get(sinkOp).getRR());
+  validateColumnNameUniqueness(derivedSchema);
+  List<FieldSchema> imposedSchema=createVwDesc.getSchema();
+  if (imposedSchema != null) {
+    int explicitColCount=imposedSchema.size();
+    int derivedColCount=derivedSchema.size();
+    if (explicitColCount != derivedColCount) {
+      throw new SemanticException(ErrorMsg.VIEW_COL_MISMATCH.getMsg(viewSelect));
+    }
+  }
+  String originalText=ctx.getTokenRewriteStream().toString(viewSelect.getTokenStartIndex(),viewSelect.getTokenStopIndex());
+  createVwDesc.setViewOriginalText(originalText);
+  unparseTranslator.applyTranslation(ctx.getTokenRewriteStream());
+  String expandedText=ctx.getTokenRewriteStream().toString(viewSelect.getTokenStartIndex(),viewSelect.getTokenStopIndex());
+  if (imposedSchema != null) {
+    StringBuilder sb=new StringBuilder();
+    sb.append("SELECT ");
+    int n=derivedSchema.size();
+    for (int i=0; i < n; ++i) {
+      if (i > 0) {
+        sb.append(", ");
+      }
+      FieldSchema fieldSchema=derivedSchema.get(i);
+      fieldSchema=new FieldSchema(fieldSchema);
+      derivedSchema.set(i,fieldSchema);
+      sb.append(HiveUtils.unparseIdentifier(fieldSchema.getName()));
+      sb.append(" AS ");
+      String imposedName=imposedSchema.get(i).getName();
+      sb.append(HiveUtils.unparseIdentifier(imposedName));
+      fieldSchema.setName(imposedName);
+      fieldSchema.setComment(imposedSchema.get(i).getComment());
+    }
+    sb.append(" FROM (");
+    sb.append(expandedText);
+    sb.append(") ");
+    sb.append(HiveUtils.unparseIdentifier(createVwDesc.getViewName()));
+    expandedText=sb.toString();
+  }
+  createVwDesc.setSchema(derivedSchema);
+  createVwDesc.setViewExpandedText(expandedText);
+}

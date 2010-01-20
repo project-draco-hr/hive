@@ -1,7 +1,8 @@
 {
   try {
     LOG.info("Get metadata for source tables");
-    for (    String alias : qb.getTabAliases()) {
+    List<String> tabAliases=new ArrayList<String>(qb.getTabAliases());
+    for (    String alias : tabAliases) {
       String tab_name=qb.getTabNameForAlias(alias);
       Table tab=null;
       try {
@@ -9,6 +10,10 @@
       }
  catch (      InvalidTableException ite) {
         throw new SemanticException(ErrorMsg.INVALID_TABLE.getMsg(qb.getParseInfo().getSrcForAlias(alias)));
+      }
+      if (tab.isView()) {
+        replaceViewReferenceWithDefinition(qb,tab,tab_name,alias);
+        continue;
       }
       if (!InputFormat.class.isAssignableFrom(tab.getInputFormatClass()))       throw new SemanticException(ErrorMsg.INVALID_INPUT_FORMAT_TYPE.getMsg(qb.getParseInfo().getSrcForAlias(alias)));
       qb.getMetaData().setSrcForAlias(alias,tab);
@@ -26,6 +31,9 @@ switch (ast.getToken().getType()) {
 case HiveParser.TOK_TAB:
 {
           tableSpec ts=new tableSpec(this.db,conf,ast);
+          if (ts.tableHandle.isView()) {
+            throw new SemanticException(ErrorMsg.DML_AGAINST_VIEW.getMsg());
+          }
           if (!HiveOutputFormat.class.isAssignableFrom(ts.tableHandle.getOutputFormatClass()))           throw new SemanticException(ErrorMsg.INVALID_OUTPUT_FORMAT_TYPE.getMsg(ast));
           if (ts.partSpec == null) {
             qb.getMetaData().setDestForAlias(name,ts.tableHandle);

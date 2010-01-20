@@ -8,11 +8,24 @@
   if (ast.getToken().getType() == HiveParser.TOK_CREATETABLE) {
     if ((child=analyzeCreateTable(ast,qb)) == null)     return;
   }
+  if (ast.getToken().getType() == HiveParser.TOK_CREATEVIEW) {
+    child=analyzeCreateView(ast,qb);
+    if (child == null) {
+      return;
+    }
+    viewSelect=child;
+  }
   doPhase1(child,qb,initPhase1Ctx());
   LOG.info("Completed phase 1 of Semantic Analysis");
   getMetaData(qb);
   LOG.info("Completed getting MetaData in Semantic Analysis");
-  genPlan(qb);
+  Operator sinkOp=genPlan(qb);
+  if (createVwDesc != null) {
+    saveViewDefinition(sinkOp);
+    ctx.setResDir(null);
+    ctx.setResFile(null);
+    return;
+  }
   ParseContext pCtx=new ParseContext(conf,qb,child,opToPartPruner,topOps,topSelOps,opParseCtx,joinContext,topToTable,loadTableWork,loadFileWork,ctx,idToTableNameMap,destTableId,uCtx,listMapJoinOpsNoReducer,groupOpToInputTables,prunedPartitions,opToSamplePruner);
   Optimizer optm=new Optimizer();
   optm.setPctx(pCtx);
