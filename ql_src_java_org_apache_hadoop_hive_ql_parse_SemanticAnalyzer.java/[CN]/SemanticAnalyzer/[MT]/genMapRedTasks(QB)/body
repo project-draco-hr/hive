@@ -6,7 +6,7 @@
   if (qb.isSelectStarQuery() && qbParseInfo.getDestToClusterBy().isEmpty() && qbParseInfo.getDestToDistributeBy().isEmpty()&& qbParseInfo.getDestToOrderBy().isEmpty()&& qbParseInfo.getDestToSortBy().isEmpty()) {
     boolean noMapRed=false;
     Iterator<Map.Entry<String,Table>> iter=qb.getMetaData().getAliasToTable().entrySet().iterator();
-    Table tab=((Map.Entry<String,Table>)iter.next()).getValue();
+    Table tab=(iter.next()).getValue();
     if (!tab.isPartitioned()) {
       if (qbParseInfo.getDestToWhereExpr().isEmpty()) {
         fetch=new fetchWork(tab.getPath().toString(),Utilities.getTableDesc(tab),qb.getParseInfo().getOuterQueryLimit());
@@ -49,23 +49,27 @@
       }
     }
     if (noMapRed) {
-      fetchTask=TaskFactory.get(fetch,this.conf);
+      fetchTask=TaskFactory.get(fetch,conf);
       setFetchTask(fetchTask);
       rootTasks.clear();
       return;
     }
   }
   if (qb.getIsQuery()) {
-    if ((!loadTableWork.isEmpty()) || (loadFileWork.size() != 1))     throw new SemanticException(ErrorMsg.GENERIC_ERROR.getMsg());
+    if ((!loadTableWork.isEmpty()) || (loadFileWork.size() != 1)) {
+      throw new SemanticException(ErrorMsg.GENERIC_ERROR.getMsg());
+    }
     String cols=loadFileWork.get(0).getColumns();
     String colTypes=loadFileWork.get(0).getColumnTypes();
     fetch=new fetchWork(new Path(loadFileWork.get(0).getSourceDir()).toString(),new tableDesc(LazySimpleSerDe.class,TextInputFormat.class,IgnoreKeyTextOutputFormat.class,Utilities.makeProperties(org.apache.hadoop.hive.serde.Constants.SERIALIZATION_FORMAT,"" + Utilities.ctrlaCode,org.apache.hadoop.hive.serde.Constants.LIST_COLUMNS,cols,org.apache.hadoop.hive.serde.Constants.LIST_COLUMN_TYPES,colTypes)),qb.getParseInfo().getOuterQueryLimit());
-    fetchTask=TaskFactory.get(fetch,this.conf);
+    fetchTask=TaskFactory.get(fetch,conf);
     setFetchTask(fetchTask);
   }
  else {
-    List<moveWork> mv=new ArrayList<moveWork>();
-    for (    loadTableDesc ltd : loadTableWork)     mvTask.add(TaskFactory.get(new moveWork(null,null,ltd,null,false),this.conf));
+    new ArrayList<moveWork>();
+    for (    loadTableDesc ltd : loadTableWork) {
+      mvTask.add(TaskFactory.get(new moveWork(null,null,ltd,null,false),conf));
+    }
     boolean oneLoadFile=true;
     for (    loadFileDesc lfd : loadFileWork) {
       if (qb.isCTAS()) {
@@ -82,10 +86,10 @@
         lfd.setTargetDir(location);
         oneLoadFile=false;
       }
-      mvTask.add(TaskFactory.get(new moveWork(null,null,null,lfd,false),this.conf));
+      mvTask.add(TaskFactory.get(new moveWork(null,null,null,lfd,false),conf));
     }
   }
-  GenMRProcContext procCtx=new GenMRProcContext(conf,new HashMap<Operator<? extends Serializable>,Task<? extends Serializable>>(),new ArrayList<Operator<? extends Serializable>>(),getParseContext(),mvTask,this.rootTasks,new LinkedHashMap<Operator<? extends Serializable>,GenMapRedCtx>(),inputs,outputs);
+  GenMRProcContext procCtx=new GenMRProcContext(conf,new HashMap<Operator<? extends Serializable>,Task<? extends Serializable>>(),new ArrayList<Operator<? extends Serializable>>(),getParseContext(),mvTask,rootTasks,new LinkedHashMap<Operator<? extends Serializable>,GenMapRedCtx>(),inputs,outputs);
   Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
   opRules.put(new RuleRegExp(new String("R1"),"TS%"),new GenMRTableScan1());
   opRules.put(new RuleRegExp(new String("R2"),"TS%.*RS%"),new GenMRRedSink1());
@@ -102,19 +106,27 @@
   Dispatcher disp=new DefaultRuleDispatcher(new GenMROperator(),opRules,procCtx);
   GraphWalker ogw=new GenMapRedWalker(disp);
   ArrayList<Node> topNodes=new ArrayList<Node>();
-  topNodes.addAll(this.topOps.values());
+  topNodes.addAll(topOps.values());
   ogw.startWalking(topNodes,null);
-  for (  Task<? extends Serializable> rootTask : rootTasks)   breakTaskTree(rootTask);
-  for (  Task<? extends Serializable> rootTask : rootTasks)   setKeyDescTaskTree(rootTask);
+  for (  Task<? extends Serializable> rootTask : rootTasks) {
+    breakTaskTree(rootTask);
+  }
+  for (  Task<? extends Serializable> rootTask : rootTasks) {
+    setKeyDescTaskTree(rootTask);
+  }
   PhysicalContext physicalContext=new PhysicalContext(conf,getParseContext(),ctx,rootTasks,fetchTask);
   PhysicalOptimizer physicalOptimizer=new PhysicalOptimizer(physicalContext,conf);
   physicalOptimizer.optimize();
-  if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVEJOBPROGRESS))   for (  Task<? extends Serializable> rootTask : rootTasks)   generateCountersTask(rootTask);
+  if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVEJOBPROGRESS)) {
+    for (    Task<? extends Serializable> rootTask : rootTasks) {
+      generateCountersTask(rootTask);
+    }
+  }
   if (qb.isCTAS()) {
     createTableDesc crtTblDesc=qb.getTableDesc();
     validateCreateTable(crtTblDesc);
     getOutputs().clear();
-    Task<? extends Serializable> crtTblTask=TaskFactory.get(new DDLWork(getInputs(),getOutputs(),crtTblDesc),this.conf);
+    Task<? extends Serializable> crtTblTask=TaskFactory.get(new DDLWork(getInputs(),getOutputs(),crtTblDesc),conf);
     HashSet<Task<? extends Serializable>> leaves=new HashSet<Task<? extends Serializable>>();
     getLeafTasks(rootTasks,leaves);
     assert(leaves.size() > 0);
