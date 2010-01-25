@@ -1,5 +1,5 @@
 {
-  fetchWork fetch=null;
+  FetchWork fetch=null;
   List<Task<? extends Serializable>> mvTask=new ArrayList<Task<? extends Serializable>>();
   Task<? extends Serializable> fetchTask=null;
   QBParseInfo qbParseInfo=qb.getParseInfo();
@@ -9,7 +9,7 @@
     Table tab=(iter.next()).getValue();
     if (!tab.isPartitioned()) {
       if (qbParseInfo.getDestToWhereExpr().isEmpty()) {
-        fetch=new fetchWork(tab.getPath().toString(),Utilities.getTableDesc(tab),qb.getParseInfo().getOuterQueryLimit());
+        fetch=new FetchWork(tab.getPath().toString(),Utilities.getTableDesc(tab),qb.getParseInfo().getOuterQueryLimit());
         noMapRed=true;
         inputs.add(new ReadEntity(tab));
       }
@@ -28,7 +28,7 @@
           }
           if (partsList.getUnknownPartns().size() == 0) {
             List<String> listP=new ArrayList<String>();
-            List<partitionDesc> partP=new ArrayList<partitionDesc>();
+            List<PartitionDesc> partP=new ArrayList<PartitionDesc>();
             Set<Partition> parts=partsList.getConfirmedPartns();
             Iterator<Partition> iterParts=parts.iterator();
             while (iterParts.hasNext()) {
@@ -42,7 +42,7 @@
               }
               inputs.add(new ReadEntity(part));
             }
-            fetch=new fetchWork(listP,partP,qb.getParseInfo().getOuterQueryLimit());
+            fetch=new FetchWork(listP,partP,qb.getParseInfo().getOuterQueryLimit());
             noMapRed=true;
           }
         }
@@ -61,17 +61,17 @@
     }
     String cols=loadFileWork.get(0).getColumns();
     String colTypes=loadFileWork.get(0).getColumnTypes();
-    fetch=new fetchWork(new Path(loadFileWork.get(0).getSourceDir()).toString(),new tableDesc(LazySimpleSerDe.class,TextInputFormat.class,IgnoreKeyTextOutputFormat.class,Utilities.makeProperties(org.apache.hadoop.hive.serde.Constants.SERIALIZATION_FORMAT,"" + Utilities.ctrlaCode,org.apache.hadoop.hive.serde.Constants.LIST_COLUMNS,cols,org.apache.hadoop.hive.serde.Constants.LIST_COLUMN_TYPES,colTypes)),qb.getParseInfo().getOuterQueryLimit());
+    fetch=new FetchWork(new Path(loadFileWork.get(0).getSourceDir()).toString(),new TableDesc(LazySimpleSerDe.class,TextInputFormat.class,IgnoreKeyTextOutputFormat.class,Utilities.makeProperties(org.apache.hadoop.hive.serde.Constants.SERIALIZATION_FORMAT,"" + Utilities.ctrlaCode,org.apache.hadoop.hive.serde.Constants.LIST_COLUMNS,cols,org.apache.hadoop.hive.serde.Constants.LIST_COLUMN_TYPES,colTypes)),qb.getParseInfo().getOuterQueryLimit());
     fetchTask=TaskFactory.get(fetch,conf);
     setFetchTask(fetchTask);
   }
  else {
-    new ArrayList<moveWork>();
-    for (    loadTableDesc ltd : loadTableWork) {
-      mvTask.add(TaskFactory.get(new moveWork(null,null,ltd,null,false),conf));
+    new ArrayList<MoveWork>();
+    for (    LoadTableDesc ltd : loadTableWork) {
+      mvTask.add(TaskFactory.get(new MoveWork(null,null,ltd,null,false),conf));
     }
     boolean oneLoadFile=true;
-    for (    loadFileDesc lfd : loadFileWork) {
+    for (    LoadFileDesc lfd : loadFileWork) {
       if (qb.isCTAS()) {
         assert(oneLoadFile);
         String location=qb.getTableDesc().getLocation();
@@ -86,7 +86,7 @@
         lfd.setTargetDir(location);
         oneLoadFile=false;
       }
-      mvTask.add(TaskFactory.get(new moveWork(null,null,null,lfd,false),conf));
+      mvTask.add(TaskFactory.get(new MoveWork(null,null,null,lfd,false),conf));
     }
   }
   GenMRProcContext procCtx=new GenMRProcContext(conf,new HashMap<Operator<? extends Serializable>,Task<? extends Serializable>>(),new ArrayList<Operator<? extends Serializable>>(),getParseContext(),mvTask,rootTasks,new LinkedHashMap<Operator<? extends Serializable>,GenMapRedCtx>(),inputs,outputs);
@@ -123,7 +123,7 @@
     }
   }
   if (qb.isCTAS()) {
-    createTableDesc crtTblDesc=qb.getTableDesc();
+    CreateTableDesc crtTblDesc=qb.getTableDesc();
     validateCreateTable(crtTblDesc);
     getOutputs().clear();
     Task<? extends Serializable> crtTblTask=TaskFactory.get(new DDLWork(getInputs(),getOutputs(),crtTblDesc),conf);

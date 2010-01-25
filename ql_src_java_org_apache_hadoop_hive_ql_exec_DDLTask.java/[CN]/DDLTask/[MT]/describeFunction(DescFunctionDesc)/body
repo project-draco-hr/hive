@@ -1,0 +1,50 @@
+{
+  String funcName=descFunc.getName();
+  try {
+    FileSystem fs=descFunc.getResFile().getFileSystem(conf);
+    DataOutput outStream=(DataOutput)fs.create(descFunc.getResFile());
+    Description desc=null;
+    Class<?> funcClass=null;
+    FunctionInfo functionInfo=FunctionRegistry.getFunctionInfo(funcName);
+    if (functionInfo != null) {
+      funcClass=functionInfo.getFunctionClass();
+    }
+    if (funcClass != null) {
+      desc=funcClass.getAnnotation(Description.class);
+    }
+    if (desc != null) {
+      outStream.writeBytes(desc.value().replace("_FUNC_",funcName));
+      if (descFunc.isExtended()) {
+        Set<String> synonyms=FunctionRegistry.getFunctionSynonyms(funcName);
+        if (synonyms.size() > 0) {
+          outStream.writeBytes("\nSynonyms: " + join(synonyms,", "));
+        }
+        if (desc.extended().length() > 0) {
+          outStream.writeBytes("\n" + desc.extended().replace("_FUNC_",funcName));
+        }
+      }
+    }
+ else {
+      if (funcClass != null) {
+        outStream.writeBytes("There is no documentation for function '" + funcName + "'");
+      }
+ else {
+        outStream.writeBytes("Function '" + funcName + "' does not exist.");
+      }
+    }
+    outStream.write(terminator);
+    ((FSDataOutputStream)outStream).close();
+  }
+ catch (  FileNotFoundException e) {
+    LOG.warn("describe function: " + stringifyException(e));
+    return 1;
+  }
+catch (  IOException e) {
+    LOG.warn("describe function: " + stringifyException(e));
+    return 1;
+  }
+catch (  Exception e) {
+    throw new HiveException(e.toString());
+  }
+  return 0;
+}

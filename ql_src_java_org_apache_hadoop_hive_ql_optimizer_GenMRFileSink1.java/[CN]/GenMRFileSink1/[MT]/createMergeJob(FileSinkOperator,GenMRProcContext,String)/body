@@ -1,23 +1,23 @@
 {
   Task<? extends Serializable> currTask=ctx.getCurrTask();
   RowSchema fsRS=fsOp.getSchema();
-  ArrayList<exprNodeDesc> keyCols=new ArrayList<exprNodeDesc>();
+  ArrayList<ExprNodeDesc> keyCols=new ArrayList<ExprNodeDesc>();
   keyCols.add(TypeCheckProcFactory.DefaultExprProcessor.getFuncExprNodeDesc("rand"));
-  ArrayList<exprNodeDesc> valueCols=new ArrayList<exprNodeDesc>();
+  ArrayList<ExprNodeDesc> valueCols=new ArrayList<ExprNodeDesc>();
   for (  ColumnInfo ci : fsRS.getSignature()) {
-    valueCols.add(new exprNodeColumnDesc(ci.getType(),ci.getInternalName(),ci.getTabAlias(),ci.getIsPartitionCol()));
+    valueCols.add(new ExprNodeColumnDesc(ci.getType(),ci.getInternalName(),ci.getTabAlias(),ci.getIsPartitionCol()));
   }
-  Operator<? extends Serializable> ts_op=OperatorFactory.get(tableScanDesc.class,fsRS);
+  Operator<? extends Serializable> ts_op=OperatorFactory.get(TableScanDesc.class,fsRS);
   ArrayList<String> outputColumns=new ArrayList<String>();
   for (int i=0; i < valueCols.size(); i++) {
     outputColumns.add(SemanticAnalyzer.getColumnInternalName(i));
   }
-  reduceSinkDesc rsDesc=PlanUtils.getReduceSinkDesc(new ArrayList<exprNodeDesc>(),valueCols,outputColumns,false,-1,-1,-1);
+  ReduceSinkDesc rsDesc=PlanUtils.getReduceSinkDesc(new ArrayList<ExprNodeDesc>(),valueCols,outputColumns,false,-1,-1,-1);
   OperatorFactory.getAndMakeChild(rsDesc,fsRS,ts_op);
-  mapredWork cplan=GenMapRedUtils.getMapRedWork();
+  MapredWork cplan=GenMapRedUtils.getMapRedWork();
   ParseContext parseCtx=ctx.getParseCtx();
   Task<? extends Serializable> mergeTask=TaskFactory.get(cplan,parseCtx.getConf());
-  fileSinkDesc fsConf=fsOp.getConf();
+  FileSinkDesc fsConf=fsOp.getConf();
   RowResolver out_rwsch=new RowResolver();
   RowResolver interim_rwsch=ctx.getParseCtx().getOpParseCtx().get(fsOp).getRR();
   Integer pos=Integer.valueOf(0);
@@ -26,18 +26,18 @@
     out_rwsch.put(info[0],info[1],new ColumnInfo(pos.toString(),colInfo.getType(),info[0],colInfo.getIsPartitionCol()));
     pos=Integer.valueOf(pos.intValue() + 1);
   }
-  Operator extract=OperatorFactory.getAndMakeChild(new extractDesc(new exprNodeColumnDesc(TypeInfoFactory.stringTypeInfo,Utilities.ReduceField.VALUE.toString(),"",false)),new RowSchema(out_rwsch.getColumnInfos()));
-  tableDesc ts=(tableDesc)fsConf.getTableInfo().clone();
+  Operator extract=OperatorFactory.getAndMakeChild(new ExtractDesc(new ExprNodeColumnDesc(TypeInfoFactory.stringTypeInfo,Utilities.ReduceField.VALUE.toString(),"",false)),new RowSchema(out_rwsch.getColumnInfos()));
+  TableDesc ts=(TableDesc)fsConf.getTableInfo().clone();
   fsConf.getTableInfo().getProperties().remove(org.apache.hadoop.hive.metastore.api.Constants.META_TABLE_PARTITION_COLUMNS);
-  FileSinkOperator newOutput=(FileSinkOperator)OperatorFactory.getAndMakeChild(new fileSinkDesc(finalName,ts,parseCtx.getConf().getBoolVar(HiveConf.ConfVars.COMPRESSRESULT)),fsRS,extract);
+  FileSinkOperator newOutput=(FileSinkOperator)OperatorFactory.getAndMakeChild(new FileSinkDesc(finalName,ts,parseCtx.getConf().getBoolVar(HiveConf.ConfVars.COMPRESSRESULT)),fsRS,extract);
   cplan.setReducer(extract);
   ArrayList<String> aliases=new ArrayList<String>();
   aliases.add(fsConf.getDirName());
   cplan.getPathToAliases().put(fsConf.getDirName(),aliases);
   cplan.getAliasToWork().put(fsConf.getDirName(),ts_op);
-  cplan.getPathToPartitionInfo().put(fsConf.getDirName(),new partitionDesc(fsConf.getTableInfo(),null));
+  cplan.getPathToPartitionInfo().put(fsConf.getDirName(),new PartitionDesc(fsConf.getTableInfo(),null));
   cplan.setNumReduceTasks(-1);
-  moveWork dummyMv=new moveWork(null,null,null,new loadFileDesc(fsOp.getConf().getDirName(),finalName,true,null,null),false);
+  MoveWork dummyMv=new MoveWork(null,null,null,new LoadFileDesc(fsOp.getConf().getDirName(),finalName,true,null,null),false);
   Task<? extends Serializable> dummyMergeTask=TaskFactory.get(dummyMv,ctx.getConf());
   List<Serializable> listWorks=new ArrayList<Serializable>();
   listWorks.add(dummyMv);

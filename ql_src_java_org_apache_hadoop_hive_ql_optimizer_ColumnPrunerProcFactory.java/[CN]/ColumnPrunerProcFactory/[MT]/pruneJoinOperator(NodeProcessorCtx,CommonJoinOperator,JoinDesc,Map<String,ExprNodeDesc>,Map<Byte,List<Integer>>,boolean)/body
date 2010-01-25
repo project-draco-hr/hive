@@ -1,0 +1,85 @@
+{
+  ColumnPrunerProcCtx cppCtx=(ColumnPrunerProcCtx)ctx;
+  Map<Byte,List<String>> prunedColLists=new HashMap<Byte,List<String>>();
+  List<Operator<? extends Serializable>> childOperators=op.getChildOperators();
+  for (  Operator<? extends Serializable> child : childOperators) {
+    if (child instanceof FileSinkOperator) {
+      return;
+    }
+  }
+  List<String> childColLists=cppCtx.genColLists(op);
+  RowResolver joinRR=cppCtx.getOpToParseCtxMap().get(op).getRR();
+  RowResolver newJoinRR=new RowResolver();
+  ArrayList<String> outputCols=new ArrayList<String>();
+  Vector<ColumnInfo> rs=new Vector<ColumnInfo>();
+  Map<String,ExprNodeDesc> newColExprMap=new HashMap<String,ExprNodeDesc>();
+  for (int i=0; i < conf.getOutputColumnNames().size(); i++) {
+    String internalName=conf.getOutputColumnNames().get(i);
+    ExprNodeDesc desc=columnExprMap.get(internalName);
+    Byte tag=conf.getReversedExprs().get(internalName);
+    if (!childColLists.contains(internalName)) {
+      int index=conf.getExprs().get(tag).indexOf(desc);
+      if (index < 0) {
+        continue;
+      }
+      conf.getExprs().get(tag).remove(desc);
+      if (retainMap != null) {
+        retainMap.get(tag).remove(index);
+      }
+    }
+ else {
+      List<String> prunedRSList=prunedColLists.get(tag);
+      if (prunedRSList == null) {
+        prunedRSList=new ArrayList<String>();
+        prunedColLists.put(tag,prunedRSList);
+      }
+      prunedRSList=Utilities.mergeUniqElems(prunedRSList,desc.getCols());
+      outputCols.add(internalName);
+      newColExprMap.put(internalName,desc);
+    }
+  }
+  if (mapJoin) {
+    List<TableDesc> valueTableDescs=new ArrayList<TableDesc>();
+    for (int pos=0; pos < op.getParentOperators().size(); pos++) {
+      List<ExprNodeDesc> valueCols=conf.getExprs().get(new Byte((byte)pos));
+      StringBuilder keyOrder=new StringBuilder();
+      for (int i=0; i < valueCols.size(); i++) {
+        keyOrder.append("+");
+      }
+      TableDesc valueTableDesc=PlanUtils.getMapJoinValueTableDesc(PlanUtils.getFieldSchemasFromColumnList(valueCols,"mapjoinvalue"));
+      valueTableDescs.add(valueTableDesc);
+    }
+    ((MapJoinDesc)conf).setValueTblDescs(valueTableDescs);
+    Set<Map.Entry<Byte,List<ExprNodeDesc>>> exprs=((MapJoinDesc)conf).getKeys().entrySet();
+    Iterator<Map.Entry<Byte,List<ExprNodeDesc>>> iters=exprs.iterator();
+    while (iters.hasNext()) {
+      Map.Entry<Byte,List<ExprNodeDesc>> entry=iters.next();
+      List<ExprNodeDesc> lists=entry.getValue();
+      for (int j=0; j < lists.size(); j++) {
+        ExprNodeDesc desc=lists.get(j);
+        Byte tag=entry.getKey();
+        List<String> cols=prunedColLists.get(tag);
+        cols=Utilities.mergeUniqElems(cols,desc.getCols());
+        prunedColLists.put(tag,cols);
+      }
+    }
+  }
+  for (  Operator<? extends Serializable> child : childOperators) {
+    if (child instanceof ReduceSinkOperator) {
+      boolean[] flags=getPruneReduceSinkOpRetainFlags(childColLists,(ReduceSinkOperator)child);
+      pruneReduceSinkOperator(flags,(ReduceSinkOperator)child,cppCtx);
+    }
+  }
+  for (int i=0; i < outputCols.size(); i++) {
+    String internalName=outputCols.get(i);
+    String[] nm=joinRR.reverseLookup(internalName);
+    ColumnInfo col=joinRR.get(nm[0],nm[1]);
+    newJoinRR.put(nm[0],nm[1],col);
+    rs.add(col);
+  }
+  op.setColumnExprMap(newColExprMap);
+  conf.setOutputColumnNames(outputCols);
+  op.getSchema().setSignature(rs);
+  cppCtx.getOpToParseCtxMap().get(op).setRR(newJoinRR);
+  cppCtx.getJoinPrunedColLists().put(op,prunedColLists);
+}
