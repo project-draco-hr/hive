@@ -15,23 +15,22 @@
       SessionState.get().getHiveHistory().logPlanProgress(plan);
     }
     resStream=null;
-    BaseSemanticAnalyzer sem=plan.getPlan();
     for (    PreExecute peh : getPreExecHooks()) {
-      peh.run(SessionState.get(),sem.getInputs(),sem.getOutputs(),UnixUserGroupInformation.readFromConf(conf,UnixUserGroupInformation.UGI_PROPERTY_NAME));
+      peh.run(SessionState.get(),plan.getInputs(),plan.getOutputs(),UnixUserGroupInformation.readFromConf(conf,UnixUserGroupInformation.UGI_PROPERTY_NAME));
     }
-    int jobs=countJobs(sem.getRootTasks());
+    int jobs=countJobs(plan.getRootTasks());
     if (jobs > 0) {
       console.printInfo("Total MapReduce jobs = " + jobs);
     }
     if (SessionState.get() != null) {
       SessionState.get().getHiveHistory().setQueryProperty(queryId,Keys.QUERY_NUM_TASKS,String.valueOf(jobs));
-      SessionState.get().getHiveHistory().setIdToTableMap(sem.getIdToTableNameMap());
+      SessionState.get().getHiveHistory().setIdToTableMap(plan.getIdToTableNameMap());
     }
     String jobname=Utilities.abbreviate(queryStr,maxlen - 6);
     Queue<Task<? extends Serializable>> runnable=new LinkedList<Task<? extends Serializable>>();
     Map<TaskResult,TaskRunner> running=new HashMap<TaskResult,TaskRunner>();
     DriverContext driverCxt=new DriverContext(runnable);
-    for (    Task<? extends Serializable> tsk : sem.getRootTasks()) {
+    for (    Task<? extends Serializable> tsk : plan.getRootTasks()) {
       driverCxt.addToRunnable(tsk);
     }
     while (running.size() != 0 || runnable.peek() != null) {
@@ -65,7 +64,7 @@
       }
     }
     for (    PostExecute peh : getPostExecHooks()) {
-      peh.run(SessionState.get(),sem.getInputs(),sem.getOutputs(),UnixUserGroupInformation.readFromConf(conf,UnixUserGroupInformation.UGI_PROPERTY_NAME));
+      peh.run(SessionState.get(),plan.getInputs(),plan.getOutputs(),UnixUserGroupInformation.readFromConf(conf,UnixUserGroupInformation.UGI_PROPERTY_NAME));
     }
     if (SessionState.get() != null) {
       SessionState.get().getHiveHistory().setQueryProperty(queryId,Keys.QUERY_RET_CODE,String.valueOf(0));
