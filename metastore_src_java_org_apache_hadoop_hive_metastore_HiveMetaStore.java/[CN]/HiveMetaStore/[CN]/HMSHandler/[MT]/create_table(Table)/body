@@ -8,24 +8,28 @@
   boolean success=false, madeDir=false;
   try {
     getMS().openTransaction();
-    if (tbl.getSd().getLocation() == null || tbl.getSd().getLocation().isEmpty()) {
-      tblPath=wh.getDefaultTablePath(tbl.getDbName(),tbl.getTableName());
-    }
- else {
-      if (!isExternal(tbl)) {
-        LOG.warn("Location: " + tbl.getSd().getLocation() + "specified for non-external table:"+ tbl.getTableName());
+    if (!TableType.VIRTUAL_VIEW.toString().equals(tbl.getTableType())) {
+      if (tbl.getSd().getLocation() == null || tbl.getSd().getLocation().isEmpty()) {
+        tblPath=wh.getDefaultTablePath(tbl.getDbName(),tbl.getTableName());
       }
-      tblPath=wh.getDnsPath(new Path(tbl.getSd().getLocation()));
+ else {
+        if (!isExternal(tbl)) {
+          LOG.warn("Location: " + tbl.getSd().getLocation() + "specified for non-external table:"+ tbl.getTableName());
+        }
+        tblPath=wh.getDnsPath(new Path(tbl.getSd().getLocation()));
+      }
+      tbl.getSd().setLocation(tblPath.toString());
     }
-    tbl.getSd().setLocation(tblPath.toString());
     if (is_table_exists(tbl.getDbName(),tbl.getTableName())) {
       throw new AlreadyExistsException("Table " + tbl.getTableName() + " already exists");
     }
-    if (!wh.isDir(tblPath)) {
-      if (!wh.mkdirs(tblPath)) {
-        throw new MetaException(tblPath + " is not a directory or unable to create one");
+    if (tblPath != null) {
+      if (!wh.isDir(tblPath)) {
+        if (!wh.mkdirs(tblPath)) {
+          throw new MetaException(tblPath + " is not a directory or unable to create one");
+        }
+        madeDir=true;
       }
-      madeDir=true;
     }
     long time=System.currentTimeMillis() / 1000;
     tbl.setCreateTime((int)time);
