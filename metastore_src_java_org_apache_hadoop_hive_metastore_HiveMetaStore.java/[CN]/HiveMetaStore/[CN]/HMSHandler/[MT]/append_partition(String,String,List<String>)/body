@@ -6,47 +6,5 @@
       LOG.debug(part);
     }
   }
-  Partition part=new Partition();
-  boolean success=false, madeDir=false;
-  Path partLocation=null;
-  try {
-    getMS().openTransaction();
-    part=new Partition();
-    part.setDbName(dbName);
-    part.setTableName(tableName);
-    part.setValues(part_vals);
-    Table tbl=getMS().getTable(part.getDbName(),part.getTableName());
-    if (tbl == null) {
-      throw new InvalidObjectException("Unable to add partition because table or database do not exist");
-    }
-    part.setSd(tbl.getSd());
-    partLocation=new Path(tbl.getSd().getLocation(),Warehouse.makePartName(tbl.getPartitionKeys(),part_vals));
-    part.getSd().setLocation(partLocation.toString());
-    Partition old_part=get_partition(part.getDbName(),part.getTableName(),part.getValues());
-    if (old_part != null) {
-      throw new AlreadyExistsException("Partition already exists:" + part);
-    }
-    if (!wh.isDir(partLocation)) {
-      if (!wh.mkdirs(partLocation)) {
-        throw new MetaException(partLocation + " is not a directory or unable to create one");
-      }
-      madeDir=true;
-    }
-    long time=System.currentTimeMillis() / 1000;
-    part.setCreateTime((int)time);
-    part.putToParameters(Constants.DDL_TIME,Long.toString(time));
-    success=getMS().addPartition(part);
-    if (success) {
-      success=getMS().commitTransaction();
-    }
-  }
-  finally {
-    if (!success) {
-      getMS().rollbackTransaction();
-      if (madeDir) {
-        wh.deleteDir(partLocation,true);
-      }
-    }
-  }
-  return part;
+  return append_partition_common(dbName,tableName,part_vals);
 }
