@@ -2,7 +2,6 @@
   if (tableName == null || tableName.equals("")) {
     throw new HiveException("empty table creation??");
   }
-  Table table=new Table();
   org.apache.hadoop.hive.metastore.api.Table tTable=null;
   try {
     tTable=getMSC().getTable(dbName,tableName);
@@ -17,34 +16,20 @@
 catch (  Exception e) {
     throw new HiveException("Unable to fetch table " + tableName,e);
   }
-  assert(tTable != null);
-  try {
+  if (!TableType.VIRTUAL_VIEW.toString().equals(tTable.getTableType())) {
+    Map<String,String> parameters=tTable.getSd().getParameters();
+    String sf=parameters.get(org.apache.hadoop.hive.serde.Constants.SERIALIZATION_FORMAT);
+    if (sf != null) {
+      char[] b=sf.toCharArray();
+      if ((b.length == 1) && (b[0] < 10)) {
+        parameters.put(org.apache.hadoop.hive.serde.Constants.SERIALIZATION_FORMAT,Integer.toString(b[0]));
+      }
+    }
     if (org.apache.hadoop.hive.serde2.MetadataTypedColumnsetSerDe.class.getName().equals(tTable.getSd().getSerdeInfo().getSerializationLib()) && tTable.getSd().getColsSize() > 0 && tTable.getSd().getCols().get(0).getType().indexOf('<') == -1) {
       tTable.getSd().getSerdeInfo().setSerializationLib(org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe.class.getName());
     }
-    Properties p=MetaStoreUtils.getSchema(tTable);
-    table.setSchema(p);
-    table.setTTable(tTable);
-    if (table.isView()) {
-      table.checkValidity();
-      return table;
-    }
-    table.setInputFormatClass((Class<? extends InputFormat<WritableComparable,Writable>>)Class.forName(table.getSchema().getProperty(org.apache.hadoop.hive.metastore.api.Constants.FILE_INPUT_FORMAT,org.apache.hadoop.mapred.SequenceFileInputFormat.class.getName()),true,JavaUtils.getClassLoader()));
-    table.setOutputFormatClass(Class.forName(table.getSchema().getProperty(org.apache.hadoop.hive.metastore.api.Constants.FILE_OUTPUT_FORMAT,HiveSequenceFileOutputFormat.class.getName()),true,JavaUtils.getClassLoader()));
-    table.setDeserializer(MetaStoreUtils.getDeserializer(getConf(),p));
-    table.setDataLocation(new URI(tTable.getSd().getLocation()));
   }
- catch (  Exception e) {
-    LOG.error(StringUtils.stringifyException(e));
-    throw new HiveException(e);
-  }
-  String sf=table.getSerdeParam(org.apache.hadoop.hive.serde.Constants.SERIALIZATION_FORMAT);
-  if (sf != null) {
-    char[] b=sf.toCharArray();
-    if ((b.length == 1) && (b[0] < 10)) {
-      table.setSerdeParam(org.apache.hadoop.hive.serde.Constants.SERIALIZATION_FORMAT,Integer.toString(b[0]));
-    }
-  }
+  Table table=new Table(tTable);
   table.checkValidity();
   return table;
 }
