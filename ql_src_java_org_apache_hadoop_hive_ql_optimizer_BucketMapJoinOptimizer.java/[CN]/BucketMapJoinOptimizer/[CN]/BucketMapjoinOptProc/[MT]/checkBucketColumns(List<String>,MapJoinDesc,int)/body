@@ -1,0 +1,31 @@
+{
+  List<ExprNodeDesc> keys=mjDesc.getKeys().get((byte)index);
+  if (keys == null || bucketColumns == null || bucketColumns.size() == 0)   return false;
+  List<String> joinCols=new ArrayList<String>();
+  List<ExprNodeDesc> joinKeys=new ArrayList<ExprNodeDesc>();
+  joinKeys.addAll(keys);
+  while (joinKeys.size() > 0) {
+    ExprNodeDesc node=joinKeys.remove(0);
+    if (node instanceof ExprNodeColumnDesc) {
+      joinCols.addAll(node.getCols());
+    }
+ else     if (node instanceof ExprNodeGenericFuncDesc) {
+      ExprNodeGenericFuncDesc udfNode=((ExprNodeGenericFuncDesc)node);
+      GenericUDF udf=udfNode.getGenericUDF();
+      if (!FunctionRegistry.isDeterministic(udf)) {
+        return false;
+      }
+      joinKeys.addAll(0,udfNode.getChildExprs());
+    }
+ else {
+      return false;
+    }
+  }
+  if (joinCols.size() == 0 || joinCols.size() != bucketColumns.size()) {
+    return false;
+  }
+  for (  String col : joinCols) {
+    if (!bucketColumns.contains(col))     return false;
+  }
+  return true;
+}

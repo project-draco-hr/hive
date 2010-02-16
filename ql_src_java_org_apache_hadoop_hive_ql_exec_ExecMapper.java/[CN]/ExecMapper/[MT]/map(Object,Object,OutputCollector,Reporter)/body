@@ -4,43 +4,10 @@
     rp=reporter;
     mo.setOutputCollector(oc);
     mo.setReporter(rp);
-    if (fetchOperators != null) {
-      try {
-        MapredLocalWork localWork=mo.getConf().getMapLocalWork();
-        int fetchOpNum=0;
-        for (        Map.Entry<String,FetchOperator> entry : fetchOperators.entrySet()) {
-          int fetchOpRows=0;
-          String alias=entry.getKey();
-          FetchOperator fetchOp=entry.getValue();
-          Operator<? extends Serializable> forwardOp=localWork.getAliasToWork().get(alias);
-          while (true) {
-            InspectableObject row=fetchOp.getNextRow();
-            if (row == null) {
-              forwardOp.close(false);
-              break;
-            }
-            fetchOpRows++;
-            forwardOp.process(row.o,0);
-            if (forwardOp.getDone()) {
-              done=true;
-              break;
-            }
-          }
-          if (l4j.isInfoEnabled()) {
-            l4j.info("fetch " + fetchOpNum++ + " processed "+ fetchOpRows+ " used mem: "+ memoryMXBean.getHeapMemoryUsage().getUsed());
-          }
-        }
-      }
- catch (      Throwable e) {
-        abort=true;
-        if (e instanceof OutOfMemoryError) {
-          throw (OutOfMemoryError)e;
-        }
- else {
-          throw new RuntimeException("Map local work failed",e);
-        }
-      }
-    }
+  }
+  if (localWork != null && (this.lastInputFile == null || (localWork.getInputFileChangeSensitive() && inputFileChanged()))) {
+    this.lastInputFile=HiveConf.getVar(jc,HiveConf.ConfVars.HADOOPMAPFILENAME);
+    processMapLocalWork(localWork.getInputFileChangeSensitive());
   }
   try {
     if (mo.getDone()) {
