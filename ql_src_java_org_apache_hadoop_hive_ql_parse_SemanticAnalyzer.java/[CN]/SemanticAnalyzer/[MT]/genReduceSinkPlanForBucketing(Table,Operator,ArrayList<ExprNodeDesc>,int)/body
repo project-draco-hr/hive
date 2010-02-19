@@ -1,0 +1,27 @@
+{
+  RowResolver inputRR=opParseCtx.get(input).getRR();
+  ArrayList<ExprNodeDesc> sortCols=new ArrayList<ExprNodeDesc>();
+  Map<String,ExprNodeDesc> colExprMap=new HashMap<String,ExprNodeDesc>();
+  ArrayList<ExprNodeDesc> valueCols=new ArrayList<ExprNodeDesc>();
+  for (  ColumnInfo colInfo : inputRR.getColumnInfos()) {
+    valueCols.add(new ExprNodeColumnDesc(colInfo.getType(),colInfo.getInternalName(),colInfo.getTabAlias(),colInfo.getIsPartitionCol()));
+    colExprMap.put(colInfo.getInternalName(),valueCols.get(valueCols.size() - 1));
+  }
+  ArrayList<String> outputColumns=new ArrayList<String>();
+  for (int i=0; i < valueCols.size(); i++) {
+    outputColumns.add(getColumnInternalName(i));
+  }
+  Operator interim=putOpInsertMap(OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(sortCols,valueCols,outputColumns,false,-1,partitionCols,new String(),numReducers),new RowSchema(inputRR.getColumnInfos()),input),inputRR);
+  interim.setColumnExprMap(colExprMap);
+  RowResolver out_rwsch=new RowResolver();
+  RowResolver interim_rwsch=inputRR;
+  Integer pos=Integer.valueOf(0);
+  for (  ColumnInfo colInfo : interim_rwsch.getColumnInfos()) {
+    String[] info=interim_rwsch.reverseLookup(colInfo.getInternalName());
+    out_rwsch.put(info[0],info[1],new ColumnInfo(getColumnInternalName(pos),colInfo.getType(),info[0],false));
+    pos=Integer.valueOf(pos.intValue() + 1);
+  }
+  Operator output=putOpInsertMap(OperatorFactory.getAndMakeChild(new ExtractDesc(new ExprNodeColumnDesc(TypeInfoFactory.stringTypeInfo,Utilities.ReduceField.VALUE.toString(),"",false)),new RowSchema(out_rwsch.getColumnInfos()),interim),out_rwsch);
+  LOG.debug("Created ReduceSink Plan for table: " + tab.getTableName() + " row schema: "+ out_rwsch.toString());
+  return output;
+}
