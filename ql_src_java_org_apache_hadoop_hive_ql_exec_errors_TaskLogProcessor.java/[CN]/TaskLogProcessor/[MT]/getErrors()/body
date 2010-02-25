@@ -1,0 +1,49 @@
+{
+  for (  String urlString : taskLogUrls) {
+    URL taskAttemptLogUrl;
+    try {
+      taskAttemptLogUrl=new URL(urlString);
+    }
+ catch (    MalformedURLException e) {
+      throw new RuntimeException("Bad task log url",e);
+    }
+    BufferedReader in;
+    try {
+      in=new BufferedReader(new InputStreamReader(taskAttemptLogUrl.openStream()));
+      String inputLine;
+      while ((inputLine=in.readLine()) != null) {
+        for (        ErrorHeuristic e : heuristics.keySet()) {
+          e.processLogLine(inputLine);
+        }
+      }
+      in.close();
+    }
+ catch (    IOException e) {
+      throw new RuntimeException("Error while reading from task log url",e);
+    }
+    for (    Entry<ErrorHeuristic,HeuristicStats> ent : heuristics.entrySet()) {
+      ErrorHeuristic eh=ent.getKey();
+      HeuristicStats hs=ent.getValue();
+      ErrorAndSolution es=eh.getErrorAndSolution();
+      if (es != null) {
+        hs.incTriggerCount();
+        hs.addErrorAndSolution(es);
+      }
+    }
+  }
+  int max=0;
+  for (  HeuristicStats hs : heuristics.values()) {
+    if (hs.getTriggerCount() > max) {
+      max=hs.getTriggerCount();
+    }
+  }
+  List<ErrorAndSolution> errors=new ArrayList<ErrorAndSolution>();
+  for (  HeuristicStats hs : heuristics.values()) {
+    if (hs.getTriggerCount() == max) {
+      if (hs.getErrorAndSolutions().size() > 0) {
+        errors.add(hs.getErrorAndSolutions().get(0));
+      }
+    }
+  }
+  return errors;
+}

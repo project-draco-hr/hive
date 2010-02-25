@@ -1,7 +1,7 @@
 {
   Map<String,Integer> failures=new HashMap<String,Integer>();
   Set<String> successes=new HashSet<String>();
-  Map<String,String> taskToJob=new HashMap<String,String>();
+  Map<String,TaskInfo> taskIdToInfo=new HashMap<String,TaskInfo>();
   int startIndex=0;
   while (true) {
     TaskCompletionEvent[] taskCompletions=rj.getTaskCompletionEvents(startIndex);
@@ -12,13 +12,19 @@
     for (    TaskCompletionEvent t : taskCompletions) {
       String[] taskJobIds=ShimLoader.getHadoopShims().getTaskJobIDs(t);
       if (taskJobIds == null) {
-        console.printError("Task attempt info is unavailable in this Hadoop version");
+        console.printError("Task attempt info is unavailable in " + "this Hadoop version");
         more=false;
         break;
       }
       String taskId=taskJobIds[0];
       String jobId=taskJobIds[1];
-      taskToJob.put(taskId,jobId);
+      TaskInfo ti=taskIdToInfo.get(taskId);
+      if (ti == null) {
+        ti=new TaskInfo(jobId);
+        taskIdToInfo.put(taskId,ti);
+      }
+      assert(ti.getJobId() == jobId);
+      ti.getLogUrls().add(getTaskAttemptLogUrl(t.getTaskTrackerHttp(),t.getTaskId()));
       if (t.getTaskStatus() != TaskCompletionEvent.Status.SUCCEEDED) {
         Integer failAttempts=failures.get(taskId);
         if (failAttempts == null) {
@@ -48,13 +54,30 @@
       maxFailures=failCount.intValue();
     }
   }
-  console.printError("\nFailed tasks with most" + "(" + maxFailures + ")"+ " failures "+ ": ");
   String jtUrl=JobTrackerURLResolver.getURL(conf);
   for (  String task : failures.keySet()) {
     if (failures.get(task).intValue() == maxFailures) {
-      String jobId=taskToJob.get(task);
+      TaskInfo ti=taskIdToInfo.get(task);
+      String jobId=ti.getJobId();
       String taskUrl=jtUrl + "/taskdetails.jsp?jobid=" + jobId+ "&tipid="+ task.toString();
-      console.printError("Task URL: " + taskUrl + "\n");
+      TaskLogProcessor tlp=new TaskLogProcessor(conf);
+      for (      String logUrl : ti.getLogUrls()) {
+        tlp.addTaskAttemptLogUrl(logUrl);
+      }
+      List<ErrorAndSolution> errors=tlp.getErrors();
+      StringBuilder sb=new StringBuilder();
+      sb.append("\n");
+      sb.append("Task with the most failures(" + maxFailures + "): \n");
+      sb.append("-----\n");
+      sb.append("Task ID:\n  " + task + "\n\n");
+      sb.append("URL:\n  " + taskUrl + "\n");
+      for (      ErrorAndSolution e : errors) {
+        sb.append("\n");
+        sb.append("Possible error:\n  " + e.getError() + "\n\n");
+        sb.append("Solution:\n  " + e.getSolution() + "\n");
+      }
+      sb.append("-----\n");
+      console.printError(sb.toString());
       break;
     }
   }
