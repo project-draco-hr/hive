@@ -8,34 +8,11 @@
   TableDesc table_desc=null;
   int currentTableId=0;
   boolean isLocal=false;
-  boolean multiFileSpray=false;
-  int numFiles=1;
-  int totalFiles=1;
-  ArrayList<ExprNodeDesc> partnCols=null;
+  SortBucketRSCtx rsCtx=new SortBucketRSCtx();
 switch (dest_type.intValue()) {
 case QBMetaData.DEST_TABLE:
 {
       dest_tab=qbm.getDestTableForAlias(dest);
-      if ((dest_tab.getNumBuckets() > 0) && (conf.getBoolVar(HiveConf.ConfVars.HIVEENFORCEBUCKETING))) {
-        int maxReducers=conf.getIntVar(HiveConf.ConfVars.MAXREDUCERS);
-        int numBuckets=dest_tab.getNumBuckets();
-        if (numBuckets > maxReducers) {
-          multiFileSpray=true;
-          totalFiles=numBuckets;
-          if (totalFiles % maxReducers == 0) {
-            numFiles=totalFiles / maxReducers;
-          }
- else {
-            maxReducers=getReducersBucketing(totalFiles,maxReducers);
-            numFiles=totalFiles / maxReducers;
-          }
-        }
- else {
-          maxReducers=numBuckets;
-        }
-        partnCols=getParitionColsFromBucketCols(dest_tab,input);
-        input=genReduceSinkPlanForBucketing(dest_tab,input,partnCols,maxReducers);
-      }
       List<FieldSchema> parts=dest_tab.getPartitionKeys();
       if (parts != null && parts.size() > 0) {
         throw new SemanticException(ErrorMsg.NEED_PARTITION_ERROR.getMsg());
@@ -43,6 +20,7 @@ case QBMetaData.DEST_TABLE:
       dest_path=dest_tab.getPath();
       queryTmpdir=ctx.getExternalTmpFileURI(dest_path.toUri());
       table_desc=Utilities.getTableDesc(dest_tab);
+      input=genBucketingSortingDest(dest,input,qb,table_desc,dest_tab,rsCtx);
       idToTableNameMap.put(String.valueOf(destTableId),dest_tab.getTableName());
       currentTableId=destTableId;
       destTableId++;
@@ -56,29 +34,10 @@ case QBMetaData.DEST_PARTITION:
 {
     Partition dest_part=qbm.getDestPartitionForAlias(dest);
     dest_tab=dest_part.getTable();
-    if ((dest_tab.getNumBuckets() > 0) && (conf.getBoolVar(HiveConf.ConfVars.HIVEENFORCEBUCKETING))) {
-      int maxReducers=conf.getIntVar(HiveConf.ConfVars.MAXREDUCERS);
-      int numBuckets=dest_tab.getNumBuckets();
-      if (numBuckets > maxReducers) {
-        multiFileSpray=true;
-        totalFiles=numBuckets;
-        if (totalFiles % maxReducers == 0) {
-          numFiles=totalFiles / maxReducers;
-        }
- else {
-          maxReducers=getReducersBucketing(totalFiles,maxReducers);
-          numFiles=totalFiles / maxReducers;
-        }
-      }
- else {
-        maxReducers=numBuckets;
-      }
-      partnCols=getParitionColsFromBucketCols(dest_tab,input);
-      input=genReduceSinkPlanForBucketing(dest_tab,input,partnCols,maxReducers);
-    }
     dest_path=dest_part.getPath()[0];
     queryTmpdir=ctx.getExternalTmpFileURI(dest_path.toUri());
     table_desc=Utilities.getTableDesc(dest_tab);
+    input=genBucketingSortingDest(dest,input,qb,table_desc,dest_tab,rsCtx);
     idToTableNameMap.put(String.valueOf(destTableId),dest_tab.getTableName());
     currentTableId=destTableId;
     destTableId++;
@@ -183,7 +142,7 @@ vecCol.add(new ColumnInfo(fields.get(i).getFieldName(),TypeInfoUtils.getTypeInfo
 throw new SemanticException(e.getMessage());
 }
 RowSchema fsRS=new RowSchema(vecCol);
-Operator output=putOpInsertMap(OperatorFactory.getAndMakeChild(new FileSinkDesc(queryTmpdir,table_desc,conf.getBoolVar(HiveConf.ConfVars.COMPRESSRESULT),currentTableId,multiFileSpray,numFiles,totalFiles,partnCols),fsRS,input),inputRR);
+Operator output=putOpInsertMap(OperatorFactory.getAndMakeChild(new FileSinkDesc(queryTmpdir,table_desc,conf.getBoolVar(HiveConf.ConfVars.COMPRESSRESULT),currentTableId,rsCtx.isMultiFileSpray(),rsCtx.getNumFiles(),rsCtx.getTotalFiles(),rsCtx.getPartnCols()),fsRS,input),inputRR);
 LOG.debug("Created FileSink Plan for clause: " + dest + "dest_path: "+ dest_path+ " row schema: "+ inputRR.toString());
 return output;
 }

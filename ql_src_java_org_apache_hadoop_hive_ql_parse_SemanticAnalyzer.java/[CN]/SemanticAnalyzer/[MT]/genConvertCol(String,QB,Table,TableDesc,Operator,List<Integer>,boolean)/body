@@ -1,0 +1,35 @@
+{
+  StructObjectInspector oi=null;
+  try {
+    Deserializer deserializer=table_desc.getDeserializerClass().newInstance();
+    deserializer.initialize(conf,table_desc.getProperties());
+    oi=(StructObjectInspector)deserializer.getObjectInspector();
+  }
+ catch (  Exception e) {
+    throw new SemanticException(e);
+  }
+  List<? extends StructField> tableFields=oi.getAllStructFieldRefs();
+  ArrayList<ColumnInfo> rowFields=opParseCtx.get(input).getRR().getColumnInfos();
+  int columnNumber=posns.size();
+  ArrayList<ExprNodeDesc> expressions=new ArrayList<ExprNodeDesc>(columnNumber);
+  for (  Integer posn : posns) {
+    ObjectInspector tableFieldOI=tableFields.get(posn).getFieldObjectInspector();
+    TypeInfo tableFieldTypeInfo=TypeInfoUtils.getTypeInfoFromObjectInspector(tableFieldOI);
+    TypeInfo rowFieldTypeInfo=rowFields.get(posn).getType();
+    ExprNodeDesc column=new ExprNodeColumnDesc(rowFieldTypeInfo,rowFields.get(posn).getInternalName(),rowFields.get(posn).getTabAlias(),rowFields.get(posn).getIsPartitionCol());
+    if (convert && !tableFieldTypeInfo.equals(rowFieldTypeInfo)) {
+      if (tableFieldTypeInfo.getCategory() != Category.PRIMITIVE) {
+        column=null;
+      }
+ else {
+        column=TypeCheckProcFactory.DefaultExprProcessor.getFuncExprNodeDesc(tableFieldTypeInfo.getTypeName(),column);
+      }
+      if (column == null) {
+        String reason="Cannot convert column " + posn + " from "+ rowFieldTypeInfo+ " to "+ tableFieldTypeInfo+ ".";
+        throw new SemanticException(ErrorMsg.TARGET_TABLE_COLUMN_MISMATCH.getMsg(qb.getParseInfo().getDestForClause(dest),reason));
+      }
+    }
+    expressions.add(column);
+  }
+  return expressions;
+}

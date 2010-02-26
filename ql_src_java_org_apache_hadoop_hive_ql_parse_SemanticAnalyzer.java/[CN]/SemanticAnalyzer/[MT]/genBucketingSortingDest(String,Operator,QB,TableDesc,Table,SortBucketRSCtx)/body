@@ -1,0 +1,47 @@
+{
+  boolean enforceBucketing=false;
+  boolean enforceSorting=false;
+  ArrayList<ExprNodeDesc> partnCols=new ArrayList<ExprNodeDesc>();
+  ArrayList<ExprNodeDesc> partnColsNoConvert=new ArrayList<ExprNodeDesc>();
+  ArrayList<ExprNodeDesc> sortCols=new ArrayList<ExprNodeDesc>();
+  boolean multiFileSpray=false;
+  int numFiles=1;
+  int totalFiles=1;
+  if ((dest_tab.getNumBuckets() > 0) && (conf.getBoolVar(HiveConf.ConfVars.HIVEENFORCEBUCKETING))) {
+    enforceBucketing=true;
+    partnCols=getParitionColsFromBucketCols(dest,qb,dest_tab,table_desc,input,true);
+    partnColsNoConvert=getParitionColsFromBucketCols(dest,qb,dest_tab,table_desc,input,false);
+  }
+  if ((dest_tab.getSortCols() != null) && (dest_tab.getSortCols().size() > 0) && (conf.getBoolVar(HiveConf.ConfVars.HIVEENFORCESORTING))) {
+    enforceSorting=true;
+    sortCols=getSortCols(dest,qb,dest_tab,table_desc,input,true);
+    if (!enforceBucketing) {
+      partnCols=sortCols;
+      partnColsNoConvert=getSortCols(dest,qb,dest_tab,table_desc,input,false);
+    }
+  }
+  if (enforceBucketing || enforceSorting) {
+    int maxReducers=conf.getIntVar(HiveConf.ConfVars.MAXREDUCERS);
+    int numBuckets=dest_tab.getNumBuckets();
+    if (numBuckets > maxReducers) {
+      multiFileSpray=true;
+      totalFiles=numBuckets;
+      if (totalFiles % maxReducers == 0) {
+        numFiles=totalFiles / maxReducers;
+      }
+ else {
+        maxReducers=getReducersBucketing(totalFiles,maxReducers);
+        numFiles=totalFiles / maxReducers;
+      }
+    }
+ else {
+      maxReducers=numBuckets;
+    }
+    input=genReduceSinkPlanForSortingBucketing(dest_tab,input,sortCols,partnCols,maxReducers);
+    ctx.setMultiFileSpray(multiFileSpray);
+    ctx.setNumFiles(numFiles);
+    ctx.setPartnCols(partnColsNoConvert);
+    ctx.setTotalFiles(totalFiles);
+  }
+  return input;
+}
