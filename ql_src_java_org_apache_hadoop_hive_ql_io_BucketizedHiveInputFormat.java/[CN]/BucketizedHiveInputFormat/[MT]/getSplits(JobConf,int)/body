@@ -1,0 +1,29 @@
+{
+  init(job);
+  Path[] dirs=FileInputFormat.getInputPaths(job);
+  if (dirs.length == 0) {
+    throw new IOException("No input paths specified in job");
+  }
+  JobConf newjob=new JobConf(job);
+  ArrayList<InputSplit> result=new ArrayList<InputSplit>();
+  int numOrigSplits=0;
+  for (  Path dir : dirs) {
+    PartitionDesc part=getPartitionDescFromPath(pathToPartitionInfo,dir);
+    Class inputFormatClass=part.getInputFileFormatClass();
+    InputFormat inputFormat=getInputFormatFromCache(inputFormatClass,job);
+    newjob.setInputFormat(inputFormat.getClass());
+    FileStatus[] listStatus=listStatus(newjob,dir);
+    for (    FileStatus status : listStatus) {
+      LOG.info("block size: " + status.getBlockSize());
+      LOG.info("file length: " + status.getLen());
+      FileInputFormat.setInputPaths(newjob,status.getPath());
+      InputSplit[] iss=inputFormat.getSplits(newjob,0);
+      if (iss != null && iss.length > 0) {
+        numOrigSplits+=iss.length;
+        result.add(new BucketizedHiveInputSplit(iss,inputFormatClass.getName()));
+      }
+    }
+  }
+  LOG.info(result.size() + " bucketized splits generated from " + numOrigSplits+ " original splits.");
+  return result.toArray(new BucketizedHiveInputSplit[result.size()]);
+}
