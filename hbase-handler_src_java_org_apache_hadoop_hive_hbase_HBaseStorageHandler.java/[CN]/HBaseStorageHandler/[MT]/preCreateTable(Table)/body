@@ -1,0 +1,54 @@
+{
+  boolean isExternal=MetaStoreUtils.isExternalTable(tbl);
+  if (tbl.getSd().getLocation() != null) {
+    throw new MetaException("LOCATION may not be specified for HBase.");
+  }
+  try {
+    String tblName=getHBaseTableName(tbl);
+    Set<String> columnFamilies=new HashSet<String>();
+    Map<String,String> serdeParam=tbl.getSd().getSerdeInfo().getParameters();
+    String hbaseColumnStr=serdeParam.get(HBaseSerDe.HBASE_COL_MAPPING);
+    if (hbaseColumnStr == null) {
+      throw new MetaException("No hbase.columns.mapping defined in Serde.");
+    }
+    String[] hbaseColumns=hbaseColumnStr.split(",");
+    for (    String hbaseColumn : hbaseColumns) {
+      int idx=hbaseColumn.indexOf(":");
+      if (idx < 0) {
+        throw new MetaException(hbaseColumn + " is not a qualified hbase column.");
+      }
+      columnFamilies.add(hbaseColumn.substring(0,idx));
+    }
+    HTableDescriptor tblDesc;
+    if (!getHBaseAdmin().tableExists(tblName)) {
+      if (!isExternal) {
+        tblDesc=new HTableDescriptor(tblName);
+        for (        String cf : columnFamilies) {
+          tblDesc.addFamily(new HColumnDescriptor(cf + ":"));
+        }
+        getHBaseAdmin().createTable(tblDesc);
+      }
+ else {
+        throw new MetaException("HBase table " + tblName + " doesn't exist while the table is declared as an external table.");
+      }
+    }
+ else {
+      if (!isExternal) {
+        throw new MetaException("Table " + tblName + " already exists"+ " within HBase; use CREATE EXTERNAL TABLE instead to"+ " register it in Hive.");
+      }
+      tblDesc=getHBaseAdmin().getTableDescriptor(Bytes.toBytes(tblName));
+      for (      String cf : columnFamilies) {
+        if (!tblDesc.hasFamily(Bytes.toBytes(cf))) {
+          throw new MetaException("Column Family " + cf + " is not defined in hbase table "+ tblName);
+        }
+      }
+    }
+    new HTable(hbaseConf,tblDesc.getName());
+  }
+ catch (  MasterNotRunningException mnre) {
+    throw new MetaException(StringUtils.stringifyException(mnre));
+  }
+catch (  IOException ie) {
+    throw new MetaException(StringUtils.stringifyException(ie));
+  }
+}

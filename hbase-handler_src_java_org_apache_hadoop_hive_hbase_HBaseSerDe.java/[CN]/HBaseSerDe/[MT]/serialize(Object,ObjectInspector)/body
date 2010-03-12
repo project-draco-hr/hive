@@ -1,0 +1,66 @@
+{
+  if (objInspector.getCategory() != Category.STRUCT) {
+    throw new SerDeException(getClass().toString() + " can only serialize struct types, but we got: " + objInspector.getTypeName());
+  }
+  StructObjectInspector soi=(StructObjectInspector)objInspector;
+  List<? extends StructField> fields=soi.getAllStructFieldRefs();
+  List<Object> list=soi.getStructFieldsDataAsList(obj);
+  List<? extends StructField> declaredFields=(hbSerDeParams.serdeParams.getRowTypeInfo() != null && ((StructTypeInfo)hbSerDeParams.serdeParams.getRowTypeInfo()).getAllStructFieldNames().size() > 0) ? ((StructObjectInspector)getObjectInspector()).getAllStructFieldRefs() : null;
+  boolean isNotNull=false;
+  String hbaseColumn="";
+  try {
+    for (int i=0; i < fields.size(); i++) {
+      serializeStream.reset();
+      ObjectInspector foi=fields.get(i).getFieldObjectInspector();
+      Object f=(list == null ? null : list.get(i));
+      if (declaredFields != null && i >= declaredFields.size()) {
+        throw new SerDeException("Error: expecting " + declaredFields.size() + " but asking for field "+ i+ "\n"+ "data="+ obj+ "\n"+ "tableType="+ hbSerDeParams.serdeParams.getRowTypeInfo().toString()+ "\n"+ "dataType="+ TypeInfoUtils.getTypeInfoFromObjectInspector(objInspector));
+      }
+      if (f == null) {
+        continue;
+      }
+      if (i > 0) {
+        hbaseColumn=hbSerDeParams.hbaseColumnNames.get(i - 1);
+      }
+      if (i > 0 && hbaseColumn.endsWith(":")) {
+        MapObjectInspector moi=(MapObjectInspector)foi;
+        ObjectInspector koi=moi.getMapKeyObjectInspector();
+        ObjectInspector voi=moi.getMapValueObjectInspector();
+        Map<?,?> map=moi.getMap(f);
+        if (map == null) {
+          continue;
+        }
+ else {
+          for (          Map.Entry<?,?> entry : map.entrySet()) {
+            serialize(serializeStream,entry.getKey(),koi,hbSerDeParams.serdeParams.getSeparators(),3,hbSerDeParams.serdeParams.getNullSequence(),hbSerDeParams.serdeParams.isEscaped(),hbSerDeParams.serdeParams.getEscapeChar(),hbSerDeParams.serdeParams.getNeedsEscape());
+            hbaseColumn+=Bytes.toString(serializeStream.getData(),0,serializeStream.getCount());
+            serializeStream.reset();
+            isNotNull=serialize(serializeStream,entry.getValue(),voi,hbSerDeParams.serdeParams.getSeparators(),3,hbSerDeParams.serdeParams.getNullSequence(),hbSerDeParams.serdeParams.isEscaped(),hbSerDeParams.serdeParams.getEscapeChar(),hbSerDeParams.serdeParams.getNeedsEscape());
+          }
+        }
+      }
+ else {
+        if (!foi.getCategory().equals(Category.PRIMITIVE) && (declaredFields == null || declaredFields.get(i).getFieldObjectInspector().getCategory().equals(Category.PRIMITIVE) || useJSONSerialize)) {
+          isNotNull=serialize(serializeStream,SerDeUtils.getJSONString(f,foi),PrimitiveObjectInspectorFactory.javaStringObjectInspector,hbSerDeParams.serdeParams.getSeparators(),1,hbSerDeParams.serdeParams.getNullSequence(),hbSerDeParams.serdeParams.isEscaped(),hbSerDeParams.serdeParams.getEscapeChar(),hbSerDeParams.serdeParams.getNeedsEscape());
+        }
+ else {
+          isNotNull=serialize(serializeStream,f,foi,hbSerDeParams.serdeParams.getSeparators(),1,hbSerDeParams.serdeParams.getNullSequence(),hbSerDeParams.serdeParams.isEscaped(),hbSerDeParams.serdeParams.getEscapeChar(),hbSerDeParams.serdeParams.getNeedsEscape());
+        }
+      }
+      byte[] key=new byte[serializeStream.getCount()];
+      System.arraycopy(serializeStream.getData(),0,key,0,serializeStream.getCount());
+      if (i == 0) {
+        serializeCache=new BatchUpdate(key);
+      }
+ else {
+        if (isNotNull) {
+          serializeCache.put(hbaseColumn,key);
+        }
+      }
+    }
+  }
+ catch (  IOException e) {
+    throw new SerDeException(e);
+  }
+  return serializeCache;
+}

@@ -3,8 +3,8 @@
   QBMetaData qbm=qb.getMetaData();
   Integer dest_type=qbm.getDestTypeForAlias(dest);
   Table dest_tab;
-  String queryTmpdir;
-  Path dest_path;
+  String queryTmpdir=null;
+  Path dest_path=null;
   TableDesc table_desc=null;
   int currentTableId=0;
   boolean isLocal=false;
@@ -18,13 +18,21 @@ case QBMetaData.DEST_TABLE:
         throw new SemanticException(ErrorMsg.NEED_PARTITION_ERROR.getMsg());
       }
       dest_path=dest_tab.getPath();
-      queryTmpdir=ctx.getExternalTmpFileURI(dest_path.toUri());
+      boolean isNonNativeTable=dest_tab.isNonNative();
+      if (isNonNativeTable) {
+        queryTmpdir=dest_path.toUri().getPath();
+      }
+ else {
+        queryTmpdir=ctx.getExternalTmpFileURI(dest_path.toUri());
+      }
       table_desc=Utilities.getTableDesc(dest_tab);
       input=genBucketingSortingDest(dest,input,qb,table_desc,dest_tab,rsCtx);
       idToTableNameMap.put(String.valueOf(destTableId),dest_tab.getTableName());
       currentTableId=destTableId;
       destTableId++;
-      loadTableWork.add(new LoadTableDesc(queryTmpdir,ctx.getExternalTmpFileURI(dest_path.toUri()),table_desc,new HashMap<String,String>()));
+      if (!isNonNativeTable) {
+        loadTableWork.add(new LoadTableDesc(queryTmpdir,ctx.getExternalTmpFileURI(dest_path.toUri()),table_desc,new HashMap<String,String>()));
+      }
       if (!outputs.add(new WriteEntity(dest_tab))) {
         throw new SemanticException(ErrorMsg.OUTPUT_SPECIFIED_MULTIPLE_TIMES.getMsg(dest_tab.getTableName()));
       }

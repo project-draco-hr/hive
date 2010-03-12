@@ -1,0 +1,31 @@
+{
+  if (cachedMap == null) {
+    cachedMap=new LinkedHashMap<Object,Object>();
+  }
+ else {
+    cachedMap.clear();
+  }
+  Iterator<byte[]> iter=rowResult.keySet().iterator();
+  byte[] columnFamily=hbaseColumnFamily.getBytes();
+  while (iter.hasNext()) {
+    byte[] columnKey=iter.next();
+    if (columnFamily.length > columnKey.length) {
+      continue;
+    }
+    if (0 == LazyUtils.compare(columnFamily,0,columnFamily.length,columnKey,0,columnFamily.length)) {
+      byte[] columnValue=rowResult.get(columnKey).getValue();
+      if (columnValue == null || columnValue.length == 0) {
+        continue;
+      }
+      LazyPrimitive<?,?> key=LazyFactory.createLazyPrimitiveClass((PrimitiveObjectInspector)((MapObjectInspector)getInspector()).getMapKeyObjectInspector());
+      ByteArrayRef keyRef=new ByteArrayRef();
+      keyRef.setData(columnKey);
+      key.init(keyRef,columnFamily.length,columnKey.length - columnFamily.length);
+      LazyObject value=LazyFactory.createLazyObject(((MapObjectInspector)getInspector()).getMapValueObjectInspector());
+      ByteArrayRef valueRef=new ByteArrayRef();
+      valueRef.setData(columnValue);
+      value.init(valueRef,0,columnValue.length);
+      cachedMap.put(key.getObject(),value.getObject());
+    }
+  }
+}

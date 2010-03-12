@@ -1,10 +1,33 @@
 {
+  Table tbl;
   try {
-    client.drop_table(dbname,name,deleteData);
+    tbl=getTable(dbname,name);
   }
  catch (  NoSuchObjectException e) {
     if (!ignoreUknownTab) {
       throw e;
+    }
+    return;
+  }
+  HiveMetaHook hook=getHook(tbl);
+  if (hook != null) {
+    hook.preDropTable(tbl);
+  }
+  boolean success=false;
+  try {
+    client.drop_table(dbname,name,deleteData);
+    if (hook != null) {
+      hook.commitDropTable(tbl,deleteData);
+    }
+  }
+ catch (  NoSuchObjectException e) {
+    if (!ignoreUknownTab) {
+      throw e;
+    }
+  }
+ finally {
+    if (!success && (hook != null)) {
+      hook.rollbackDropTable(tbl);
     }
   }
 }

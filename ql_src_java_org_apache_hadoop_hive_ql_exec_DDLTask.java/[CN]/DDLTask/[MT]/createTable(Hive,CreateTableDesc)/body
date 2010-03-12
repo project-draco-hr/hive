@@ -6,15 +6,12 @@
   if (crtTbl.getNumBuckets() != -1) {
     tbl.setNumBuckets(crtTbl.getNumBuckets());
   }
+  if (crtTbl.getStorageHandler() != null) {
+    tbl.setProperty(org.apache.hadoop.hive.metastore.api.Constants.META_TABLE_STORAGE,crtTbl.getStorageHandler());
+  }
+  HiveStorageHandler storageHandler=tbl.getStorageHandler();
   if (crtTbl.getSerName() != null) {
     tbl.setSerializationLib(crtTbl.getSerName());
-    if (crtTbl.getMapProp() != null) {
-      Iterator<Entry<String,String>> iter=crtTbl.getMapProp().entrySet().iterator();
-      while (iter.hasNext()) {
-        Entry<String,String> m=(Entry<String,String>)iter.next();
-        tbl.setSerdeParam(m.getKey(),m.getValue());
-      }
-    }
   }
  else {
     if (crtTbl.getFieldDelim() != null) {
@@ -34,9 +31,23 @@
       tbl.setSerdeParam(Constants.LINE_DELIM,crtTbl.getLineDelim());
     }
   }
+  if (crtTbl.getMapProp() != null) {
+    Iterator<Entry<String,String>> iter=crtTbl.getMapProp().entrySet().iterator();
+    while (iter.hasNext()) {
+      Entry<String,String> m=(Entry<String,String>)iter.next();
+      tbl.setSerdeParam(m.getKey(),m.getValue());
+    }
+  }
   if (crtTbl.getSerName() == null) {
-    LOG.info("Default to LazySimpleSerDe for table " + crtTbl.getTableName());
-    tbl.setSerializationLib(org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe.class.getName());
+    if (storageHandler == null) {
+      LOG.info("Default to LazySimpleSerDe for table " + crtTbl.getTableName());
+      tbl.setSerializationLib(org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe.class.getName());
+    }
+ else {
+      String serDeClassName=storageHandler.getSerDeClass().getName();
+      LOG.info("Use StorageHandler-supplied " + serDeClassName + " for table "+ crtTbl.getTableName());
+      tbl.setSerializationLib(serDeClassName);
+    }
   }
  else {
     validateSerDe(crtTbl.getSerName());
@@ -58,6 +69,8 @@
   }
   tbl.setInputFormatClass(crtTbl.getInputFormat());
   tbl.setOutputFormatClass(crtTbl.getOutputFormat());
+  tbl.getTTable().getSd().setInputFormat(tbl.getInputFormatClass().getName());
+  tbl.getTTable().getSd().setOutputFormat(tbl.getOutputFormatClass().getName());
   if (crtTbl.isExternal()) {
     tbl.setProperty("EXTERNAL","TRUE");
     tbl.setTableType(TableType.EXTERNAL_TABLE);

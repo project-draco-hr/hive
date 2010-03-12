@@ -1,0 +1,47 @@
+{
+  this.hookLoader=hookLoader;
+  if (conf == null) {
+    conf=new HiveConf(HiveMetaStoreClient.class);
+  }
+  boolean localMetaStore=conf.getBoolean("hive.metastore.local",false);
+  if (localMetaStore) {
+    client=new HiveMetaStore.HMSHandler("hive client",conf);
+    open=true;
+    return;
+  }
+  retries=conf.getInt("hive.metastore.connect.retries",5);
+  if (conf.getVar(HiveConf.ConfVars.METASTOREURIS) != null) {
+    String metastoreUrisString[]=conf.getVar(HiveConf.ConfVars.METASTOREURIS).split(",");
+    metastoreUris=new URI[metastoreUrisString.length];
+    try {
+      int i=0;
+      for (      String s : metastoreUrisString) {
+        URI tmpUri=new URI(s);
+        if (tmpUri.getScheme() == null) {
+          throw new IllegalArgumentException("URI: " + s + " does not have a scheme");
+        }
+        metastoreUris[i++]=tmpUri;
+      }
+    }
+ catch (    IllegalArgumentException e) {
+      throw (e);
+    }
+catch (    Exception e) {
+      MetaStoreUtils.logAndThrowMetaException(e);
+    }
+  }
+ else   if (conf.getVar(HiveConf.ConfVars.METASTOREDIRECTORY) != null) {
+    metastoreUris=new URI[1];
+    try {
+      metastoreUris[0]=new URI(conf.getVar(HiveConf.ConfVars.METASTOREDIRECTORY));
+    }
+ catch (    URISyntaxException e) {
+      MetaStoreUtils.logAndThrowMetaException(e);
+    }
+  }
+ else {
+    LOG.error("NOT getting uris from conf");
+    throw new MetaException("MetaStoreURIs not found in conf file");
+  }
+  open();
+}

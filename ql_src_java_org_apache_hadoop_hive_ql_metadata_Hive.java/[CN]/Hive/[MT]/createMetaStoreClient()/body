@@ -1,3 +1,22 @@
 {
-  return new HiveMetaStoreClient(conf);
+  HiveMetaHookLoader hookLoader=new HiveMetaHookLoader(){
+    public HiveMetaHook getHook(    org.apache.hadoop.hive.metastore.api.Table tbl) throws MetaException {
+      try {
+        if (tbl == null) {
+          return null;
+        }
+        HiveStorageHandler storageHandler=HiveUtils.getStorageHandler(conf,tbl.getParameters().get(Constants.META_TABLE_STORAGE));
+        if (storageHandler == null) {
+          return null;
+        }
+        return storageHandler.getMetaHook();
+      }
+ catch (      HiveException ex) {
+        LOG.error(StringUtils.stringifyException(ex));
+        throw new MetaException("Failed to load storage handler:  " + ex.getMessage());
+      }
+    }
+  }
+;
+  return new HiveMetaStoreClient(conf,hookLoader);
 }

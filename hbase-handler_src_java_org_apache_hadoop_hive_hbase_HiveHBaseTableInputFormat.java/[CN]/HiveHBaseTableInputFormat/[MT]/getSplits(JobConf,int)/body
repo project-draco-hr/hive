@@ -1,0 +1,21 @@
+{
+  Path[] tableNames=FileInputFormat.getInputPaths(job);
+  String hbaseTableName=job.get(HBaseSerDe.HBASE_TABLE_NAME);
+  hbaseInputFormat.setHBaseTable(new HTable(new HBaseConfiguration(job),hbaseTableName));
+  String hbaseSchemaMapping=job.get(HBaseSerDe.HBASE_COL_MAPPING);
+  if (hbaseSchemaMapping == null) {
+    throw new IOException("hbase.columns.mapping required for HBase Table.");
+  }
+  String[] columns=hbaseSchemaMapping.split(",");
+  byte[][] inputColumns=new byte[columns.length][];
+  for (int i=0; i < columns.length; i++) {
+    inputColumns[i]=Bytes.toBytes(columns[i]);
+  }
+  hbaseInputFormat.setScanColumns(inputColumns);
+  InputSplit[] splits=hbaseInputFormat.getSplits(job,numSplits <= 0 ? 1 : numSplits);
+  InputSplit[] results=new InputSplit[splits.length];
+  for (int i=0; i < splits.length; i++) {
+    results[i]=new HBaseSplit((TableSplit)splits[i],hbaseSchemaMapping,tableNames[0]);
+  }
+  return results;
+}
