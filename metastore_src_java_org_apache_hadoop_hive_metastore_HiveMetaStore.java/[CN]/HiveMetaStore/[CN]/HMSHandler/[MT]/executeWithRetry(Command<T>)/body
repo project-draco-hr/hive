@@ -1,0 +1,33 @@
+{
+  T ret=null;
+  boolean gotNewConnectUrl=false;
+  boolean reloadConf=HiveConf.getBoolVar(hiveConf,HiveConf.ConfVars.METASTOREFORCERELOADCONF);
+  if (reloadConf) {
+    updateConnectionURL(getConf(),null);
+  }
+  int retryCount=0;
+  Exception caughtException=null;
+  while (true) {
+    try {
+      RawStore ms=getMS(reloadConf || gotNewConnectUrl);
+      ret=cmd.run(ms);
+      break;
+    }
+ catch (    javax.jdo.JDOFatalDataStoreException e) {
+      caughtException=e;
+    }
+catch (    javax.jdo.JDODataStoreException e) {
+      caughtException=e;
+    }
+    if (retryCount >= retryLimit) {
+      throw caughtException;
+    }
+    assert(retryInterval >= 0);
+    retryCount++;
+    LOG.error(String.format("JDO datastore error. Retrying metastore command " + "after %d ms (attempt %d of %d)",retryInterval,retryCount,retryLimit));
+    Thread.sleep(retryInterval);
+    String lastUrl=getConnectionURL(getConf());
+    gotNewConnectUrl=updateConnectionURL(getConf(),lastUrl);
+  }
+  return ret;
+}

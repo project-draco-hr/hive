@@ -3,22 +3,28 @@
   if (parts.size() == 0) {
     return 0;
   }
-  String db=parts.get(0).getDbName();
-  String tbl=parts.get(0).getTableName();
-  logStartFunction("add_partitions",db,tbl);
-  boolean success=false;
+  Integer ret=null;
   try {
-    getMS().openTransaction();
-    for (    Partition part : parts) {
-      add_partition(part);
+    ret=executeWithRetry(new Command<Integer>(){
+      @Override Integer run(      RawStore ms) throws Exception {
+        int ret=add_partitions_core(ms,parts);
+        return Integer.valueOf(ret);
+      }
     }
-    success=true;
-    getMS().commitTransaction();
+);
   }
-  finally {
-    if (!success) {
-      getMS().rollbackTransaction();
-    }
+ catch (  InvalidObjectException e) {
+    throw e;
   }
-  return parts.size();
+catch (  AlreadyExistsException e) {
+    throw e;
+  }
+catch (  MetaException e) {
+    throw e;
+  }
+catch (  Exception e) {
+    assert(e instanceof RuntimeException);
+    throw (RuntimeException)e;
+  }
+  return ret;
 }

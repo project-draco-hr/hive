@@ -1,18 +1,25 @@
 {
   incrementCounter("create_database");
   logStartFunction("create_database: " + name);
-  boolean success=false;
+  Boolean ret=null;
   try {
-    getMS().openTransaction();
-    Database db=new Database(name,location_uri);
-    if (getMS().createDatabase(db) && wh.mkdirs(wh.getDefaultDatabasePath(name))) {
-      success=getMS().commitTransaction();
+    ret=executeWithRetry(new Command<Boolean>(){
+      @Override Boolean run(      RawStore ms) throws Exception {
+        boolean success=create_database_core(ms,name,location_uri);
+        return Boolean.valueOf(success);
+      }
     }
+);
   }
-  finally {
-    if (!success) {
-      getMS().rollbackTransaction();
-    }
+ catch (  AlreadyExistsException e) {
+    throw e;
   }
-  return success;
+catch (  MetaException e) {
+    throw e;
+  }
+catch (  Exception e) {
+    assert(e instanceof RuntimeException);
+    throw (RuntimeException)e;
+  }
+  return ret.booleanValue();
 }

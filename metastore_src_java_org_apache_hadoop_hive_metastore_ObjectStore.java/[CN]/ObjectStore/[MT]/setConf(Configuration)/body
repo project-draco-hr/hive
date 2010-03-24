@@ -1,15 +1,29 @@
 {
-  hiveConf=conf;
-  if (isInitialized) {
-    return;
-  }
+  pmfPropLock.lock();
+  try {
+    isInitialized=false;
+    hiveConf=conf;
+    Properties propsFromConf=getDataSourceProps(conf);
+    boolean propsChanged=!propsFromConf.equals(prop);
+    if (propsChanged) {
+      pmf=null;
+      prop=null;
+    }
+    assert(!isActiveTransaction());
+    shutdown();
+    pm=null;
+    openTrasactionCalls=0;
+    currentTransaction=null;
+    transactionStatus=TXN_STATUS.NO_STATE;
+    initialize(propsFromConf);
+    if (!isInitialized) {
+      throw new RuntimeException("Unable to create persistence manager. Check dss.log for details");
+    }
  else {
-    initialize();
+      LOG.info("Initialized ObjectStore");
+    }
   }
-  if (!isInitialized) {
-    throw new RuntimeException("Unable to create persistence manager. Check dss.log for details");
-  }
- else {
-    LOG.info("Initialized ObjectStore");
+  finally {
+    pmfPropLock.unlock();
   }
 }

@@ -4,20 +4,22 @@
   if (name.equalsIgnoreCase(MetaStoreUtils.DEFAULT_DATABASE_NAME)) {
     throw new MetaException("Can't drop default database");
   }
-  boolean success=false;
+  Boolean ret=null;
   try {
-    getMS().openTransaction();
-    if (getMS().dropDatabase(name)) {
-      success=getMS().commitTransaction();
+    ret=executeWithRetry(new Command<Boolean>(){
+      @Override Boolean run(      RawStore ms) throws Exception {
+        boolean success=drop_database_core(ms,name);
+        return Boolean.valueOf(success);
+      }
     }
+);
   }
-  finally {
-    if (!success) {
-      getMS().rollbackTransaction();
-    }
- else {
-      wh.deleteDir(wh.getDefaultDatabasePath(name),true);
-    }
+ catch (  MetaException e) {
+    throw e;
   }
-  return success;
+catch (  Exception e) {
+    assert(e instanceof RuntimeException);
+    throw (RuntimeException)e;
+  }
+  return ret.booleanValue();
 }

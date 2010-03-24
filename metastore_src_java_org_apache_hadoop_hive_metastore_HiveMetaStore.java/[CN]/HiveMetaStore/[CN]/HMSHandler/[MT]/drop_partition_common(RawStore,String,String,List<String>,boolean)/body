@@ -1,0 +1,32 @@
+{
+  boolean success=false;
+  Path partPath=null;
+  Table tbl=null;
+  try {
+    ms.openTransaction();
+    Partition part=get_partition(db_name,tbl_name,part_vals);
+    if (part == null) {
+      throw new NoSuchObjectException("Partition doesn't exist. " + part_vals);
+    }
+    if (part.getSd() == null || part.getSd().getLocation() == null) {
+      throw new MetaException("Partition metadata is corrupted");
+    }
+    if (!ms.dropPartition(db_name,tbl_name,part_vals)) {
+      throw new MetaException("Unable to drop partition");
+    }
+    success=ms.commitTransaction();
+    partPath=new Path(part.getSd().getLocation());
+    tbl=get_table(db_name,tbl_name);
+  }
+  finally {
+    if (!success) {
+      ms.rollbackTransaction();
+    }
+ else     if (deleteData && (partPath != null)) {
+      if (tbl != null && !isExternal(tbl)) {
+        wh.deleteDir(partPath,true);
+      }
+    }
+  }
+  return true;
+}

@@ -1,0 +1,46 @@
+{
+  if (!MetaStoreUtils.validateName(tbl.getTableName()) || !MetaStoreUtils.validateColNames(tbl.getSd().getCols()) || (tbl.getPartitionKeys() != null && !MetaStoreUtils.validateColNames(tbl.getPartitionKeys()))) {
+    throw new InvalidObjectException(tbl.getTableName() + " is not a valid object name");
+  }
+  Path tblPath=null;
+  boolean success=false, madeDir=false;
+  try {
+    ms.openTransaction();
+    if (!TableType.VIRTUAL_VIEW.toString().equals(tbl.getTableType())) {
+      if (tbl.getSd().getLocation() == null || tbl.getSd().getLocation().isEmpty()) {
+        tblPath=wh.getDefaultTablePath(tbl.getDbName(),tbl.getTableName());
+      }
+ else {
+        if (!isExternal(tbl) && !MetaStoreUtils.isNonNativeTable(tbl)) {
+          LOG.warn("Location: " + tbl.getSd().getLocation() + " specified for non-external table:"+ tbl.getTableName());
+        }
+        tblPath=wh.getDnsPath(new Path(tbl.getSd().getLocation()));
+      }
+      tbl.getSd().setLocation(tblPath.toString());
+    }
+    if (is_table_exists(tbl.getDbName(),tbl.getTableName())) {
+      throw new AlreadyExistsException("Table " + tbl.getTableName() + " already exists");
+    }
+    if (tblPath != null) {
+      if (!wh.isDir(tblPath)) {
+        if (!wh.mkdirs(tblPath)) {
+          throw new MetaException(tblPath + " is not a directory or unable to create one");
+        }
+        madeDir=true;
+      }
+    }
+    long time=System.currentTimeMillis() / 1000;
+    tbl.setCreateTime((int)time);
+    tbl.putToParameters(Constants.DDL_TIME,Long.toString(time));
+    ms.createTable(tbl);
+    success=ms.commitTransaction();
+  }
+  finally {
+    if (!success) {
+      ms.rollbackTransaction();
+      if (madeDir) {
+        wh.deleteDir(tblPath,true);
+      }
+    }
+  }
+}

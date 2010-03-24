@@ -1,0 +1,34 @@
+{
+  boolean success=false;
+  boolean isExternal=false;
+  Path tblPath=null;
+  Table tbl=null;
+  isExternal=false;
+  try {
+    ms.openTransaction();
+    tbl=get_table(dbname,name);
+    if (tbl == null) {
+      throw new NoSuchObjectException(name + " doesn't exist");
+    }
+    if (tbl.getSd() == null) {
+      throw new MetaException("Table metadata is corrupted");
+    }
+    isExternal=isExternal(tbl);
+    if (tbl.getSd().getLocation() != null) {
+      tblPath=new Path(tbl.getSd().getLocation());
+    }
+    if (!ms.dropTable(dbname,name)) {
+      throw new MetaException("Unable to drop table");
+    }
+    tbl=null;
+    success=ms.commitTransaction();
+  }
+  finally {
+    if (!success) {
+      ms.rollbackTransaction();
+    }
+ else     if (deleteData && (tblPath != null) && !isExternal) {
+      wh.deleteDir(tblPath,true);
+    }
+  }
+}
