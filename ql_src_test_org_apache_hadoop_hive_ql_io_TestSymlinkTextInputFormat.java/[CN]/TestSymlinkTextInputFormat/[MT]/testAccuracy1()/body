@@ -1,0 +1,26 @@
+{
+  writeTextFile(new Path(dataDir1,"file1"),"dir1_file1_line1\n" + "dir1_file1_line2\n");
+  writeTextFile(new Path(dataDir1,"file2"),"dir1_file2_line1\n" + "dir1_file2_line2\n");
+  writeTextFile(new Path(dataDir2,"file1"),"dir2_file1_line1\n" + "dir2_file1_line2\n");
+  writeTextFile(new Path(dataDir2,"file2"),"dir2_file2_line1\n" + "dir2_file2_line2\n");
+  writeSymlinkFile(new Path(symlinkDir,"symlink_file"),new Path(dataDir1,"file1"),new Path(dataDir2,"file2"));
+  FileInputFormat.setInputPaths(job,symlinkDir);
+  SymlinkTextInputFormat inputFormat=new SymlinkTextInputFormat();
+  InputSplit[] splits=inputFormat.getSplits(job,2);
+  log.info("Number of splits: " + splits.length);
+  List<String> received=new ArrayList<String>();
+  for (  InputSplit split : splits) {
+    RecordReader<LongWritable,Text> reader=inputFormat.getRecordReader(split,job,reporter);
+    LongWritable key=reader.createKey();
+    Text value=reader.createValue();
+    while (reader.next(key,value)) {
+      received.add(value.toString());
+    }
+  }
+  List<String> expected=new ArrayList<String>();
+  expected.add("dir1_file1_line1");
+  expected.add("dir1_file1_line2");
+  expected.add("dir2_file2_line1");
+  expected.add("dir2_file2_line2");
+  assertEquals(expected,received);
+}

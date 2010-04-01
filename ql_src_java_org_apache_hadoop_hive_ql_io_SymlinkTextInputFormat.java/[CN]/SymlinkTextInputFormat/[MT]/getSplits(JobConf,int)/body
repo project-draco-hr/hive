@@ -1,0 +1,34 @@
+{
+  Path[] symlinksDirs=FileInputFormat.getInputPaths(job);
+  if (symlinksDirs.length == 0) {
+    throw new IOException("No input paths specified in job.");
+  }
+  List<Path> targetPaths=new ArrayList<Path>();
+  List<Path> symlinkPaths=new ArrayList<Path>();
+  try {
+    getTargetPathsFromSymlinksDirs(job,symlinksDirs,targetPaths,symlinkPaths);
+  }
+ catch (  Exception e) {
+    throw new IOException("Error parsing symlinks from specified job input path.",e);
+  }
+  if (targetPaths.size() == 0) {
+    return new InputSplit[0];
+  }
+  TextInputFormat inputFormat=new TextInputFormat();
+  JobConf newjob=new JobConf(job);
+  newjob.setInputFormat(TextInputFormat.class);
+  inputFormat.configure(newjob);
+  List<InputSplit> result=new ArrayList<InputSplit>();
+  int numPaths=targetPaths.size();
+  int numSubSplits=(numSplits + numPaths - 1) / numPaths;
+  for (int i=0; i < numPaths; ++i) {
+    Path targetPath=targetPaths.get(i);
+    Path symlinkPath=symlinkPaths.get(i);
+    FileInputFormat.setInputPaths(newjob,targetPath);
+    InputSplit[] iss=inputFormat.getSplits(newjob,numSubSplits);
+    for (    InputSplit is : iss) {
+      result.add(new SymlinkTextInputSplit(symlinkPath,(FileSplit)is));
+    }
+  }
+  return result.toArray(new InputSplit[result.size()]);
+}
