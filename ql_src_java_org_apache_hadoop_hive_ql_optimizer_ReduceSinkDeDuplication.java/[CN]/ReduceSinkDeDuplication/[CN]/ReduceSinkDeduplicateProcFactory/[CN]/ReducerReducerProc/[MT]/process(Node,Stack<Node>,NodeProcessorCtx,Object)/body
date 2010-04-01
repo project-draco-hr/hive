@@ -1,0 +1,40 @@
+{
+  ReduceSinkDeduplicateProcCtx ctx=(ReduceSinkDeduplicateProcCtx)procCtx;
+  ReduceSinkOperator childReduceSink=(ReduceSinkOperator)nd;
+  if (ctx.contains(childReduceSink)) {
+    return null;
+  }
+  ParseContext pGraphContext=ctx.getPctx();
+  HashMap<String,String> childColumnMapping=getPartitionAndKeyColumnMapping(childReduceSink);
+  ReduceSinkOperator parentRS=null;
+  parentRS=findSingleParentReduceSink(childReduceSink,pGraphContext);
+  if (parentRS == null) {
+    ctx.addRejectedReduceSinkOperator(childReduceSink);
+    return null;
+  }
+  HashMap<String,String> parentColumnMapping=getPartitionAndKeyColumnMapping(parentRS);
+  Operator<? extends Serializable> stopBacktrackFlagOp=null;
+  if (parentRS.getParentOperators() == null || parentRS.getParentOperators().size() == 0) {
+    stopBacktrackFlagOp=parentRS;
+  }
+ else   if (parentRS.getParentOperators().size() != 1) {
+    return null;
+  }
+ else {
+    stopBacktrackFlagOp=parentRS.getParentOperators().get(0);
+  }
+  boolean succeed=backTrackColumnNames(childColumnMapping,childReduceSink,stopBacktrackFlagOp,pGraphContext);
+  if (!succeed) {
+    return null;
+  }
+  succeed=backTrackColumnNames(parentColumnMapping,parentRS,stopBacktrackFlagOp,pGraphContext);
+  if (!succeed) {
+    return null;
+  }
+  boolean same=compareReduceSink(childReduceSink,parentRS,childColumnMapping,parentColumnMapping);
+  if (!same) {
+    return null;
+  }
+  replaceReduceSinkWithSelectOperator(childReduceSink,pGraphContext);
+  return null;
+}
