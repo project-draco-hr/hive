@@ -2,13 +2,14 @@
   RowResolver inputRR=opParseCtx.get(input).getRR();
   QBMetaData qbm=qb.getMetaData();
   Integer dest_type=qbm.getDestTypeForAlias(dest);
-  Table dest_tab;
+  Table dest_tab=null;
   String queryTmpdir=null;
   Path dest_path=null;
   TableDesc table_desc=null;
   int currentTableId=0;
   boolean isLocal=false;
   SortBucketRSCtx rsCtx=new SortBucketRSCtx();
+  LoadTableDesc ltd=null;
 switch (dest_type.intValue()) {
 case QBMetaData.DEST_TABLE:
 {
@@ -31,7 +32,8 @@ case QBMetaData.DEST_TABLE:
       currentTableId=destTableId;
       destTableId++;
       if (!isNonNativeTable) {
-        loadTableWork.add(new LoadTableDesc(queryTmpdir,ctx.getExternalTmpFileURI(dest_path.toUri()),table_desc,new HashMap<String,String>()));
+        ltd=new LoadTableDesc(queryTmpdir,ctx.getExternalTmpFileURI(dest_path.toUri()),table_desc,new HashMap<String,String>());
+        loadTableWork.add(ltd);
       }
       if (!outputs.add(new WriteEntity(dest_tab))) {
         throw new SemanticException(ErrorMsg.OUTPUT_SPECIFIED_MULTIPLE_TIMES.getMsg(dest_tab.getTableName()));
@@ -49,7 +51,8 @@ case QBMetaData.DEST_PARTITION:
     idToTableNameMap.put(String.valueOf(destTableId),dest_tab.getTableName());
     currentTableId=destTableId;
     destTableId++;
-    loadTableWork.add(new LoadTableDesc(queryTmpdir,ctx.getExternalTmpFileURI(dest_path.toUri()),table_desc,dest_part.getSpec()));
+    ltd=new LoadTableDesc(queryTmpdir,ctx.getExternalTmpFileURI(dest_path.toUri()),table_desc,dest_part.getSpec());
+    loadTableWork.add(ltd);
     if (!outputs.add(new WriteEntity(dest_part))) {
       throw new SemanticException(ErrorMsg.OUTPUT_SPECIFIED_MULTIPLE_TIMES.getMsg(dest_tab.getTableName() + "@" + dest_part.getName()));
     }
@@ -151,6 +154,9 @@ throw new SemanticException(e.getMessage());
 }
 RowSchema fsRS=new RowSchema(vecCol);
 Operator output=putOpInsertMap(OperatorFactory.getAndMakeChild(new FileSinkDesc(queryTmpdir,table_desc,conf.getBoolVar(HiveConf.ConfVars.COMPRESSRESULT),currentTableId,rsCtx.isMultiFileSpray(),rsCtx.getNumFiles(),rsCtx.getTotalFiles(),rsCtx.getPartnCols()),fsRS,input),inputRR);
+if (ltd != null && SessionState.get() != null) {
+SessionState.get().getLineageState().mapDirToFop(ltd.getSourceDir(),(FileSinkOperator)output);
+}
 LOG.debug("Created FileSink Plan for clause: " + dest + "dest_path: "+ dest_path+ " row schema: "+ inputRR.toString());
 return output;
 }

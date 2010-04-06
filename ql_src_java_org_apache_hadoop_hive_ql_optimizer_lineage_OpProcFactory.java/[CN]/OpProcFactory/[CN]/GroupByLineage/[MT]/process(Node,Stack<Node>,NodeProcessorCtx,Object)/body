@@ -1,0 +1,45 @@
+{
+  LineageCtx lctx=(LineageCtx)procCtx;
+  GroupByOperator gop=(GroupByOperator)nd;
+  ArrayList<ColumnInfo> col_infos=gop.getSchema().getSignature();
+  Operator<? extends Serializable> inpOp=getParent(stack);
+  int cnt=0;
+  for (  ExprNodeDesc expr : gop.getConf().getKeys()) {
+    lctx.getIndex().putDependency(gop,col_infos.get(cnt++),ExprProcFactory.getExprDependency(lctx,inpOp,expr));
+  }
+  for (  AggregationDesc agg : gop.getConf().getAggregators()) {
+    Dependency dep=new Dependency();
+    DependencyType new_type=LineageInfo.DependencyType.EXPRESSION;
+    dep.setExpr(null);
+    LinkedHashSet<BaseColumnInfo> bci_set=new LinkedHashSet<BaseColumnInfo>();
+    for (    ExprNodeDesc expr : agg.getParameters()) {
+      Dependency expr_dep=ExprProcFactory.getExprDependency(lctx,inpOp,expr);
+      if (expr_dep != null) {
+        new_type=LineageCtx.getNewDependencyType(expr_dep.getType(),new_type);
+        bci_set.addAll(expr_dep.getBaseCols());
+      }
+    }
+    if (bci_set.isEmpty()) {
+      Set<TableAliasInfo> tai_set=new LinkedHashSet<TableAliasInfo>();
+      for (      ColumnInfo ci : inpOp.getSchema().getSignature()) {
+        Dependency inp_dep=lctx.getIndex().getDependency(inpOp,ci);
+        if (inp_dep != null) {
+          for (          BaseColumnInfo bci : inp_dep.getBaseCols()) {
+            new_type=LineageCtx.getNewDependencyType(inp_dep.getType(),new_type);
+            tai_set.add(bci.getTabAlias());
+          }
+        }
+      }
+      for (      TableAliasInfo tai : tai_set) {
+        BaseColumnInfo bci=new BaseColumnInfo();
+        bci.setTabAlias(tai);
+        bci.setColumn(null);
+        bci_set.add(bci);
+      }
+    }
+    dep.setBaseCols(new ArrayList<BaseColumnInfo>(bci_set));
+    dep.setType(new_type);
+    lctx.getIndex().putDependency(gop,col_infos.get(cnt++),dep);
+  }
+  return null;
+}
