@@ -1,2 +1,45 @@
 {
+  try {
+    filesCreated=false;
+    this.hconf=hconf;
+    serializer=(Serializer)conf.getTableInfo().getDeserializerClass().newInstance();
+    serializer.initialize(null,conf.getTableInfo().getProperties());
+    isNativeTable=!conf.getTableInfo().isNonNative();
+    if (hconf instanceof JobConf) {
+      jc=(JobConf)hconf;
+    }
+ else {
+      jc=new JobConf(hconf,ExecDriver.class);
+    }
+    multiFileSpray=conf.isMultiFileSpray();
+    totalFiles=conf.getTotalFiles();
+    numFiles=conf.getNumFiles();
+    if (multiFileSpray) {
+      partitionEval=new ExprNodeEvaluator[conf.getPartitionCols().size()];
+      int i=0;
+      for (      ExprNodeDesc e : conf.getPartitionCols()) {
+        partitionEval[i++]=ExprNodeEvaluatorFactory.get(e);
+      }
+      partitionObjectInspectors=initEvaluators(partitionEval,outputObjInspector);
+      prtner=(HivePartitioner<HiveKey,Object>)ReflectionUtils.newInstance(jc.getPartitionerClass(),null);
+    }
+    outWriters=new RecordWriter[numFiles];
+    outPaths=new Path[numFiles];
+    finalPaths=new Path[numFiles];
+    int id=conf.getDestTableId();
+    if ((id != 0) && (id <= TableIdEnum.values().length)) {
+      String enumName="TABLE_ID_" + String.valueOf(id) + "_ROWCOUNT";
+      tabIdEnum=TableIdEnum.valueOf(enumName);
+      row_count=new LongWritable();
+      statsMap.put(tabIdEnum,row_count);
+    }
+    initializeChildren(hconf);
+  }
+ catch (  HiveException e) {
+    throw e;
+  }
+catch (  Exception e) {
+    e.printStackTrace();
+    throw new HiveException(e);
+  }
 }
