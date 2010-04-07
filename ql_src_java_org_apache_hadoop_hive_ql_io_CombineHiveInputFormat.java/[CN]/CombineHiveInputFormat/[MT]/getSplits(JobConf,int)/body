@@ -11,24 +11,37 @@
   Path[] paths=combine.getInputPathsShim(job);
   for (  Path path : paths) {
     LOG.info("CombineHiveInputSplit creating pool for " + path);
-    FileSystem inpFs=path.getFileSystem(job);
-    FileStatus fStats=inpFs.getFileStatus(path);
-    Path tstPath=path;
-    if (fStats.isDir()) {
-      FileStatus[] fStatus=inpFs.listStatus(path);
-      if (fStatus.length > 0) {
-        tstPath=fStatus[0].getPath();
-      }
-    }
     PartitionDesc part=getPartitionDescFromPath(pathToPartitionInfo,path);
-    Class inputFormatClass=part.getInputFileFormatClass();
-    InputFormat inputFormat=getInputFormatFromCache(inputFormatClass,job);
     TableDesc tableDesc=part.getTableDesc();
     if ((tableDesc != null) && tableDesc.isNonNative()) {
       return super.getSplits(job,numSplits);
     }
-    if ((inputFormat instanceof TextInputFormat) && ((new CompressionCodecFactory(job)).getCodec(tstPath) != null)) {
-      return super.getSplits(job,numSplits);
+    Class inputFormatClass=part.getInputFileFormatClass();
+    InputFormat inputFormat=getInputFormatFromCache(inputFormatClass,job);
+    if (this.mrwork != null && this.mrwork.getHadoopSupportsSplittable()) {
+      FileSystem inpFs=path.getFileSystem(job);
+      if (inputFormat instanceof TextInputFormat) {
+        Queue<Path> dirs=new LinkedList<Path>();
+        FileStatus fStats=inpFs.getFileStatus(path);
+        if (fStats.isDir()) {
+          dirs.offer(path);
+        }
+ else         if ((new CompressionCodecFactory(job)).getCodec(path) != null) {
+          return super.getSplits(job,numSplits);
+        }
+        while (dirs.peek() != null) {
+          Path tstPath=dirs.remove();
+          FileStatus[] fStatus=inpFs.listStatus(tstPath);
+          for (int idx=0; idx < fStatus.length; idx++) {
+            if (fStatus[idx].isDir()) {
+              dirs.offer(fStatus[idx].getPath());
+            }
+ else             if ((new CompressionCodecFactory(job)).getCodec(fStatus[idx].getPath()) != null) {
+              return super.getSplits(job,numSplits);
+            }
+          }
+        }
+      }
     }
     if (inputFormat instanceof SymlinkTextInputFormat) {
       return super.getSplits(job,numSplits);
