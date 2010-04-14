@@ -1,19 +1,28 @@
 {
   try {
-    filesCreated=false;
     this.hconf=hconf;
+    filesCreated=false;
+    isNativeTable=!conf.getTableInfo().isNonNative();
+    multiFileSpray=conf.isMultiFileSpray();
+    totalFiles=conf.getTotalFiles();
+    numFiles=conf.getNumFiles();
+    dpCtx=conf.getDynPartCtx();
+    valToPaths=new HashMap<String,FSPaths>();
+    taskId=Utilities.getTaskId(hconf);
+    specPath=new Path(conf.getDirName());
+    fs=specPath.getFileSystem(hconf);
+    hiveOutputFormat=conf.getTableInfo().getOutputFileFormatClass().newInstance();
+    isCompressed=conf.getCompressed();
+    parent=Utilities.toTempPath(conf.getDirName());
     serializer=(Serializer)conf.getTableInfo().getDeserializerClass().newInstance();
     serializer.initialize(null,conf.getTableInfo().getProperties());
-    isNativeTable=!conf.getTableInfo().isNonNative();
+    outputClass=serializer.getSerializedClass();
     if (hconf instanceof JobConf) {
       jc=(JobConf)hconf;
     }
  else {
       jc=new JobConf(hconf,ExecDriver.class);
     }
-    multiFileSpray=conf.isMultiFileSpray();
-    totalFiles=conf.getTotalFiles();
-    numFiles=conf.getNumFiles();
     if (multiFileSpray) {
       partitionEval=new ExprNodeEvaluator[conf.getPartitionCols().size()];
       int i=0;
@@ -23,15 +32,20 @@
       partitionObjectInspectors=initEvaluators(partitionEval,outputObjInspector);
       prtner=(HivePartitioner<HiveKey,Object>)ReflectionUtils.newInstance(jc.getPartitionerClass(),null);
     }
-    outWriters=new RecordWriter[numFiles];
-    outPaths=new Path[numFiles];
-    finalPaths=new Path[numFiles];
     int id=conf.getDestTableId();
     if ((id != 0) && (id <= TableIdEnum.values().length)) {
       String enumName="TABLE_ID_" + String.valueOf(id) + "_ROWCOUNT";
       tabIdEnum=TableIdEnum.valueOf(enumName);
       row_count=new LongWritable();
       statsMap.put(tabIdEnum,row_count);
+    }
+    if (dpCtx != null) {
+      dpSetup();
+    }
+    if (!bDynParts) {
+      fsp=new FSPaths(specPath);
+      createBucketFiles(fsp);
+      valToPaths.put("",fsp);
     }
     initializeChildren(hconf);
   }
