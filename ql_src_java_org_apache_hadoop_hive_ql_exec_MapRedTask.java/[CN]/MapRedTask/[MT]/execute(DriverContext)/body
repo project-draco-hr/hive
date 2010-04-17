@@ -1,0 +1,108 @@
+{
+  try {
+    String hadoopExec=conf.getVar(HiveConf.ConfVars.HADOOPBIN);
+    String hiveJar=conf.getJar();
+    String libJarsOption;
+    String addedJars=ExecDriver.getResourceFiles(conf,SessionState.ResourceType.JAR);
+    conf.setVar(ConfVars.HIVEADDEDJARS,addedJars);
+    String auxJars=conf.getAuxJars();
+    if (StringUtils.isEmpty(addedJars)) {
+      if (StringUtils.isEmpty(auxJars)) {
+        libJarsOption=" ";
+      }
+ else {
+        libJarsOption=" -libjars " + auxJars + " ";
+      }
+    }
+ else {
+      if (StringUtils.isEmpty(auxJars)) {
+        libJarsOption=" -libjars " + addedJars + " ";
+      }
+ else {
+        libJarsOption=" -libjars " + addedJars + ","+ auxJars+ " ";
+      }
+    }
+    String hiveConfArgs=ExecDriver.generateCmdLine(conf);
+    String hiveScratchDir;
+    if (driverContext.getCtx() != null && driverContext.getCtx().getQueryPath() != null)     hiveScratchDir=driverContext.getCtx().getQueryPath().toString();
+ else     hiveScratchDir=conf.getVar(HiveConf.ConfVars.SCRATCHDIR);
+    File scratchDir=new File(hiveScratchDir);
+    if (!scratchDir.exists()) {
+      LOG.info("Local scratch directory " + scratchDir.getPath() + " not found. Attempting to create.");
+      if (!scratchDir.mkdirs()) {
+        if (!scratchDir.exists()) {
+          throw new TaskExecutionException("Cannot create scratch directory " + "\"" + scratchDir.getPath() + "\". "+ "To configure a different directory, "+ "set the configuration "+ "\"hive.exec.scratchdir\" "+ "in the session, or permanently by modifying the "+ "appropriate hive configuration file such as hive-site.xml.");
+        }
+      }
+    }
+    MapredWork plan=getWork();
+    File planFile=File.createTempFile("plan",".xml",scratchDir);
+    LOG.info("Generating plan file " + planFile.toString());
+    FileOutputStream out=new FileOutputStream(planFile);
+    Utilities.serializeMapRedWork(plan,out);
+    String isSilent="true".equalsIgnoreCase(System.getProperty("test.silent")) ? "-silent" : "";
+    String jarCmd;
+    if (ShimLoader.getHadoopShims().usesJobShell()) {
+      jarCmd=libJarsOption + hiveJar + " "+ ExecDriver.class.getName();
+    }
+ else {
+      jarCmd=hiveJar + " " + ExecDriver.class.getName()+ libJarsOption;
+    }
+    String cmdLine=hadoopExec + " jar " + jarCmd+ " -plan "+ planFile.toString()+ " "+ isSilent+ " "+ hiveConfArgs;
+    String files=ExecDriver.getResourceFiles(conf,SessionState.ResourceType.FILE);
+    if (!files.isEmpty()) {
+      cmdLine=cmdLine + " -files " + files;
+    }
+    LOG.info("Executing: " + cmdLine);
+    Process executor=null;
+    String hadoopOpts;
+    StringBuilder sb=new StringBuilder();
+    Properties p=System.getProperties();
+    for (    String element : HIVE_SYS_PROP) {
+      if (p.containsKey(element)) {
+        sb.append(" -D" + element + "="+ p.getProperty(element));
+      }
+    }
+    hadoopOpts=sb.toString();
+    String[] env;
+    Map<String,String> variables=new HashMap(System.getenv());
+    int hadoopMem=conf.getIntVar(HiveConf.ConfVars.HIVEHADOOPMAXMEM);
+    if (hadoopMem == 0) {
+      variables.remove(HADOOP_MEM_KEY);
+    }
+ else {
+      variables.put(HADOOP_MEM_KEY,String.valueOf(hadoopMem));
+    }
+    if (variables.containsKey(HADOOP_OPTS_KEY)) {
+      variables.put(HADOOP_OPTS_KEY,variables.get(HADOOP_OPTS_KEY) + hadoopOpts);
+    }
+ else {
+      variables.put(HADOOP_OPTS_KEY,hadoopOpts);
+    }
+    env=new String[variables.size()];
+    int pos=0;
+    for (    Map.Entry<String,String> entry : variables.entrySet()) {
+      String name=entry.getKey();
+      String value=entry.getValue();
+      env[pos++]=name + "=" + value;
+    }
+    executor=Runtime.getRuntime().exec(cmdLine,env);
+    StreamPrinter outPrinter=new StreamPrinter(executor.getInputStream(),null,System.out);
+    StreamPrinter errPrinter=new StreamPrinter(executor.getErrorStream(),null,System.err);
+    outPrinter.start();
+    errPrinter.start();
+    int exitVal=executor.waitFor();
+    if (exitVal != 0) {
+      LOG.error("Execution failed with exit status: " + exitVal);
+    }
+ else {
+      LOG.info("Execution completed successfully");
+    }
+    return exitVal;
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    LOG.error("Exception: " + e.getMessage());
+    return (1);
+  }
+}
