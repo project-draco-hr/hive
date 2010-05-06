@@ -1,16 +1,33 @@
 {
-  try {
-    URI dirUri=new URI(dir.toUri().getPath());
+  String dirPath=dir.toUri().getPath();
+  PartitionDesc part=pathToPartitionInfo.get(dir.toString());
+  if (part == null) {
+    LOG.warn("exact match not found, try ripping input path's theme and authority");
+    part=pathToPartitionInfo.get(dirPath);
+  }
+  if (part == null) {
+    LOG.warn("still does not found just the path part: " + dirPath + " in pathToPartitionInfo."+ " Will try prefix matching");
     for (    Map.Entry<String,PartitionDesc> entry : pathToPartitionInfo.entrySet()) {
-      URI pathOfPartition=new URI(entry.getKey());
-      pathOfPartition=new URI(pathOfPartition.getPath());
-      if (!pathOfPartition.relativize(dirUri).equals(dirUri)) {
-        return entry.getValue();
+      String keyPath=entry.getKey();
+      String dirStr=dir.toString();
+      if (dirStr.startsWith(keyPath)) {
+        part=entry.getValue();
+        break;
+      }
+ else {
+        Path p=new Path(entry.getKey());
+        String newP=p.toUri().getPath().toString();
+        if (dirStr.startsWith(newP)) {
+          part=entry.getValue();
+          break;
+        }
       }
     }
   }
- catch (  URISyntaxException e2) {
-    LOG.info("getPartitionDescFromPath ",e2);
+  if (part != null) {
+    return part;
   }
-  throw new IOException("cannot find dir = " + dir.toString() + " in partToPartitionInfo: "+ pathToPartitionInfo.keySet());
+ else {
+    throw new IOException("cannot find dir = " + dir.toString() + " in partToPartitionInfo: "+ pathToPartitionInfo.keySet());
+  }
 }
