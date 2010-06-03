@@ -1,39 +1,38 @@
 {
-  HBaseSerDeParameters serdeParams=new HBaseSerDeParameters();
   String hbaseColumnNameProperty=tbl.getProperty(HBaseSerDe.HBASE_COL_MAPPING);
   String columnTypeProperty=tbl.getProperty(Constants.LIST_COLUMN_TYPES);
-  if (hbaseColumnNameProperty != null && hbaseColumnNameProperty.length() > 0) {
-    serdeParams.hbaseColumnNames=Arrays.asList(hbaseColumnNameProperty.split(","));
-  }
- else {
-    serdeParams.hbaseColumnNames=new ArrayList<String>();
-  }
+  hbaseColumnNames=parseColumnMapping(hbaseColumnNameProperty);
+  iKey=hbaseColumnNames.indexOf(HBASE_KEY_COL);
   if (columnTypeProperty == null) {
     StringBuilder sb=new StringBuilder();
-    sb.append(Constants.STRING_TYPE_NAME);
-    for (int i=0; i < serdeParams.hbaseColumnNames.size(); i++) {
-      String colName=serdeParams.hbaseColumnNames.get(i);
-      if (colName.endsWith(":")) {
-        sb.append(":").append(Constants.MAP_TYPE_NAME + "<" + Constants.STRING_TYPE_NAME+ ","+ Constants.STRING_TYPE_NAME+ ">");
+    for (int i=0; i < hbaseColumnNames.size(); i++) {
+      if (sb.length() > 0) {
+        sb.append(":");
+      }
+      String colName=hbaseColumnNames.get(i);
+      if (isSpecialColumn(colName)) {
+        sb.append(Constants.STRING_TYPE_NAME);
+      }
+ else       if (colName.endsWith(":")) {
+        sb.append(Constants.MAP_TYPE_NAME + "<" + Constants.STRING_TYPE_NAME+ ","+ Constants.STRING_TYPE_NAME+ ">");
       }
  else {
-        sb.append(":").append(Constants.STRING_TYPE_NAME);
+        sb.append(Constants.STRING_TYPE_NAME);
       }
     }
     tbl.setProperty(Constants.LIST_COLUMN_TYPES,sb.toString());
   }
-  serdeParams.serdeParams=LazySimpleSerDe.initSerdeParams(job,tbl,serdeName);
-  if (serdeParams.hbaseColumnNames.size() + 1 != serdeParams.serdeParams.getColumnNames().size()) {
-    throw new SerDeException(serdeName + ": columns has " + serdeParams.serdeParams.getColumnNames().size()+ " elements while hbase.columns.mapping has "+ serdeParams.hbaseColumnNames.size()+ " elements!");
+  serdeParams=LazySimpleSerDe.initSerdeParams(job,tbl,serdeName);
+  if (hbaseColumnNames.size() != serdeParams.getColumnNames().size()) {
+    throw new SerDeException(serdeName + ": columns has " + serdeParams.getColumnNames().size()+ " elements while hbase.columns.mapping has "+ hbaseColumnNames.size()+ " elements"+ " (counting the key if implicit)");
   }
-  for (int i=0; i < serdeParams.hbaseColumnNames.size(); i++) {
-    String hbaseColName=serdeParams.hbaseColumnNames.get(i);
+  for (int i=0; i < hbaseColumnNames.size(); i++) {
+    String hbaseColName=hbaseColumnNames.get(i);
     if (hbaseColName.endsWith(":")) {
-      TypeInfo typeInfo=serdeParams.serdeParams.getColumnTypes().get(i + 1);
+      TypeInfo typeInfo=serdeParams.getColumnTypes().get(i);
       if ((typeInfo.getCategory() != Category.MAP) || (((MapTypeInfo)typeInfo).getMapKeyTypeInfo().getTypeName() != Constants.STRING_TYPE_NAME)) {
         throw new SerDeException(serdeName + ": hbase column family '" + hbaseColName+ "' should be mapped to map<string,?> but is mapped to "+ typeInfo.getTypeName());
       }
     }
   }
-  return serdeParams;
 }

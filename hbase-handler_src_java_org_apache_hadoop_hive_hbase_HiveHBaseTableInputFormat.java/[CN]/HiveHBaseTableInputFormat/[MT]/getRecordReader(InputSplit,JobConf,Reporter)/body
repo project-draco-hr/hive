@@ -3,40 +3,34 @@
   byte[] tableNameBytes;
   String hbaseTableName=job.get(HBaseSerDe.HBASE_TABLE_NAME);
   hbaseInputFormat.setHBaseTable(new HTable(new HBaseConfiguration(job),Bytes.toBytes(hbaseTableName)));
-  String columnMapping="_key," + hbaseSplit.getColumnsMapping();
-  String[] columns=columnMapping.split(",");
+  String columnMapping=hbaseSplit.getColumnsMapping();
+  List<String> columns=HBaseSerDe.parseColumnMapping(columnMapping);
   List<Integer> readColIDs=ColumnProjectionUtils.getReadColumnIDs(job);
-  if (columns.length < readColIDs.size()) {
+  if (columns.size() < readColIDs.size()) {
     throw new IOException("Cannot read more columns than the given table contains.");
   }
-  byte[][] scanColumns;
-  if (readColIDs.size() == 0) {
-    scanColumns=new byte[columns.length - 1][];
-    for (int i=0; i < columns.length - 1; i++) {
-      scanColumns[i]=Bytes.toBytes(columns[i + 1]);
+  List<byte[]> scanColumns=new ArrayList<byte[]>();
+  boolean addAll=(readColIDs.size() == 0);
+  if (!addAll) {
+    for (    int iColumn : readColIDs) {
+      String column=columns.get(iColumn);
+      if (HBaseSerDe.isSpecialColumn(column)) {
+        continue;
+      }
+      scanColumns.add(Bytes.toBytes(column));
     }
   }
- else {
-    Collections.sort(readColIDs);
-    if (readColIDs.get(0) == 0) {
-      if (readColIDs.size() == 1) {
-        scanColumns=new byte[1][];
-        scanColumns[0]=Bytes.toBytes(columns[1]);
+  if (scanColumns.isEmpty()) {
+    for (    String column : columns) {
+      if (HBaseSerDe.isSpecialColumn(column)) {
+        continue;
       }
- else {
-        scanColumns=new byte[readColIDs.size() - 1][];
-        for (int i=0; i < scanColumns.length; i++) {
-          scanColumns[i]=Bytes.toBytes(columns[readColIDs.get(i + 1)]);
-        }
-      }
-    }
- else {
-      scanColumns=new byte[readColIDs.size()][];
-      for (int i=0; i < scanColumns.length; i++) {
-        scanColumns[i]=Bytes.toBytes(columns[readColIDs.get(i)]);
+      scanColumns.add(Bytes.toBytes(column));
+      if (!addAll) {
+        break;
       }
     }
   }
-  hbaseInputFormat.setScanColumns(scanColumns);
+  hbaseInputFormat.setScanColumns(scanColumns.toArray(new byte[0][]));
   return (RecordReader<K,V>)hbaseInputFormat.getRecordReader(hbaseSplit.getSplit(),job,reporter);
 }
