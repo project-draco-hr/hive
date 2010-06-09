@@ -1,0 +1,119 @@
+{
+  String dbName=simpleDesc.getDbName();
+  String tblName=simpleDesc.getTableName();
+  Table tbl=db.getTable(dbName,tblName);
+  validateAlterTableType(tbl,AlterTableDesc.AlterTableTypes.UNARCHIVE);
+  if (simpleDesc.getPartSpec() == null) {
+    throw new HiveException("ARCHIVE is for partitions only");
+  }
+  Map<String,String> partSpec=simpleDesc.getPartSpec();
+  Partition p=db.getPartition(tbl,partSpec,false);
+  if (tbl.getTableType() != TableType.MANAGED_TABLE) {
+    throw new HiveException("UNARCHIVE can only be performed on managed tables");
+  }
+  if (p == null) {
+    throw new HiveException("Specified partition does not exist");
+  }
+  if (!isArchived(p)) {
+    Path location=new Path(p.getLocation());
+    Path leftOverArchiveDir=new Path(location.getParent(),location.getName() + INTERMEDIATE_ARCHIVED_DIR_SUFFIX);
+    try {
+      if (pathExists(location.getFileSystem(conf),leftOverArchiveDir)) {
+        console.printInfo("Deleting " + leftOverArchiveDir + " left over "+ "from a previous unarchiving operation");
+        deleteDir(leftOverArchiveDir);
+      }
+    }
+ catch (    IOException e) {
+      throw new HiveException(e);
+    }
+    throw new HiveException("Specified partition is not archived");
+  }
+  Path originalLocation=new Path(getOriginalLocation(p));
+  Path sourceDir=new Path(p.getLocation());
+  Path intermediateArchiveDir=new Path(originalLocation.getParent(),originalLocation.getName() + INTERMEDIATE_ARCHIVED_DIR_SUFFIX);
+  Path intermediateExtractedDir=new Path(originalLocation.getParent(),originalLocation.getName() + INTERMEDIATE_EXTRACTED_DIR_SUFFIX);
+  Path tmpDir=new Path(driverContext.getCtx().getMRScratchDir());
+  FileSystem fs=null;
+  try {
+    fs=tmpDir.getFileSystem(conf);
+    FileStatus[] filesInTmpDir=fs.listStatus(tmpDir);
+    if (filesInTmpDir.length != 0) {
+      for (      FileStatus file : filesInTmpDir) {
+        console.printInfo(file.getPath().toString());
+      }
+      throw new HiveException("Temporary directory " + tmpDir + " is not empty");
+    }
+  }
+ catch (  IOException e) {
+    throw new HiveException(e);
+  }
+  if (originalLocation == null) {
+    throw new HiveException("Missing archive data in the partition");
+  }
+  if (!"har".equals(sourceDir.toUri().getScheme())) {
+    throw new HiveException("Location should refer to a HAR");
+  }
+  if (!pathExists(fs,intermediateExtractedDir) && !pathExists(fs,intermediateArchiveDir)) {
+    try {
+      String copySource=(new Path(sourceDir,"*")).toString();
+      String copyDest=tmpDir.toString();
+      List<String> args=new ArrayList<String>();
+      args.add("-cp");
+      args.add(copySource);
+      args.add(copyDest);
+      console.printInfo("Copying " + copySource + " to "+ copyDest);
+      FsShell fss=new FsShell(conf);
+      int ret=0;
+      try {
+        ret=ToolRunner.run(fss,args.toArray(new String[0]));
+      }
+ catch (      Exception e) {
+        throw new HiveException(e);
+      }
+      if (ret != 0) {
+        throw new HiveException("Error while copying files from archive");
+      }
+      console.printInfo("Moving " + tmpDir + " to "+ intermediateExtractedDir);
+      if (fs.exists(intermediateExtractedDir)) {
+        throw new HiveException("Invalid state: the intermediate extracted " + "directory already exists.");
+      }
+      fs.rename(tmpDir,intermediateExtractedDir);
+    }
+ catch (    Exception e) {
+      throw new HiveException(e);
+    }
+  }
+  if (!pathExists(fs,intermediateArchiveDir)) {
+    try {
+      console.printInfo("Moving " + originalLocation + " to "+ intermediateArchiveDir);
+      fs.rename(originalLocation,intermediateArchiveDir);
+    }
+ catch (    IOException e) {
+      throw new HiveException(e);
+    }
+  }
+ else {
+    console.printInfo(intermediateArchiveDir + " already exists. " + "Assuming it contains the archived version of the partition");
+  }
+  if (!pathExists(fs,originalLocation)) {
+    try {
+      console.printInfo("Moving " + intermediateExtractedDir + " to "+ originalLocation);
+      fs.rename(intermediateExtractedDir,originalLocation);
+    }
+ catch (    IOException e) {
+      throw new HiveException(e);
+    }
+  }
+ else {
+    console.printInfo(originalLocation + " already exists. " + "Assuming it contains the extracted files in the partition");
+  }
+  setUnArchived(p);
+  try {
+    db.alterPartition(tblName,p);
+  }
+ catch (  InvalidOperationException e) {
+    throw new HiveException(e);
+  }
+  deleteDir(intermediateArchiveDir);
+  return 0;
+}
