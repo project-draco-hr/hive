@@ -1,19 +1,18 @@
 {
   String planFileName=null;
   ArrayList<String> jobConfArgs=new ArrayList<String>();
-  boolean isSilent=false;
+  boolean noLog=false;
   String files=null;
   try {
     for (int i=0; i < args.length; i++) {
       if (args[i].equals("-plan")) {
         planFileName=args[++i];
-        System.out.println("plan = " + planFileName);
       }
  else       if (args[i].equals("-jobconf")) {
         jobConfArgs.add(args[++i]);
       }
- else       if (args[i].equals("-silent")) {
-        isSilent=true;
+ else       if (args[i].equals("-nolog")) {
+        noLog=true;
       }
  else       if (args[i].equals("-files")) {
         files=args[++i];
@@ -24,20 +23,16 @@
     System.err.println("Missing argument to option");
     printUsage();
   }
-  if (isSilent) {
-    BasicConfigurator.resetConfiguration();
-    BasicConfigurator.configure(new NullAppender());
-  }
-  if (planFileName == null) {
-    System.err.println("Must specify Plan File Name");
-    printUsage();
-  }
   JobConf conf=new JobConf(ExecDriver.class);
+  StringBuilder sb=new StringBuilder("JobConf:\n");
   for (  String one : jobConfArgs) {
     int eqIndex=one.indexOf('=');
     if (eqIndex != -1) {
       try {
-        conf.set(one.substring(0,eqIndex),URLDecoder.decode(one.substring(eqIndex + 1),"UTF-8"));
+        String key=one.substring(0,eqIndex);
+        String value=URLDecoder.decode(one.substring(eqIndex + 1),"UTF-8");
+        conf.set(key,value);
+        sb.append(key).append("=").append(value).append("\n");
       }
  catch (      UnsupportedEncodingException e) {
         System.err.println("Unexpected error " + e.getMessage() + " while encoding "+ one.substring(eqIndex + 1));
@@ -48,6 +43,22 @@
   if (files != null) {
     conf.set("tmpfiles",files);
   }
+  boolean isSilent=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVESESSIONSILENT);
+  if (noLog) {
+    BasicConfigurator.resetConfiguration();
+    BasicConfigurator.configure(new NullAppender());
+  }
+ else {
+    setupChildLog4j(conf);
+  }
+  Log LOG=LogFactory.getLog(ExecDriver.class.getName());
+  LogHelper console=new LogHelper(LOG,isSilent);
+  if (planFileName == null) {
+    console.printError("Must specify Plan File Name");
+    printUsage();
+  }
+  console.printInfo("plan = " + planFileName);
+  LOG.info(sb.toString());
   URI pathURI=(new Path(planFileName)).toUri();
   InputStream pathData;
   if (StringUtils.isEmpty(pathURI.getScheme())) {
@@ -57,30 +68,26 @@
     FileSystem fs=FileSystem.get(conf);
     pathData=fs.open(new Path(planFileName));
   }
-  boolean localMode=HiveConf.getVar(conf,HiveConf.ConfVars.HADOOPJT).equals("local");
-  if (localMode) {
-    String auxJars=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEAUXJARS);
-    String addedJars=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEADDEDJARS);
-    try {
-      ClassLoader loader=conf.getClassLoader();
-      if (StringUtils.isNotBlank(auxJars)) {
-        loader=Utilities.addToClassPath(loader,StringUtils.split(auxJars,","));
-      }
-      if (StringUtils.isNotBlank(addedJars)) {
-        loader=Utilities.addToClassPath(loader,StringUtils.split(addedJars,","));
-      }
-      conf.setClassLoader(loader);
-      Thread.currentThread().setContextClassLoader(loader);
+  String auxJars=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEAUXJARS);
+  String addedJars=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEADDEDJARS);
+  try {
+    ClassLoader loader=conf.getClassLoader();
+    if (StringUtils.isNotBlank(auxJars)) {
+      loader=Utilities.addToClassPath(loader,StringUtils.split(auxJars,","));
     }
- catch (    Exception e) {
-      throw new HiveException(e.getMessage(),e);
+    if (StringUtils.isNotBlank(addedJars)) {
+      loader=Utilities.addToClassPath(loader,StringUtils.split(addedJars,","));
     }
+    conf.setClassLoader(loader);
+    Thread.currentThread().setContextClassLoader(loader);
+  }
+ catch (  Exception e) {
+    throw new HiveException(e.getMessage(),e);
   }
   MapredWork plan=Utilities.deserializeMapRedWork(pathData,conf);
   ExecDriver ed=new ExecDriver(plan,conf,isSilent);
   int ret=ed.execute(new DriverContext());
   if (ret != 0) {
-    System.out.println("Job Failed");
     System.exit(2);
   }
 }
