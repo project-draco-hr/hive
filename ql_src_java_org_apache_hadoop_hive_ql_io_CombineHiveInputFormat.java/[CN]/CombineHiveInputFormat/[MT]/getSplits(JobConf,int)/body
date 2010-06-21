@@ -9,8 +9,8 @@
   }
   ArrayList<InputSplit> result=new ArrayList<InputSplit>();
   Path[] paths=combine.getInputPathsShim(job);
+  Set<Path> poolSet=new HashSet<Path>();
   for (  Path path : paths) {
-    LOG.info("CombineHiveInputSplit creating pool for " + path);
     PartitionDesc part=getPartitionDescFromPath(pathToPartitionInfo,path);
     TableDesc tableDesc=part.getTableDesc();
     if ((tableDesc != null) && tableDesc.isNonNative()) {
@@ -46,7 +46,18 @@
     if (inputFormat instanceof SymlinkTextInputFormat) {
       return super.getSplits(job,numSplits);
     }
-    combine.createPool(job,new CombineFilter(path));
+    Path filterPath=path;
+    if (!path.getFileSystem(job).getFileStatus(path).isDir()) {
+      filterPath=path.getParent();
+    }
+    if (!poolSet.contains(filterPath)) {
+      LOG.info("CombineHiveInputSplit creating pool for " + path + "; using filter path "+ filterPath);
+      combine.createPool(job,new CombineFilter(filterPath));
+      poolSet.add(filterPath);
+    }
+ else {
+      LOG.info("CombineHiveInputSplit: pool is already created for " + path + "; using filter path "+ filterPath);
+    }
   }
   InputSplitShim[] iss=combine.getSplits(job,1);
   for (  InputSplitShim is : iss) {
