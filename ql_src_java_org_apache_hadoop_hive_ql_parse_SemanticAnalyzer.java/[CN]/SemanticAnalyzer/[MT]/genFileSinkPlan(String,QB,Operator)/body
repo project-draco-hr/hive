@@ -11,6 +11,7 @@
   SortBucketRSCtx rsCtx=new SortBucketRSCtx();
   DynamicPartitionCtx dpCtx=null;
   LoadTableDesc ltd=null;
+  boolean holdDDLTime=checkHoldDDLTime(qb);
 switch (dest_type.intValue()) {
 case QBMetaData.DEST_TABLE:
 {
@@ -21,6 +22,9 @@ case QBMetaData.DEST_TABLE:
       if (parts != null && parts.size() > 0) {
         if (partSpec == null || partSpec.size() == 0) {
           throw new SemanticException(ErrorMsg.NEED_PARTITION_ERROR.getMsg());
+        }
+        if (holdDDLTime) {
+          throw new SemanticException(ErrorMsg.HOLD_DDLTIME_ON_NONEXIST_PARTITIONS.getMsg());
         }
         dpCtx=qbm.getDPCtx(dest);
         if (dpCtx == null) {
@@ -62,6 +66,10 @@ case QBMetaData.DEST_TABLE:
       destTableId++;
       if (!isNonNativeTable) {
         ltd=new LoadTableDesc(queryTmpdir,ctx.getExternalTmpFileURI(dest_path.toUri()),table_desc,dpCtx);
+        if (holdDDLTime) {
+          LOG.info("this query will not update transient_lastDdlTime!");
+          ltd.setHoldDDLTime(true);
+        }
         loadTableWork.add(ltd);
       }
       if ((dpCtx == null || dpCtx.getNumDPCols() == 0) && !outputs.add(new WriteEntity(dest_tab))) {
@@ -84,6 +92,19 @@ case QBMetaData.DEST_PARTITION:
     currentTableId=destTableId;
     destTableId++;
     ltd=new LoadTableDesc(queryTmpdir,ctx.getExternalTmpFileURI(dest_path.toUri()),table_desc,dest_part.getSpec());
+    if (holdDDLTime) {
+      try {
+        Partition part=db.getPartition(dest_tab,dest_part.getSpec(),false);
+        if (part == null) {
+          throw new SemanticException(ErrorMsg.HOLD_DDLTIME_ON_NONEXIST_PARTITIONS.getMsg());
+        }
+      }
+ catch (      HiveException e) {
+        throw new SemanticException(e);
+      }
+      LOG.info("this query will not update transient_lastDdlTime!");
+      ltd.setHoldDDLTime(true);
+    }
     loadTableWork.add(ltd);
     if (!outputs.add(new WriteEntity(dest_part))) {
       throw new SemanticException(ErrorMsg.OUTPUT_SPECIFIED_MULTIPLE_TIMES.getMsg(dest_tab.getTableName() + "@" + dest_part.getName()));
