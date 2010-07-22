@@ -5,27 +5,22 @@
  else {
     cachedMap.clear();
   }
-  Iterator<byte[]> iter=rowResult.keySet().iterator();
-  byte[] columnFamily=hbaseColumnFamily.getBytes();
-  while (iter.hasNext()) {
-    byte[] columnKey=iter.next();
-    if (columnFamily.length > columnKey.length) {
-      continue;
-    }
-    if (0 == LazyUtils.compare(columnFamily,0,columnFamily.length,columnKey,0,columnFamily.length)) {
-      byte[] columnValue=rowResult.get(columnKey).getValue();
-      if (columnValue == null || columnValue.length == 0) {
+  NavigableMap<byte[],byte[]> familyMap=result.getFamilyMap(columnFamilyBytes);
+  if (familyMap != null) {
+    for (    Entry<byte[],byte[]> e : familyMap.entrySet()) {
+      if (e.getValue() == null || e.getValue().length == 0) {
         continue;
       }
-      LazyPrimitive<?,?> key=LazyFactory.createLazyPrimitiveClass((PrimitiveObjectInspector)((MapObjectInspector)getInspector()).getMapKeyObjectInspector());
+      LazyPrimitive<? extends ObjectInspector,? extends Writable> key=LazyFactory.createLazyPrimitiveClass((PrimitiveObjectInspector)getInspector().getMapKeyObjectInspector());
       ByteArrayRef keyRef=new ByteArrayRef();
-      keyRef.setData(columnKey);
-      key.init(keyRef,columnFamily.length,columnKey.length - columnFamily.length);
-      LazyObject value=LazyFactory.createLazyObject(((MapObjectInspector)getInspector()).getMapValueObjectInspector());
+      keyRef.setData(e.getKey());
+      key.init(keyRef,0,keyRef.getData().length);
+      LazyObject<?> value=LazyFactory.createLazyObject(getInspector().getMapValueObjectInspector());
       ByteArrayRef valueRef=new ByteArrayRef();
-      valueRef.setData(columnValue);
-      value.init(valueRef,0,columnValue.length);
+      valueRef.setData(e.getValue());
+      value.init(valueRef,0,valueRef.getData().length);
       cachedMap.put(key.getObject(),value.getObject());
     }
   }
+  setParsed(true);
 }

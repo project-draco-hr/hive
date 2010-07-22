@@ -1,11 +1,10 @@
 {
   HBaseSplit hbaseSplit=(HBaseSplit)split;
-  byte[] tableNameBytes;
-  String hbaseTableName=job.get(HBaseSerDe.HBASE_TABLE_NAME);
-  hbaseInputFormat.setHBaseTable(new HTable(new HBaseConfiguration(job),Bytes.toBytes(hbaseTableName)));
-  String columnMapping=hbaseSplit.getColumnsMapping();
-  List<String> columns=HBaseSerDe.parseColumnMapping(columnMapping);
-  List<Integer> readColIDs=ColumnProjectionUtils.getReadColumnIDs(job);
+  String hbaseTableName=jobConf.get(HBaseSerDe.HBASE_TABLE_NAME);
+  setHTable(new HTable(new HBaseConfiguration(jobConf),Bytes.toBytes(hbaseTableName)));
+  String hbaseColumnsMapping=jobConf.get(HBaseSerDe.HBASE_COLUMNS_MAPPING);
+  List<String> columns=HBaseSerDe.parseColumnMapping(hbaseColumnsMapping);
+  List<Integer> readColIDs=ColumnProjectionUtils.getReadColumnIDs(jobConf);
   if (columns.size() < readColIDs.size()) {
     throw new IOException("Cannot read more columns than the given table contains.");
   }
@@ -31,6 +30,53 @@
       }
     }
   }
-  hbaseInputFormat.setScanColumns(scanColumns.toArray(new byte[0][]));
-  return (RecordReader<K,V>)hbaseInputFormat.getRecordReader(hbaseSplit.getSplit(),job,reporter);
+  setScan(new Scan().addColumns(scanColumns.toArray(new byte[0][])));
+  org.apache.hadoop.hbase.mapreduce.TableSplit tableSplit=hbaseSplit.getSplit();
+  Job job=new Job(jobConf);
+  TaskAttemptContext tac=new TaskAttemptContext(job.getConfiguration(),new TaskAttemptID()){
+    @Override public void progress(){
+      reporter.progress();
+    }
+  }
+;
+  final org.apache.hadoop.mapreduce.RecordReader<ImmutableBytesWritable,Result> recordReader=createRecordReader(tableSplit,tac);
+  return new RecordReader<ImmutableBytesWritable,Result>(){
+    @Override public void close() throws IOException {
+      recordReader.close();
+    }
+    @Override public ImmutableBytesWritable createKey(){
+      return new ImmutableBytesWritable();
+    }
+    @Override public Result createValue(){
+      return new Result();
+    }
+    @Override public long getPos() throws IOException {
+      return 0;
+    }
+    @Override public float getProgress() throws IOException {
+      float progress=0.0F;
+      try {
+        progress=recordReader.getProgress();
+      }
+ catch (      InterruptedException e) {
+        throw new IOException(e);
+      }
+      return progress;
+    }
+    @Override public boolean next(    ImmutableBytesWritable rowKey,    Result value) throws IOException {
+      boolean next=false;
+      try {
+        next=recordReader.nextKeyValue();
+        if (next) {
+          rowKey.set(recordReader.getCurrentValue().getRow());
+          Writables.copyWritable(recordReader.getCurrentValue(),value);
+        }
+      }
+ catch (      InterruptedException e) {
+        throw new IOException(e);
+      }
+      return next;
+    }
+  }
+;
 }

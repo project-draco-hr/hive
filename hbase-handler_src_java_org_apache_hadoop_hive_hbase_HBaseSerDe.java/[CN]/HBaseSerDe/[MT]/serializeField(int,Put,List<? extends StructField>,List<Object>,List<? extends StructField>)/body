@@ -1,0 +1,53 @@
+{
+  String hbaseColumn=hbaseColumnNames.get(i);
+  ObjectInspector foi=fields.get(i).getFieldObjectInspector();
+  Object f=(list == null ? null : list.get(i));
+  if (f == null) {
+    return null;
+  }
+  if (hbaseColumn.endsWith(":")) {
+    MapObjectInspector moi=(MapObjectInspector)foi;
+    ObjectInspector koi=moi.getMapKeyObjectInspector();
+    ObjectInspector voi=moi.getMapValueObjectInspector();
+    Map<?,?> map=moi.getMap(f);
+    if (map == null) {
+      return null;
+    }
+ else {
+      for (      Map.Entry<?,?> entry : map.entrySet()) {
+        serializeStream.reset();
+        serialize(entry.getKey(),koi,3);
+        byte[] columnQualifier=new byte[serializeStream.getCount()];
+        System.arraycopy(serializeStream.getData(),0,columnQualifier,0,serializeStream.getCount());
+        serializeStream.reset();
+        boolean isNotNull=serialize(entry.getValue(),voi,3);
+        if (!isNotNull) {
+          continue;
+        }
+        byte[] value=new byte[serializeStream.getCount()];
+        System.arraycopy(serializeStream.getData(),0,value,0,serializeStream.getCount());
+        put.add(hbaseColumnNamesBytes.get(i),columnQualifier,value);
+      }
+    }
+  }
+ else {
+    serializeStream.reset();
+    boolean isNotNull;
+    if (!foi.getCategory().equals(Category.PRIMITIVE) && (declaredFields == null || declaredFields.get(i).getFieldObjectInspector().getCategory().equals(Category.PRIMITIVE) || useJSONSerialize)) {
+      isNotNull=serialize(SerDeUtils.getJSONString(f,foi),PrimitiveObjectInspectorFactory.javaStringObjectInspector,1);
+    }
+ else {
+      isNotNull=serialize(f,foi,1);
+    }
+    if (!isNotNull) {
+      return null;
+    }
+    byte[] key=new byte[serializeStream.getCount()];
+    System.arraycopy(serializeStream.getData(),0,key,0,serializeStream.getCount());
+    if (i == iKey) {
+      return key;
+    }
+    put.add(hbaseColumnNamesBytes.get(i),0,key);
+  }
+  return null;
+}

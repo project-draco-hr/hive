@@ -1,8 +1,20 @@
 {
   String hbaseTableName=jc.get(HBaseSerDe.HBASE_TABLE_NAME);
   jc.set(TableOutputFormat.OUTPUT_TABLE,hbaseTableName);
-  boolean walEnabled=HiveConf.getBoolVar(jc,HiveConf.ConfVars.HIVE_HBASE_WAL_ENABLED);
-  HTable table=new HTable(new HBaseConfiguration(jc),hbaseTableName);
+  final boolean walEnabled=HiveConf.getBoolVar(jc,HiveConf.ConfVars.HIVE_HBASE_WAL_ENABLED);
+  final HTable table=new HTable(new HBaseConfiguration(jc),hbaseTableName);
   table.setAutoFlush(false);
-  return new HiveHBaseRecordWriter(table,walEnabled);
+  return new RecordWriter(){
+    @Override public void close(    boolean abort) throws IOException {
+      if (!abort) {
+        table.flushCommits();
+      }
+    }
+    @Override public void write(    Writable w) throws IOException {
+      Put put=(Put)w;
+      put.setWriteToWAL(walEnabled);
+      table.put(put);
+    }
+  }
+;
 }
