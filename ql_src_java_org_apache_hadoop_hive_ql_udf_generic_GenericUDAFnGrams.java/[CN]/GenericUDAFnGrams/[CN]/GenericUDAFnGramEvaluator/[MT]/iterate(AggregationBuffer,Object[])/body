@@ -1,0 +1,46 @@
+{
+  assert(parameters.length == 3);
+  if (parameters[0] == null || parameters[1] == null || parameters[2] == null) {
+    return;
+  }
+  NGramAggBuf myagg=(NGramAggBuf)agg;
+  if (myagg.n == 0 || myagg.k == 0) {
+    myagg.n=PrimitiveObjectInspectorUtils.getInt(parameters[1],nOI);
+    myagg.k=PrimitiveObjectInspectorUtils.getInt(parameters[2],kOI);
+    if (myagg.n < 1) {
+      throw new HiveException(getClass().getSimpleName() + " needs 'n' to be at least 1, " + "but you supplied "+ myagg.n);
+    }
+    if (myagg.k < 1) {
+      throw new HiveException(getClass().getSimpleName() + " needs 'k' to be at least 1, " + "but you supplied "+ myagg.k);
+    }
+    if (parameters.length == 4) {
+      myagg.pf=PrimitiveObjectInspectorUtils.getInt(parameters[3],pOI);
+      if (myagg.pf < 1) {
+        throw new HiveException(getClass().getSimpleName() + " needs 'pf' to be at least 1, " + "but you supplied "+ myagg.pf);
+      }
+    }
+    if (myagg.pf * myagg.k < 1000) {
+      myagg.pf=1000 / myagg.k;
+    }
+  }
+  ArrayList outer=(ArrayList)outerInputOI.getList(parameters[0]);
+  if (innerInputOI != null) {
+    for (int i=0; i < outer.size(); i++) {
+      ArrayList inner=(ArrayList)innerInputOI.getList(outer.get(i));
+      ArrayList<String> words=new ArrayList<String>();
+      for (int j=0; j < inner.size(); j++) {
+        String word=PrimitiveObjectInspectorUtils.getString(inner.get(j),inputOI);
+        words.add(word);
+      }
+      processNgrams(myagg,words);
+    }
+  }
+ else {
+    ArrayList<String> words=new ArrayList<String>();
+    for (int i=0; i < outer.size(); i++) {
+      String word=PrimitiveObjectInspectorUtils.getString(outer.get(i),inputOI);
+      words.add(word);
+    }
+    processNgrams(myagg,words);
+  }
+}
