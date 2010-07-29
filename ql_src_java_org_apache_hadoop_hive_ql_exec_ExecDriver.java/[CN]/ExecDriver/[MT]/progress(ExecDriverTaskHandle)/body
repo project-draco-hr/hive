@@ -1,0 +1,65 @@
+{
+  JobClient jc=th.getJobClient();
+  RunningJob rj=th.getRunningJob();
+  String lastReport="";
+  SimpleDateFormat dateFormat=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS");
+  long reportTime=System.currentTimeMillis();
+  long maxReportInterval=60 * 1000;
+  boolean fatal=false;
+  StringBuilder errMsg=new StringBuilder();
+  long pullInterval=HiveConf.getLongVar(job,HiveConf.ConfVars.HIVECOUNTERSPULLINTERVAL);
+  boolean initializing=true;
+  while (!rj.isComplete()) {
+    try {
+      Thread.sleep(pullInterval);
+    }
+ catch (    InterruptedException e) {
+    }
+    if (initializing && ShimLoader.getHadoopShims().isJobPreparing(rj)) {
+      continue;
+    }
+ else {
+      initializing=false;
+    }
+    th.setRunningJob(jc.getJob(rj.getJobID()));
+    if (fatal) {
+      continue;
+    }
+    if (fatal=checkFatalErrors(th,errMsg)) {
+      success=false;
+      console.printError("[Fatal Error] " + errMsg.toString() + ". Killing the job.");
+      rj.killJob();
+      continue;
+    }
+    errMsg.setLength(0);
+    updateCounters(th);
+    String report=" " + getId() + " map = "+ mapProgress+ "%,  reduce = "+ reduceProgress+ "%";
+    if (!report.equals(lastReport) || System.currentTimeMillis() >= reportTime + maxReportInterval) {
+      String output=dateFormat.format(Calendar.getInstance().getTime()) + report;
+      SessionState ss=SessionState.get();
+      if (ss != null) {
+        ss.getHiveHistory().setTaskCounters(SessionState.get().getQueryId(),getId(),rj);
+        ss.getHiveHistory().setTaskProperty(SessionState.get().getQueryId(),getId(),Keys.TASK_HADOOP_PROGRESS,output);
+        ss.getHiveHistory().progressTask(SessionState.get().getQueryId(),this);
+        ss.getHiveHistory().logPlanProgress(queryPlan);
+      }
+      console.printInfo(output);
+      lastReport=report;
+      reportTime=System.currentTimeMillis();
+    }
+  }
+  if (!fatal && (fatal=checkFatalErrors(th,errMsg))) {
+    console.printError("[Fatal Error] " + errMsg.toString());
+    success=false;
+  }
+ else {
+    success=rj.isSuccessful();
+  }
+  setDone();
+  th.setRunningJob(jc.getJob(rj.getJobID()));
+  updateCounters(th);
+  SessionState ss=SessionState.get();
+  if (ss != null) {
+    ss.getHiveHistory().logPlanProgress(queryPlan);
+  }
+}

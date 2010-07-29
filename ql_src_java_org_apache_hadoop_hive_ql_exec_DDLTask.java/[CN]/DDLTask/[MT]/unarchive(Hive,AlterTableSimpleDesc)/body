@@ -17,14 +17,9 @@
   if (!isArchived(p)) {
     Path location=new Path(p.getLocation());
     Path leftOverArchiveDir=new Path(location.getParent(),location.getName() + INTERMEDIATE_ARCHIVED_DIR_SUFFIX);
-    try {
-      if (pathExists(location.getFileSystem(conf),leftOverArchiveDir)) {
-        console.printInfo("Deleting " + leftOverArchiveDir + " left over "+ "from a previous unarchiving operation");
-        deleteDir(leftOverArchiveDir);
-      }
-    }
- catch (    IOException e) {
-      throw new HiveException(e);
+    if (pathExists(leftOverArchiveDir)) {
+      console.printInfo("Deleting " + leftOverArchiveDir + " left over "+ "from a previous unarchiving operation");
+      deleteDir(leftOverArchiveDir);
     }
     throw new HiveException("Specified partition is not archived");
   }
@@ -32,7 +27,7 @@
   Path sourceDir=new Path(p.getLocation());
   Path intermediateArchiveDir=new Path(originalLocation.getParent(),originalLocation.getName() + INTERMEDIATE_ARCHIVED_DIR_SUFFIX);
   Path intermediateExtractedDir=new Path(originalLocation.getParent(),originalLocation.getName() + INTERMEDIATE_EXTRACTED_DIR_SUFFIX);
-  Path tmpDir=new Path(driverContext.getCtx().getMRScratchDir());
+  Path tmpDir=new Path(driverContext.getCtx().getExternalTmpFileURI(originalLocation.toUri()));
   FileSystem fs=null;
   try {
     fs=tmpDir.getFileSystem(conf);
@@ -53,7 +48,7 @@
   if (!"har".equals(sourceDir.toUri().getScheme())) {
     throw new HiveException("Location should refer to a HAR");
   }
-  if (!pathExists(fs,intermediateExtractedDir) && !pathExists(fs,intermediateArchiveDir)) {
+  if (!pathExists(intermediateExtractedDir) && !pathExists(intermediateArchiveDir)) {
     try {
       String copySource=(new Path(sourceDir,"*")).toString();
       String copyDest=tmpDir.toString();
@@ -83,7 +78,7 @@
       throw new HiveException(e);
     }
   }
-  if (!pathExists(fs,intermediateArchiveDir)) {
+  if (!pathExists(intermediateArchiveDir)) {
     try {
       console.printInfo("Moving " + originalLocation + " to "+ intermediateArchiveDir);
       fs.rename(originalLocation,intermediateArchiveDir);
@@ -95,7 +90,7 @@
  else {
     console.printInfo(intermediateArchiveDir + " already exists. " + "Assuming it contains the archived version of the partition");
   }
-  if (!pathExists(fs,originalLocation)) {
+  if (!pathExists(originalLocation)) {
     try {
       console.printInfo("Moving " + intermediateExtractedDir + " to "+ originalLocation);
       fs.rename(intermediateExtractedDir,originalLocation);

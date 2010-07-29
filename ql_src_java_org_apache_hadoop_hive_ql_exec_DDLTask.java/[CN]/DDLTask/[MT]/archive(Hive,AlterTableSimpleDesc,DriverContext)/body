@@ -14,14 +14,9 @@
   if (isArchived(p)) {
     Path originalDir=new Path(getOriginalLocation(p));
     Path leftOverIntermediateOriginal=new Path(originalDir.getParent(),originalDir.getName() + INTERMEDIATE_ORIGINAL_DIR_SUFFIX);
-    try {
-      if (pathExists(leftOverIntermediateOriginal.getFileSystem(conf),leftOverIntermediateOriginal)) {
-        console.printInfo("Deleting " + leftOverIntermediateOriginal + " left over from a previous archiving operation");
-        deleteDir(leftOverIntermediateOriginal);
-      }
-    }
- catch (    IOException e) {
-      throw new HiveException(e);
+    if (pathExists(leftOverIntermediateOriginal)) {
+      console.printInfo("Deleting " + leftOverIntermediateOriginal + " left over from a previous archiving operation");
+      deleteDir(leftOverIntermediateOriginal);
     }
     throw new HiveException("Specified partition is already archived");
   }
@@ -36,8 +31,8 @@
  catch (  IOException e) {
     throw new HiveException(e);
   }
-  if (!pathExists(fs,intermediateArchivedDir) && !pathExists(fs,intermediateOriginalDir)) {
-    Path tmpDir=new Path(driverContext.getCtx().getMRScratchDir(),"partlevel");
+  if (!pathExists(intermediateArchivedDir) && !pathExists(intermediateOriginalDir)) {
+    Path tmpDir=new Path(driverContext.getCtx().getExternalTmpFileURI(originalDir.toUri()),"partlevel");
     console.printInfo("Creating " + archiveName + " for "+ originalDir.toString());
     console.printInfo("in " + tmpDir);
     console.printInfo("Please wait... (this may take a while)");
@@ -54,7 +49,7 @@
     }
     try {
       console.printInfo("Moving " + tmpDir + " to "+ intermediateArchivedDir);
-      if (pathExists(fs,intermediateArchivedDir)) {
+      if (pathExists(intermediateArchivedDir)) {
         throw new HiveException("The intermediate archive directory already exists.");
       }
       fs.rename(tmpDir,intermediateArchivedDir);
@@ -64,18 +59,18 @@
     }
   }
  else {
-    if (pathExists(fs,intermediateArchivedDir)) {
+    if (pathExists(intermediateArchivedDir)) {
       console.printInfo("Intermediate archive directory " + intermediateArchivedDir + " already exists. Assuming it contains an archived version of the partition");
     }
   }
-  if (!pathExists(fs,intermediateOriginalDir)) {
+  if (!pathExists(intermediateOriginalDir)) {
     console.printInfo("Moving " + originalDir + " to "+ intermediateOriginalDir);
     moveDir(fs,originalDir,intermediateOriginalDir);
   }
  else {
     console.printInfo(intermediateOriginalDir + " already exists. " + "Assuming it contains the original files in the partition");
   }
-  if (!pathExists(fs,originalDir)) {
+  if (!pathExists(originalDir)) {
     console.printInfo("Moving " + intermediateArchivedDir + " to "+ originalDir);
     moveDir(fs,intermediateArchivedDir,originalDir);
   }

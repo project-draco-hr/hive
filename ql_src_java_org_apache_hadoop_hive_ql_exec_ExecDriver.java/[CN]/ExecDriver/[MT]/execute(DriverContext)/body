@@ -1,43 +1,27 @@
 {
   success=true;
-  try {
-    setNumberOfReducers();
-  }
- catch (  IOException e) {
-    String statusMesg="IOException while accessing HDFS to estimate the number of reducers: " + e.getMessage();
-    console.printError(statusMesg,"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
-    return 1;
-  }
   String invalidReason=work.isInvalid();
   if (invalidReason != null) {
     throw new RuntimeException("Plan invalid, Reason: " + invalidReason);
   }
-  String hiveScratchDir;
-  if (driverContext.getCtx() != null && driverContext.getCtx().getQueryPath() != null) {
-    hiveScratchDir=driverContext.getCtx().getQueryPath().toString();
-  }
- else {
-    hiveScratchDir=HiveConf.getVar(job,HiveConf.ConfVars.SCRATCHDIR);
-  }
-  String emptyScratchDirStr=null;
-  Path emptyScratchDir=null;
-  int numTries=3;
-  while (numTries > 0) {
-    emptyScratchDirStr=hiveScratchDir + File.separator + Utilities.randGen.nextInt();
+  Context ctx=driverContext.getCtx();
+  boolean ctxCreated=false;
+  String emptyScratchDirStr;
+  Path emptyScratchDir;
+  try {
+    if (ctx == null) {
+      ctx=new Context(job);
+      ctxCreated=true;
+    }
+    emptyScratchDirStr=ctx.getMRTmpFileURI();
     emptyScratchDir=new Path(emptyScratchDirStr);
-    try {
-      FileSystem fs=emptyScratchDir.getFileSystem(job);
-      fs.mkdirs(emptyScratchDir);
-      break;
-    }
- catch (    Exception e) {
-      if (numTries > 0) {
-        numTries--;
-      }
- else {
-        throw new RuntimeException("Failed to make dir " + emptyScratchDir.toString() + " : "+ e.getMessage());
-      }
-    }
+    FileSystem fs=emptyScratchDir.getFileSystem(job);
+    fs.mkdirs(emptyScratchDir);
+  }
+ catch (  IOException e) {
+    e.printStackTrace();
+    console.printError("Error launching map-reduce job","\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
+    return 5;
   }
   ShimLoader.getHadoopShims().setNullOutputFormat(job);
   job.setMapperClass(ExecMapper.class);
@@ -94,11 +78,11 @@
   RunningJob rj=null, orig_rj=null;
   boolean noName=StringUtils.isEmpty(HiveConf.getVar(job,HiveConf.ConfVars.HADOOPJOBNAME));
   if (noName) {
-    HiveConf.setVar(job,HiveConf.ConfVars.HADOOPJOBNAME,"JOB" + randGen.nextInt());
+    HiveConf.setVar(job,HiveConf.ConfVars.HADOOPJOBNAME,"JOB" + Utilities.randGen.nextInt());
   }
   try {
     addInputPaths(job,work,emptyScratchDirStr);
-    Utilities.setMapRedWork(job,work,hiveScratchDir);
+    Utilities.setMapRedWork(job,work,ctx.getMRTmpFileURI());
     String pwd=HiveConf.getVar(job,HiveConf.ConfVars.METASTOREPWD);
     if (pwd != null) {
       HiveConf.setVar(job,HiveConf.ConfVars.METASTOREPWD,"HIVE");
@@ -110,7 +94,7 @@
       HiveConf.setVar(job,HiveConf.ConfVars.METASTOREPWD,pwd);
     }
     runningJobKillURIs.put(rj.getJobID(),rj.getTrackingURL() + "&action=kill");
-    TaskHandle th=new ExecDriverTaskHandle(jc,rj);
+    ExecDriverTaskHandle th=new ExecDriverTaskHandle(jc,rj);
     jobInfo(rj);
     progress(th);
     if (rj == null) {
@@ -144,7 +128,7 @@
  finally {
     Utilities.clearMapRedWork(job);
     try {
-      emptyScratchDir.getFileSystem(job).delete(emptyScratchDir,true);
+      if (ctxCreated)       ctx.clear();
       if (returnVal != 0 && rj != null) {
         rj.killJob();
       }

@@ -1,0 +1,34 @@
+{
+  if (ctx.getExplain())   return;
+  if (ctx.isLocalOnlyExecutionMode() || !conf.getBoolVar(HiveConf.ConfVars.LOCALMODEAUTO))   return;
+  final Context lCtx=ctx;
+  PathFilter p=new PathFilter(){
+    public boolean accept(    Path file){
+      return !lCtx.isMRTmpFileURI(file.toUri().getPath());
+    }
+  }
+;
+  List<ExecDriver> mrtasks=Utilities.getMRTasks(rootTasks);
+  boolean hasNonLocalJob=false;
+  for (  ExecDriver mrtask : mrtasks) {
+    try {
+      ContentSummary inputSummary=Utilities.getInputSummary(ctx,(MapredWork)mrtask.getWork(),p);
+      int numReducers=getNumberOfReducers(mrtask.getWork(),conf);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Task: " + mrtask.getId() + ", Summary: "+ inputSummary.getLength()+ ","+ inputSummary.getFileCount()+ ","+ numReducers);
+      }
+      if (MapRedTask.isEligibleForLocalMode(conf,inputSummary,numReducers) != null) {
+        hasNonLocalJob=true;
+        break;
+      }
+    }
+ catch (    IOException e) {
+      throw new SemanticException(e);
+    }
+  }
+  if (!hasNonLocalJob) {
+    ctx.setOriginalTracker(conf.getVar(HiveConf.ConfVars.HADOOPJT));
+    conf.setVar(HiveConf.ConfVars.HADOOPJT,"local");
+    console.printInfo("Automatically selecting local only mode for query");
+  }
+}

@@ -1,9 +1,36 @@
 {
+  Context ctx=driverContext.getCtx();
+  boolean ctxCreated=false;
   try {
+    if (ctx == null) {
+      ctx=new Context(conf);
+      ctxCreated=true;
+    }
+    setNumberOfReducers();
+    if (!ctx.isLocalOnlyExecutionMode() && conf.getBoolVar(HiveConf.ConfVars.LOCALMODEAUTO)) {
+      if (inputSummary == null)       inputSummary=Utilities.getInputSummary(driverContext.getCtx(),work,null);
+      int numReducers=work.getNumReduceTasks();
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Task: " + getId() + ", Summary: "+ inputSummary.getLength()+ ","+ inputSummary.getFileCount()+ ","+ numReducers);
+      }
+      String reason=MapRedTask.isEligibleForLocalMode(conf,inputSummary,numReducers);
+      if (reason == null) {
+        ctx.setOriginalTracker(conf.getVar(HiveConf.ConfVars.HADOOPJT));
+        conf.setVar(HiveConf.ConfVars.HADOOPJT,"local");
+        console.printInfo("Selecting local mode for task: " + getId());
+      }
+ else {
+        console.printInfo("Cannot run job locally: " + reason);
+      }
+    }
+    runningViaChild="local".equals(conf.getVar(HiveConf.ConfVars.HADOOPJT)) || conf.getBoolVar(HiveConf.ConfVars.SUBMITVIACHILD);
+    if (!runningViaChild) {
+      return super.execute(driverContext);
+    }
     String hadoopExec=conf.getVar(HiveConf.ConfVars.HADOOPBIN);
     String hiveJar=conf.getJar();
     String libJarsOption;
-    String addedJars=ExecDriver.getResourceFiles(conf,SessionState.ResourceType.JAR);
+    String addedJars=getResourceFiles(conf,SessionState.ResourceType.JAR);
     conf.setVar(ConfVars.HIVEADDEDJARS,addedJars);
     String auxJars=conf.getAuxJars();
     if (StringUtils.isEmpty(addedJars)) {
@@ -22,23 +49,11 @@
         libJarsOption=" -libjars " + addedJars + ","+ auxJars+ " ";
       }
     }
-    String hiveConfArgs=ExecDriver.generateCmdLine(conf);
-    String hiveScratchDir;
-    if (driverContext.getCtx() != null && driverContext.getCtx().getQueryPath() != null)     hiveScratchDir=driverContext.getCtx().getQueryPath().toString();
- else     hiveScratchDir=conf.getVar(HiveConf.ConfVars.SCRATCHDIR);
-    File scratchDir=new File(hiveScratchDir);
-    if (!scratchDir.exists()) {
-      LOG.info("Local scratch directory " + scratchDir.getPath() + " not found. Attempting to create.");
-      if (!scratchDir.mkdirs()) {
-        if (!scratchDir.exists()) {
-          throw new TaskExecutionException("Cannot create scratch directory " + "\"" + scratchDir.getPath() + "\". "+ "To configure a different directory, "+ "set the configuration "+ "\"hive.exec.scratchdir\" "+ "in the session, or permanently by modifying the "+ "appropriate hive configuration file such as hive-site.xml.");
-        }
-      }
-    }
+    String hiveConfArgs=generateCmdLine(conf);
+    Path planPath=new Path(ctx.getLocalTmpFileURI(),"plan.xml");
+    OutputStream out=FileSystem.getLocal(conf).create(planPath);
     MapredWork plan=getWork();
-    File planFile=File.createTempFile("plan",".xml",scratchDir);
-    LOG.info("Generating plan file " + planFile.toString());
-    FileOutputStream out=new FileOutputStream(planFile);
+    LOG.info("Generating plan file " + planPath.toString());
     Utilities.serializeMapRedWork(plan,out);
     String isSilent="true".equalsIgnoreCase(System.getProperty("test.silent")) ? "-nolog" : "";
     String jarCmd;
@@ -48,8 +63,8 @@
  else {
       jarCmd=hiveJar + " " + ExecDriver.class.getName()+ libJarsOption;
     }
-    String cmdLine=hadoopExec + " jar " + jarCmd+ " -plan "+ planFile.toString()+ " "+ isSilent+ " "+ hiveConfArgs;
-    String files=ExecDriver.getResourceFiles(conf,SessionState.ResourceType.FILE);
+    String cmdLine=hadoopExec + " jar " + jarCmd+ " -plan "+ planPath.toString()+ " "+ isSilent+ " "+ hiveConfArgs;
+    String files=getResourceFiles(conf,SessionState.ResourceType.FILE);
     if (!files.isEmpty()) {
       cmdLine=cmdLine + " -files " + files;
     }
@@ -104,5 +119,14 @@
     e.printStackTrace();
     LOG.error("Exception: " + e.getMessage());
     return (1);
+  }
+ finally {
+    try {
+      ctx.restoreOriginalTracker();
+      if (ctxCreated)       ctx.clear();
+    }
+ catch (    Exception e) {
+      LOG.error("Exception: " + e.getMessage());
+    }
   }
 }
