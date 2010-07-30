@@ -5,12 +5,30 @@
   cppCtx.getPrunedColLists().put((Operator<? extends Serializable>)nd,cols);
   ArrayList<Integer> needed_columns=new ArrayList<Integer>();
   RowResolver inputRR=cppCtx.getOpToParseCtxMap().get(scanOp).getRR();
+  TableScanDesc desc=scanOp.getConf();
+  List<VirtualColumn> virtualCols=desc.getVirtualCols();
+  List<VirtualColumn> newVirtualCols=new ArrayList<VirtualColumn>();
   for (int i=0; i < cols.size(); i++) {
+    String[] tabCol=inputRR.reverseLookup(cols.get(i));
+    if (tabCol == null) {
+      continue;
+    }
+    ColumnInfo colInfo=inputRR.get(tabCol[0],tabCol[1]);
+    if (colInfo.getIsVirtualCol()) {
+      for (int j=0; j < virtualCols.size(); j++) {
+        VirtualColumn vc=virtualCols.get(j);
+        if (vc.getName().equals(colInfo.getInternalName())) {
+          newVirtualCols.add(vc);
+        }
+      }
+      continue;
+    }
     int position=inputRR.getPosition(cols.get(i));
     if (position >= 0) {
       needed_columns.add(position);
     }
   }
+  desc.setVirtualCols(newVirtualCols);
   scanOp.setNeededColumnIDs(needed_columns);
   return null;
 }

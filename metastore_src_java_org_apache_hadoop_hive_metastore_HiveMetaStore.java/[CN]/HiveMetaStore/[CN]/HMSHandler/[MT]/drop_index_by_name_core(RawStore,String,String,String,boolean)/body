@@ -1,0 +1,37 @@
+{
+  boolean success=false;
+  Path tblPath=null;
+  try {
+    ms.openTransaction();
+    Index index=get_index_by_name(dbName,tblName,indexName);
+    if (index == null) {
+      throw new NoSuchObjectException(indexName + " doesn't exist");
+    }
+    ms.dropIndex(dbName,tblName,indexName);
+    String idxTblName=index.getIndexTableName();
+    if (idxTblName != null) {
+      Table tbl=null;
+      tbl=this.get_table(dbName,idxTblName);
+      if (tbl.getSd() == null) {
+        throw new MetaException("Table metadata is corrupted");
+      }
+      if (tbl.getSd().getLocation() != null) {
+        tblPath=new Path(tbl.getSd().getLocation());
+      }
+      if (!ms.dropTable(dbName,idxTblName)) {
+        throw new MetaException("Unable to drop underlying data table " + idxTblName + " for index "+ idxTblName);
+      }
+    }
+    success=ms.commitTransaction();
+  }
+  finally {
+    if (!success) {
+      ms.rollbackTransaction();
+      return false;
+    }
+ else     if (deleteData && tblPath != null) {
+      wh.deleteDir(tblPath,true);
+    }
+  }
+  return true;
+}

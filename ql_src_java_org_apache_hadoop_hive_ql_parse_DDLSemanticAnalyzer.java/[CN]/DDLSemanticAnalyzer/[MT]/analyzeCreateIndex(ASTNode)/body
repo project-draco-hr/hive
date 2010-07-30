@@ -1,0 +1,60 @@
+{
+  String indexName=unescapeIdentifier(ast.getChild(0).getText());
+  String typeName=unescapeSQLString(ast.getChild(1).getText());
+  String tableName=unescapeIdentifier(ast.getChild(2).getText());
+  List<String> indexedCols=getColumnNames((ASTNode)ast.getChild(3));
+  IndexType indexType=HiveIndex.getIndexType(typeName);
+  if (indexType != null) {
+    typeName=indexType.getHandlerClsName();
+  }
+ else {
+    try {
+      Class.forName(typeName);
+    }
+ catch (    Exception e) {
+      throw new SemanticException("class name provided for index handler not found.",e);
+    }
+  }
+  String indexTableName=null;
+  boolean deferredRebuild=false;
+  String location=null;
+  Map<String,String> idxProps=null;
+  RowFormatParams rowFormatParams=new RowFormatParams();
+  StorageFormat storageFormat=new StorageFormat();
+  AnalyzeCreateCommonVars shared=new AnalyzeCreateCommonVars();
+  for (int idx=4; idx < ast.getChildCount(); idx++) {
+    ASTNode child=(ASTNode)ast.getChild(idx);
+    if (storageFormat.fillStorageFormat(child,shared)) {
+      continue;
+    }
+switch (child.getToken().getType()) {
+case HiveParser.TOK_TABLEROWFORMAT:
+      rowFormatParams.analyzeRowFormat(shared,child);
+    break;
+case HiveParser.TOK_CREATEINDEX_INDEXTBLNAME:
+  ASTNode ch=(ASTNode)child.getChild(0);
+indexTableName=unescapeIdentifier(ch.getText());
+break;
+case HiveParser.TOK_DEFERRED_REBUILDINDEX:
+deferredRebuild=true;
+break;
+case HiveParser.TOK_TABLELOCATION:
+location=unescapeSQLString(child.getChild(0).getText());
+break;
+case HiveParser.TOK_TABLEPROPERTIES:
+idxProps=DDLSemanticAnalyzer.getProps((ASTNode)child.getChild(0));
+break;
+case HiveParser.TOK_TABLESERIALIZER:
+child=(ASTNode)child.getChild(0);
+shared.serde=unescapeSQLString(child.getChild(0).getText());
+if (child.getChildCount() == 2) {
+readProps((ASTNode)(child.getChild(1).getChild(0)),shared.serdeProps);
+}
+break;
+}
+}
+storageFormat.fillDefaultStorageFormat(shared);
+CreateIndexDesc crtIndexDesc=new CreateIndexDesc(tableName,indexName,indexedCols,indexTableName,deferredRebuild,storageFormat.inputFormat,storageFormat.outputFormat,storageFormat.storageHandler,typeName,location,idxProps,shared.serde,shared.serdeProps,rowFormatParams.collItemDelim,rowFormatParams.fieldDelim,rowFormatParams.fieldEscape,rowFormatParams.lineDelim,rowFormatParams.mapKeyDelim);
+Task<?> createIndex=TaskFactory.get(new DDLWork(crtIndexDesc),conf);
+rootTasks.add(createIndex);
+}

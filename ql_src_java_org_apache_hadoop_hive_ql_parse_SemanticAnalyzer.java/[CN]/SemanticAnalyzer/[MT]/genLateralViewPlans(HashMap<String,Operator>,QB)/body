@@ -6,7 +6,15 @@
     if (lateralViews != null) {
       Operator op=e.getValue();
       for (      ASTNode lateralViewTree : aliasToLateralViews.get(alias)) {
-        RowResolver lvForwardRR=opParseCtx.get(op).getRR();
+        RowResolver lvForwardRR=new RowResolver();
+        RowResolver source=opParseCtx.get(op).getRR();
+        for (        ColumnInfo col : source.getColumnInfos()) {
+          if (col.getIsVirtualCol() && col.isHiddenVirtualCol()) {
+            continue;
+          }
+          String[] tabCol=source.reverseLookup(col.getInternalName());
+          lvForwardRR.put(tabCol[0],tabCol[1],col);
+        }
         Operator lvForward=putOpInsertMap(OperatorFactory.getAndMakeChild(new LateralViewForwardDesc(),new RowSchema(lvForwardRR.getColumnInfos()),op),lvForwardRR);
         RowResolver allPathRR=opParseCtx.get(lvForward).getRR();
         Operator allPath=putOpInsertMap(OperatorFactory.getAndMakeChild(new SelectDesc(true),new RowSchema(allPathRR.getColumnInfos()),lvForward),allPathRR);
@@ -22,7 +30,7 @@
         for (        ColumnInfo c : allPathRR.getColumnInfos()) {
           String internalName=getColumnInternalName(i);
           i++;
-          colExprMap.put(internalName,new ExprNodeColumnDesc(c.getType(),c.getInternalName(),c.getTabAlias(),c.getIsPartitionCol()));
+          colExprMap.put(internalName,new ExprNodeColumnDesc(c.getType(),c.getInternalName(),c.getTabAlias(),c.getIsVirtualCol()));
         }
         Operator lateralViewJoin=putOpInsertMap(OperatorFactory.getAndMakeChild(new LateralViewJoinDesc(outputInternalColNames),new RowSchema(lateralViewRR.getColumnInfos()),allPath,udtfPath),lateralViewRR);
         lateralViewJoin.setColumnExprMap(colExprMap);

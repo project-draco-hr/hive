@@ -1,0 +1,33 @@
+{
+  String l=line.toString();
+  byte[] bytes=l.getBytes();
+  int firstEnd=0;
+  int i=0;
+  for (int index=0; index < bytes.length; index++) {
+    if (bytes[index] == LazySimpleSerDe.DefaultSeparators[0]) {
+      i++;
+      firstEnd=index;
+    }
+  }
+  if (i > 1) {
+    throw new HiveException("Bad index file row (index file should only contain two columns: bucket_file_name and offset lists.) ." + line.toString());
+  }
+  String bucketFileName=new String(bytes,0,firstEnd);
+  IBucket bucket=buckets.get(bucketFileName);
+  if (bucket == null) {
+    bucket=new IBucket(bucketFileName);
+    buckets.put(bucketFileName,bucket);
+  }
+  int currentStart=firstEnd + 1;
+  int currentEnd=firstEnd + 1;
+  for (; currentEnd < bytes.length; currentEnd++) {
+    if (bytes[currentEnd] == LazySimpleSerDe.DefaultSeparators[1]) {
+      String one_offset=new String(bytes,currentStart,currentEnd - currentStart);
+      Long offset=Long.parseLong(one_offset);
+      bucket.getOffsets().add(offset);
+      currentStart=currentEnd + 1;
+    }
+  }
+  String one_offset=new String(bytes,currentStart,currentEnd - currentStart);
+  bucket.getOffsets().add(Long.parseLong(one_offset));
+}

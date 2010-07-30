@@ -1,0 +1,50 @@
+{
+  boolean success=false, indexTableCreated=false;
+  try {
+    ms.openTransaction();
+    Index old_index=null;
+    try {
+      old_index=get_index_by_name(index.getDbName(),index.getOrigTableName(),index.getIndexName());
+    }
+ catch (    Exception e) {
+    }
+    if (old_index != null) {
+      throw new AlreadyExistsException("Index already exists:" + index);
+    }
+    Table origTbl=ms.getTable(index.getDbName(),index.getOrigTableName());
+    if (origTbl == null) {
+      throw new InvalidObjectException("Unable to add index because database or the orginal table do not exist");
+    }
+    long time=System.currentTimeMillis() / 1000;
+    Table indexTbl=indexTable;
+    if (indexTbl != null) {
+      try {
+        indexTbl=ms.getTable(index.getDbName(),index.getIndexTableName());
+      }
+ catch (      Exception e) {
+      }
+      if (indexTbl != null) {
+        throw new InvalidObjectException("Unable to add index because index table already exists");
+      }
+      this.create_table(indexTable);
+      indexTableCreated=true;
+    }
+    index.setCreateTime((int)time);
+    index.putToParameters(Constants.DDL_TIME,Long.toString(time));
+    ms.addIndex(index);
+    success=ms.commitTransaction();
+    return index;
+  }
+  finally {
+    if (!success) {
+      if (indexTableCreated) {
+        try {
+          this.drop_table(index.getDbName(),index.getIndexTableName(),false);
+        }
+ catch (        Exception e) {
+        }
+      }
+      ms.rollbackTransaction();
+    }
+  }
+}

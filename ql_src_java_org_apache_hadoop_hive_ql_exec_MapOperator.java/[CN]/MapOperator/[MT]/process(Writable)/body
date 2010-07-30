@@ -1,11 +1,17 @@
 {
   Object row=null;
   try {
-    if (!isPartitioned) {
-      row=deserializer.deserialize(value);
+    if (this.hasVC) {
+      this.rowWithPartAndVC[0]=deserializer.deserialize(value);
+      int vcPos=isPartitioned ? 2 : 1;
+      populateVirtualColumnValues();
+      this.rowWithPartAndVC[vcPos]=this.vcValues;
+    }
+ else     if (!isPartitioned) {
+      row=deserializer.deserialize((Writable)value);
     }
  else {
-      rowWithPart[0]=deserializer.deserialize(value);
+      rowWithPart[0]=deserializer.deserialize((Writable)value);
     }
   }
  catch (  Exception e) {
@@ -20,7 +26,10 @@
     throw new HiveException("Hive Runtime Error while processing writable " + rawRowString,e);
   }
   try {
-    if (!isPartitioned) {
+    if (this.hasVC) {
+      forward(this.rowWithPartAndVC,this.rowObjectInspector);
+    }
+ else     if (!isPartitioned) {
       forward(row,rowObjectInspector);
     }
  else {
@@ -30,7 +39,10 @@
  catch (  Exception e) {
     String rowString;
     try {
-      if (!isPartitioned) {
+      if (this.hasVC) {
+        rowString=SerDeUtils.getJSONString(rowWithPartAndVC,rowObjectInspector);
+      }
+ else       if (!isPartitioned) {
         rowString=SerDeUtils.getJSONString(row,rowObjectInspector);
       }
  else {
