@@ -1,3 +1,63 @@
 {
-  throw new SQLException("Method not supported");
+  final List<String> tablesstr;
+  final List<JdbcTable> resultTables=new ArrayList();
+  final String resultCatalog;
+  if (catalog == null) {
+    resultCatalog="default";
+  }
+ else {
+    resultCatalog=catalog;
+  }
+  String regtableNamePattern=convertPattern(tableNamePattern);
+  try {
+    tablesstr=client.get_tables(resultCatalog,"*");
+    for (    String tablestr : tablesstr) {
+      if (tablestr.matches(regtableNamePattern)) {
+        Table tbl=client.get_table(resultCatalog,tablestr);
+        if (types == null) {
+          resultTables.add(new JdbcTable(resultCatalog,tbl.getTableName(),tbl.getTableType(),tbl.getParameters().get("comment")));
+        }
+ else {
+          String tableType=toJdbcTableType(tbl.getTableType());
+          for (          String type : types) {
+            if (type.equalsIgnoreCase(tableType)) {
+              resultTables.add(new JdbcTable(resultCatalog,tbl.getTableName(),tbl.getTableType(),tbl.getParameters().get("comment")));
+              break;
+            }
+          }
+        }
+      }
+    }
+    Collections.sort(resultTables,new GetTablesComparator());
+  }
+ catch (  Exception e) {
+    throw new SQLException(e);
+  }
+  ResultSet result=new HiveMetaDataResultSet<JdbcTable>(Arrays.asList("TABLE_CAT","TABLE_SCHEM","TABLE_NAME","TABLE_TYPE","REMARKS"),Arrays.asList("STRING","STRING","STRING","STRING","STRING"),resultTables){
+    private int cnt=0;
+    public boolean next() throws SQLException {
+      if (cnt < data.size()) {
+        List<Object> a=new ArrayList<Object>(5);
+        JdbcTable table=data.get(cnt);
+        a.add(table.getTableCatalog());
+        a.add(null);
+        a.add(table.getTableName());
+        try {
+          a.add(table.getSqlTableType());
+        }
+ catch (        Exception e) {
+          throw new SQLException(e);
+        }
+        a.add(table.getComment());
+        row=a;
+        cnt++;
+        return true;
+      }
+ else {
+        return false;
+      }
+    }
+  }
+;
+  return result;
 }

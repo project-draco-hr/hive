@@ -1,3 +1,65 @@
 {
-  throw new SQLException("Method not supported");
+  List<JdbcColumn> columns=new ArrayList<JdbcColumn>();
+  try {
+    if (catalog == null) {
+      catalog="default";
+    }
+    String regtableNamePattern=convertPattern(tableNamePattern);
+    String regcolumnNamePattern=convertPattern(columnNamePattern);
+    List<String> tables=client.get_tables(catalog,"*");
+    for (    String table : tables) {
+      if (table.matches(regtableNamePattern)) {
+        List<FieldSchema> fields=client.get_fields(catalog,table);
+        int ordinalPos=1;
+        for (        FieldSchema field : fields) {
+          if (field.getName().matches(regcolumnNamePattern)) {
+            columns.add(new JdbcColumn(field.getName(),table,catalog,field.getType(),field.getComment(),ordinalPos));
+            ordinalPos++;
+          }
+        }
+      }
+    }
+    Collections.sort(columns,new GetColumnsComparator());
+    return new HiveMetaDataResultSet<JdbcColumn>(Arrays.asList("TABLE_CAT","TABLE_SCHEM","TABLE_NAME","COLUMN_NAME","DATA_TYPE","TYPE_NAME","COLUMN_SIZE","BUFFER_LENGTH","DECIMAL_DIGITS","NUM_PREC_RADIX","NULLABLE","REMARKS","COLUMN_DEF","SQL_DATA_TYPE","SQL_DATETIME_SUB","CHAR_OCTET_LENGTH","ORDINAL_POSITION","IS_NULLABLE","SCOPE_CATLOG","SCOPE_SCHEMA","SCOPE_TABLE","SOURCE_DATA_TYPE"),Arrays.asList("STRING","STRING","STRING","STRING","I32","STRING","I32","I32","I32","I32","I32","STRING","STRING","I32","I32","I32","I32","STRING","STRING","STRING","STRING","I32"),columns){
+      private int cnt=0;
+      public boolean next() throws SQLException {
+        if (cnt < data.size()) {
+          List<Object> a=new ArrayList<Object>(20);
+          JdbcColumn column=data.get(cnt);
+          a.add(column.getTableCatalog());
+          a.add(null);
+          a.add(column.getTableName());
+          a.add(column.getColumnName());
+          a.add(column.getSqlType());
+          a.add(column.getType());
+          a.add(column.getColumnSize());
+          a.add(null);
+          a.add(column.getDecimalDigits());
+          a.add(column.getNumPrecRadix());
+          a.add(DatabaseMetaData.columnNullable);
+          a.add(column.getComment());
+          a.add(null);
+          a.add(null);
+          a.add(null);
+          a.add(null);
+          a.add(column.getOrdinalPos());
+          a.add("YES");
+          a.add(null);
+          a.add(null);
+          a.add(null);
+          a.add(null);
+          row=a;
+          cnt++;
+          return true;
+        }
+ else {
+          return false;
+        }
+      }
+    }
+;
+  }
+ catch (  Exception e) {
+    throw new SQLException(e);
+  }
 }
