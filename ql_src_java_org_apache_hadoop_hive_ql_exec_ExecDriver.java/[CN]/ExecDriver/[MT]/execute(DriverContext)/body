@@ -1,5 +1,5 @@
 {
-  success=true;
+  boolean success=true;
   String invalidReason=work.isInvalid();
   if (invalidReason != null) {
     throw new RuntimeException("Plan invalid, Reason: " + invalidReason);
@@ -75,7 +75,7 @@
     initializeFiles("tmparchives",addedArchives);
   }
   int returnVal=0;
-  RunningJob rj=null, orig_rj=null;
+  RunningJob rj=null;
   boolean noName=StringUtils.isEmpty(HiveConf.getVar(job,HiveConf.ConfVars.HADOOPJOBNAME));
   if (noName) {
     HiveConf.setVar(job,HiveConf.ConfVars.HADOOPJOBNAME,"JOB" + Utilities.randGen.nextInt());
@@ -89,18 +89,14 @@
     }
     JobClient jc=new JobClient(job);
     Throttle.checkJobTracker(job,LOG);
-    orig_rj=rj=jc.submitJob(job);
+    rj=jc.submitJob(job);
     if (pwd != null) {
       HiveConf.setVar(job,HiveConf.ConfVars.METASTOREPWD,pwd);
     }
     runningJobKillURIs.put(rj.getJobID(),rj.getTrackingURL() + "&action=kill");
     ExecDriverTaskHandle th=new ExecDriverTaskHandle(jc,rj);
     jobInfo(rj);
-    progress(th);
-    if (rj == null) {
-      rj=orig_rj;
-      success=false;
-    }
+    success=progress(th);
     String statusMesg=getJobEndMsg(rj.getJobID());
     if (!success) {
       statusMesg+=" with errors";
@@ -129,10 +125,12 @@
     Utilities.clearMapRedWork(job);
     try {
       if (ctxCreated)       ctx.clear();
-      if (returnVal != 0 && rj != null) {
-        rj.killJob();
+      if (rj != null) {
+        if (returnVal != 0) {
+          rj.killJob();
+        }
+        runningJobKillURIs.remove(rj.getJobID());
       }
-      runningJobKillURIs.remove(rj.getJobID());
     }
  catch (    Exception e) {
     }

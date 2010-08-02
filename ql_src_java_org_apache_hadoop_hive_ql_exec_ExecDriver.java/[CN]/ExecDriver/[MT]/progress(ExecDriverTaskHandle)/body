@@ -21,12 +21,17 @@
  else {
       initializing=false;
     }
-    th.setRunningJob(jc.getJob(rj.getJobID()));
+    RunningJob newRj=jc.getJob(rj.getJobID());
+    if (newRj == null) {
+      throw new IOException("Could not find status of job: + rj.getJobID()");
+    }
+ else {
+      th.setRunningJob(newRj);
+    }
     if (fatal) {
       continue;
     }
     if (fatal=checkFatalErrors(th,errMsg)) {
-      success=false;
       console.printError("[Fatal Error] " + errMsg.toString() + ". Killing the job.");
       rj.killJob();
       continue;
@@ -48,18 +53,24 @@
       reportTime=System.currentTimeMillis();
     }
   }
-  if (!fatal && (fatal=checkFatalErrors(th,errMsg))) {
-    console.printError("[Fatal Error] " + errMsg.toString());
+  boolean success;
+  if (fatal) {
     success=false;
   }
  else {
-    success=rj.isSuccessful();
+    if (checkFatalErrors(th,errMsg)) {
+      console.printError("[Fatal Error] " + errMsg.toString());
+      success=false;
+    }
+ else {
+      success=rj.isSuccessful();
+    }
   }
   setDone();
-  th.setRunningJob(jc.getJob(rj.getJobID()));
   updateCounters(th);
   SessionState ss=SessionState.get();
   if (ss != null) {
     ss.getHiveHistory().logPlanProgress(queryPlan);
   }
+  return (success);
 }
