@@ -2,6 +2,9 @@
   Table tbl=null;
   try {
     tbl=db.getTable(MetaStoreUtils.DEFAULT_DATABASE_NAME,dropTbl.getTableName());
+    if (!tbl.canDrop()) {
+      throw new HiveException("Table " + tbl.getTableName() + " is protected from being dropped");
+    }
   }
  catch (  InvalidTableException e) {
   }
@@ -18,6 +21,14 @@
     }
   }
   if (dropTbl.getPartSpecs() == null) {
+    if (tbl != null && tbl.isPartitioned()) {
+      List<Partition> listPartitions=db.getPartitions(tbl);
+      for (      Partition p : listPartitions) {
+        if (!p.canDrop()) {
+          throw new HiveException("Table " + tbl.getTableName() + " Partition"+ p.getName()+ " is protected from being dropped");
+        }
+      }
+    }
     db.dropTable(MetaStoreUtils.DEFAULT_DATABASE_NAME,dropTbl.getTableName());
     if (tbl != null) {
       work.getOutputs().add(new WriteEntity(tbl));
@@ -47,7 +58,11 @@
           }
         }
         if (match) {
-          partsToDelete.add(db.getPartition(tbl,part,false));
+          Partition p=db.getPartition(tbl,part,false);
+          if (!p.canDrop()) {
+            throw new HiveException("Table " + tbl.getTableName() + " Partition "+ p.getName()+ " is protected from being dropped");
+          }
+          partsToDelete.add(p);
           it.remove();
         }
       }

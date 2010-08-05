@@ -1,0 +1,31 @@
+{
+  String tblName=unescapeIdentifier(ast.getChild(0).getText());
+  List<Map<String,String>> partSpecs=getPartitionSpecs(ast);
+  Map<String,String> partSpec=partSpecs.get(0);
+  AlterPartitionProtectModeDesc desc=new AlterPartitionProtectModeDesc(MetaStoreUtils.DEFAULT_DATABASE_NAME,tblName,partSpec);
+  CommonTree child=(CommonTree)ast.getChild(2);
+switch (child.getToken().getType()) {
+case HiveParser.TOK_ENABLE:
+    desc.setProtectModeEnable(true);
+  break;
+case HiveParser.TOK_DISABLE:
+desc.setProtectModeEnable(false);
+break;
+default :
+throw new SemanticException("Set Protect mode Syntax parsing error.");
+}
+ASTNode grandChild=(ASTNode)child.getChild(0);
+switch (grandChild.getToken().getType()) {
+case HiveParser.TOK_OFFLINE:
+desc.setProtectModeType(AlterPartitionProtectModeDesc.ProtectModeType.OFFLINE);
+break;
+case HiveParser.TOK_NO_DROP:
+desc.setProtectModeType(AlterPartitionProtectModeDesc.ProtectModeType.NO_DROP);
+break;
+case HiveParser.TOK_READONLY:
+throw new SemanticException("Potect mode READONLY is not implemented");
+default :
+throw new SemanticException("Only protect mode NO_DROP or OFFLINE supported");
+}
+rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),desc),conf));
+}

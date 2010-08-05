@@ -1,4 +1,50 @@
 {
+  for (  ReadEntity readEntity : getInputs()) {
+    ReadEntity.Type type=readEntity.getType();
+    if (type != ReadEntity.Type.TABLE && type != ReadEntity.Type.PARTITION) {
+      continue;
+    }
+    Table tbl=readEntity.getTable();
+    Partition p=readEntity.getPartition();
+    if (tbl.isOffline()) {
+      throw new SemanticException(ErrorMsg.OFFLINE_TABLE_OR_PARTITION.getMsg("Table " + tbl.getTableName()));
+    }
+    if (type == ReadEntity.Type.PARTITION && p != null && p.isOffline()) {
+      throw new SemanticException(ErrorMsg.OFFLINE_TABLE_OR_PARTITION.getMsg("Table " + tbl.getTableName() + " Partition "+ p.getName()));
+    }
+  }
+  for (  WriteEntity writeEntity : getOutputs()) {
+    WriteEntity.Type type=writeEntity.getType();
+    if (type != WriteEntity.Type.TABLE && type != WriteEntity.Type.PARTITION) {
+      continue;
+    }
+    Table tbl;
+    Partition p;
+    if (type == WriteEntity.Type.PARTITION) {
+      Partition inputPartition=writeEntity.getPartition();
+      try {
+        p=Hive.get().getPartition(inputPartition.getTable(),inputPartition.getSpec(),false);
+        if (p != null) {
+          tbl=p.getTable();
+        }
+ else {
+          tbl=inputPartition.getTable();
+        }
+      }
+ catch (      HiveException e) {
+        throw new SemanticException(e);
+      }
+      if (type == WriteEntity.Type.PARTITION && p != null && p.isOffline()) {
+        throw new SemanticException(ErrorMsg.OFFLINE_TABLE_OR_PARTITION.getMsg("Table " + tbl.getTableName() + " Partition "+ p.getName()));
+      }
+    }
+ else {
+      tbl=writeEntity.getTable();
+    }
+    if (tbl.isOffline()) {
+      throw new SemanticException(ErrorMsg.OFFLINE_TABLE_OR_PARTITION.getMsg("Table " + tbl.getTableName()));
+    }
+  }
   for (  Task<? extends Serializable> rootTask : rootTasks) {
     validate(rootTask);
   }

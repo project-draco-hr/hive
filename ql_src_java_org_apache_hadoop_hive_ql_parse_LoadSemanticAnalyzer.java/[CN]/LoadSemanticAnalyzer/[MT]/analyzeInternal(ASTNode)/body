@@ -27,6 +27,9 @@ catch (  URISyntaxException e) {
     throw new SemanticException(ErrorMsg.INVALID_PATH.getMsg(fromTree,e.getMessage()),e);
   }
   tableSpec ts=new tableSpec(db,conf,(ASTNode)tableTree);
+  if (ts.tableHandle.isOffline()) {
+    throw new SemanticException(ErrorMsg.OFFLINE_TABLE_OR_PARTITION.getMsg(":Table " + ts.tableName));
+  }
   if (ts.tableHandle.isView()) {
     throw new SemanticException(ErrorMsg.DML_AGAINST_VIEW.getMsg());
   }
@@ -50,6 +53,19 @@ catch (  URISyntaxException e) {
   Map<String,String> partSpec=ts.getPartSpec();
   if (partSpec == null) {
     partSpec=new LinkedHashMap<String,String>();
+  }
+ else {
+    try {
+      Partition part=Hive.get().getPartition(ts.tableHandle,partSpec,false);
+      if (part != null) {
+        if (part.isOffline()) {
+          throw new SemanticException(ErrorMsg.OFFLINE_TABLE_OR_PARTITION.getMsg(ts.tableName + ":" + part.getName()));
+        }
+      }
+    }
+ catch (    HiveException e) {
+      throw new SemanticException(e);
+    }
   }
   LoadTableDesc loadTableWork=new LoadTableDesc(fromURI.toString(),loadTmpPath,Utilities.getTableDesc(ts.tableHandle),partSpec,isOverWrite);
   if (rTask != null) {
