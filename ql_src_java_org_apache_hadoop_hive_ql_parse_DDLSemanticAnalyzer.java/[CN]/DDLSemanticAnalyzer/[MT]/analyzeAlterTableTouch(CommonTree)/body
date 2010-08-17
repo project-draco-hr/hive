@@ -1,11 +1,23 @@
 {
   String tblName=unescapeIdentifier(ast.getChild(0).getText());
+  Table tab;
+  try {
+    tab=db.getTable(MetaStoreUtils.DEFAULT_DATABASE_NAME,tblName,false);
+    if (tab != null) {
+      inputs.add(new ReadEntity(tab));
+    }
+  }
+ catch (  HiveException e) {
+    throw new SemanticException(ErrorMsg.INVALID_TABLE.getMsg(tblName));
+  }
   List<Map<String,String>> partSpecs=getPartitionSpecs(ast);
   if (partSpecs.size() == 0) {
     AlterTableSimpleDesc touchDesc=new AlterTableSimpleDesc(MetaStoreUtils.DEFAULT_DATABASE_NAME,tblName,null,AlterTableDesc.AlterTableTypes.TOUCH);
+    outputs.add(new WriteEntity(tab));
     rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),touchDesc),conf));
   }
  else {
+    addTablePartsOutputs(tblName,partSpecs);
     for (    Map<String,String> partSpec : partSpecs) {
       AlterTableSimpleDesc touchDesc=new AlterTableSimpleDesc(MetaStoreUtils.DEFAULT_DATABASE_NAME,tblName,partSpec,AlterTableDesc.AlterTableTypes.TOUCH);
       rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),touchDesc),conf));
