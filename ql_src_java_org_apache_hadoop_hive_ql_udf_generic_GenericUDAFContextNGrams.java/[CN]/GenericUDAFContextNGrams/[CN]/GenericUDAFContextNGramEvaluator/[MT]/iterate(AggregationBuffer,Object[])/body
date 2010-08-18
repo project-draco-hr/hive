@@ -5,12 +5,8 @@
   }
   NGramAggBuf myagg=(NGramAggBuf)agg;
   if (!myagg.nge.isInitialized()) {
-    int n=PrimitiveObjectInspectorUtils.getInt(parameters[1],nOI);
     int k=PrimitiveObjectInspectorUtils.getInt(parameters[2],kOI);
     int pf=0;
-    if (n < 1) {
-      throw new HiveException(getClass().getSimpleName() + " needs 'n' to be at least 1, " + "but you supplied "+ n);
-    }
     if (k < 1) {
       throw new HiveException(getClass().getSimpleName() + " needs 'k' to be at least 1, " + "but you supplied "+ k);
     }
@@ -23,8 +19,23 @@
  else {
       pf=1;
     }
-    myagg.n=n;
-    myagg.nge.initialize(k,pf,n);
+    myagg.context.clear();
+    List<Text> context=(List<Text>)contextListOI.getList(parameters[1]);
+    int contextNulls=0;
+    for (int i=0; i < context.size(); i++) {
+      String word=PrimitiveObjectInspectorUtils.getString(context.get(i),contextOI);
+      if (word == null) {
+        contextNulls++;
+      }
+      myagg.context.add(word);
+    }
+    if (context.size() == 0) {
+      throw new HiveException(getClass().getSimpleName() + " needs a context array " + "with at least one element.");
+    }
+    if (contextNulls == 0) {
+      throw new HiveException(getClass().getSimpleName() + " the context array needs to " + "contain at least one 'null' value to indicate what should be counted.");
+    }
+    myagg.nge.initialize(k,pf,contextNulls);
   }
   List<Text> outer=(List<Text>)outerInputOI.getList(parameters[0]);
   if (innerInputOI != null) {
