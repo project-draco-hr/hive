@@ -1,0 +1,37 @@
+{
+  Task<? extends Serializable> currTask=ctx.getCurrTask();
+  RowSchema inputRS=fsOp.getSchema();
+  ArrayList<ExprNodeDesc> keyCols=new ArrayList<ExprNodeDesc>();
+  keyCols.add(TypeCheckProcFactory.DefaultExprProcessor.getFuncExprNodeDesc("rand"));
+  ArrayList<ExprNodeDesc> valueCols=new ArrayList<ExprNodeDesc>();
+  for (  ColumnInfo ci : inputRS.getSignature()) {
+    valueCols.add(new ExprNodeColumnDesc(ci.getType(),ci.getInternalName(),ci.getTabAlias(),ci.getIsVirtualCol()));
+  }
+  Operator<? extends Serializable> tsMerge=OperatorFactory.get(TableScanDesc.class,inputRS);
+  ArrayList<String> outputColumns=new ArrayList<String>();
+  for (int i=0; i < valueCols.size(); i++) {
+    outputColumns.add(SemanticAnalyzer.getColumnInternalName(i));
+  }
+  ReduceSinkDesc rsDesc=PlanUtils.getReduceSinkDesc(new ArrayList<ExprNodeDesc>(),valueCols,outputColumns,false,-1,-1,-1);
+  OperatorFactory.getAndMakeChild(rsDesc,inputRS,tsMerge);
+  ParseContext parseCtx=ctx.getParseCtx();
+  FileSinkDesc fsConf=fsOp.getConf();
+  RowResolver out_rwsch=new RowResolver();
+  RowResolver interim_rwsch=ctx.getParseCtx().getOpParseCtx().get(fsOp).getRR();
+  Integer pos=Integer.valueOf(0);
+  for (  ColumnInfo colInfo : interim_rwsch.getColumnInfos()) {
+    String[] info=interim_rwsch.reverseLookup(colInfo.getInternalName());
+    out_rwsch.put(info[0],info[1],new ColumnInfo(pos.toString(),colInfo.getType(),info[0],colInfo.getIsVirtualCol(),colInfo.isHiddenVirtualCol()));
+    pos=Integer.valueOf(pos.intValue() + 1);
+  }
+  Operator<ExtractDesc> extract=OperatorFactory.getAndMakeChild(new ExtractDesc(new ExprNodeColumnDesc(TypeInfoFactory.stringTypeInfo,Utilities.ReduceField.VALUE.toString(),"",false)),new RowSchema(out_rwsch.getColumnInfos()));
+  TableDesc ts=(TableDesc)fsConf.getTableInfo().clone();
+  fsConf.getTableInfo().getProperties().remove(org.apache.hadoop.hive.metastore.api.Constants.META_TABLE_PARTITION_COLUMNS);
+  FileSinkOperator newOutput=(FileSinkOperator)OperatorFactory.getAndMakeChild(new FileSinkDesc(finalName,ts,parseCtx.getConf().getBoolVar(HiveConf.ConfVars.COMPRESSRESULT)),inputRS,extract);
+  HiveConf conf=parseCtx.getConf();
+  MapredWork cplan=createMergeTask(conf,tsMerge,fsConf);
+  cplan.setReducer(extract);
+  MoveWork dummyMv=new MoveWork(null,null,null,new LoadFileDesc(fsConf.getDirName(),finalName,true,null,null),false);
+  ConditionalTask cndTsk=createCondTask(conf,currTask,dummyMv,cplan,fsConf.getDirName());
+  LinkMoveTask(ctx,newOutput,cndTsk);
+}

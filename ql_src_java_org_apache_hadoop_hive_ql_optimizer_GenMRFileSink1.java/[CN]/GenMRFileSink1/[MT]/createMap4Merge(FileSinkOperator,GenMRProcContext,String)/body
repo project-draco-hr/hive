@@ -1,0 +1,38 @@
+{
+  ParseContext parseCtx=ctx.getParseCtx();
+  FileSinkDesc fsInputDesc=fsInput.getConf();
+  RowSchema inputRS=fsInput.getSchema();
+  Operator<? extends Serializable> tsMerge=OperatorFactory.get(TableScanDesc.class,inputRS);
+  TableDesc ts=(TableDesc)fsInputDesc.getTableInfo().clone();
+  FileSinkDesc fsOutputDesc=new FileSinkDesc(finalName,ts,parseCtx.getConf().getBoolVar(HiveConf.ConfVars.COMPRESSRESULT));
+  FileSinkOperator fsOutput=(FileSinkOperator)OperatorFactory.getAndMakeChild(fsOutputDesc,inputRS,tsMerge);
+  DynamicPartitionCtx dpCtx=fsInputDesc.getDynPartCtx();
+  if (dpCtx != null && dpCtx.getNumDPCols() > 0) {
+    ArrayList<ColumnInfo> signature=inputRS.getSignature();
+    String tblAlias=fsInputDesc.getTableInfo().getTableName();
+    LinkedHashMap<String,String> colMap=new LinkedHashMap<String,String>();
+    StringBuilder partCols=new StringBuilder();
+    for (    String dpCol : dpCtx.getDPColNames()) {
+      ColumnInfo colInfo=new ColumnInfo(dpCol,TypeInfoFactory.stringTypeInfo,tblAlias,true);
+      signature.add(colInfo);
+      colMap.put(dpCol,dpCol);
+      partCols.append(dpCol).append('/');
+    }
+    partCols.setLength(partCols.length() - 1);
+    inputRS.setSignature(signature);
+    DynamicPartitionCtx dpCtx2=new DynamicPartitionCtx(dpCtx);
+    dpCtx2.setInputToDPCols(colMap);
+    fsOutputDesc.setDynPartCtx(dpCtx2);
+    fsInputDesc.getTableInfo().getProperties().setProperty(org.apache.hadoop.hive.metastore.api.Constants.META_TABLE_PARTITION_COLUMNS,partCols.toString());
+  }
+ else {
+    fsInputDesc.getTableInfo().getProperties().remove(org.apache.hadoop.hive.metastore.api.Constants.META_TABLE_PARTITION_COLUMNS);
+  }
+  MoveWork dummyMv=new MoveWork(null,null,null,new LoadFileDesc(fsInputDesc.getDirName(),finalName,true,null,null),false);
+  MapredWork cplan=createMergeTask(ctx.getConf(),tsMerge,fsInputDesc);
+  cplan.setInputformat("org.apache.hadoop.hive.ql.io.CombineHiveInputFormat");
+  ConditionalTask cndTsk=createCondTask(ctx.getConf(),ctx.getCurrTask(),dummyMv,cplan,fsInputDesc.getDirName());
+  ConditionalResolverMergeFilesCtx mrCtx=(ConditionalResolverMergeFilesCtx)cndTsk.getResolverCtx();
+  mrCtx.setDPCtx(fsInputDesc.getDynPartCtx());
+  LinkMoveTask(ctx,fsOutput,cndTsk);
+}
