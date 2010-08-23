@@ -1,18 +1,36 @@
 {
   String indexFileStr=job.get("hive.index.compact.file");
   l4j.info("index_file is " + indexFileStr);
-  HiveInputSplit[] splits=(HiveInputSplit[])super.getSplits(job,numSplits);
-  if (indexFileStr == null) {
-    return splits;
-  }
   HiveCompactIndexResult hiveIndexResult=null;
-  try {
-    hiveIndexResult=new HiveCompactIndexResult(indexFileStr,job);
+  if (indexFileStr != null) {
+    try {
+      hiveIndexResult=new HiveCompactIndexResult(indexFileStr,job);
+    }
+ catch (    HiveException e) {
+      l4j.error("Unable to read index..");
+      throw new IOException(e);
+    }
+    Set<String> inputFiles=hiveIndexResult.buckets.keySet();
+    Iterator<String> iter=inputFiles.iterator();
+    boolean first=true;
+    StringBuilder newInputPaths=new StringBuilder();
+    while (iter.hasNext()) {
+      String path=iter.next();
+      if (path.trim().equalsIgnoreCase(""))       continue;
+      if (!first) {
+        newInputPaths.append(",");
+      }
+ else {
+        first=false;
+      }
+      newInputPaths.append(path);
+    }
+    FileInputFormat.setInputPaths(job,newInputPaths.toString());
   }
- catch (  HiveException e) {
-    l4j.error("Unable to read index so we will go with all the file splits.");
-    e.printStackTrace();
+ else {
+    return super.getSplits(job,numSplits);
   }
+  HiveInputSplit[] splits=(HiveInputSplit[])this.doGetSplits(job,numSplits);
   ArrayList<HiveInputSplit> newSplits=new ArrayList<HiveInputSplit>(numSplits);
   for (  HiveInputSplit split : splits) {
     l4j.info("split start : " + split.getStart());
