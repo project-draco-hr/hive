@@ -1,20 +1,23 @@
 {
-  String hbaseColumnNameProperty=tbl.getProperty(HBaseSerDe.HBASE_COLUMNS_MAPPING);
+  hbaseColumnsMapping=tbl.getProperty(HBaseSerDe.HBASE_COLUMNS_MAPPING);
   String columnTypeProperty=tbl.getProperty(Constants.LIST_COLUMN_TYPES);
-  hbaseColumnNames=parseColumnMapping(hbaseColumnNameProperty);
-  iKey=hbaseColumnNames.indexOf(HBASE_KEY_COL);
-  hbaseColumnNamesBytes=initColumnNamesBytes(hbaseColumnNames);
+  hbaseColumnFamilies=new ArrayList<String>();
+  hbaseColumnFamiliesBytes=new ArrayList<byte[]>();
+  hbaseColumnQualifiers=new ArrayList<String>();
+  hbaseColumnQualifiersBytes=new ArrayList<byte[]>();
+  iKey=parseColumnMapping(hbaseColumnsMapping,hbaseColumnFamilies,hbaseColumnFamiliesBytes,hbaseColumnQualifiers,hbaseColumnQualifiersBytes);
   if (columnTypeProperty == null) {
     StringBuilder sb=new StringBuilder();
-    for (int i=0; i < hbaseColumnNames.size(); i++) {
+    for (int i=0; i < hbaseColumnFamilies.size(); i++) {
       if (sb.length() > 0) {
         sb.append(":");
       }
-      String colName=hbaseColumnNames.get(i);
-      if (isSpecialColumn(colName)) {
+      String colFamily=hbaseColumnFamilies.get(i);
+      String colQualifier=hbaseColumnQualifiers.get(i);
+      if (isSpecialColumn(colFamily)) {
         sb.append(Constants.STRING_TYPE_NAME);
       }
- else       if (colName.endsWith(":")) {
+ else       if (colQualifier == null) {
         sb.append(Constants.MAP_TYPE_NAME + "<" + Constants.STRING_TYPE_NAME+ ","+ Constants.STRING_TYPE_NAME+ ">");
       }
  else {
@@ -24,19 +27,20 @@
     tbl.setProperty(Constants.LIST_COLUMN_TYPES,sb.toString());
   }
   serdeParams=LazySimpleSerDe.initSerdeParams(job,tbl,serdeName);
-  if (hbaseColumnNames.size() != serdeParams.getColumnNames().size()) {
-    throw new SerDeException(serdeName + ": columns has " + serdeParams.getColumnNames().size()+ " elements while hbase.columns.mapping has "+ hbaseColumnNames.size()+ " elements"+ " (counting the key if implicit)");
+  if (hbaseColumnFamilies.size() != serdeParams.getColumnNames().size()) {
+    throw new SerDeException(serdeName + ": columns has " + serdeParams.getColumnNames().size()+ " elements while hbase.columns.mapping has "+ hbaseColumnFamilies.size()+ " elements"+ " (counting the key if implicit)");
   }
   separators=serdeParams.getSeparators();
   escaped=serdeParams.isEscaped();
   escapeChar=serdeParams.getEscapeChar();
   needsEscape=serdeParams.getNeedsEscape();
-  for (int i=0; i < hbaseColumnNames.size(); i++) {
-    String hbaseColName=hbaseColumnNames.get(i);
-    if (hbaseColName.endsWith(":")) {
+  for (int i=0; i < hbaseColumnFamilies.size(); i++) {
+    String colFamily=hbaseColumnFamilies.get(i);
+    String colQualifier=hbaseColumnQualifiers.get(i);
+    if (colQualifier == null && !isSpecialColumn(colFamily)) {
       TypeInfo typeInfo=serdeParams.getColumnTypes().get(i);
       if ((typeInfo.getCategory() != Category.MAP) || (((MapTypeInfo)typeInfo).getMapKeyTypeInfo().getTypeName() != Constants.STRING_TYPE_NAME)) {
-        throw new SerDeException(serdeName + ": hbase column family '" + hbaseColName+ "' should be mapped to map<string,?> but is mapped to "+ typeInfo.getTypeName());
+        throw new SerDeException(serdeName + ": hbase column family '" + colFamily+ "' should be mapped to Map<String,?> but is mapped to "+ typeInfo.getTypeName());
       }
     }
   }

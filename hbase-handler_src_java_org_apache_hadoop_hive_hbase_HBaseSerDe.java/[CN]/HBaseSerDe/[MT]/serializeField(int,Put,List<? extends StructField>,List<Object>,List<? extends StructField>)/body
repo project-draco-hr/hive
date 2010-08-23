@@ -1,11 +1,12 @@
 {
-  String hbaseColumn=hbaseColumnNames.get(i);
+  String hbaseColumnFamily=hbaseColumnFamilies.get(i);
+  String hbaseColumnQualifier=hbaseColumnQualifiers.get(i);
   ObjectInspector foi=fields.get(i).getFieldObjectInspector();
   Object f=(list == null ? null : list.get(i));
   if (f == null) {
     return null;
   }
-  if (hbaseColumn.endsWith(":")) {
+  if (hbaseColumnQualifier == null && !isSpecialColumn(hbaseColumnFamily)) {
     MapObjectInspector moi=(MapObjectInspector)foi;
     ObjectInspector koi=moi.getMapKeyObjectInspector();
     ObjectInspector voi=moi.getMapValueObjectInspector();
@@ -17,8 +18,8 @@
       for (      Map.Entry<?,?> entry : map.entrySet()) {
         serializeStream.reset();
         serialize(entry.getKey(),koi,3);
-        byte[] columnQualifier=new byte[serializeStream.getCount()];
-        System.arraycopy(serializeStream.getData(),0,columnQualifier,0,serializeStream.getCount());
+        byte[] columnQualifierBytes=new byte[serializeStream.getCount()];
+        System.arraycopy(serializeStream.getData(),0,columnQualifierBytes,0,serializeStream.getCount());
         serializeStream.reset();
         boolean isNotNull=serialize(entry.getValue(),voi,3);
         if (!isNotNull) {
@@ -26,7 +27,7 @@
         }
         byte[] value=new byte[serializeStream.getCount()];
         System.arraycopy(serializeStream.getData(),0,value,0,serializeStream.getCount());
-        put.add(hbaseColumnNamesBytes.get(i),columnQualifier,value);
+        put.add(hbaseColumnFamiliesBytes.get(i),columnQualifierBytes,value);
       }
     }
   }
@@ -47,7 +48,7 @@
     if (i == iKey) {
       return key;
     }
-    put.add(hbaseColumnNamesBytes.get(i),0,key);
+    put.add(hbaseColumnFamiliesBytes.get(i),hbaseColumnQualifiersBytes.get(i),key);
   }
   return null;
 }

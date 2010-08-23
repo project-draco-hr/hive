@@ -5,15 +5,30 @@
   if (hbaseColumnsMapping == null) {
     throw new IOException("hbase.columns.mapping required for HBase Table.");
   }
-  List<String> columns=HBaseSerDe.parseColumnMapping(hbaseColumnsMapping);
-  List<byte[]> inputColumns=new ArrayList<byte[]>();
-  for (  String column : columns) {
-    if (HBaseSerDe.isSpecialColumn(column)) {
+  List<String> hbaseColumnFamilies=new ArrayList<String>();
+  List<String> hbaseColumnQualifiers=new ArrayList<String>();
+  List<byte[]> hbaseColumnFamiliesBytes=new ArrayList<byte[]>();
+  List<byte[]> hbaseColumnQualifiersBytes=new ArrayList<byte[]>();
+  int iKey;
+  try {
+    iKey=HBaseSerDe.parseColumnMapping(hbaseColumnsMapping,hbaseColumnFamilies,hbaseColumnFamiliesBytes,hbaseColumnQualifiers,hbaseColumnQualifiersBytes);
+  }
+ catch (  SerDeException se) {
+    throw new IOException(se);
+  }
+  Scan scan=new Scan();
+  for (int i=0; i < hbaseColumnFamilies.size(); i++) {
+    if (i == iKey) {
       continue;
     }
-    inputColumns.add(Bytes.toBytes(column));
+    if (hbaseColumnQualifiers.get(i) == null) {
+      scan.addFamily(hbaseColumnFamiliesBytes.get(i));
+    }
+ else {
+      scan.addColumn(hbaseColumnFamiliesBytes.get(i),hbaseColumnQualifiersBytes.get(i));
+    }
   }
-  setScan(new Scan().addColumns(inputColumns.toArray(new byte[0][])));
+  setScan(scan);
   Job job=new Job(jobConf);
   JobContext jobContext=new JobContext(job.getConfiguration(),job.getJobID());
   Path[] tablePaths=FileInputFormat.getInputPaths(jobContext);
