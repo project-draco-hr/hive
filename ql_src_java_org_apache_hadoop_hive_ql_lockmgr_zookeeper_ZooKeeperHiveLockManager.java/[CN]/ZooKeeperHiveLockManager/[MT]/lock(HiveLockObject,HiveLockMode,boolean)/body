@@ -1,0 +1,40 @@
+{
+  String name=getObjectName(key,mode);
+  String res;
+  try {
+    if (keepAlive) {
+      res=zooKeeper.create(name,new byte[0],Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT_SEQUENTIAL);
+    }
+ else {
+      res=zooKeeper.create(name,new byte[0],Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL_SEQUENTIAL);
+    }
+    int seqNo=getSequenceNumber(res,name);
+    if (seqNo == -1) {
+      zooKeeper.delete(res,-1);
+      return null;
+    }
+    List<String> children=zooKeeper.getChildren("/",false);
+    String exLock=getObjectName(key,HiveLockMode.EXCLUSIVE);
+    String shLock=getObjectName(key,HiveLockMode.SHARED);
+    for (    String child : children) {
+      child="/" + child;
+      int childSeq=seqNo;
+      if (child.startsWith(exLock)) {
+        childSeq=getSequenceNumber(child,exLock);
+      }
+      if ((mode == HiveLockMode.EXCLUSIVE) && child.startsWith(shLock)) {
+        childSeq=getSequenceNumber(child,shLock);
+      }
+      if ((childSeq >= 0) && (childSeq < seqNo)) {
+        zooKeeper.delete(res,-1);
+        console.printError("conflicting lock present ");
+        return null;
+      }
+    }
+  }
+ catch (  Exception e) {
+    LOG.error("Failed to get ZooKeeper lock: " + e);
+    throw new LockException(e);
+  }
+  return new ZooKeeperHiveLock(res,key,mode);
+}

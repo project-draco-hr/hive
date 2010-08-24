@@ -1,0 +1,50 @@
+{
+  Context ctx=driverContext.getCtx();
+  HiveLockManager lockMgr=ctx.getHiveLockMgr();
+  if (lockMgr == null) {
+    throw new HiveException("show Locks LockManager not specified");
+  }
+  try {
+    Path resFile=new Path(showLocks.getResFile());
+    FileSystem fs=resFile.getFileSystem(conf);
+    DataOutput outStream=fs.create(resFile);
+    List<HiveLock> locks=lockMgr.getLocks();
+    Collections.sort(locks,new Comparator<HiveLock>(){
+      @Override public int compare(      HiveLock o1,      HiveLock o2){
+        int cmp=o1.getHiveLockObject().getName().compareTo(o2.getHiveLockObject().getName());
+        if (cmp == 0) {
+          if (o1.getHiveLockMode() == o2.getHiveLockMode()) {
+            return cmp;
+          }
+          if (o1.getHiveLockMode() == HiveLockMode.EXCLUSIVE) {
+            return -1;
+          }
+          return +1;
+        }
+        return cmp;
+      }
+    }
+);
+    Iterator<HiveLock> locksIter=locks.iterator();
+    while (locksIter.hasNext()) {
+      HiveLock lock=locksIter.next();
+      outStream.writeBytes(lock.getHiveLockObject().getName());
+      outStream.write(separator);
+      outStream.writeBytes(lock.getHiveLockMode().toString());
+      outStream.write(terminator);
+    }
+    ((FSDataOutputStream)outStream).close();
+  }
+ catch (  FileNotFoundException e) {
+    LOG.warn("show function: " + stringifyException(e));
+    return 1;
+  }
+catch (  IOException e) {
+    LOG.warn("show function: " + stringifyException(e));
+    return 1;
+  }
+catch (  Exception e) {
+    throw new HiveException(e.toString());
+  }
+  return 0;
+}

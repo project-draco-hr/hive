@@ -1,0 +1,77 @@
+{
+  try {
+    int tryNum=1;
+    int sleepTime=conf.getIntVar(HiveConf.ConfVars.HIVE_LOCK_SLEEP_BETWEEN_RETRIES) * 1000;
+    int numRetries=conf.getIntVar(HiveConf.ConfVars.HIVE_LOCK_NUMRETRIES);
+    boolean supportConcurrency=conf.getBoolVar(HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY);
+    if (!supportConcurrency) {
+      return 0;
+    }
+    List<LockObject> lockObjects=new ArrayList<LockObject>();
+    for (    ReadEntity input : plan.getInputs()) {
+      if (input.getType() == ReadEntity.Type.TABLE) {
+        lockObjects.addAll(getLockObjects(input.getTable(),null,HiveLockMode.SHARED));
+      }
+ else {
+        lockObjects.addAll(getLockObjects(null,input.getPartition(),HiveLockMode.SHARED));
+      }
+    }
+    for (    WriteEntity output : plan.getOutputs()) {
+      if (output.getTyp() == WriteEntity.Type.TABLE) {
+        lockObjects.addAll(getLockObjects(output.getTable(),null,HiveLockMode.EXCLUSIVE));
+      }
+ else       if (output.getTyp() == WriteEntity.Type.PARTITION) {
+        lockObjects.addAll(getLockObjects(null,output.getPartition(),HiveLockMode.EXCLUSIVE));
+      }
+    }
+    if (lockObjects.isEmpty() && !ctx.isNeedLockMgr()) {
+      return 0;
+    }
+    int ret=checkLockManager();
+    if (ret != 0) {
+      return ret;
+    }
+    ctx.setHiveLockMgr(hiveLockMgr);
+    Collections.sort(lockObjects,new Comparator<LockObject>(){
+      @Override public int compare(      LockObject o1,      LockObject o2){
+        int cmp=o1.getName().compareTo(o2.getName());
+        if (cmp == 0) {
+          if (o1.getMode() == o2.getMode()) {
+            return cmp;
+          }
+          if (o1.getMode() == HiveLockMode.EXCLUSIVE) {
+            return -1;
+          }
+          return +1;
+        }
+        return cmp;
+      }
+    }
+);
+    while (true) {
+      List<HiveLock> hiveLocks=acquireLocks(lockObjects);
+      if (hiveLocks == null) {
+        if (tryNum == numRetries) {
+          throw new SemanticException(ErrorMsg.LOCK_CANNOT_BE_ACQUIRED.getMsg());
+        }
+        tryNum++;
+        try {
+          Thread.sleep(sleepTime);
+        }
+ catch (        InterruptedException e) {
+        }
+      }
+ else {
+        ctx.setHiveLocks(hiveLocks);
+        break;
+      }
+    }
+    return (0);
+  }
+ catch (  SemanticException e) {
+    errorMessage="FAILED: Error in acquiring locks: " + e.getMessage();
+    SQLState=ErrorMsg.findSQLState(e.getMessage());
+    console.printError(errorMessage,"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
+    return (10);
+  }
+}
