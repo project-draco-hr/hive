@@ -5,17 +5,17 @@
     String tblName2="simptbl2";
     String typeName="Person";
     client.dropTable(dbName,tblName);
-    client.dropDatabase(dbName);
-    boolean ret=client.createDatabase(dbName,"strange_loc");
-    assertTrue("Unable to create the databse " + dbName,ret);
+    silentDropDatabase(dbName);
+    Database db=new Database();
+    db.setName(dbName);
+    client.createDatabase(db);
     client.dropType(typeName);
     Type typ1=new Type();
     typ1.setName(typeName);
     typ1.setFields(new ArrayList<FieldSchema>(2));
     typ1.getFields().add(new FieldSchema("name",Constants.STRING_TYPE_NAME,""));
     typ1.getFields().add(new FieldSchema("income",Constants.INT_TYPE_NAME,""));
-    ret=client.createType(typ1);
-    assertTrue("Unable to create type " + typeName,ret);
+    client.createType(typ1);
     Table tbl=new Table();
     tbl.setDbName(dbName);
     tbl.setTableName(tblName);
@@ -35,6 +35,9 @@
     sd.getSerdeInfo().setSerializationLib(org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe.class.getName());
     tbl.setPartitionKeys(new ArrayList<FieldSchema>());
     client.createTable(tbl);
+    if (isThriftClient) {
+      tbl=client.getTable(dbName,tblName);
+    }
     Table tbl2=client.getTable(dbName,tblName);
     assertNotNull(tbl2);
     assertEquals(tbl2.getDbName(),dbName);
@@ -66,6 +69,9 @@
       assertTrue(fieldSchemasFull.contains(fs));
     }
     client.createTable(tbl2);
+    if (isThriftClient) {
+      tbl2=client.getTable(tbl2.getDbName(),tbl2.getTableName());
+    }
     Table tbl3=client.getTable(dbName,tblName2);
     assertNotNull(tbl3);
     assertEquals(tbl3.getDbName(),dbName);
@@ -98,10 +104,8 @@
     assertFalse(fs.exists(new Path(tbl.getSd().getLocation())));
     client.dropTable(dbName,tblName2);
     assertTrue(fs.exists(new Path(tbl2.getSd().getLocation())));
-    ret=client.dropType(typeName);
-    assertTrue("Unable to drop type " + typeName,ret);
-    ret=client.dropDatabase(dbName);
-    assertTrue("Unable to drop databse " + dbName,ret);
+    client.dropType(typeName);
+    client.dropDatabase(dbName);
   }
  catch (  Exception e) {
     System.err.println(StringUtils.stringifyException(e));

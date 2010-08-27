@@ -1,12 +1,13 @@
 {
+  String dbName="alterdb";
+  String invTblName="alter-tbl";
+  String tblName="altertbl";
   try {
-    String dbName="alterdb";
-    String invTblName="alter-tbl";
-    String tblName="altertbl";
     client.dropTable(dbName,tblName);
-    client.dropDatabase(dbName);
-    boolean ret=client.createDatabase(dbName,"strange_loc");
-    assertTrue("Unable to create the databse " + dbName,ret);
+    silentDropDatabase(dbName);
+    Database db=new Database();
+    db.setName(dbName);
+    client.createDatabase(db);
     ArrayList<FieldSchema> invCols=new ArrayList<FieldSchema>(2);
     invCols.add(new FieldSchema("n-ame",Constants.STRING_TYPE_NAME,""));
     invCols.add(new FieldSchema("in.come",Constants.INT_TYPE_NAME,""));
@@ -42,6 +43,9 @@
     tbl.setTableName(tblName);
     tbl.getSd().setCols(cols);
     client.createTable(tbl);
+    if (isThriftClient) {
+      tbl=client.getTable(tbl.getDbName(),tbl.getTableName());
+    }
     Table tbl2=client.getTable(dbName,tblName);
     failed=false;
     try {
@@ -64,11 +68,16 @@
     FileSystem fs=FileSystem.get((new Path(tbl.getSd().getLocation())).toUri(),hiveConf);
     assertFalse("old table location still exists",fs.exists(new Path(tbl.getSd().getLocation())));
     assertTrue("data did not move to new location",fs.exists(new Path(tbl3.getSd().getLocation())));
-    assertEquals("alter table didn't move data correct location",tbl3.getSd().getLocation(),tbl2.getSd().getLocation());
+    if (!isThriftClient) {
+      assertEquals("alter table didn't move data correct location",tbl3.getSd().getLocation(),tbl2.getSd().getLocation());
+    }
   }
  catch (  Exception e) {
     System.err.println(StringUtils.stringifyException(e));
     System.err.println("testSimpleTable() failed.");
     throw e;
+  }
+ finally {
+    silentDropDatabase(dbName);
   }
 }
