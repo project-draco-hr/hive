@@ -1,0 +1,35 @@
+{
+  TableScanDesc tableScanDesc=tableScanOp.getConf();
+  Table tbl=owi.getParseContext().getTopToTable().get(tableScanOp);
+  if (!tbl.isNonNative()) {
+    return originalPredicate;
+  }
+  HiveStorageHandler storageHandler=tbl.getStorageHandler();
+  if (!(storageHandler instanceof HiveStoragePredicateHandler)) {
+    tableScanDesc.setFilterExpr(originalPredicate);
+    return originalPredicate;
+  }
+  HiveStoragePredicateHandler predicateHandler=(HiveStoragePredicateHandler)storageHandler;
+  JobConf jobConf=new JobConf(owi.getParseContext().getConf());
+  Utilities.setColumnNameList(jobConf,tableScanOp);
+  Utilities.copyTableJobPropertiesToConf(Utilities.getTableDesc(tbl),jobConf);
+  Deserializer deserializer=tbl.getDeserializer();
+  HiveStoragePredicateHandler.DecomposedPredicate decomposed=predicateHandler.decomposePredicate(jobConf,deserializer,originalPredicate);
+  if (decomposed == null) {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("No pushdown possible for predicate:  " + originalPredicate.getExprString());
+    }
+    return originalPredicate;
+  }
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Original predicate:  " + originalPredicate.getExprString());
+    if (decomposed.pushedPredicate != null) {
+      LOG.debug("Pushed predicate:  " + decomposed.pushedPredicate.getExprString());
+    }
+    if (decomposed.residualPredicate != null) {
+      LOG.debug("Residual predicate:  " + decomposed.residualPredicate.getExprString());
+    }
+  }
+  tableScanDesc.setFilterExpr(decomposed.pushedPredicate);
+  return decomposed.residualPredicate;
+}

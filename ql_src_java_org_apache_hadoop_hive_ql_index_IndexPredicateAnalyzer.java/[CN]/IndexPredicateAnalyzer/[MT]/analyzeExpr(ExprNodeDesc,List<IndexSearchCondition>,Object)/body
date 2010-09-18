@@ -1,0 +1,54 @@
+{
+  if (!(expr instanceof ExprNodeGenericFuncDesc)) {
+    return expr;
+  }
+  if (FunctionRegistry.isOpAnd(expr)) {
+    assert(nodeOutputs.length == 2);
+    ExprNodeDesc residual1=(ExprNodeDesc)nodeOutputs[0];
+    ExprNodeDesc residual2=(ExprNodeDesc)nodeOutputs[1];
+    if (residual1 == null) {
+      return residual2;
+    }
+    if (residual2 == null) {
+      return residual1;
+    }
+    List<ExprNodeDesc> residuals=new ArrayList<ExprNodeDesc>();
+    residuals.add(residual1);
+    residuals.add(residual2);
+    return new ExprNodeGenericFuncDesc(TypeInfoFactory.booleanTypeInfo,FunctionRegistry.getGenericUDFForAnd(),residuals);
+  }
+  String udfName;
+  ExprNodeGenericFuncDesc funcDesc=(ExprNodeGenericFuncDesc)expr;
+  if (funcDesc.getGenericUDF() instanceof GenericUDFBridge) {
+    GenericUDFBridge func=(GenericUDFBridge)funcDesc.getGenericUDF();
+    udfName=func.getUdfName();
+  }
+ else {
+    udfName=funcDesc.getGenericUDF().getClass().getName();
+  }
+  if (!udfNames.contains(udfName)) {
+    return expr;
+  }
+  ExprNodeDesc child1=(ExprNodeDesc)nodeOutputs[0];
+  ExprNodeDesc child2=(ExprNodeDesc)nodeOutputs[1];
+  ExprNodeColumnDesc columnDesc=null;
+  ExprNodeConstantDesc constantDesc=null;
+  if ((child1 instanceof ExprNodeColumnDesc) && (child2 instanceof ExprNodeConstantDesc)) {
+    columnDesc=(ExprNodeColumnDesc)child1;
+    constantDesc=(ExprNodeConstantDesc)child2;
+  }
+ else   if ((child2 instanceof ExprNodeColumnDesc) && (child1 instanceof ExprNodeConstantDesc)) {
+    columnDesc=(ExprNodeColumnDesc)child2;
+    constantDesc=(ExprNodeConstantDesc)child1;
+  }
+  if (columnDesc == null) {
+    return expr;
+  }
+  if (allowedColumnNames != null) {
+    if (!allowedColumnNames.contains(columnDesc.getColumn())) {
+      return expr;
+    }
+  }
+  searchConditions.add(new IndexSearchCondition(columnDesc,udfName,constantDesc,expr));
+  return null;
+}

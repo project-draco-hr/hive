@@ -1,0 +1,41 @@
+{
+  String filterExprSerialized=jobConf.get(TableScanDesc.FILTER_EXPR_CONF_STR);
+  if (filterExprSerialized == null) {
+    return tableSplit;
+  }
+  ExprNodeDesc filterExpr=Utilities.deserializeExpression(filterExprSerialized,jobConf);
+  String columnNameProperty=jobConf.get(Constants.LIST_COLUMNS);
+  List<String> columnNames=Arrays.asList(columnNameProperty.split(","));
+  IndexPredicateAnalyzer analyzer=newIndexPredicateAnalyzer(columnNames.get(iKey));
+  List<IndexSearchCondition> searchConditions=new ArrayList<IndexSearchCondition>();
+  ExprNodeDesc residualPredicate=analyzer.analyzePredicate(filterExpr,searchConditions);
+  if (residualPredicate != null) {
+    throw new RuntimeException("Unexpected residual predicate " + residualPredicate.getExprString());
+  }
+  if (searchConditions.size() != 1) {
+    throw new RuntimeException("Exactly one search condition expected in push down");
+  }
+  IndexSearchCondition sc=searchConditions.get(0);
+  ExprNodeConstantEvaluator eval=new ExprNodeConstantEvaluator(sc.getConstantDesc());
+  byte[] startRow;
+  try {
+    ObjectInspector objInspector=eval.initialize(null);
+    Object writable=eval.evaluate(null);
+    ByteStream.Output serializeStream=new ByteStream.Output();
+    LazyUtils.writePrimitiveUTF8(serializeStream,writable,(PrimitiveObjectInspector)objInspector,false,(byte)0,null);
+    startRow=new byte[serializeStream.getCount()];
+    System.arraycopy(serializeStream.getData(),0,startRow,0,serializeStream.getCount());
+  }
+ catch (  HiveException ex) {
+    throw new IOException(ex);
+  }
+  byte[] stopRow=new byte[startRow.length + 1];
+  System.arraycopy(startRow,0,stopRow,0,startRow.length);
+  if (tableSplit != null) {
+    tableSplit=new TableSplit(tableSplit.getTableName(),startRow,stopRow,tableSplit.getRegionLocation());
+  }
+  scan.setStartRow(startRow);
+  scan.setStopRow(stopRow);
+  scan.setFilter(new WhileMatchFilter(new RowFilter(CompareFilter.CompareOp.EQUAL,new BinaryComparator(startRow))));
+  return tableSplit;
+}
