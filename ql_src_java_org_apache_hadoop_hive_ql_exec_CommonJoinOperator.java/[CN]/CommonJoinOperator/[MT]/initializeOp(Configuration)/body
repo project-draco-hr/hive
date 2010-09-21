@@ -7,14 +7,30 @@
   storage=new HashMap<Byte,RowContainer<ArrayList<Object>>>();
   numAliases=conf.getExprs().size();
   joinValues=new HashMap<Byte,List<ExprNodeEvaluator>>();
+  joinFilters=new HashMap<Byte,List<ExprNodeEvaluator>>();
   if (order == null) {
     order=conf.getTagOrder();
   }
   condn=conf.getConds();
   noOuterJoin=conf.isNoOuterJoin();
   totalSz=populateJoinKeyValue(joinValues,conf.getExprs());
+  populateJoinKeyValue(joinFilters,conf.getFilters());
   joinValuesObjectInspectors=getObjectInspectorsFromEvaluators(joinValues,inputObjInspectors);
+  joinFilterObjectInspectors=getObjectInspectorsFromEvaluators(joinFilters,inputObjInspectors);
   joinValuesStandardObjectInspectors=getStandardObjectInspectors(joinValuesObjectInspectors);
+  if (noOuterJoin) {
+    rowContainerStandardObjectInspectors=joinValuesStandardObjectInspectors;
+  }
+ else {
+    Map<Byte,List<ObjectInspector>> rowContainerObjectInspectors=new HashMap<Byte,List<ObjectInspector>>();
+    for (    Byte alias : order) {
+      ArrayList<ObjectInspector> rcOIs=new ArrayList<ObjectInspector>();
+      rcOIs.addAll(joinValuesObjectInspectors.get(alias));
+      rcOIs.add(PrimitiveObjectInspectorFactory.writableBooleanObjectInspector);
+      rowContainerObjectInspectors.put(alias,rcOIs);
+    }
+    rowContainerStandardObjectInspectors=getStandardObjectInspectors(rowContainerObjectInspectors);
+  }
   dummyObj=new Object[numAliases];
   dummyObjVectors=new RowContainer[numAliases];
   joinEmitInterval=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVEJOINEMITINTERVAL);
@@ -25,6 +41,9 @@
     ArrayList<Object> nr=new ArrayList<Object>(sz);
     for (int j=0; j < sz; j++) {
       nr.add(null);
+    }
+    if (!noOuterJoin) {
+      nr.add(new BooleanWritable(false));
     }
     dummyObj[pos]=nr;
     RowContainer<ArrayList<Object>> values=getRowContainer(hconf,pos,alias,1);

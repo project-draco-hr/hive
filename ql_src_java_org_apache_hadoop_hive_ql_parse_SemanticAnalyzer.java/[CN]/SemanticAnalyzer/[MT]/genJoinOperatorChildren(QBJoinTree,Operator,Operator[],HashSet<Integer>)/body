@@ -7,12 +7,14 @@
   HashMap<Byte,List<ExprNodeDesc>> exprMap=new HashMap<Byte,List<ExprNodeDesc>>();
   Map<String,ExprNodeDesc> colExprMap=new HashMap<String,ExprNodeDesc>();
   HashMap<Integer,Set<String>> posToAliasMap=new HashMap<Integer,Set<String>>();
+  HashMap<Byte,List<ExprNodeDesc>> filterMap=new HashMap<Byte,List<ExprNodeDesc>>();
   for (int pos=0; pos < right.length; ++pos) {
     Operator input=right[pos];
     if (input == null) {
       input=left;
     }
     ArrayList<ExprNodeDesc> keyDesc=new ArrayList<ExprNodeDesc>();
+    ArrayList<ExprNodeDesc> filterDesc=new ArrayList<ExprNodeDesc>();
     Byte tag=Byte.valueOf((byte)(((ReduceSinkDesc)(input.getConf())).getTag()));
     if (omitOpts == null || !omitOpts.contains(pos)) {
       RowResolver inputRS=opParseCtx.get(input).getRR();
@@ -41,8 +43,12 @@
           }
         }
       }
+      for (      ASTNode cond : join.getFilters().get(tag)) {
+        filterDesc.add(genExprNodeDesc(cond,inputRS));
+      }
     }
     exprMap.put(tag,keyDesc);
+    filterMap.put(tag,filterDesc);
     rightOps[pos]=input;
   }
   JoinCondDesc[] joinCondns=new JoinCondDesc[join.getJoinCond().length];
@@ -50,7 +56,7 @@
     JoinCond condn=join.getJoinCond()[i];
     joinCondns[i]=new JoinCondDesc(condn);
   }
-  JoinDesc desc=new JoinDesc(exprMap,outputColumnNames,joinCondns);
+  JoinDesc desc=new JoinDesc(exprMap,outputColumnNames,join.getNoOuterJoin(),joinCondns,filterMap);
   desc.setReversedExprs(reversedExprs);
   JoinOperator joinOp=(JoinOperator)OperatorFactory.getAndMakeChild(desc,new RowSchema(outputRS.getColumnInfos()),rightOps);
   joinOp.setColumnExprMap(colExprMap);
