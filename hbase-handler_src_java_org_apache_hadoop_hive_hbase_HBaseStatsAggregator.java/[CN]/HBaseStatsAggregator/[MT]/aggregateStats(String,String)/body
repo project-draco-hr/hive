@@ -1,0 +1,26 @@
+{
+  if (key != StatsSetupConst.ROW_COUNT) {
+    LOG.warn("Warning. Invalid statistic. Currently " + "row count is the only supported statistic");
+    return null;
+  }
+  int retValue=0;
+  try {
+    Scan scan=new Scan();
+    scan.addColumn(rowCountFamily,rowCountColumn);
+    PrefixFilter filter=new PrefixFilter(Bytes.toBytes(rowID));
+    scan.setFilter(filter);
+    ResultScanner scanner=htable.getScanner(scan);
+    ArrayList<Delete> toDelete=new ArrayList<Delete>();
+    for (    Result result : scanner) {
+      retValue+=Integer.parseInt(Bytes.toString(result.getValue(rowCountFamily,rowCountColumn)));
+      Delete delete=new Delete(result.getRow());
+      toDelete.add(delete);
+    }
+    htable.delete(toDelete);
+    return Integer.toString(retValue);
+  }
+ catch (  IOException e) {
+    LOG.error("Error during publishing aggregation. ",e);
+    return null;
+  }
+}

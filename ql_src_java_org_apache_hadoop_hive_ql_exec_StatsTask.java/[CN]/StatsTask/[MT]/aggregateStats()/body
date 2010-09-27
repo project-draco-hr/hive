@@ -1,0 +1,100 @@
+{
+  try {
+    Warehouse wh=new Warehouse(conf);
+    FileSystem fileSys;
+    FileStatus[] fileStatus;
+    StatsAggregator statsAggregator;
+    String statsImplementationClass=HiveConf.getVar(conf,HiveConf.ConfVars.HIVESTATSDBCLASS);
+    StatsFactory.setImplementation(statsImplementationClass,conf);
+    statsAggregator=StatsFactory.getStatsAggregator();
+    if (!statsAggregator.connect(conf)) {
+      console.printInfo("[WARNING] Could not update table/partition level stats.","StatsAggregator.connect() failed: stats class = " + statsImplementationClass);
+      return 0;
+    }
+    TableStatistics tblStats=new TableStatistics();
+    if (table.isPartitioned()) {
+      org.apache.hadoop.hive.metastore.api.Table tTable=table.getTTable();
+      Map<String,String> parameters=tTable.getParameters();
+      if (parameters.containsKey(StatsSetupConst.ROW_COUNT)) {
+        tblStats.setNumRows(Long.parseLong(parameters.get(StatsSetupConst.ROW_COUNT)));
+      }
+      if (parameters.containsKey(StatsSetupConst.NUM_PARTITIONS)) {
+        tblStats.setNumPartitions(Integer.parseInt(parameters.get(StatsSetupConst.NUM_PARTITIONS)));
+      }
+      if (parameters.containsKey(StatsSetupConst.NUM_FILES)) {
+        tblStats.setNumFiles(Integer.parseInt(parameters.get(StatsSetupConst.NUM_FILES)));
+      }
+      if (parameters.containsKey(StatsSetupConst.TOTAL_SIZE)) {
+        tblStats.setSize(Long.parseLong(parameters.get(StatsSetupConst.TOTAL_SIZE)));
+      }
+    }
+    List<Partition> partitions=getPartitionsList();
+    if (partitions == null) {
+      Path tablePath=wh.getDefaultTablePath(table.getDbName(),table.getTableName());
+      fileSys=tablePath.getFileSystem(conf);
+      fileStatus=Utilities.getFileStatusRecurse(tablePath,1,fileSys);
+      tblStats.setNumFiles(fileStatus.length);
+      long tableSize=0L;
+      for (int i=0; i < fileStatus.length; i++) {
+        tableSize+=fileStatus[i].getLen();
+      }
+      tblStats.setSize(tableSize);
+      String rows=statsAggregator.aggregateStats(work.getAggKey(),StatsSetupConst.ROW_COUNT);
+      if (rows != null) {
+        tblStats.setNumRows(Long.parseLong(rows));
+      }
+    }
+ else {
+      for (      Partition partn : partitions) {
+        PartitionStatistics newPartStats=new PartitionStatistics();
+        String partitionID=work.getAggKey() + Warehouse.makePartName(partn.getSpec());
+        String rows=statsAggregator.aggregateStats(partitionID,StatsSetupConst.ROW_COUNT);
+        if (rows != null) {
+          newPartStats.setNumRows(Long.parseLong(rows));
+        }
+        fileSys=partn.getPartitionPath().getFileSystem(conf);
+        fileStatus=Utilities.getFileStatusRecurse(partn.getPartitionPath(),1,fileSys);
+        newPartStats.setNumFiles(fileStatus.length);
+        long partitionSize=0L;
+        for (int i=0; i < fileStatus.length; i++) {
+          partitionSize+=fileStatus[i].getLen();
+        }
+        newPartStats.setSize(partitionSize);
+        org.apache.hadoop.hive.metastore.api.Partition tPart=partn.getTPartition();
+        Map<String,String> parameters=tPart.getParameters();
+        boolean hasStats=parameters.containsKey(StatsSetupConst.NUM_FILES) || parameters.containsKey(StatsSetupConst.ROW_COUNT) || parameters.containsKey(StatsSetupConst.TOTAL_SIZE);
+        int nf=parameters.containsKey(StatsSetupConst.NUM_FILES) ? Integer.parseInt(parameters.get(StatsSetupConst.NUM_FILES)) : 0;
+        long nr=parameters.containsKey(StatsSetupConst.ROW_COUNT) ? Long.parseLong(parameters.get(StatsSetupConst.ROW_COUNT)) : 0L;
+        long sz=parameters.containsKey(StatsSetupConst.TOTAL_SIZE) ? Integer.parseInt(parameters.get(StatsSetupConst.TOTAL_SIZE)) : 0L;
+        if (hasStats) {
+          PartitionStatistics oldPartStats=new PartitionStatistics(nf,nr,sz);
+          tblStats.updateStats(oldPartStats,newPartStats);
+        }
+ else {
+          tblStats.addPartitionStats(newPartStats);
+        }
+        parameters.put(StatsSetupConst.ROW_COUNT,Long.toString(newPartStats.getNumRows()));
+        parameters.put(StatsSetupConst.NUM_FILES,Integer.toString(newPartStats.getNumFiles()));
+        parameters.put(StatsSetupConst.TOTAL_SIZE,Long.toString(newPartStats.getSize()));
+        tPart.setParameters(parameters);
+        db.alterPartition(table.getTableName(),new Partition(table,tPart));
+        console.printInfo("Partition " + table.getTableName() + partn.getSpec()+ " stats: ["+ newPartStats.toString()+ ']');
+      }
+    }
+    statsAggregator.closeConnection();
+    org.apache.hadoop.hive.metastore.api.Table tTable=table.getTTable();
+    Map<String,String> parameters=tTable.getParameters();
+    parameters.put(StatsSetupConst.ROW_COUNT,Long.toString(tblStats.getNumRows()));
+    parameters.put(StatsSetupConst.NUM_PARTITIONS,Integer.toString(tblStats.getNumPartitions()));
+    parameters.put(StatsSetupConst.NUM_FILES,Integer.toString(tblStats.getNumFiles()));
+    parameters.put(StatsSetupConst.TOTAL_SIZE,Long.toString(tblStats.getSize()));
+    tTable.setParameters(parameters);
+    db.alterTable(table.getTableName(),new Table(tTable));
+    console.printInfo("Table " + table.getTableName() + " stats: ["+ tblStats.toString()+ ']');
+    return 0;
+  }
+ catch (  Exception e) {
+    console.printInfo("[Warning] could not update stats.","Failed with exception " + e.getMessage() + "\n"+ StringUtils.stringifyException(e));
+    return 0;
+  }
+}

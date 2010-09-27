@@ -1,0 +1,33 @@
+{
+  if (conn == null) {
+    LOG.error("JDBC connection is null. Cannot publish stats without JDBC connection.");
+    return false;
+  }
+  if (statType != StatsSetupConst.ROW_COUNT) {
+    LOG.warn("Warning. Invalid statistic. Currently " + "row count is the only supported statistic");
+    return false;
+  }
+  LOG.info("Stats publishing for key " + fileID + ". Value = "+ value);
+  try {
+    selStmt.setString(1,fileID);
+    ResultSet result=selStmt.executeQuery();
+    if (result.next()) {
+      long currval=result.getLong(1);
+      if (currval < Long.parseLong(value)) {
+        updStmt.setString(1,value);
+        updStmt.setString(2,fileID);
+        updStmt.executeUpdate();
+      }
+    }
+ else {
+      insStmt.setString(1,fileID);
+      insStmt.setString(2,value);
+      insStmt.executeUpdate();
+    }
+    return true;
+  }
+ catch (  SQLException e) {
+    LOG.error("Error during publishing statistics. ",e);
+    return false;
+  }
+}

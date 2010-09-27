@@ -1,0 +1,30 @@
+{
+  LOG.info("Stats Aggregator for key " + fileID);
+  if (statType != StatsSetupConst.ROW_COUNT) {
+    LOG.warn("Warning. Invalid statistic. Currently " + "row count is the only supported statistic");
+    return null;
+  }
+  try {
+    long retval=0;
+    Statement stmt=conn.createStatement();
+    String select="SELECT SUM" + "(" + JDBCStatsSetupConstants.PART_STAT_ROW_COUNT_COLUMN_NAME + ")"+ " FROM "+ JDBCStatsSetupConstants.PART_STAT_TABLE_NAME+ " WHERE "+ JDBCStatsSetupConstants.PART_STAT_ID_COLUMN_NAME+ " LIKE '"+ fileID+ "%'";
+    ResultSet result=stmt.executeQuery(select);
+    if (result.next()) {
+      retval=result.getLong(1);
+    }
+ else {
+      LOG.warn("Warning. Nothing published. Nothing aggregated.");
+      return "";
+    }
+    stmt.clearBatch();
+    String delete="DELETE FROM " + JDBCStatsSetupConstants.PART_STAT_TABLE_NAME + " WHERE "+ JDBCStatsSetupConstants.PART_STAT_ID_COLUMN_NAME+ " LIKE '"+ fileID+ "%'";
+    stmt.executeUpdate(delete);
+    stmt.close();
+    LOG.info("Stats aggregator got " + retval);
+    return Long.toString(retval);
+  }
+ catch (  SQLException e) {
+    LOG.error("Error during publishing aggregation. " + e);
+    return null;
+  }
+}

@@ -1,0 +1,33 @@
+{
+  if (!qbp.isAnalyzeCommand()) {
+    tsDesc.setGatherStats(false);
+  }
+ else {
+    tsDesc.setGatherStats(true);
+    String tblName=tab.getTableName();
+    tableSpec tblSpec=qbp.getTableSpec(alias);
+    Map<String,String> partSpec=tblSpec.getPartSpec();
+    if (partSpec != null) {
+      List<String> cols=new ArrayList<String>();
+      cols.addAll(partSpec.keySet());
+      tsDesc.setPartColumns(cols);
+    }
+    String k=tblName + Path.SEPARATOR;
+    tsDesc.setStatsAggPrefix(k);
+    outputs.add(new WriteEntity(tab));
+    if (tab.isPartitioned()) {
+      if (partSpec == null) {
+        throw new SemanticException(ErrorMsg.NEED_PARTITION_SPECIFICATION.getMsg());
+      }
+      try {
+        List<Partition> partitions=db.getPartitions(tab,partSpec);
+        for (        Partition partn : partitions) {
+          outputs.add(new WriteEntity(partn));
+        }
+      }
+ catch (      HiveException e) {
+        throw new SemanticException(e);
+      }
+    }
+  }
+}

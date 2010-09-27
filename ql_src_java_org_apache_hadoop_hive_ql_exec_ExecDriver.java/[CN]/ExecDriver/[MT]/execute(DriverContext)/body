@@ -91,6 +91,14 @@
     }
     JobClient jc=new JobClient(job);
     Throttle.checkJobTracker(job,LOG);
+    if (work.isGatheringStats()) {
+      StatsPublisher statsPublisher;
+      String statsImplementationClass=HiveConf.getVar(job,HiveConf.ConfVars.HIVESTATSDBCLASS);
+      if (StatsFactory.setImplementation(statsImplementationClass,job)) {
+        statsPublisher=StatsFactory.getStatsPublisher();
+        statsPublisher.init(job);
+      }
+    }
     rj=jc.submitJob(job);
     if (pwd != null) {
       HiveConf.setVar(job,HiveConf.ConfVars.METASTOREPWD,pwd);
@@ -104,7 +112,7 @@
       statusMesg+=" with errors";
       returnVal=2;
       console.printError(statusMesg);
-      if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.SHOW_JOB_FAIL_DEBUG_INFO)) {
+      if (HiveConf.getBoolVar(job,HiveConf.ConfVars.SHOW_JOB_FAIL_DEBUG_INFO)) {
         showJobFailDebugInfo(job,rj);
       }
     }
@@ -141,21 +149,12 @@
  catch (    Exception e) {
     }
   }
-  ArrayList<String> dpPaths=new ArrayList<String>();
   try {
     if (rj != null) {
       JobCloseFeedBack feedBack=new JobCloseFeedBack();
       if (work.getAliasToWork() != null) {
         for (        Operator<? extends Serializable> op : work.getAliasToWork().values()) {
           op.jobClose(job,success,feedBack);
-          ArrayList<Object> dirs=feedBack.get(JobCloseFeedBack.FeedBackType.DYNAMIC_PARTITIONS);
-          if (dirs != null) {
-            for (            Object o : dirs) {
-              if (o instanceof String) {
-                dpPaths.add((String)o);
-              }
-            }
-          }
         }
       }
       if (work.getReducer() != null) {
