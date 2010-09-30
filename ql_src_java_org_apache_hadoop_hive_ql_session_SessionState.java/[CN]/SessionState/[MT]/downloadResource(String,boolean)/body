@@ -1,0 +1,31 @@
+{
+  if (value.matches("(" + getMatchingSchemaAsRegex() + ")://.*")) {
+    getConsole().printInfo("converting to local " + value);
+    File resourceDir=new File(getConf().getVar(HiveConf.ConfVars.DOWNLOADED_RESOURCES_DIR));
+    String destinationName=new Path(value).getName();
+    File destinationFile=new File(resourceDir,destinationName);
+    if (resourceDir.exists() && !resourceDir.isDirectory()) {
+      throw new RuntimeException("The resource directory is not a directory, resourceDir is set to" + resourceDir);
+    }
+    if (!resourceDir.exists() && !resourceDir.mkdirs()) {
+      throw new RuntimeException("Couldn't create directory " + resourceDir);
+    }
+    try {
+      FileSystem fs=FileSystem.get(new URI(value),conf);
+      fs.copyToLocalFile(new Path(value),new Path(destinationFile.getCanonicalPath()));
+      value=destinationFile.getCanonicalPath();
+      if (convertToUnix && DosToUnix.isWindowsScript(destinationFile)) {
+        try {
+          DosToUnix.convertWindowsScriptToUnix(destinationFile);
+        }
+ catch (        Exception e) {
+          throw new RuntimeException("Caught exception while converting to unix line endings",e);
+        }
+      }
+    }
+ catch (    Exception e) {
+      throw new RuntimeException("Failed to read external resource " + value,e);
+    }
+  }
+  return value;
+}
