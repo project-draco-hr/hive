@@ -66,9 +66,18 @@
       jarCmd=hiveJar + " " + ExecDriver.class.getName()+ libJarsOption;
     }
     String cmdLine=hadoopExec + " jar " + jarCmd+ " -plan "+ planPath.toString()+ " "+ isSilent+ " "+ hiveConfArgs;
+    String workDir=(new File(".")).getCanonicalPath();
     String files=getResourceFiles(conf,SessionState.ResourceType.FILE);
     if (!files.isEmpty()) {
       cmdLine=cmdLine + " -files " + files;
+      workDir=(new Path(ctx.getLocalTmpFileURI())).toUri().getPath();
+      if (!(new File(workDir)).mkdir())       throw new IOException("Cannot create tmp working dir: " + workDir);
+      for (      String f : StringUtils.split(files,',')) {
+        Path p=new Path(f);
+        String target=p.toUri().getPath();
+        String link=workDir + Path.SEPARATOR + p.getName();
+        if (FileUtil.symLink(target,link) != 0)         throw new IOException("Cannot link to added file: " + target + " from: "+ link);
+      }
     }
     LOG.info("Executing: " + cmdLine);
     Process executor=null;
@@ -83,12 +92,16 @@
     hadoopOpts=sb.toString();
     String[] env;
     Map<String,String> variables=new HashMap(System.getenv());
-    int hadoopMem=conf.getIntVar(HiveConf.ConfVars.HIVEHADOOPMAXMEM);
-    if (hadoopMem == 0) {
-      variables.remove(HADOOP_MEM_KEY);
+    if ("local".equals(conf.getVar(HiveConf.ConfVars.HADOOPJT))) {
+      int hadoopMem=conf.getIntVar(HiveConf.ConfVars.HIVEHADOOPMAXMEM);
+      if (hadoopMem == 0) {
+        variables.remove(HADOOP_MEM_KEY);
+      }
+ else {
+        variables.put(HADOOP_MEM_KEY,String.valueOf(hadoopMem));
+      }
     }
  else {
-      variables.put(HADOOP_MEM_KEY,String.valueOf(hadoopMem));
     }
     if (variables.containsKey(HADOOP_OPTS_KEY)) {
       variables.put(HADOOP_OPTS_KEY,variables.get(HADOOP_OPTS_KEY) + hadoopOpts);
@@ -103,7 +116,7 @@
       String value=entry.getValue();
       env[pos++]=name + "=" + value;
     }
-    executor=Runtime.getRuntime().exec(cmdLine,env);
+    executor=Runtime.getRuntime().exec(cmdLine,env,new File(workDir));
     StreamPrinter outPrinter=new StreamPrinter(executor.getInputStream(),null,System.out);
     StreamPrinter errPrinter=new StreamPrinter(executor.getErrorStream(),null,System.err);
     outPrinter.start();
