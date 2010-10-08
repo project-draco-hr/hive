@@ -1,0 +1,17 @@
+{
+  HiveConf conf=new HiveConf(this.getClass());
+  conf.set(ConfVars.SEMANTIC_ANALYZER_HOOK.varname,DummySemanticAnalyzerHook.class.getName());
+  conf.set(ConfVars.HIVE_SUPPORT_CONCURRENCY.varname,"false");
+  Driver driver=new Driver(conf);
+  driver.run("drop table testDL");
+  CommandProcessorResponse resp=driver.run("create table testDL (a int) as select * from tbl2");
+  assertEquals(10,resp.getResponseCode());
+  assertTrue(resp.getErrorMessage().contains("CTAS not supported."));
+  resp=driver.run("create table testDL (a int)");
+  assertEquals(0,resp.getResponseCode());
+  assertNull(resp.getErrorMessage());
+  Map<String,String> params=Hive.get(conf).getTable(MetaStoreUtils.DEFAULT_DATABASE_NAME,"testDL").getParameters();
+  assertEquals(DummyCreateTableHook.class.getName(),params.get("createdBy"));
+  assertEquals("Open Source rocks!!",params.get("Message"));
+  driver.run("drop table testDL");
+}
