@@ -24,6 +24,14 @@
       qb.getMetaData().setSrcForAlias(alias,tab);
       if (qb.getParseInfo().isAnalyzeCommand()) {
         tableSpec ts=new tableSpec(db,conf,(ASTNode)ast.getChild(0));
+        if (ts.specType == SpecType.DYNAMIC_PARTITION) {
+          try {
+            ts.partitions=db.getPartitionsByNames(ts.tableHandle,ts.partSpec);
+          }
+ catch (          HiveException e) {
+            throw new SemanticException("Cannot get partitions for " + ts.partSpec,e);
+          }
+        }
         qb.getParseInfo().addTableSpec(alias,ts);
       }
     }
@@ -47,7 +55,7 @@ case HiveParser.TOK_TAB:
           if (!HiveOutputFormat.class.isAssignableFrom(outputFormatClass)) {
             throw new SemanticException(ErrorMsg.INVALID_OUTPUT_FORMAT_TYPE.getMsg(ast,"The class is " + outputFormatClass.toString()));
           }
-          if (ts.partHandle == null) {
+          if (ts.specType != SpecType.STATIC_PARTITION) {
             qb.getMetaData().setDestForAlias(name,ts.tableHandle);
             if (ts.partSpec != null && ts.partSpec.size() > 0) {
               qb.getMetaData().setPartSpecForAlias(name,ts.partSpec);
