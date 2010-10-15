@@ -3,16 +3,31 @@
     for (    FileStatus src : srcs) {
       FileStatus[] items=fs.listStatus(src.getPath());
       for (      FileStatus item : items) {
+        Path itemStaging=item.getPath();
         if (Utilities.isTempPath(item)) {
-          fs.delete(item.getPath(),true);
+          fs.delete(itemStaging,true);
           continue;
         }
         if (item.isDir()) {
-          throw new HiveException("checkPaths: " + src.getPath() + " has nested directory"+ item.getPath());
+          throw new HiveException("checkPaths: " + src.getPath() + " has nested directory"+ itemStaging);
         }
-        Path tmpDest=new Path(destf,item.getPath().getName());
-        if (!replace && fs.exists(tmpDest)) {
-          throw new HiveException("checkPaths: " + tmpDest + " already exists");
+        if (!replace) {
+          int counter=1;
+          Path itemDest=new Path(destf,itemStaging.getName());
+          while (fs.exists(itemDest)) {
+            Path proposedStaging=itemStaging.suffix("_copy_" + counter++);
+            Path proposedDest=new Path(destf,proposedStaging.getName());
+            if (fs.exists(proposedDest)) {
+              LOG.trace(proposedDest + " already exists");
+              continue;
+            }
+            if (!fs.rename(itemStaging,proposedStaging)) {
+              LOG.debug("Unsuccessfully in attempt to rename " + itemStaging + " to "+ proposedStaging+ "...");
+              continue;
+            }
+            LOG.debug("Successfully renamed " + itemStaging + " to "+ proposedStaging);
+            itemDest=proposedDest;
+          }
         }
       }
     }
