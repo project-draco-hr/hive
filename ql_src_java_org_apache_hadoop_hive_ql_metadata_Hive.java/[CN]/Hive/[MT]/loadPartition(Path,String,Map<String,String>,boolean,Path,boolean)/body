@@ -1,25 +1,22 @@
 {
   Table tbl=getTable(tableName);
   try {
-    FileSystem fs;
-    Path partPath;
-    Partition part=getPartition(tbl,partSpec,false);
-    if (part == null) {
-      fs=FileSystem.get(tbl.getDataLocation(),getConf());
-      partPath=new Path(tbl.getDataLocation().getPath(),Warehouse.makePartName(partSpec));
+    Partition oldPart=getPartition(tbl,partSpec,false,null);
+    Path oldPartPath=null;
+    if (oldPart != null) {
+      oldPartPath=oldPart.getPartitionPath();
     }
- else {
-      partPath=part.getPath()[0];
-      fs=partPath.getFileSystem(getConf());
-    }
+    Path partPath=new Path(tbl.getDataLocation().getPath(),Warehouse.makePartName(partSpec));
+    Path newPartPath=new Path(loadPath.toUri().getScheme(),loadPath.toUri().getAuthority(),partPath.toUri().getPath());
     if (replace) {
-      Hive.replaceFiles(loadPath,partPath,fs,tmpDirPath);
+      Hive.replaceFiles(loadPath,newPartPath,oldPartPath,tmpDirPath,getConf());
     }
  else {
-      Hive.copyFiles(loadPath,partPath,fs);
+      FileSystem fs=FileSystem.get(tbl.getDataLocation(),getConf());
+      Hive.copyFiles(loadPath,newPartPath,fs);
     }
     if (!holdDDLTime) {
-      part=getPartition(tbl,partSpec,true);
+      getPartition(tbl,partSpec,true,newPartPath.toString());
     }
   }
  catch (  IOException e) {
