@@ -8,17 +8,34 @@
  catch (  NoSuchObjectException e) {
     throw new MetaException(e.getMessage());
   }
-  List<String> partNames=get_partition_names(db_name,tbl_name,max_parts);
-  List<String> filteredPartNames=new ArrayList<String>();
-  for (  String name : partNames) {
-    LinkedHashMap<String,String> spec=Warehouse.makeSpecFromName(name);
-    List<String> vals=new ArrayList<String>();
-    for (    String val : spec.values()) {
-      vals.add(val);
-    }
-    if (MetaStoreUtils.pvalMatches(part_vals,vals)) {
-      filteredPartNames.add(name);
-    }
+  if (part_vals.size() > t.getPartitionKeys().size()) {
+    throw new MetaException("Incorrect number of partition values");
   }
-  return filteredPartNames;
+  Map<String,String> partKeyToValues=new LinkedHashMap<String,String>();
+  int i=0;
+  for (  String value : part_vals) {
+    String col=t.getPartitionKeys().get(i).getName();
+    if (value.length() > 0) {
+      partKeyToValues.put(col,value);
+    }
+    i++;
+  }
+  final String filter=MetaStoreUtils.makeFilterStringFromMap(partKeyToValues);
+  List<String> ret=null;
+  try {
+    ret=executeWithRetry(new Command<List<String>>(){
+      @Override List<String> run(      RawStore ms) throws Exception {
+        return ms.listPartitionNamesByFilter(db_name,tbl_name,filter,max_parts);
+      }
+    }
+);
+  }
+ catch (  MetaException e) {
+    throw e;
+  }
+catch (  Exception e) {
+    assert(e instanceof RuntimeException);
+    throw (RuntimeException)e;
+  }
+  return ret;
 }
