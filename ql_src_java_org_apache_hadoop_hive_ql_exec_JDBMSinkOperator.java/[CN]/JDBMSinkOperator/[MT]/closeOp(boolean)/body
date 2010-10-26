@@ -1,0 +1,29 @@
+{
+  try {
+    if (mapJoinTables != null) {
+      String tmpURI=this.getExecContext().getLocalWork().getTmpFileURI();
+      LOG.info("Get TMP URI: " + tmpURI);
+      for (      Map.Entry<Byte,HashMapWrapper<MapJoinObjectKey,MapJoinObjectValue>> hashTables : mapJoinTables.entrySet()) {
+        Byte tag=hashTables.getKey();
+        HashMapWrapper hashTable=hashTables.getValue();
+        String jdbmFile=hashTable.flushMemoryCacheToPersistent();
+        Path localPath=new Path(jdbmFile);
+        String bigBucketFileName=this.getExecContext().getCurrentBigBucketFile();
+        if (bigBucketFileName == null || bigBucketFileName.length() == 0) {
+          bigBucketFileName="-";
+        }
+        Path tmpURIPath=new Path(tmpURI + Path.SEPARATOR + "-"+ tag+ "-"+ bigBucketFileName+ ".jdbm");
+        FileSystem fs=tmpURIPath.getFileSystem(this.getExecContext().getJc());
+        fs.copyFromLocalFile(localPath,tmpURIPath);
+        LOG.info("Upload 1 JDBM File to: " + tmpURIPath);
+        System.out.println("Upload 1 JDBM File to: " + tmpURIPath);
+        hashTable.close();
+      }
+    }
+    super.closeOp(abort);
+  }
+ catch (  IOException e) {
+    LOG.error("Copy local file to HDFS error");
+    e.printStackTrace();
+  }
+}

@@ -1,0 +1,69 @@
+{
+  boolean localMode=HiveConf.getVar(hconf,HiveConf.ConfVars.HADOOPJT).equals("local");
+  String tmpURI=null;
+  HashMapWrapper<MapJoinObjectKey,MapJoinObjectValue> hashtable;
+  Byte pos;
+  int alias;
+  String currentInputFile=HiveConf.getVar(hconf,HiveConf.ConfVars.HADOOPMAPFILENAME);
+  LOG.info("******* Load from JDBM File: input : " + currentInputFile);
+  String currentFileName;
+  if (this.getExecContext().getLocalWork().getInputFileChangeSensitive()) {
+    currentFileName=this.getFileName(currentInputFile);
+  }
+ else {
+    currentFileName="-";
+  }
+  LOG.info("******* Filename : " + currentFileName);
+  try {
+    if (localMode) {
+      LOG.info("******* Load from tmp file uri ***");
+      tmpURI=this.getExecContext().getLocalWork().getTmpFileURI();
+      for (      Map.Entry<Byte,HashMapWrapper<MapJoinObjectKey,MapJoinObjectValue>> entry : mapJoinTables.entrySet()) {
+        pos=entry.getKey();
+        hashtable=entry.getValue();
+        URI uri=new URI(tmpURI + Path.SEPARATOR + "-"+ pos+ "-"+ currentFileName+ ".jdbm");
+        LOG.info("\tLoad back 1 JDBM file from tmp file uri:" + uri.toString());
+        Path path=new Path(tmpURI + Path.SEPARATOR + "-"+ pos+ "-"+ currentFileName+ ".jdbm");
+        LOG.info("\tLoad back 1 JDBM file from tmp file uri:" + path.toString());
+        File jdbmFile=new File(path.toUri());
+        hashtable.initilizePersistentHash(jdbmFile);
+      }
+    }
+ else {
+      LOG.info("******* Load from distributed Cache ***:");
+      Path[] localFiles=DistributedCache.getLocalCacheFiles(this.hconf);
+      for (int i=0; i < localFiles.length; i++) {
+        Path path=localFiles[i];
+      }
+      for (      Map.Entry<Byte,HashMapWrapper<MapJoinObjectKey,MapJoinObjectValue>> entry : mapJoinTables.entrySet()) {
+        pos=entry.getKey();
+        hashtable=entry.getValue();
+        String suffix="-" + pos + "-"+ currentFileName+ ".jdbm";
+        LOG.info("Looking for jdbm file with suffix: " + suffix);
+        boolean found=false;
+        for (int i=0; i < localFiles.length; i++) {
+          Path path=localFiles[i];
+          if (path.toString().endsWith(suffix)) {
+            LOG.info("Matching suffix with cached file:" + path.toString());
+            File jdbmFile=new File(path.toString());
+            LOG.info("\tInitializing the JDBM by cached file:" + path.toString());
+            hashtable.initilizePersistentHash(jdbmFile);
+            found=true;
+            LOG.info("\tLoad back 1 JDBM file from distributed cache:" + path.toString());
+            break;
+          }
+        }
+        if (!found) {
+          LOG.error("Load nothing from Distributed Cache");
+          throw new HiveException();
+        }
+      }
+      LOG.info("******* End of loading *******:");
+    }
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    LOG.error("Load Hash Table error");
+    throw new HiveException();
+  }
+}

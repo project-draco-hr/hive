@@ -1,0 +1,51 @@
+{
+  LocalMapJoinProcCtx context=(LocalMapJoinProcCtx)ctx;
+  if (!nd.getName().equals("MAPJOIN")) {
+    return null;
+  }
+  MapJoinOperator mapJoinOp=(MapJoinOperator)nd;
+  JDBMSinkDesc jdbmSinkDesc=new JDBMSinkDesc(mapJoinOp.getConf());
+  JDBMSinkOperator jdbmSinkOp=(JDBMSinkOperator)OperatorFactory.get(jdbmSinkDesc);
+  int bigTable=mapJoinOp.getConf().getPosBigTable();
+  Byte[] order=mapJoinOp.getConf().getTagOrder();
+  int bigTableAlias=(int)order[bigTable];
+  Operator<? extends Serializable> bigOp=mapJoinOp.getParentOperators().get(bigTable);
+  List<Operator<? extends Serializable>> smallTablesParentOp=new ArrayList<Operator<? extends Serializable>>();
+  List<Operator<? extends Serializable>> dummyOperators=new ArrayList<Operator<? extends Serializable>>();
+  List<Operator<? extends Serializable>> parentsOp=mapJoinOp.getParentOperators();
+  for (int i=0; i < parentsOp.size(); i++) {
+    if (i == bigTableAlias) {
+      smallTablesParentOp.add(null);
+      continue;
+    }
+    Operator<? extends Serializable> parent=parentsOp.get(i);
+    parent.replaceChild(mapJoinOp,jdbmSinkOp);
+    smallTablesParentOp.add(parent);
+    JDBMDummyDesc desc=new JDBMDummyDesc();
+    JDBMDummyOperator dummyOp=(JDBMDummyOperator)OperatorFactory.get(desc);
+    TableDesc tbl;
+    if (parent.getSchema() == null) {
+      if (parent instanceof TableScanOperator) {
+        tbl=((TableScanOperator)parent).getTableDesc();
+      }
+ else {
+        throw new SemanticException();
+      }
+    }
+ else {
+      RowSchema rowSchema=parent.getSchema();
+      tbl=PlanUtils.getIntermediateFileTableDesc(PlanUtils.getFieldSchemasFromRowSchema(rowSchema,""));
+    }
+    dummyOp.getConf().setTbl(tbl);
+    mapJoinOp.replaceParent(parent,dummyOp);
+    List<Operator<? extends Serializable>> dummyChildren=new ArrayList<Operator<? extends Serializable>>();
+    dummyChildren.add(mapJoinOp);
+    dummyOp.setChildOperators(dummyChildren);
+    dummyOperators.add(dummyOp);
+  }
+  jdbmSinkOp.setParentOperators(smallTablesParentOp);
+  for (  Operator<? extends Serializable> op : dummyOperators) {
+    context.addDummyParentOp(op);
+  }
+  return null;
+}

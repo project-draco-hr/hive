@@ -8,16 +8,15 @@
   numAliases=conf.getExprs().size();
   joinValues=new HashMap<Byte,List<ExprNodeEvaluator>>();
   joinFilters=new HashMap<Byte,List<ExprNodeEvaluator>>();
-  if (order == null) {
-    order=conf.getTagOrder();
-  }
+  order=conf.getTagOrder();
   condn=conf.getConds();
   noOuterJoin=conf.isNoOuterJoin();
-  totalSz=populateJoinKeyValue(joinValues,conf.getExprs());
-  populateJoinKeyValue(joinFilters,conf.getFilters());
-  joinValuesObjectInspectors=getObjectInspectorsFromEvaluators(joinValues,inputObjInspectors);
-  joinFilterObjectInspectors=getObjectInspectorsFromEvaluators(joinFilters,inputObjInspectors);
-  joinValuesStandardObjectInspectors=getStandardObjectInspectors(joinValuesObjectInspectors);
+  totalSz=JoinUtil.populateJoinKeyValue(joinValues,conf.getExprs(),order,NOTSKIPBIGTABLE);
+  joinFilters=new HashMap<Byte,List<ExprNodeEvaluator>>();
+  JoinUtil.populateJoinKeyValue(joinFilters,conf.getFilters(),order,NOTSKIPBIGTABLE);
+  joinValuesObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinValues,inputObjInspectors,NOTSKIPBIGTABLE);
+  joinFilterObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinFilters,inputObjInspectors,NOTSKIPBIGTABLE);
+  joinValuesStandardObjectInspectors=JoinUtil.getStandardObjectInspectors(joinValuesObjectInspectors,NOTSKIPBIGTABLE);
   if (noOuterJoin) {
     rowContainerStandardObjectInspectors=joinValuesStandardObjectInspectors;
   }
@@ -29,7 +28,7 @@
       rcOIs.add(PrimitiveObjectInspectorFactory.writableBooleanObjectInspector);
       rowContainerObjectInspectors.put(alias,rcOIs);
     }
-    rowContainerStandardObjectInspectors=getStandardObjectInspectors(rowContainerObjectInspectors);
+    rowContainerStandardObjectInspectors=JoinUtil.getStandardObjectInspectors(rowContainerObjectInspectors,NOTSKIPBIGTABLE);
   }
   dummyObj=new Object[numAliases];
   dummyObjVectors=new RowContainer[numAliases];
@@ -46,10 +45,10 @@
       nr.add(new BooleanWritable(false));
     }
     dummyObj[pos]=nr;
-    RowContainer<ArrayList<Object>> values=getRowContainer(hconf,pos,alias,1);
+    RowContainer<ArrayList<Object>> values=JoinUtil.getRowContainer(hconf,rowContainerStandardObjectInspectors.get((byte)pos),alias,1,spillTableDesc,conf,noOuterJoin);
     values.add((ArrayList<Object>)dummyObj[pos]);
     dummyObjVectors[pos]=values;
-    RowContainer rc=getRowContainer(hconf,pos,alias,joinCacheSize);
+    RowContainer rc=JoinUtil.getRowContainer(hconf,rowContainerStandardObjectInspectors.get((byte)pos),alias,joinCacheSize,spillTableDesc,conf,noOuterJoin);
     storage.put(pos,rc);
     pos++;
   }
