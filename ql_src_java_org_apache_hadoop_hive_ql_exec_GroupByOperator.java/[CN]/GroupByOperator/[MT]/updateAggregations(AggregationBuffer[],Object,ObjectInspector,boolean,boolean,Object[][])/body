@@ -1,28 +1,86 @@
 {
-  for (int ai=0; ai < aggs.length; ai++) {
-    Object[] o=new Object[aggregationParameterFields[ai].length];
-    for (int pi=0; pi < aggregationParameterFields[ai].length; pi++) {
-      o[pi]=aggregationParameterFields[ai][pi].evaluate(row);
-    }
-    if (aggregationIsDistinct[ai]) {
-      if (hashAggr) {
-        if (newEntryForHashAggr) {
-          aggregationEvaluators[ai].aggregate(aggs[ai],o);
+  if (unionExprEval == null) {
+    for (int ai=0; ai < aggs.length; ai++) {
+      Object[] o=new Object[aggregationParameterFields[ai].length];
+      for (int pi=0; pi < aggregationParameterFields[ai].length; pi++) {
+        o[pi]=aggregationParameterFields[ai][pi].evaluate(row);
+      }
+      if (aggregationIsDistinct[ai]) {
+        if (hashAggr) {
+          if (newEntryForHashAggr) {
+            aggregationEvaluators[ai].aggregate(aggs[ai],o);
+          }
+        }
+ else {
+          if (lastInvoke[ai] == null) {
+            lastInvoke[ai]=new Object[o.length];
+          }
+          if (ObjectInspectorUtils.compare(o,aggregationParameterObjectInspectors[ai],lastInvoke[ai],aggregationParameterStandardObjectInspectors[ai]) != 0) {
+            aggregationEvaluators[ai].aggregate(aggs[ai],o);
+            for (int pi=0; pi < o.length; pi++) {
+              lastInvoke[ai][pi]=ObjectInspectorUtils.copyToStandardObject(o[pi],aggregationParameterObjectInspectors[ai][pi],ObjectInspectorCopyOption.WRITABLE);
+            }
+          }
         }
       }
  else {
-        if (lastInvoke[ai] == null) {
-          lastInvoke[ai]=new Object[o.length];
+        aggregationEvaluators[ai].aggregate(aggs[ai],o);
+      }
+    }
+    return;
+  }
+  if (distinctKeyAggrs.size() > 0) {
+    UnionObject uo=(UnionObject)(unionExprEval.evaluate(row));
+    int unionTag=uo.getTag();
+    if (nonDistinctKeyAggrs.get(unionTag) != null) {
+      for (      int pos : nonDistinctKeyAggrs.get(unionTag)) {
+        Object[] o=new Object[aggregationParameterFields[pos].length];
+        for (int pi=0; pi < aggregationParameterFields[pos].length; pi++) {
+          o[pi]=aggregationParameterFields[pos][pi].evaluate(row);
         }
-        if (ObjectInspectorUtils.compare(o,aggregationParameterObjectInspectors[ai],lastInvoke[ai],aggregationParameterStandardObjectInspectors[ai]) != 0) {
-          aggregationEvaluators[ai].aggregate(aggs[ai],o);
-          for (int pi=0; pi < o.length; pi++) {
-            lastInvoke[ai][pi]=ObjectInspectorUtils.copyToStandardObject(o[pi],aggregationParameterObjectInspectors[ai][pi],ObjectInspectorCopyOption.WRITABLE);
+        aggregationEvaluators[pos].aggregate(aggs[pos],o);
+      }
+    }
+    if (distinctKeyAggrs.get(unionTag) != null) {
+      for (      int i : distinctKeyAggrs.get(unionTag)) {
+        Object[] o=new Object[aggregationParameterFields[i].length];
+        for (int pi=0; pi < aggregationParameterFields[i].length; pi++) {
+          o[pi]=aggregationParameterFields[i][pi].evaluate(row);
+        }
+        if (hashAggr) {
+          if (newEntryForHashAggr) {
+            aggregationEvaluators[i].aggregate(aggs[i],o);
+          }
+        }
+ else {
+          if (lastInvoke[i] == null) {
+            lastInvoke[i]=new Object[o.length];
+          }
+          if (ObjectInspectorUtils.compare(o,aggregationParameterObjectInspectors[i],lastInvoke[i],aggregationParameterStandardObjectInspectors[i]) != 0) {
+            aggregationEvaluators[i].aggregate(aggs[i],o);
+            for (int pi=0; pi < o.length; pi++) {
+              lastInvoke[i][pi]=ObjectInspectorUtils.copyToStandardObject(o[pi],aggregationParameterObjectInspectors[i][pi],ObjectInspectorCopyOption.WRITABLE);
+            }
           }
         }
       }
     }
+    if (unionTag == 0) {
+      for (      int pos : nonDistinctAggrs) {
+        Object[] o=new Object[aggregationParameterFields[pos].length];
+        for (int pi=0; pi < aggregationParameterFields[pos].length; pi++) {
+          o[pi]=aggregationParameterFields[pos][pi].evaluate(row);
+        }
+        aggregationEvaluators[pos].aggregate(aggs[pos],o);
+      }
+    }
+  }
  else {
+    for (int ai=0; ai < aggs.length; ai++) {
+      Object[] o=new Object[aggregationParameterFields[ai].length];
+      for (int pi=0; pi < aggregationParameterFields[ai].length; pi++) {
+        o[pi]=aggregationParameterFields[ai][pi].evaluate(row);
+      }
       aggregationEvaluators[ai].aggregate(aggs[ai],o);
     }
   }

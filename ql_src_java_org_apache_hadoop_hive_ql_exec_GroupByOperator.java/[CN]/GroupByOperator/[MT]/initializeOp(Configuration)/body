@@ -17,12 +17,32 @@
     keyObjects[i]=null;
   }
   newKeys=new ArrayList<Object>(keyFields.length);
-  aggregationParameterFields=new ExprNodeEvaluator[conf.getAggregators().size()][];
-  aggregationParameterObjectInspectors=new ObjectInspector[conf.getAggregators().size()][];
-  aggregationParameterStandardObjectInspectors=new ObjectInspector[conf.getAggregators().size()][];
-  aggregationParameterObjects=new Object[conf.getAggregators().size()][];
-  for (int i=0; i < aggregationParameterFields.length; i++) {
-    ArrayList<ExprNodeDesc> parameters=conf.getAggregators().get(i).getParameters();
+  List<? extends StructField> sfs=((StandardStructObjectInspector)rowInspector).getAllStructFieldRefs();
+  if (sfs.size() > 0) {
+    StructField keyField=sfs.get(0);
+    if (keyField.getFieldName().toUpperCase().equals(Utilities.ReduceField.KEY.name())) {
+      ObjectInspector keyObjInspector=keyField.getFieldObjectInspector();
+      if (keyObjInspector instanceof StandardStructObjectInspector) {
+        List<? extends StructField> keysfs=((StandardStructObjectInspector)keyObjInspector).getAllStructFieldRefs();
+        if (keysfs.size() > 0) {
+          StructField sf=keysfs.get(keysfs.size() - 1);
+          if (sf.getFieldObjectInspector().getCategory().equals(ObjectInspector.Category.UNION)) {
+            unionExprEval=ExprNodeEvaluatorFactory.get(new ExprNodeColumnDesc(TypeInfoUtils.getTypeInfoFromObjectInspector(sf.getFieldObjectInspector()),keyField.getFieldName() + "." + sf.getFieldName(),null,false));
+            unionExprEval.initialize(rowInspector);
+          }
+        }
+      }
+    }
+  }
+  ArrayList<AggregationDesc> aggrs=conf.getAggregators();
+  aggregationParameterFields=new ExprNodeEvaluator[aggrs.size()][];
+  aggregationParameterObjectInspectors=new ObjectInspector[aggrs.size()][];
+  aggregationParameterStandardObjectInspectors=new ObjectInspector[aggrs.size()][];
+  aggregationParameterObjects=new Object[aggrs.size()][];
+  aggregationIsDistinct=new boolean[aggrs.size()];
+  for (int i=0; i < aggrs.size(); i++) {
+    AggregationDesc aggr=aggrs.get(i);
+    ArrayList<ExprNodeDesc> parameters=aggr.getParameters();
     aggregationParameterFields[i]=new ExprNodeEvaluator[parameters.size()];
     aggregationParameterObjectInspectors[i]=new ObjectInspector[parameters.size()];
     aggregationParameterStandardObjectInspectors[i]=new ObjectInspector[parameters.size()];
@@ -30,13 +50,51 @@
     for (int j=0; j < parameters.size(); j++) {
       aggregationParameterFields[i][j]=ExprNodeEvaluatorFactory.get(parameters.get(j));
       aggregationParameterObjectInspectors[i][j]=aggregationParameterFields[i][j].initialize(rowInspector);
+      if (unionExprEval != null) {
+        String[] names=parameters.get(j).getExprString().split("\\.");
+        if (Utilities.ReduceField.KEY.name().equals(names[0])) {
+          String name=names[names.length - 2];
+          int tag=Integer.parseInt(name.split("\\:")[1]);
+          if (aggr.getDistinct()) {
+            Set<Integer> set=distinctKeyAggrs.get(tag);
+            if (null == set) {
+              set=new HashSet<Integer>();
+              distinctKeyAggrs.put(tag,set);
+            }
+            if (!set.contains(i)) {
+              set.add(i);
+            }
+          }
+ else {
+            Set<Integer> set=nonDistinctKeyAggrs.get(tag);
+            if (null == set) {
+              set=new HashSet<Integer>();
+              nonDistinctKeyAggrs.put(tag,set);
+            }
+            if (!set.contains(i)) {
+              set.add(i);
+            }
+          }
+        }
+ else {
+          if (!nonDistinctAggrs.contains(i)) {
+            nonDistinctAggrs.add(i);
+          }
+        }
+      }
+ else {
+        if (aggr.getDistinct()) {
+          aggregationIsDistinct[i]=true;
+        }
+      }
       aggregationParameterStandardObjectInspectors[i][j]=ObjectInspectorUtils.getStandardObjectInspector(aggregationParameterObjectInspectors[i][j],ObjectInspectorCopyOption.WRITABLE);
       aggregationParameterObjects[i][j]=null;
     }
-  }
-  aggregationIsDistinct=new boolean[conf.getAggregators().size()];
-  for (int i=0; i < aggregationIsDistinct.length; i++) {
-    aggregationIsDistinct[i]=conf.getAggregators().get(i).getDistinct();
+    if (parameters.size() == 0) {
+      if (!nonDistinctAggrs.contains(i)) {
+        nonDistinctAggrs.add(i);
+      }
+    }
   }
   aggregationEvaluators=new GenericUDAFEvaluator[conf.getAggregators().size()];
   for (int i=0; i < aggregationEvaluators.length; i++) {

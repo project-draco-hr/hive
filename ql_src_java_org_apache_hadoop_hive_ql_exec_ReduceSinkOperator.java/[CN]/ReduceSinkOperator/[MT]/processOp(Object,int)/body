@@ -3,38 +3,13 @@
     ObjectInspector rowInspector=inputObjInspectors[tag];
     if (firstRow) {
       firstRow=false;
-      keyObjectInspector=initEvaluatorsAndReturnStruct(keyEval,conf.getOutputKeyColumnNames(),rowInspector);
+      keyObjectInspector=initEvaluatorsAndReturnStruct(keyEval,distinctColIndices,conf.getOutputKeyColumnNames(),numDistributionKeys,rowInspector);
       valueObjectInspector=initEvaluatorsAndReturnStruct(valueEval,conf.getOutputValueColumnNames(),rowInspector);
       partitionObjectInspectors=initEvaluators(partitionEval,rowInspector);
-      cachedKeys=new Object[keyEval.length];
+      int numKeys=numDistinctExprs > 0 ? numDistinctExprs : 1;
+      int keyLen=numDistinctExprs > 0 ? numDistributionKeys + 1 : numDistributionKeys;
+      cachedKeys=new Object[numKeys][keyLen];
       cachedValues=new Object[valueEval.length];
-    }
-    for (int i=0; i < keyEval.length; i++) {
-      cachedKeys[i]=keyEval[i].evaluate(row);
-    }
-    if (keyIsText) {
-      Text key=(Text)keySerializer.serialize(cachedKeys,keyObjectInspector);
-      if (tag == -1) {
-        keyWritable.set(key.getBytes(),0,key.getLength());
-      }
- else {
-        int keyLength=key.getLength();
-        keyWritable.setSize(keyLength + 1);
-        System.arraycopy(key.getBytes(),0,keyWritable.get(),0,keyLength);
-        keyWritable.get()[keyLength]=tagByte[0];
-      }
-    }
- else {
-      BytesWritable key=(BytesWritable)keySerializer.serialize(cachedKeys,keyObjectInspector);
-      if (tag == -1) {
-        keyWritable.set(key.get(),0,key.getSize());
-      }
- else {
-        int keyLength=key.getSize();
-        keyWritable.setSize(keyLength + 1);
-        System.arraycopy(key.get(),0,keyWritable.get(),0,keyLength);
-        keyWritable.get()[keyLength]=tagByte[0];
-      }
     }
     int keyHashCode=0;
     if (partitionEval.length == 0) {
@@ -49,28 +24,69 @@
         keyHashCode=keyHashCode * 31 + ObjectInspectorUtils.hashCode(o,partitionObjectInspectors[i]);
       }
     }
-    keyWritable.setHashCode(keyHashCode);
     for (int i=0; i < valueEval.length; i++) {
       cachedValues[i]=valueEval[i].evaluate(row);
     }
     value=valueSerializer.serialize(cachedValues,valueObjectInspector);
-  }
- catch (  SerDeException e) {
-    throw new HiveException(e);
-  }
-  try {
-    if (out != null) {
-      out.collect(keyWritable,value);
-      if (counterNameToEnum != null) {
-        ++outputRows;
-        if (outputRows % 1000 == 0) {
-          incrCounter(numOutputRowsCntr,outputRows);
-          outputRows=0;
+    Object[] distributionKeys=new Object[numDistributionKeys];
+    for (int i=0; i < numDistributionKeys; i++) {
+      distributionKeys[i]=keyEval[i].evaluate(row);
+    }
+    if (numDistinctExprs > 0) {
+      for (int i=0; i < numDistinctExprs; i++) {
+        System.arraycopy(distributionKeys,0,cachedKeys[i],0,numDistributionKeys);
+        Object[] distinctParameters=new Object[distinctColIndices.get(i).size()];
+        for (int j=0; j < distinctParameters.length; j++) {
+          distinctParameters[j]=keyEval[distinctColIndices.get(i).get(j)].evaluate(row);
+        }
+        cachedKeys[i][numDistributionKeys]=new StandardUnion((byte)i,distinctParameters);
+      }
+    }
+ else {
+      System.arraycopy(distributionKeys,0,cachedKeys[0],0,numDistributionKeys);
+    }
+    for (int i=0; i < cachedKeys.length; i++) {
+      if (keyIsText) {
+        Text key=(Text)keySerializer.serialize(cachedKeys[i],keyObjectInspector);
+        if (tag == -1) {
+          keyWritable.set(key.getBytes(),0,key.getLength());
+        }
+ else {
+          int keyLength=key.getLength();
+          keyWritable.setSize(keyLength + 1);
+          System.arraycopy(key.getBytes(),0,keyWritable.get(),0,keyLength);
+          keyWritable.get()[keyLength]=tagByte[0];
+        }
+      }
+ else {
+        BytesWritable key=(BytesWritable)keySerializer.serialize(cachedKeys[i],keyObjectInspector);
+        if (tag == -1) {
+          keyWritable.set(key.getBytes(),0,key.getLength());
+        }
+ else {
+          int keyLength=key.getLength();
+          keyWritable.setSize(keyLength + 1);
+          System.arraycopy(key.getBytes(),0,keyWritable.get(),0,keyLength);
+          keyWritable.get()[keyLength]=tagByte[0];
+        }
+      }
+      keyWritable.setHashCode(keyHashCode);
+      if (out != null) {
+        out.collect(keyWritable,value);
+        if (counterNameToEnum != null) {
+          ++outputRows;
+          if (outputRows % 1000 == 0) {
+            incrCounter(numOutputRowsCntr,outputRows);
+            outputRows=0;
+          }
         }
       }
     }
   }
- catch (  IOException e) {
+ catch (  SerDeException e) {
+    throw new HiveException(e);
+  }
+catch (  IOException e) {
     throw new HiveException(e);
   }
 }

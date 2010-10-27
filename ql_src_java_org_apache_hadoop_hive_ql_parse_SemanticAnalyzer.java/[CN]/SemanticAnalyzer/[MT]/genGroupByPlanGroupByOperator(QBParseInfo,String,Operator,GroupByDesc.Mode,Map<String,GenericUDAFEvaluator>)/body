@@ -21,9 +21,19 @@
   }
   HashMap<String,ASTNode> aggregationTrees=parseInfo.getAggregationExprsForClause(dest);
   assert(aggregationTrees != null);
+  String lastKeyColName=null;
+  if (reduceSinkOperatorInfo.getConf() instanceof ReduceSinkDesc) {
+    List<String> inputKeyCols=((ReduceSinkDesc)reduceSinkOperatorInfo.getConf()).getOutputKeyColumnNames();
+    if (inputKeyCols.size() > 0) {
+      lastKeyColName=inputKeyCols.get(inputKeyCols.size() - 1);
+    }
+  }
+  int numDistinctUDFs=0;
   for (  Map.Entry<String,ASTNode> entry : aggregationTrees.entrySet()) {
     ASTNode value=entry.getValue();
     String aggName=value.getChild(0).getText();
+    boolean isDistinct=value.getType() == HiveParser.TOK_FUNCTIONDI;
+    boolean isAllColumns=value.getType() == HiveParser.TOK_FUNCTIONSTAR;
     ArrayList<ExprNodeDesc> aggParameters=new ArrayList<ExprNodeDesc>();
     for (int i=1; i < value.getChildCount(); i++) {
       ASTNode paraExpr=(ASTNode)value.getChild(i);
@@ -33,10 +43,14 @@
       }
       String paraExpression=paraExprInfo.getInternalName();
       assert(paraExpression != null);
-      aggParameters.add(new ExprNodeColumnDesc(paraExprInfo.getType(),paraExprInfo.getInternalName(),paraExprInfo.getTabAlias(),paraExprInfo.getIsVirtualCol()));
+      if (isDistinct && lastKeyColName != null) {
+        paraExpression=Utilities.ReduceField.KEY.name() + "." + lastKeyColName+ ":"+ numDistinctUDFs+ "."+ getColumnInternalName(i - 1);
+      }
+      aggParameters.add(new ExprNodeColumnDesc(paraExprInfo.getType(),paraExpression,paraExprInfo.getTabAlias(),paraExprInfo.getIsVirtualCol()));
     }
-    boolean isDistinct=value.getType() == HiveParser.TOK_FUNCTIONDI;
-    boolean isAllColumns=value.getType() == HiveParser.TOK_FUNCTIONSTAR;
+    if (isDistinct) {
+      numDistinctUDFs++;
+    }
     Mode amode=groupByDescModeToUDAFMode(mode,isDistinct);
     GenericUDAFEvaluator genericUDAFEvaluator=getGenericUDAFEvaluator(aggName,aggParameters,value,isDistinct,isAllColumns);
     assert(genericUDAFEvaluator != null);
