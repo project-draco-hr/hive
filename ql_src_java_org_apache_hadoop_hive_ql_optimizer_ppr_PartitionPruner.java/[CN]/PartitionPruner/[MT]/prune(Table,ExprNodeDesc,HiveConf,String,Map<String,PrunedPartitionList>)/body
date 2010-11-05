@@ -18,31 +18,14 @@
     Object[] rowWithPart=new Object[2];
     if (tab.isPartitioned()) {
       for (      String partName : Hive.get().getPartitionNames(tab.getDbName(),tab.getTableName(),(short)-1)) {
-        LinkedHashMap<String,String> partSpec=Warehouse.makeSpecFromName(partName);
-        ArrayList<String> partNames=new ArrayList<String>();
-        ArrayList<String> partValues=new ArrayList<String>();
-        ArrayList<ObjectInspector> partObjectInspectors=new ArrayList<ObjectInspector>();
-        for (        Map.Entry<String,String> entry : partSpec.entrySet()) {
-          partNames.add(entry.getKey());
-          partValues.add(entry.getValue());
-          partObjectInspectors.add(PrimitiveObjectInspectorFactory.javaStringObjectInspector);
-        }
-        StructObjectInspector partObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(partNames,partObjectInspectors);
-        rowWithPart[1]=partValues;
-        ArrayList<StructObjectInspector> ois=new ArrayList<StructObjectInspector>(2);
-        ois.add(rowObjectInspector);
-        ois.add(partObjectInspector);
-        StructObjectInspector rowWithPartObjectInspector=ObjectInspectorFactory.getUnionStructObjectInspector(ois);
         if ("strict".equalsIgnoreCase(HiveConf.getVar(conf,HiveConf.ConfVars.HIVEMAPREDMODE))) {
           if (!hasColumnExpr(prunerExpr)) {
             throw new SemanticException(ErrorMsg.NO_PARTITION_PREDICATE.getMsg("for Alias \"" + alias + "\" Table \""+ tab.getTableName()+ "\""));
           }
         }
+        LinkedHashMap<String,String> partSpec=Warehouse.makeSpecFromName(partName);
         if (prunerExpr != null) {
-          ExprNodeEvaluator evaluator=ExprNodeEvaluatorFactory.get(prunerExpr);
-          ObjectInspector evaluateResultOI=evaluator.initialize(rowWithPartObjectInspector);
-          Object evaluateResultO=evaluator.evaluate(rowWithPart);
-          Boolean r=(Boolean)((PrimitiveObjectInspector)evaluateResultOI).getPrimitiveJavaObject(evaluateResultO);
+          Boolean r=(Boolean)PartExprEvalUtils.evalExprWithPart(prunerExpr,partSpec,rowObjectInspector);
           LOG.trace("prune result for partition " + partSpec + ": "+ r);
           if (Boolean.FALSE.equals(r)) {
             if (denied_parts.isEmpty()) {
@@ -61,7 +44,9 @@
               unkn_parts.add(part);
               state="unknown";
             }
-            if (LOG.isDebugEnabled())             LOG.debug(state + " partition: " + partSpec);
+            if (LOG.isDebugEnabled()) {
+              LOG.debug(state + " partition: " + partSpec);
+            }
           }
         }
  else {

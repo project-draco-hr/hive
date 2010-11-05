@@ -1,0 +1,116 @@
+{
+  PcrExprProcCtx ctx=(PcrExprProcCtx)procCtx;
+  ExprNodeGenericFuncDesc fd=(ExprNodeGenericFuncDesc)nd;
+  if (FunctionRegistry.isOpNot(fd)) {
+    assert(nodeOutputs.length == 1);
+    NodeInfoWrapper wrapper=(NodeInfoWrapper)nodeOutputs[0];
+    if (wrapper.state == WalkState.TRUE) {
+      ExprNodeConstantDesc falseDesc=new ExprNodeConstantDesc(wrapper.outExpr.getTypeInfo(),Boolean.FALSE);
+      return new NodeInfoWrapper(WalkState.FALSE,null,falseDesc);
+    }
+ else     if (wrapper.state == WalkState.FALSE) {
+      ExprNodeConstantDesc trueDesc=new ExprNodeConstantDesc(wrapper.outExpr.getTypeInfo(),Boolean.TRUE);
+      return new NodeInfoWrapper(WalkState.TRUE,null,trueDesc);
+    }
+ else     if (wrapper.state == WalkState.DIVIDED) {
+      Boolean[] results=new Boolean[ctx.getPartList().size()];
+      for (int i=0; i < ctx.getPartList().size(); i++) {
+        results[i]=opNot(wrapper.ResultVector[i]);
+      }
+      return new NodeInfoWrapper(WalkState.DIVIDED,results,getOutExpr(fd,nodeOutputs));
+    }
+ else {
+      return new NodeInfoWrapper(wrapper.state,null,getOutExpr(fd,nodeOutputs));
+    }
+  }
+ else   if (FunctionRegistry.isOpAnd(fd)) {
+    assert(nodeOutputs.length == 2);
+    NodeInfoWrapper c1=(NodeInfoWrapper)nodeOutputs[0];
+    NodeInfoWrapper c2=(NodeInfoWrapper)nodeOutputs[1];
+    if (c1.state == WalkState.FALSE) {
+      return c1;
+    }
+ else     if (c2.state == WalkState.FALSE) {
+      return c2;
+    }
+ else     if (c1.state == WalkState.TRUE) {
+      return c2;
+    }
+ else     if (c2.state == WalkState.TRUE) {
+      return c1;
+    }
+ else     if (c1.state == WalkState.UNKNOWN || c2.state == WalkState.UNKNOWN) {
+      return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,nodeOutputs));
+    }
+ else     if (c1.state == WalkState.DIVIDED && c2.state == WalkState.DIVIDED) {
+      Boolean[] results=new Boolean[ctx.getPartList().size()];
+      for (int i=0; i < ctx.getPartList().size(); i++) {
+        results[i]=opAnd(c1.ResultVector[i],c2.ResultVector[i]);
+      }
+      return getResultWrapFromResults(results,fd,nodeOutputs);
+    }
+    return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,nodeOutputs));
+  }
+ else   if (FunctionRegistry.isOpOr(fd)) {
+    assert(nodeOutputs.length == 2);
+    NodeInfoWrapper c1=(NodeInfoWrapper)nodeOutputs[0];
+    NodeInfoWrapper c2=(NodeInfoWrapper)nodeOutputs[1];
+    if (c1.state == WalkState.TRUE) {
+      return c1;
+    }
+ else     if (c2.state == WalkState.TRUE) {
+      return c2;
+    }
+ else     if (c1.state == WalkState.FALSE) {
+      return c2;
+    }
+ else     if (c2.state == WalkState.FALSE) {
+      return c1;
+    }
+ else     if (c1.state == WalkState.UNKNOWN || c2.state == WalkState.UNKNOWN) {
+      return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,nodeOutputs));
+    }
+ else     if (c1.state == WalkState.DIVIDED && c2.state == WalkState.DIVIDED) {
+      Boolean[] results=new Boolean[ctx.getPartList().size()];
+      for (int i=0; i < ctx.getPartList().size(); i++) {
+        results[i]=opOr(c1.ResultVector[i],c2.ResultVector[i]);
+      }
+      return getResultWrapFromResults(results,fd,nodeOutputs);
+    }
+    return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,nodeOutputs));
+  }
+ else   if (!FunctionRegistry.isDeterministic(fd.getGenericUDF())) {
+    return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,nodeOutputs));
+  }
+ else {
+    boolean has_part_col=false;
+    for (    Object child : nodeOutputs) {
+      NodeInfoWrapper wrapper=(NodeInfoWrapper)child;
+      if (wrapper.state == WalkState.UNKNOWN) {
+        return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,nodeOutputs));
+      }
+ else       if (wrapper.state == WalkState.PART_COL) {
+        has_part_col=true;
+      }
+    }
+    if (has_part_col) {
+      if (fd.getTypeInfo().equals(TypeInfoFactory.booleanTypeInfo)) {
+        Boolean[] results=new Boolean[ctx.getPartList().size()];
+        for (int i=0; i < ctx.getPartList().size(); i++) {
+          results[i]=(Boolean)evalExprWithPart(fd,ctx.getPartList().get(i));
+        }
+        return getResultWrapFromResults(results,fd,nodeOutputs);
+      }
+      Object[] results=new Object[ctx.getPartList().size()];
+      for (int i=0; i < ctx.getPartList().size(); i++) {
+        results[i]=evalExprWithPart(fd,ctx.getPartList().get(i));
+      }
+      Object result=ifResultsAgree(results);
+      if (result == null) {
+        return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,nodeOutputs));
+      }
+      return new NodeInfoWrapper(WalkState.CONSTANT,null,new ExprNodeConstantDesc(fd.getTypeInfo(),result));
+    }
+    return new NodeInfoWrapper(WalkState.CONSTANT,null,getOutExpr(fd,nodeOutputs));
+  }
+}
