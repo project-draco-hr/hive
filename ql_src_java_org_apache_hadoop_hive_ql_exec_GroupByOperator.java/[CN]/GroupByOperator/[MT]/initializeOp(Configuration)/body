@@ -9,14 +9,11 @@
   keyFields=new ExprNodeEvaluator[conf.getKeys().size()];
   keyObjectInspectors=new ObjectInspector[conf.getKeys().size()];
   currentKeyObjectInspectors=new ObjectInspector[conf.getKeys().size()];
-  keyObjects=new Object[conf.getKeys().size()];
   for (int i=0; i < keyFields.length; i++) {
     keyFields[i]=ExprNodeEvaluatorFactory.get(conf.getKeys().get(i));
     keyObjectInspectors[i]=keyFields[i].initialize(rowInspector);
     currentKeyObjectInspectors[i]=ObjectInspectorUtils.getStandardObjectInspector(keyObjectInspectors[i],ObjectInspectorCopyOption.WRITABLE);
-    keyObjects[i]=null;
   }
-  newKeys=new ArrayList<Object>(keyFields.length);
   List<? extends StructField> sfs=((StandardStructObjectInspector)rowInspector).getAllStructFieldRefs();
   if (sfs.size() > 0) {
     StructField keyField=sfs.get(0);
@@ -127,7 +124,7 @@
     minReductionHashAggr=HiveConf.getFloatVar(hconf,HiveConf.ConfVars.HIVEMAPAGGRHASHMINREDUCTION);
     groupKeyIsNotReduceKey=conf.getGroupKeyNotReductionKey();
     if (groupKeyIsNotReduceKey) {
-      keysCurrentGroup=new HashSet<ArrayList<Object>>();
+      keysCurrentGroup=new HashSet<KeyWrapper>();
     }
   }
   fieldNames=conf.getOutputColumnNames();
@@ -140,9 +137,9 @@
   }
   newKeyObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(keyNames,Arrays.asList(keyObjectInspectors));
   currentKeyObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(keyNames,Arrays.asList(currentKeyObjectInspectors));
-  currentStructEqualComparer=new ListObjectsEqualComparer(currentKeyObjectInspectors,currentKeyObjectInspectors);
-  newKeyStructEqualComparer=new ListObjectsEqualComparer(currentKeyObjectInspectors,keyObjectInspectors);
   outputObjInspector=ObjectInspectorFactory.getStandardStructObjectInspector(fieldNames,objectInspectors);
+  keyWrapperFactory=new KeyWrapperFactory(keyFields,keyObjectInspectors,currentKeyObjectInspectors);
+  newKeys=keyWrapperFactory.getKeyWrapper();
   firstRow=true;
   if (hashAggr) {
     computeMaxEntriesHashAggr(hconf);
