@@ -5,20 +5,20 @@
       firstRow=false;
     }
     if (this.getExecContext().inputFileChanged()) {
-      loadJDBM();
+      loadHashTable();
     }
     alias=order[tag];
     if ((lastAlias == null) || (!lastAlias.equals(alias))) {
       nextSz=joinEmitInterval;
     }
-    ArrayList<Object> key=JoinUtil.computeKeys(row,joinKeys.get(alias),joinKeysObjectInspectors.get(alias));
+    AbstractMapJoinKey key=JoinUtil.computeMapJoinKeys(row,joinKeys.get(alias),joinKeysObjectInspectors.get(alias));
     ArrayList<Object> value=JoinUtil.computeValues(row,joinValues.get(alias),joinValuesObjectInspectors.get(alias),joinFilters.get(alias),joinFilterObjectInspectors.get(alias),noOuterJoin);
     storage.get((byte)tag).add(value);
     for (    Byte pos : order) {
       if (pos.intValue() != tag) {
-        MapJoinObjectKey keyMap=new MapJoinObjectKey(metadataKeyTag,key);
-        MapJoinObjectValue o=mapJoinTables.get(pos).getMapJoinValueObject(keyMap);
-        if (o == null || (hasAnyNulls(key))) {
+        MapJoinObjectValue o=mapJoinTables.get(pos).get(key);
+        MapJoinRowContainer<ArrayList<Object>> rowContainer=rowContainerMap.get(pos);
+        if (o == null || key.hasAnyNulls()) {
           if (noOuterJoin) {
             storage.put(pos,emptyList);
           }
@@ -27,7 +27,8 @@
           }
         }
  else {
-          storage.put(pos,o.getObj());
+          rowContainer.reset(o.getObj());
+          storage.put(pos,rowContainer);
         }
       }
     }

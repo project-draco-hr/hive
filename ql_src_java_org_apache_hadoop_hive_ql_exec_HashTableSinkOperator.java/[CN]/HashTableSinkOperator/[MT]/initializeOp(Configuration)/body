@@ -1,0 +1,51 @@
+{
+  maxMapJoinSize=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVEMAXMAPJOINSIZE);
+  numMapRowsRead=0;
+  firstRow=true;
+  posBigTableTag=conf.getPosBigTable();
+  order=conf.getTagOrder();
+  posBigTableAlias=order[posBigTableTag];
+  numAliases=conf.getExprs().size();
+  this.hconf=hconf;
+  totalSz=0;
+  noOuterJoin=conf.isNoOuterJoin();
+  joinKeys=new HashMap<Byte,List<ExprNodeEvaluator>>();
+  JoinUtil.populateJoinKeyValue(joinKeys,conf.getKeys(),order,posBigTableAlias);
+  joinKeysObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinKeys,inputObjInspectors,posBigTableAlias);
+  joinKeysStandardObjectInspectors=JoinUtil.getStandardObjectInspectors(joinKeysObjectInspectors,posBigTableAlias);
+  joinValues=new HashMap<Byte,List<ExprNodeEvaluator>>();
+  JoinUtil.populateJoinKeyValue(joinValues,conf.getExprs(),order,posBigTableAlias);
+  joinValuesObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinValues,inputObjInspectors,posBigTableAlias);
+  joinValuesStandardObjectInspectors=JoinUtil.getStandardObjectInspectors(joinValuesObjectInspectors,posBigTableAlias);
+  joinFilters=new HashMap<Byte,List<ExprNodeEvaluator>>();
+  JoinUtil.populateJoinKeyValue(joinFilters,conf.getFilters(),order,posBigTableAlias);
+  joinFilterObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinFilters,inputObjInspectors,posBigTableAlias);
+  if (noOuterJoin) {
+    rowContainerStandardObjectInspectors=joinValuesStandardObjectInspectors;
+  }
+ else {
+    Map<Byte,List<ObjectInspector>> rowContainerObjectInspectors=new HashMap<Byte,List<ObjectInspector>>();
+    for (    Byte alias : order) {
+      if (alias == posBigTableAlias) {
+        continue;
+      }
+      ArrayList<ObjectInspector> rcOIs=new ArrayList<ObjectInspector>();
+      rcOIs.addAll(joinValuesObjectInspectors.get(alias));
+      rcOIs.add(PrimitiveObjectInspectorFactory.writableBooleanObjectInspector);
+      rowContainerObjectInspectors.put(alias,rcOIs);
+    }
+    rowContainerStandardObjectInspectors=getStandardObjectInspectors(rowContainerObjectInspectors);
+  }
+  metadataValueTag=new int[numAliases];
+  for (int pos=0; pos < numAliases; pos++) {
+    metadataValueTag[pos]=-1;
+  }
+  mapJoinTables=new HashMap<Byte,HashMapWrapper<AbstractMapJoinKey,MapJoinObjectValue>>();
+  for (  Byte pos : order) {
+    if (pos == posBigTableTag) {
+      continue;
+    }
+    HashMapWrapper<AbstractMapJoinKey,MapJoinObjectValue> hashTable=new HashMapWrapper<AbstractMapJoinKey,MapJoinObjectValue>();
+    mapJoinTables.put(pos,hashTable);
+  }
+}

@@ -1,0 +1,39 @@
+{
+  try {
+    if (firstRow) {
+      generateMapMetaData();
+      firstRow=false;
+    }
+    alias=order[tag];
+    AbstractMapJoinKey keyMap=JoinUtil.computeMapJoinKeys(row,joinKeys.get(alias),joinKeysObjectInspectors.get(alias));
+    Object[] value=JoinUtil.computeMapJoinValues(row,joinValues.get(alias),joinValuesObjectInspectors.get(alias),joinFilters.get(alias),joinFilterObjectInspectors.get(alias),noOuterJoin);
+    HashMapWrapper<AbstractMapJoinKey,MapJoinObjectValue> hashTable=mapJoinTables.get((byte)tag);
+    MapJoinObjectValue o=hashTable.get(keyMap);
+    MapJoinRowContainer<Object[]> res=null;
+    boolean needNewKey=true;
+    if (o == null) {
+      res=new MapJoinRowContainer<Object[]>();
+      res.add(value);
+      if (metadataValueTag[tag] == -1) {
+        metadataValueTag[tag]=order[tag];
+        TableDesc valueTableDesc=conf.getValueTblDescs().get(tag);
+        SerDe valueSerDe=(SerDe)ReflectionUtils.newInstance(valueTableDesc.getDeserializerClass(),null);
+        valueSerDe.initialize(null,valueTableDesc.getProperties());
+        MapJoinMetaData.put(Integer.valueOf(metadataValueTag[tag]),new HashTableSinkObjectCtx(ObjectInspectorUtils.getStandardObjectInspector(valueSerDe.getObjectInspector(),ObjectInspectorCopyOption.WRITABLE),valueSerDe,valueTableDesc,hconf));
+      }
+      if (needNewKey) {
+        MapJoinObjectValue valueObj=new MapJoinObjectValue(metadataValueTag[tag],res);
+        rowNumber++;
+        hashTable.put(keyMap,valueObj);
+      }
+    }
+ else {
+      res=o.getObj();
+      res.add(value);
+    }
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    throw new HiveException(e);
+  }
+}

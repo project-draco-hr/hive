@@ -1,33 +1,90 @@
 {
-  if (work == null) {
-    return -1;
-  }
-  fetchOperators=new HashMap<String,FetchOperator>();
-  Map<FetchOperator,JobConf> fetchOpJobConfMap=new HashMap<FetchOperator,JobConf>();
-  execContext.setJc(job);
-  execContext.setLocalWork(work);
-  boolean inputFileChangeSenstive=work.getInputFileChangeSensitive();
   try {
-    initializeOperators(fetchOpJobConfMap);
-    if (inputFileChangeSenstive) {
-      for (      LinkedHashMap<String,ArrayList<String>> bigTableBucketFiles : work.getBucketMapjoinContext().getAliasBucketFileNameMapping().values()) {
-        for (        String bigTableBucket : bigTableBucketFiles.keySet()) {
-          startForward(inputFileChangeSenstive,bigTableBucket);
+    Context ctx=driverContext.getCtx();
+    String hiveJar=conf.getJar();
+    String hadoopExec=conf.getVar(HiveConf.ConfVars.HADOOPBIN);
+    String libJarsOption;
+    Path planPath=new Path(ctx.getLocalTmpFileURI(),"plan.xml");
+    OutputStream out=FileSystem.getLocal(conf).create(planPath);
+    MapredLocalWork plan=getWork();
+    LOG.info("Generating plan file " + planPath.toString());
+    Utilities.serializeMapRedLocalWork(plan,out);
+    String isSilent="true".equalsIgnoreCase(System.getProperty("test.silent")) ? "-nolog" : "";
+    String jarCmd;
+    jarCmd=hiveJar + " " + ExecDriver.class.getName();
+    String hiveConfArgs=ExecDriver.generateCmdLine(conf);
+    String cmdLine=hadoopExec + " jar " + jarCmd+ " -localtask -plan "+ planPath.toString()+ " "+ isSilent+ " "+ hiveConfArgs;
+    String workDir=(new File(".")).getCanonicalPath();
+    String files=ExecDriver.getResourceFiles(conf,SessionState.ResourceType.FILE);
+    if (!files.isEmpty()) {
+      cmdLine=cmdLine + " -files " + files;
+      workDir=(new Path(ctx.getLocalTmpFileURI())).toUri().getPath();
+      if (!(new File(workDir)).mkdir()) {
+        throw new IOException("Cannot create tmp working dir: " + workDir);
+      }
+      for (      String f : StringUtils.split(files,',')) {
+        Path p=new Path(f);
+        String target=p.toUri().getPath();
+        String link=workDir + Path.SEPARATOR + p.getName();
+        if (FileUtil.symLink(target,link) != 0) {
+          throw new IOException("Cannot link to added file: " + target + " from: "+ link);
         }
       }
     }
+    LOG.info("Executing: " + cmdLine);
+    Process executor=null;
+    String hadoopOpts;
+    StringBuilder sb=new StringBuilder();
+    Properties p=System.getProperties();
+    for (    String element : HIVE_SYS_PROP) {
+      if (p.containsKey(element)) {
+        sb.append(" -D" + element + "="+ p.getProperty(element));
+      }
+    }
+    hadoopOpts=sb.toString();
+    String[] env;
+    Map<String,String> variables=new HashMap(System.getenv());
+    int hadoopMem=conf.getIntVar(HiveConf.ConfVars.HIVEHADOOPMAXMEM);
+    ;
+    if (hadoopMem == 0) {
+      variables.remove(HADOOP_MEM_KEY);
+    }
  else {
-      startForward(inputFileChangeSenstive,null);
+      console.printInfo(" set heap size\t" + hadoopMem + "MB");
+      variables.put(HADOOP_MEM_KEY,String.valueOf(hadoopMem));
     }
-  }
- catch (  Throwable e) {
-    if (e instanceof OutOfMemoryError) {
-      l4j.error("Out of Merror Error");
+    if (variables.containsKey(HADOOP_OPTS_KEY)) {
+      variables.put(HADOOP_OPTS_KEY,variables.get(HADOOP_OPTS_KEY) + hadoopOpts);
     }
  else {
-      l4j.error("Hive Runtime Error: Map local work failed");
-      e.printStackTrace();
+      variables.put(HADOOP_OPTS_KEY,hadoopOpts);
     }
+    env=new String[variables.size()];
+    int pos=0;
+    for (    Map.Entry<String,String> entry : variables.entrySet()) {
+      String name=entry.getKey();
+      String value=entry.getValue();
+      env[pos++]=name + "=" + value;
+    }
+    executor=Runtime.getRuntime().exec(cmdLine,env,new File(workDir));
+    StreamPrinter outPrinter=new StreamPrinter(executor.getInputStream(),null,System.out);
+    StreamPrinter errPrinter=new StreamPrinter(executor.getErrorStream(),null,System.err);
+    outPrinter.start();
+    errPrinter.start();
+    int exitVal=executor.waitFor();
+    if (exitVal != 0) {
+      LOG.error("Execution failed with exit status: " + exitVal);
+      console.printError("Mapred Local Task Failed. Give up the map join stragery");
+    }
+ else {
+      LOG.info("Execution completed successfully");
+      console.printInfo("Mapred Local Task Running Successfully . Keep using map join stragery");
+    }
+    return exitVal;
   }
-  return 0;
+ catch (  Exception e) {
+    e.printStackTrace();
+    LOG.error("Exception: " + e.getMessage());
+    return (1);
+  }
 }

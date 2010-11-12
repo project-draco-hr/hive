@@ -1,0 +1,59 @@
+{
+  boolean localMode=HiveConf.getVar(hconf,HiveConf.ConfVars.HADOOPJT).equals("local");
+  String tmpURI=null;
+  HashMapWrapper<AbstractMapJoinKey,MapJoinObjectValue> hashtable;
+  Byte pos;
+  String currentInputFile=HiveConf.getVar(hconf,HiveConf.ConfVars.HADOOPMAPFILENAME);
+  LOG.info("******* Load from HashTable File: input : " + currentInputFile);
+  String currentFileName;
+  if (this.getExecContext().getLocalWork().getInputFileChangeSensitive()) {
+    currentFileName=this.getFileName(currentInputFile);
+  }
+ else {
+    currentFileName="-";
+  }
+  try {
+    if (localMode) {
+      LOG.info("******* Load from tmp file uri ***");
+      tmpURI=this.getExecContext().getLocalWork().getTmpFileURI();
+      for (      Map.Entry<Byte,HashMapWrapper<AbstractMapJoinKey,MapJoinObjectValue>> entry : mapJoinTables.entrySet()) {
+        pos=entry.getKey();
+        hashtable=entry.getValue();
+        String filePath=Utilities.generatePath(tmpURI,pos,currentFileName);
+        Path path=new Path(filePath);
+        LOG.info("\tLoad back 1 hashtable file from tmp file uri:" + path.toString());
+        hashtable.initilizePersistentHash(path.toUri().getPath());
+      }
+    }
+ else {
+      Path[] localFiles=DistributedCache.getLocalCacheFiles(this.hconf);
+      for (      Map.Entry<Byte,HashMapWrapper<AbstractMapJoinKey,MapJoinObjectValue>> entry : mapJoinTables.entrySet()) {
+        pos=entry.getKey();
+        hashtable=entry.getValue();
+        String suffix=Utilities.generateFileName(pos,currentFileName);
+        LOG.info("Looking for hashtable file with suffix: " + suffix);
+        boolean found=false;
+        for (int i=0; i < localFiles.length; i++) {
+          Path path=localFiles[i];
+          if (path.toString().endsWith(suffix)) {
+            LOG.info("Matching suffix with cached file:" + path.toString());
+            LOG.info("\tInitializing the hashtable by cached file:" + path.toString());
+            hashtable.initilizePersistentHash(path.toString());
+            found=true;
+            LOG.info("\tLoad back 1 hashtable file from distributed cache:" + path.toString());
+            break;
+          }
+        }
+        if (!found) {
+          LOG.error("Load nothing from Distributed Cache");
+          throw new HiveException();
+        }
+      }
+    }
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    LOG.error("Load Hash Table error");
+    throw new HiveException();
+  }
+}

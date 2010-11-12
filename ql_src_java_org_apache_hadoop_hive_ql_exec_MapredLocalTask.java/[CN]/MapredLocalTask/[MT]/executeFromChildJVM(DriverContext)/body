@@ -1,0 +1,42 @@
+{
+  if (work == null) {
+    return -1;
+  }
+  memoryMXBean=ManagementFactory.getMemoryMXBean();
+  console.printInfo(Utilities.now() + "\tStarting to luaunch local task to process map join ");
+  console.printInfo("\tmaximum memory = " + memoryMXBean.getHeapMemoryUsage().getMax());
+  fetchOperators=new HashMap<String,FetchOperator>();
+  Map<FetchOperator,JobConf> fetchOpJobConfMap=new HashMap<FetchOperator,JobConf>();
+  execContext.setJc(job);
+  execContext.setLocalWork(work);
+  boolean inputFileChangeSenstive=work.getInputFileChangeSensitive();
+  try {
+    initializeOperators(fetchOpJobConfMap);
+    if (inputFileChangeSenstive) {
+      for (      LinkedHashMap<String,ArrayList<String>> bigTableBucketFiles : work.getBucketMapjoinContext().getAliasBucketFileNameMapping().values()) {
+        for (        String bigTableBucket : bigTableBucketFiles.keySet()) {
+          startForward(inputFileChangeSenstive,bigTableBucket);
+        }
+      }
+    }
+ else {
+      startForward(inputFileChangeSenstive,null);
+    }
+    console.printInfo(now() + "\tEnd of local task ");
+  }
+ catch (  Throwable e) {
+    if (e instanceof OutOfMemoryError) {
+      l4j.error("Out of Memory Error");
+      console.printError("[Warning] Small table is too large to put into memory");
+      return 2;
+    }
+ else {
+      l4j.error("Hive Runtime Error: Map local work failed");
+      e.printStackTrace();
+    }
+  }
+ finally {
+    console.printInfo(Utilities.now() + "\tFinish running local task");
+  }
+  return 0;
+}

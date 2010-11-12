@@ -3,6 +3,7 @@
   ArrayList<String> jobConfArgs=new ArrayList<String>();
   boolean noLog=false;
   String files=null;
+  boolean localtask=false;
   try {
     for (int i=0; i < args.length; i++) {
       if (args[i].equals("-plan")) {
@@ -17,13 +18,22 @@
  else       if (args[i].equals("-files")) {
         files=args[++i];
       }
+ else       if (args[i].equals("-localtask")) {
+        localtask=true;
+      }
     }
   }
  catch (  IndexOutOfBoundsException e) {
     System.err.println("Missing argument to option");
     printUsage();
   }
-  JobConf conf=new JobConf(ExecDriver.class);
+  JobConf conf;
+  if (localtask) {
+    conf=new JobConf(MapredLocalTask.class);
+  }
+ else {
+    conf=new JobConf(ExecDriver.class);
+  }
   StringBuilder sb=new StringBuilder("JobConf:\n");
   for (  String one : jobConfArgs) {
     int eqIndex=one.indexOf('=');
@@ -82,9 +92,18 @@
  catch (  Exception e) {
     throw new HiveException(e.getMessage(),e);
   }
-  MapredWork plan=Utilities.deserializeMapRedWork(pathData,conf);
-  ExecDriver ed=new ExecDriver(plan,conf,isSilent);
-  int ret=ed.execute(new DriverContext());
+  int ret;
+  if (localtask) {
+    memoryMXBean=ManagementFactory.getMemoryMXBean();
+    MapredLocalWork plan=Utilities.deserializeMapRedLocalWork(pathData,conf);
+    MapredLocalTask ed=new MapredLocalTask(plan,conf,isSilent);
+    ret=ed.executeFromChildJVM(new DriverContext());
+  }
+ else {
+    MapredWork plan=Utilities.deserializeMapRedWork(pathData,conf);
+    ExecDriver ed=new ExecDriver(plan,conf,isSilent);
+    ret=ed.execute(new DriverContext());
+  }
   if (ret != 0) {
     System.exit(2);
   }

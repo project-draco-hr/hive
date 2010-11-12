@@ -1,0 +1,32 @@
+{
+  try {
+    if (mapJoinTables != null) {
+      String tmpURI=this.getExecContext().getLocalWork().getTmpFileURI();
+      LOG.info("Get TMP URI: " + tmpURI);
+      long fileLength;
+      for (      Map.Entry<Byte,HashMapWrapper<AbstractMapJoinKey,MapJoinObjectValue>> hashTables : mapJoinTables.entrySet()) {
+        Byte tag=hashTables.getKey();
+        HashMapWrapper<AbstractMapJoinKey,MapJoinObjectValue> hashTable=hashTables.getValue();
+        String bigBucketFileName=this.getExecContext().getCurrentBigBucketFile();
+        if (bigBucketFileName == null || bigBucketFileName.length() == 0) {
+          bigBucketFileName="-";
+        }
+        String tmpURIPath=Utilities.generatePath(tmpURI,tag,bigBucketFileName);
+        console.printInfo(Utilities.now() + "\tDump the hashtable into file: " + tmpURIPath);
+        Path path=new Path(tmpURIPath);
+        FileSystem fs=path.getFileSystem(hconf);
+        File file=new File(path.toUri().getPath());
+        fs.create(path);
+        fileLength=hashTable.flushMemoryCacheToPersistent(file);
+        console.printInfo(Utilities.now() + "\t Processing rows: " + rowNumber+ "\t key number:"+ hashTable.size());
+        console.printInfo("Upload 1 File to: " + tmpURIPath + " File size: "+ fileLength);
+        hashTable.close();
+      }
+    }
+    super.closeOp(abort);
+  }
+ catch (  Exception e) {
+    LOG.error("Generate Hashtable error");
+    e.printStackTrace();
+  }
+}
