@@ -7,14 +7,23 @@
   if (p != null) {
     locks.add(new LockObject(new HiveLockObject(p,plan.getQueryId()),mode));
     mode=HiveLockMode.SHARED;
-    String partName=p.getName();
+    String name=p.getName();
+    if (p instanceof DummyPartition) {
+      name=p.getName().split("@")[2];
+    }
+    String partName=name;
     String partialName="";
-    String[] partns=p.getName().split("/");
+    String[] partns=name.split("/");
     for (int idx=0; idx < partns.length - 1; idx++) {
       String partn=partns[idx];
       partialName+=partialName + partn;
-      locks.add(new LockObject(new HiveLockObject(new DummyPartition(p.getTable().getDbName() + "@" + p.getTable().getTableName()+ "@"+ partialName),plan.getQueryId()),mode));
-      partialName+="/";
+      try {
+        locks.add(new LockObject(new HiveLockObject(new DummyPartition(p.getTable(),p.getTable().getDbName() + "@" + p.getTable().getTableName()+ "@"+ partialName),plan.getQueryId()),mode));
+        partialName+="/";
+      }
+ catch (      HiveException e) {
+        throw new SemanticException(e.getMessage());
+      }
     }
     locks.add(new LockObject(new HiveLockObject(p.getTable(),plan.getQueryId()),mode));
   }
