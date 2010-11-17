@@ -3,8 +3,8 @@
     return -1;
   }
   memoryMXBean=ManagementFactory.getMemoryMXBean();
-  console.printInfo(Utilities.now() + "\tStarting to luaunch local task to process map join ");
-  console.printInfo("\tmaximum memory = " + memoryMXBean.getHeapMemoryUsage().getMax());
+  long startTime=System.currentTimeMillis();
+  console.printInfo(Utilities.now() + "\tStarting to luaunch local task to process map join;\tmaximum memory = " + memoryMXBean.getHeapMemoryUsage().getMax());
   fetchOperators=new HashMap<String,FetchOperator>();
   Map<FetchOperator,JobConf> fetchOpJobConfMap=new HashMap<FetchOperator,JobConf>();
   execContext.setJc(job);
@@ -22,21 +22,19 @@
  else {
       startForward(inputFileChangeSenstive,null);
     }
-    console.printInfo(now() + "\tEnd of local task ");
+    long currentTime=System.currentTimeMillis();
+    long elapsed=currentTime - startTime;
+    console.printInfo(Utilities.now() + "\tEnd of local task; Time Taken: " + Utilities.showTime(elapsed)+ " sec.");
   }
  catch (  Throwable e) {
-    if (e instanceof OutOfMemoryError) {
-      l4j.error("Out of Memory Error");
-      console.printError("[Warning] Small table is too large to put into memory");
-      return 2;
+    if (e instanceof OutOfMemoryError || (e instanceof HiveException && e.getMessage().equals("RunOutOfMeomoryUsage"))) {
+      return 3;
     }
  else {
       l4j.error("Hive Runtime Error: Map local work failed");
       e.printStackTrace();
+      return 2;
     }
-  }
- finally {
-    console.printInfo(Utilities.now() + "\tFinish running local task");
   }
   return 0;
 }

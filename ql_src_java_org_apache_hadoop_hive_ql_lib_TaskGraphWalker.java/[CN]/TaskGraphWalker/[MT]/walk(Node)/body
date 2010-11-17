@@ -1,0 +1,40 @@
+{
+  if (!(nd instanceof Task)) {
+    throw new SemanticException("Task Graph Walker only walks for Task Graph");
+  }
+  if (getDispatchedList().contains(nd)) {
+    return;
+  }
+  if (opStack.empty() || nd != opStack.peek()) {
+    opStack.push(nd);
+  }
+  List<Task<? extends Serializable>> nextTaskList=null;
+  Set<Task<? extends Serializable>> nextTaskSet=new HashSet<Task<? extends Serializable>>();
+  List<Task<? extends Serializable>> taskListInConditionalTask=null;
+  if (nd instanceof ConditionalTask) {
+    taskListInConditionalTask=((ConditionalTask)nd).getListTasks();
+    for (    Task<? extends Serializable> tsk : taskListInConditionalTask) {
+      List<Task<? extends Serializable>> childTask=tsk.getChildTasks();
+      if (childTask != null) {
+        nextTaskSet.addAll(tsk.getChildTasks());
+      }
+    }
+    if (nextTaskSet.size() > 0) {
+      nextTaskList=new ArrayList<Task<? extends Serializable>>();
+      for (      Task<? extends Serializable> tsk : nextTaskSet) {
+        nextTaskList.add(tsk);
+      }
+    }
+  }
+ else {
+    nextTaskList=((Task<? extends Serializable>)nd).getChildTasks();
+  }
+  if ((nextTaskList == null) || getDispatchedList().containsAll(nextTaskList)) {
+    dispatch(nd,opStack,this.walkerCtx);
+    opStack.pop();
+    return;
+  }
+  getToWalk().add(0,nd);
+  getToWalk().removeAll(nextTaskList);
+  getToWalk().addAll(0,nextTaskList);
+}

@@ -1,0 +1,71 @@
+{
+  JoinOperator joinOp=getJoinOp(currTask);
+  if (joinOp == null) {
+    return null;
+  }
+  MapredWork currWork=currTask.getWork();
+  List<Serializable> listWorks=new ArrayList<Serializable>();
+  List<Task<? extends Serializable>> listTasks=new ArrayList<Task<? extends Serializable>>();
+  HashMap<String,Task<? extends Serializable>> aliasToTask=new HashMap<String,Task<? extends Serializable>>();
+  HashMap<String,String> aliasToPath=new HashMap<String,String>();
+  HashMap<String,ArrayList<String>> pathToAliases=currTask.getWork().getPathToAliases();
+  ParseContext parseCtx=physicalContext.getParseContext();
+  QBJoinTree joinTree=parseCtx.getJoinContext().get(joinOp);
+  JoinDesc joinDesc=joinOp.getConf();
+  Byte[] order=joinDesc.getTagOrder();
+  int numAliases=order.length;
+  try {
+    HashSet<Integer> smallTableOnlySet=MapJoinProcessor.getSmallTableOnlySet(joinDesc.getConds());
+    if (smallTableOnlySet == null) {
+      return null;
+    }
+    currWork.setOpParseCtxMap(parseCtx.getOpParseCtx());
+    currWork.setJoinTree(joinTree);
+    String xml=currWork.toXML();
+    String bigTableAlias=null;
+    if (smallTableOnlySet.size() == numAliases) {
+      return null;
+    }
+    for (int i=0; i < numAliases; i++) {
+      if (smallTableOnlySet.contains(i)) {
+        continue;
+      }
+      InputStream in=new ByteArrayInputStream(xml.getBytes("UTF-8"));
+      MapredWork newWork=Utilities.deserializeMapRedWork(in,physicalContext.getConf());
+      MapRedTask newTask=(MapRedTask)TaskFactory.get(newWork,physicalContext.getParseContext().getConf());
+      JoinOperator newJoinOp=getJoinOp(newTask);
+      bigTableAlias=MapJoinProcessor.genMapJoinOpAndLocalWork(newWork,newJoinOp,i);
+      listWorks.add(newWork);
+      listTasks.add(newTask);
+      newTask.setBackupTask(currTask);
+      newTask.setBackupChildrenTasks(currTask.getChildTasks());
+      aliasToTask.put(bigTableAlias,newTask);
+      for (      Map.Entry<String,ArrayList<String>> entry : pathToAliases.entrySet()) {
+        String path=entry.getKey();
+        ArrayList<String> aliasList=entry.getValue();
+        if (aliasList.contains(bigTableAlias)) {
+          aliasToPath.put(bigTableAlias,path);
+        }
+      }
+    }
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    throw new SemanticException("Generate Map Join Task Error: " + e.getMessage());
+  }
+  listWorks.add(currTask.getWork());
+  listTasks.add(currTask);
+  currWork.setOpParseCtxMap(null);
+  currWork.setJoinTree(null);
+  ConditionalWork cndWork=new ConditionalWork(listWorks);
+  ConditionalTask cndTsk=(ConditionalTask)TaskFactory.get(cndWork,parseCtx.getConf());
+  cndTsk.setListTasks(listTasks);
+  cndTsk.setResolver(new ConditionalResolverCommonJoin());
+  ConditionalResolverCommonJoinCtx resolverCtx=new ConditionalResolverCommonJoinCtx();
+  resolverCtx.setAliasToPath(aliasToPath);
+  resolverCtx.setAliasToTask(aliasToTask);
+  resolverCtx.setCommonJoinTask(currTask);
+  cndTsk.setResolverCtx(resolverCtx);
+  this.replaceTaskWithConditionalTask(currTask,cndTsk,physicalContext);
+  return cndTsk;
+}

@@ -8,6 +8,10 @@
     String hdfsTmpURI=Utilities.generateTmpURI(ctx.getMRTmpFileURI(),currTask.getId());
     mapredWork.setTmpHDFSFileURI(hdfsTmpURI);
     MapredLocalTask localTask=(MapredLocalTask)TaskFactory.get(localwork,physicalContext.getParseContext().getConf());
+    localTask.setBackupTask(currTask.getBackupTask());
+    localTask.setBackupChildrenTasks(currTask.getBackupChildrenTasks());
+    currTask.setBackupChildrenTasks(null);
+    currTask.setBackupTask(null);
     List<Operator<? extends Serializable>> dummyOps=adjustLocalTask(localTask);
     MapredLocalWork newLocalWork=new MapredLocalWork();
     newLocalWork.setDummyParentOp(dummyOps);
@@ -36,21 +40,43 @@
         index=listWork.indexOf(mapredWork);
         listWork.set(index,(Serializable)localwork);
         conditionalWork.setListWorks(listWork);
-        ConditionalResolverSkewJoinCtx context=(ConditionalResolverSkewJoinCtx)conditionalTask.getResolverCtx();
-        HashMap<String,Task<? extends Serializable>> bigKeysDirToTaskMap=context.getDirToTaskMap();
-        HashMap<String,Task<? extends Serializable>> newbigKeysDirToTaskMap=new HashMap<String,Task<? extends Serializable>>();
-        for (        Map.Entry<String,Task<? extends Serializable>> entry : bigKeysDirToTaskMap.entrySet()) {
-          Task<? extends Serializable> task=entry.getValue();
-          String key=entry.getKey();
-          if (task.equals(currTask)) {
-            newbigKeysDirToTaskMap.put(key,localTask);
-          }
+        ConditionalResolver resolver=conditionalTask.getResolver();
+        if (resolver instanceof ConditionalResolverSkewJoin) {
+          ConditionalResolverSkewJoinCtx context=(ConditionalResolverSkewJoinCtx)conditionalTask.getResolverCtx();
+          HashMap<String,Task<? extends Serializable>> bigKeysDirToTaskMap=context.getDirToTaskMap();
+          HashMap<String,Task<? extends Serializable>> newbigKeysDirToTaskMap=new HashMap<String,Task<? extends Serializable>>();
+          for (          Map.Entry<String,Task<? extends Serializable>> entry : bigKeysDirToTaskMap.entrySet()) {
+            Task<? extends Serializable> task=entry.getValue();
+            String key=entry.getKey();
+            if (task.equals(currTask)) {
+              newbigKeysDirToTaskMap.put(key,localTask);
+            }
  else {
-            newbigKeysDirToTaskMap.put(key,task);
+              newbigKeysDirToTaskMap.put(key,task);
+            }
           }
+          context.setDirToTaskMap(newbigKeysDirToTaskMap);
+          conditionalTask.setResolverCtx(context);
         }
-        context.setDirToTaskMap(newbigKeysDirToTaskMap);
-        conditionalTask.setResolverCtx(context);
+ else         if (resolver instanceof ConditionalResolverCommonJoin) {
+          ConditionalResolverCommonJoinCtx context=(ConditionalResolverCommonJoinCtx)conditionalTask.getResolverCtx();
+          HashMap<String,Task<? extends Serializable>> aliasToWork=context.getAliasToTask();
+          HashMap<String,Task<? extends Serializable>> newAliasToWork=new HashMap<String,Task<? extends Serializable>>();
+          for (          Map.Entry<String,Task<? extends Serializable>> entry : aliasToWork.entrySet()) {
+            Task<? extends Serializable> task=entry.getValue();
+            String key=entry.getKey();
+            if (task.equals(currTask)) {
+              newAliasToWork.put(key,localTask);
+            }
+ else {
+              newAliasToWork.put(key,task);
+            }
+          }
+          context.setAliasToTask(newAliasToWork);
+          conditionalTask.setResolverCtx(context);
+        }
+ else {
+        }
       }
     }
     localTask.addDependentTask(currTask);

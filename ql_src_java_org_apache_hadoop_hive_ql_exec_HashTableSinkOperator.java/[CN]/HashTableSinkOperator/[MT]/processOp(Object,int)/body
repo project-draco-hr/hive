@@ -1,7 +1,7 @@
 {
   try {
     if (firstRow) {
-      generateMapMetaData();
+      setKeyMetaData();
       firstRow=false;
     }
     alias=order[tag];
@@ -16,14 +16,17 @@
       res.add(value);
       if (metadataValueTag[tag] == -1) {
         metadataValueTag[tag]=order[tag];
-        TableDesc valueTableDesc=conf.getValueTblDescs().get(tag);
-        SerDe valueSerDe=(SerDe)ReflectionUtils.newInstance(valueTableDesc.getDeserializerClass(),null);
-        valueSerDe.initialize(null,valueTableDesc.getProperties());
-        MapJoinMetaData.put(Integer.valueOf(metadataValueTag[tag]),new HashTableSinkObjectCtx(ObjectInspectorUtils.getStandardObjectInspector(valueSerDe.getObjectInspector(),ObjectInspectorCopyOption.WRITABLE),valueSerDe,valueTableDesc,hconf));
+        setValueMetaData(tag);
       }
       if (needNewKey) {
         MapJoinObjectValue valueObj=new MapJoinObjectValue(metadataValueTag[tag],res);
         rowNumber++;
+        if (rowNumber > hashTableScale && rowNumber % hashTableScale == 0) {
+          isAbort=hashTable.isAbort(rowNumber,console);
+          if (isAbort) {
+            throw new HiveException("RunOutOfMeomoryUsage");
+          }
+        }
         hashTable.put(keyMap,valueObj);
       }
     }
@@ -32,8 +35,7 @@
       res.add(value);
     }
   }
- catch (  Exception e) {
-    e.printStackTrace();
+ catch (  SerDeException e) {
     throw new HiveException(e);
   }
 }

@@ -43,13 +43,26 @@
       Task<? extends Serializable> tsk=tskRun.getTask();
       int exitVal=tskRes.getExitVal();
       if (exitVal != 0) {
-        errorMessage="FAILED: Execution Error, return code " + exitVal + " from "+ tsk.getClass().getName();
-        SQLState="08S01";
-        console.printError(errorMessage);
-        if (running.size() != 0) {
-          taskCleanup();
+        Task<? extends Serializable> backupTask=tsk.getAndInitBackupTask();
+        if (backupTask != null) {
+          errorMessage="FAILED: Execution Error, return code " + exitVal + " from "+ tsk.getClass().getName();
+          console.printInfo(errorMessage);
+          errorMessage="ATTEMPT: Execute BackupTask: " + backupTask.getClass().getName();
+          console.printInfo(errorMessage);
+          if (DriverContext.isLaunchable(backupTask)) {
+            driverCxt.addToRunnable(backupTask);
+          }
+          continue;
         }
-        return 9;
+ else {
+          errorMessage="FAILED: Execution Error, return code " + exitVal + " from "+ tsk.getClass().getName();
+          SQLState="08S01";
+          console.printError(errorMessage);
+          if (running.size() != 0) {
+            taskCleanup();
+          }
+          return 9;
+        }
       }
       if (SessionState.get() != null) {
         SessionState.get().getHiveHistory().setTaskProperty(queryId,tsk.getId(),Keys.TASK_RET_CODE,String.valueOf(exitVal));
