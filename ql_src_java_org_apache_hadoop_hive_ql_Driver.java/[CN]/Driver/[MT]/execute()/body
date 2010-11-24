@@ -15,8 +15,14 @@
       SessionState.get().getHiveHistory().logPlanProgress(plan);
     }
     resStream=null;
-    for (    PreExecute peh : getPreExecHooks()) {
-      peh.run(SessionState.get(),plan.getInputs(),plan.getOutputs(),ShimLoader.getHadoopShims().getUGIForConf(conf));
+    HookContext hookContext=new HookContext(plan,conf);
+    for (    Hook peh : getPreExecHooks()) {
+      if (peh instanceof ExecuteWithHookContext) {
+        ((ExecuteWithHookContext)peh).run(hookContext);
+      }
+ else       if (peh instanceof PreExecute) {
+        ((PreExecute)peh).run(SessionState.get(),plan.getInputs(),plan.getOutputs(),ShimLoader.getHadoopShims().getUGIForConf(conf));
+      }
     }
     int jobs=Utilities.getMRTasks(plan.getRootTasks()).size();
     if (jobs > 0) {
@@ -41,6 +47,7 @@
       TaskResult tskRes=pollTasks(running.keySet());
       TaskRunner tskRun=running.remove(tskRes);
       Task<? extends Serializable> tsk=tskRun.getTask();
+      hookContext.addCompleteTask(tskRun);
       int exitVal=tskRes.getExitVal();
       if (exitVal != 0) {
         Task<? extends Serializable> backupTask=tsk.getAndInitBackupTask();
@@ -86,8 +93,13 @@
     for (    WriteEntity output : remOutputs) {
       plan.getOutputs().remove(output);
     }
-    for (    PostExecute peh : getPostExecHooks()) {
-      peh.run(SessionState.get(),plan.getInputs(),plan.getOutputs(),(SessionState.get() != null ? SessionState.get().getLineageState().getLineageInfo() : null),ShimLoader.getHadoopShims().getUGIForConf(conf));
+    for (    Hook peh : getPostExecHooks()) {
+      if (peh instanceof ExecuteWithHookContext) {
+        ((ExecuteWithHookContext)peh).run(hookContext);
+      }
+ else       if (peh instanceof PostExecute) {
+        ((PostExecute)peh).run(SessionState.get(),plan.getInputs(),plan.getOutputs(),(SessionState.get() != null ? SessionState.get().getLineageState().getLineageInfo() : null),ShimLoader.getHadoopShims().getUGIForConf(conf));
+      }
     }
     if (SessionState.get() != null) {
       SessionState.get().getHiveHistory().setQueryProperty(queryId,Keys.QUERY_RET_CODE,String.valueOf(0));
