@@ -1,12 +1,36 @@
 {
   String name=getObjectName(key,mode);
-  String res;
+  String res=null;
   try {
-    if (keepAlive) {
-      res=zooKeeper.create(name,key.getData().getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT_SEQUENTIAL);
-    }
+    int tryNum=0;
+    while (true) {
+      String msg=null;
+      try {
+        if (keepAlive) {
+          res=zooKeeper.create(name,key.getData().getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT_SEQUENTIAL);
+        }
  else {
-      res=zooKeeper.create(name,key.getData().getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL_SEQUENTIAL);
+          res=zooKeeper.create(name,key.getData().getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL_SEQUENTIAL);
+        }
+      }
+ catch (      Exception e) {
+        msg=e.getLocalizedMessage();
+      }
+      if (res != null) {
+        break;
+      }
+      renewZookeeperInstance(sessionTimeout,quorumServers);
+      if (tryNum == numRetries) {
+        console.printError("Lock for " + key.getName() + " cannot be acquired in "+ mode);
+        throw new SemanticException(ErrorMsg.LOCK_CANNOT_BE_ACQUIRED.getMsg());
+      }
+      tryNum++;
+      console.printInfo("Lock for " + key.getName() + " cannot be acquired in "+ mode+ ", will retry again later..., more info: "+ msg);
+      try {
+        Thread.sleep(sleepTime);
+      }
+ catch (      InterruptedException e) {
+      }
     }
     int seqNo=getSequenceNumber(res,name);
     if (seqNo == -1) {
