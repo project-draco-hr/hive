@@ -1,16 +1,33 @@
 {
-  open=false;
-  transport=new TSocket(store.getHost(),store.getPort());
-  ((TSocket)transport).setTimeout(20000);
-  TProtocol protocol=new TBinaryProtocol(transport);
-  client=new ThriftHiveMetastore.Client(protocol);
   for (int i=0; i < retries && !open; ++i) {
+    open=false;
+    transport=new TSocket(store.getHost(),store.getPort());
+    ((TSocket)transport).setTimeout(20000);
+    boolean useSasl=conf.getBoolVar(HiveConf.ConfVars.METASTORE_USE_THRIFT_SASL);
+    if (useSasl) {
+      try {
+        HadoopThriftAuthBridge.Client authBridge=ShimLoader.getHadoopThriftAuthBridge().createClient();
+        String principalConfig=conf.getVar(HiveConf.ConfVars.METASTORE_KERBEROS_PRINCIPAL);
+        transport=authBridge.createClientTransport(principalConfig,store.getHost(),"KERBEROS",transport);
+      }
+ catch (      IOException ioe) {
+        LOG.error("Couldn't create client transport",ioe);
+        throw new MetaException(ioe.toString());
+      }
+    }
+    TProtocol protocol=new TBinaryProtocol(transport);
+    client=new ThriftHiveMetastore.Client(protocol);
     try {
       transport.open();
       open=true;
     }
  catch (    TTransportException e) {
-      LOG.warn("failed to connect to MetaStore, re-trying...");
+      if (LOG.isDebugEnabled()) {
+        LOG.warn("failed to connect to MetaStore, re-trying...",e);
+      }
+ else {
+        LOG.warn("failed to connect to MetaStore, re-trying...");
+      }
       try {
         Thread.sleep(1000);
       }

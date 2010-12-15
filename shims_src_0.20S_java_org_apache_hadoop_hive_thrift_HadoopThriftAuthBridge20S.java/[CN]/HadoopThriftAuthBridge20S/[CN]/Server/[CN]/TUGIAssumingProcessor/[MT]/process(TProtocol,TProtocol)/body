@@ -1,0 +1,34 @@
+{
+  TTransport trans=inProt.getTransport();
+  if (!(trans instanceof TSaslServerTransport)) {
+    throw new TException("Unexpected non-SASL transport " + trans.getClass());
+  }
+  TSaslServerTransport saslTrans=(TSaslServerTransport)trans;
+  String authId=saslTrans.getSaslServer().getAuthorizationID();
+  try {
+    UserGroupInformation clientUgi=UserGroupInformation.createProxyUser(authId,UserGroupInformation.getLoginUser());
+    return clientUgi.doAs(new PrivilegedExceptionAction<Boolean>(){
+      public Boolean run(){
+        try {
+          return wrapped.process(inProt,outProt);
+        }
+ catch (        TException te) {
+          throw new RuntimeException(te);
+        }
+      }
+    }
+);
+  }
+ catch (  RuntimeException rte) {
+    if (rte.getCause() instanceof TException) {
+      throw (TException)rte.getCause();
+    }
+    throw rte;
+  }
+catch (  InterruptedException ie) {
+    throw new RuntimeException(ie);
+  }
+catch (  IOException ioe) {
+    throw new RuntimeException(ioe);
+  }
+}
