@@ -1,0 +1,54 @@
+{
+  try {
+    FileSystem fs=srcf.getFileSystem(conf);
+    FileStatus[] srcs;
+    try {
+      srcs=fs.globStatus(srcf);
+    }
+ catch (    IOException e) {
+      throw new HiveException("Getting globStatus " + srcf.toString(),e);
+    }
+    if (srcs == null) {
+      LOG.info("No sources specified to move: " + srcf);
+      return;
+    }
+    checkPaths(fs,srcs,destf,true);
+    if (oldPath != null) {
+      try {
+        FileSystem fs2=oldPath.getFileSystem(conf);
+        if (fs2.exists(oldPath)) {
+          FsShell fshell=new FsShell();
+          fshell.setConf(conf);
+          fshell.run(new String[]{"-rmr",oldPath.toUri().toString()});
+        }
+      }
+ catch (      Exception e) {
+        LOG.warn("Directory " + oldPath.toString() + " canot be removed.");
+      }
+    }
+    if (srcs.length == 1 && srcs[0].isDir()) {
+      if (!fs.exists(destf.getParent())) {
+        fs.mkdirs(destf.getParent());
+      }
+      boolean b=fs.rename(srcs[0].getPath(),destf);
+      if (!b) {
+        throw new HiveException("Unable to move results from " + srcs[0].getPath() + " to destination directory: "+ destf);
+      }
+      LOG.debug("Renaming:" + srcf.toString() + ",Status:"+ b);
+    }
+ else {
+      if (!fs.exists(destf)) {
+        fs.mkdirs(destf);
+      }
+      for (      FileStatus src : srcs) {
+        Path destPath=new Path(destf,src.getPath().getName());
+        if (!fs.rename(src.getPath(),destPath)) {
+          throw new HiveException("Error moving: " + src.getPath() + " into: "+ destf);
+        }
+      }
+    }
+  }
+ catch (  IOException e) {
+    throw new HiveException(e.getMessage(),e);
+  }
+}
