@@ -11,12 +11,17 @@
     throw new IOException("cannot find class " + inputFormatClassName);
   }
   JobConf cloneJobConf=new JobConf(job);
-  pushProjectionsAndFilters(cloneJobConf,inputFormatClass,hsplit.getPath().toString(),hsplit.getPath().toUri().getPath());
-  InputFormat inputFormat=getInputFormatFromCache(inputFormatClass,cloneJobConf);
+  if (this.mrwork == null) {
+    init(job);
+  }
+  boolean nonNative=false;
   PartitionDesc part=pathToPartitionInfo.get(hsplit.getPath().toString());
   if ((part != null) && (part.getTableDesc() != null)) {
     Utilities.copyTableJobPropertiesToConf(part.getTableDesc(),cloneJobConf);
+    nonNative=part.getTableDesc().isNonNative();
   }
+  pushProjectionsAndFilters(cloneJobConf,inputFormatClass,hsplit.getPath().toString(),hsplit.getPath().toUri().getPath(),nonNative);
+  InputFormat inputFormat=getInputFormatFromCache(inputFormatClass,cloneJobConf);
   RecordReader innerReader=inputFormat.getRecordReader(inputSplit,cloneJobConf,reporter);
   HiveRecordReader<K,V> rr=new HiveRecordReader(innerReader);
   rr.initIOContext(hsplit,job,inputFormatClass,innerReader);
