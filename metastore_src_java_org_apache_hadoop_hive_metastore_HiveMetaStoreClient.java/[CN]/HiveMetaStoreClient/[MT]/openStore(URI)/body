@@ -1,8 +1,16 @@
 {
-  for (int i=0; i < retries && !open; ++i) {
-    open=false;
+  isConnected=false;
+  for (int attempt=0; !isConnected && attempt < retries; ++attempt) {
+    if (attempt > 0 && retryDelaySeconds > 0) {
+      try {
+        LOG.info("Waiting " + retryDelaySeconds + " seconds before next connection attempt.");
+        Thread.sleep(retryDelaySeconds * 1000);
+      }
+ catch (      InterruptedException ignore) {
+      }
+    }
     transport=new TSocket(store.getHost(),store.getPort());
-    ((TSocket)transport).setTimeout(20000);
+    ((TSocket)transport).setTimeout(1000 * conf.getIntVar(ConfVars.METASTORE_CLIENT_SOCKET_TIMEOUT));
     boolean useSasl=conf.getBoolVar(HiveConf.ConfVars.METASTORE_USE_THRIFT_SASL);
     if (useSasl) {
       try {
@@ -19,23 +27,18 @@
     client=new ThriftHiveMetastore.Client(protocol);
     try {
       transport.open();
-      open=true;
+      isConnected=true;
     }
  catch (    TTransportException e) {
       if (LOG.isDebugEnabled()) {
-        LOG.warn("failed to connect to MetaStore, re-trying...",e);
+        LOG.warn("Failed to connect to the MetaStore Server...",e);
       }
  else {
-        LOG.warn("failed to connect to MetaStore, re-trying...");
-      }
-      try {
-        Thread.sleep(1000);
-      }
- catch (      InterruptedException ignore) {
+        LOG.warn("Failed to connect to the MetaStore Server...");
       }
     }
   }
-  if (!open) {
-    throw new MetaException("could not connect to meta store");
+  if (!isConnected) {
+    throw new MetaException("Could not connect to the MetaStore server!");
   }
 }
