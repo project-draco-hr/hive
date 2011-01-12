@@ -1,0 +1,37 @@
+{
+  boolean commited=false;
+  PrincipalPrivilegeSet ret=new PrincipalPrivilegeSet();
+  tableName=tableName.toLowerCase().trim();
+  dbName=dbName.toLowerCase().trim();
+  try {
+    openTransaction();
+    if (userName != null) {
+      Map<String,List<PrivilegeGrantInfo>> tableUserPriv=new HashMap<String,List<PrivilegeGrantInfo>>();
+      tableUserPriv.put(userName,getTablePrivilege(dbName,tableName,userName,PrincipalType.USER));
+      ret.setUserPrivileges(tableUserPriv);
+    }
+    if (groupNames != null && groupNames.size() > 0) {
+      Map<String,List<PrivilegeGrantInfo>> tableGroupPriv=new HashMap<String,List<PrivilegeGrantInfo>>();
+      for (      String groupName : groupNames) {
+        tableGroupPriv.put(groupName,getTablePrivilege(dbName,tableName,groupName,PrincipalType.GROUP));
+      }
+      ret.setGroupPrivileges(tableGroupPriv);
+    }
+    List<MRoleMap> roles=listRoles(userName,groupNames);
+    if (roles != null && roles.size() > 0) {
+      Map<String,List<PrivilegeGrantInfo>> tableRolePriv=new HashMap<String,List<PrivilegeGrantInfo>>();
+      for (      MRoleMap role : roles) {
+        String roleName=role.getRole().getRoleName();
+        tableRolePriv.put(roleName,getTablePrivilege(dbName,tableName,roleName,PrincipalType.ROLE));
+      }
+      ret.setRolePrivileges(tableRolePriv);
+    }
+    commited=commitTransaction();
+  }
+  finally {
+    if (!commited) {
+      rollbackTransaction();
+    }
+  }
+  return ret;
+}

@@ -1,0 +1,42 @@
+{
+  boolean commited=false;
+  PrincipalPrivilegeSet ret=new PrincipalPrivilegeSet();
+  try {
+    openTransaction();
+    if (userName != null) {
+      List<MGlobalPrivilege> user=this.listPrincipalGlobalGrants(userName,PrincipalType.USER);
+      if (user.size() > 0) {
+        Map<String,List<PrivilegeGrantInfo>> userPriv=new HashMap<String,List<PrivilegeGrantInfo>>();
+        List<PrivilegeGrantInfo> grantInfos=new ArrayList<PrivilegeGrantInfo>(user.size());
+        for (int i=0; i < user.size(); i++) {
+          MGlobalPrivilege item=user.get(i);
+          grantInfos.add(new PrivilegeGrantInfo(item.getPrivilege(),item.getCreateTime(),item.getGrantor(),getPrincipalTypeFromStr(item.getGrantorType()),item.getGrantOption()));
+        }
+        userPriv.put(userName,grantInfos);
+        ret.setUserPrivileges(userPriv);
+      }
+    }
+    if (groupNames != null && groupNames.size() > 0) {
+      Map<String,List<PrivilegeGrantInfo>> groupPriv=new HashMap<String,List<PrivilegeGrantInfo>>();
+      for (      String groupName : groupNames) {
+        List<MGlobalPrivilege> group=this.listPrincipalGlobalGrants(groupName,PrincipalType.GROUP);
+        if (group.size() > 0) {
+          List<PrivilegeGrantInfo> grantInfos=new ArrayList<PrivilegeGrantInfo>(group.size());
+          for (int i=0; i < group.size(); i++) {
+            MGlobalPrivilege item=group.get(i);
+            grantInfos.add(new PrivilegeGrantInfo(item.getPrivilege(),item.getCreateTime(),item.getGrantor(),getPrincipalTypeFromStr(item.getGrantorType()),item.getGrantOption()));
+          }
+          groupPriv.put(groupName,grantInfos);
+        }
+      }
+      ret.setGroupPrivileges(groupPriv);
+    }
+    commited=commitTransaction();
+  }
+  finally {
+    if (!commited) {
+      rollbackTransaction();
+    }
+  }
+  return ret;
+}

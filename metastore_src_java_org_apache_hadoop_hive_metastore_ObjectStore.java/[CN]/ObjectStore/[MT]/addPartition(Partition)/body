@@ -2,9 +2,33 @@
   boolean success=false;
   boolean commited=false;
   try {
+    MTable table=this.getMTable(part.getDbName(),part.getTableName());
+    List<MTablePrivilege> tabGrants=null;
+    List<MTableColumnPrivilege> tabColumnGrants=null;
+    if ("TRUE".equalsIgnoreCase(table.getParameters().get("PARTITION_LEVEL_PRIVILEGE"))) {
+      tabGrants=this.listAllTableGrants(part.getDbName(),part.getTableName());
+      tabColumnGrants=this.listTableAllColumnGrants(part.getDbName(),part.getTableName());
+    }
     openTransaction();
     MPartition mpart=convertToMPart(part);
     pm.makePersistent(mpart);
+    int now=(int)(System.currentTimeMillis() / 1000);
+    List<Object> toPersist=new ArrayList<Object>();
+    if (tabGrants != null) {
+      for (      MTablePrivilege tab : tabGrants) {
+        MPartitionPrivilege partGrant=new MPartitionPrivilege(tab.getPrincipalName(),tab.getPrincipalType(),mpart,tab.getPrivilege(),now,tab.getGrantor(),tab.getGrantorType(),tab.getGrantOption());
+        toPersist.add(partGrant);
+      }
+    }
+    if (tabColumnGrants != null) {
+      for (      MTableColumnPrivilege col : tabColumnGrants) {
+        MPartitionColumnPrivilege partColumn=new MPartitionColumnPrivilege(col.getPrincipalName(),col.getPrincipalType(),mpart,col.getColumnName(),col.getPrivilege(),now,col.getGrantor(),col.getGrantorType(),col.getGrantOption());
+        toPersist.add(partColumn);
+      }
+      if (toPersist.size() > 0) {
+        pm.makePersistentAll(toPersist);
+      }
+    }
     commited=commitTransaction();
     success=true;
   }

@@ -1,0 +1,139 @@
+{
+  try {
+    Path resFile=new Path(showGrantDesc.getResFile());
+    FileSystem fs=resFile.getFileSystem(conf);
+    DataOutput outStream=fs.create(resFile);
+    PrincipalDesc principalDesc=showGrantDesc.getPrincipalDesc();
+    PrivilegeObjectDesc hiveObjectDesc=showGrantDesc.getHiveObj();
+    String principalName=principalDesc.getName();
+    if (hiveObjectDesc == null) {
+      List<HiveObjectPrivilege> users=db.showPrivilegeGrant(HiveObjectType.GLOBAL,principalName,principalDesc.getType(),null,null,null,null);
+      if (users != null && users.size() > 0) {
+        boolean first=true;
+        for (        HiveObjectPrivilege usr : users) {
+          if (!first) {
+            outStream.write(terminator);
+          }
+ else {
+            first=false;
+          }
+          writeGrantInfo(outStream,principalDesc.getType(),principalName,null,null,null,null,usr.getGrantInfo());
+        }
+      }
+    }
+ else {
+      String obj=hiveObjectDesc.getObject();
+      boolean notFound=true;
+      String dbName=null;
+      String tableName=null;
+      Table tableObj=null;
+      Database dbObj=null;
+      if (hiveObjectDesc.getTable()) {
+        String[] dbTab=obj.split("\\.");
+        if (dbTab.length == 2) {
+          dbName=dbTab[0];
+          tableName=dbTab[1];
+        }
+ else {
+          dbName=db.getCurrentDatabase();
+          tableName=obj;
+        }
+        dbObj=db.getDatabase(dbName);
+        tableObj=db.getTable(dbName,tableName);
+        notFound=(dbObj == null || tableObj == null);
+      }
+ else {
+        dbName=hiveObjectDesc.getObject();
+        dbObj=db.getDatabase(dbName);
+        notFound=(dbObj == null);
+      }
+      if (notFound) {
+        throw new HiveException(obj + " can not be found");
+      }
+      String partName=null;
+      List<String> partValues=null;
+      if (hiveObjectDesc.getPartSpec() != null) {
+        partName=Warehouse.makePartName(hiveObjectDesc.getPartSpec(),false);
+        partValues=Warehouse.getPartValuesFromPartName(partName);
+      }
+      if (!hiveObjectDesc.getTable()) {
+        List<HiveObjectPrivilege> dbs=db.showPrivilegeGrant(HiveObjectType.DATABASE,principalName,principalDesc.getType(),dbName,null,null,null);
+        if (dbs != null && dbs.size() > 0) {
+          boolean first=true;
+          for (          HiveObjectPrivilege db : dbs) {
+            if (!first) {
+              outStream.write(terminator);
+            }
+ else {
+              first=false;
+            }
+            writeGrantInfo(outStream,principalDesc.getType(),principalName,dbName,null,null,null,db.getGrantInfo());
+          }
+        }
+      }
+ else {
+        if (showGrantDesc.getColumns() != null) {
+          for (          String columnName : showGrantDesc.getColumns()) {
+            List<HiveObjectPrivilege> columnss=db.showPrivilegeGrant(HiveObjectType.COLUMN,principalName,principalDesc.getType(),dbName,tableName,partValues,columnName);
+            if (columnss != null && columnss.size() > 0) {
+              boolean first=true;
+              for (              HiveObjectPrivilege col : columnss) {
+                if (!first) {
+                  outStream.write(terminator);
+                }
+ else {
+                  first=false;
+                }
+                writeGrantInfo(outStream,principalDesc.getType(),principalName,dbName,tableName,partName,columnName,col.getGrantInfo());
+              }
+            }
+          }
+        }
+ else         if (hiveObjectDesc.getPartSpec() != null) {
+          List<HiveObjectPrivilege> parts=db.showPrivilegeGrant(HiveObjectType.PARTITION,principalName,principalDesc.getType(),dbName,tableName,partValues,null);
+          if (parts != null && parts.size() > 0) {
+            boolean first=true;
+            for (            HiveObjectPrivilege part : parts) {
+              if (!first) {
+                outStream.write(terminator);
+              }
+ else {
+                first=false;
+              }
+              writeGrantInfo(outStream,principalDesc.getType(),principalName,dbName,tableName,partName,null,part.getGrantInfo());
+            }
+          }
+        }
+ else {
+          List<HiveObjectPrivilege> tbls=db.showPrivilegeGrant(HiveObjectType.TABLE,principalName,principalDesc.getType(),dbName,tableName,null,null);
+          if (tbls != null && tbls.size() > 0) {
+            boolean first=true;
+            for (            HiveObjectPrivilege tbl : tbls) {
+              if (!first) {
+                outStream.write(terminator);
+              }
+ else {
+                first=false;
+              }
+              writeGrantInfo(outStream,principalDesc.getType(),principalName,dbName,tableName,null,null,tbl.getGrantInfo());
+            }
+          }
+        }
+      }
+    }
+    ((FSDataOutputStream)outStream).close();
+  }
+ catch (  FileNotFoundException e) {
+    LOG.info("show table status: " + stringifyException(e));
+    return 1;
+  }
+catch (  IOException e) {
+    LOG.info("show table status: " + stringifyException(e));
+    return 1;
+  }
+catch (  Exception e) {
+    e.printStackTrace();
+    throw new HiveException(e);
+  }
+  return 0;
+}

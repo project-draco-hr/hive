@@ -1,0 +1,160 @@
+{
+  boolean committed=false;
+  int now=(int)(System.currentTimeMillis() / 1000);
+  try {
+    openTransaction();
+    List<Object> persistentObjs=new ArrayList<Object>();
+    List<HiveObjectPrivilege> privilegeList=privileges.getPrivileges();
+    if (privilegeList != null && privilegeList.size() > 0) {
+      Iterator<HiveObjectPrivilege> privIter=privilegeList.iterator();
+      Set<String> privSet=new HashSet<String>();
+      while (privIter.hasNext()) {
+        HiveObjectPrivilege privDef=privIter.next();
+        HiveObjectRef hiveObject=privDef.getHiveObject();
+        String privilegeStr=privDef.getGrantInfo().getPrivilege();
+        String[] privs=privilegeStr.split(",");
+        String userName=privDef.getPrincipalName();
+        PrincipalType principalType=privDef.getPrincipalType();
+        String grantor=privDef.getGrantInfo().getGrantor();
+        String grantorType=privDef.getGrantInfo().getGrantorType().toString();
+        boolean grantOption=privDef.getGrantInfo().isGrantOption();
+        privSet.clear();
+        if (hiveObject.getObjectType() == HiveObjectType.GLOBAL) {
+          List<MGlobalPrivilege> globalPrivs=this.listPrincipalGlobalGrants(userName,principalType);
+          if (globalPrivs != null) {
+            for (            MGlobalPrivilege priv : globalPrivs) {
+              if (priv.getGrantor().equalsIgnoreCase(grantor)) {
+                privSet.add(priv.getPrivilege());
+              }
+            }
+          }
+          for (          String privilege : privs) {
+            if (privSet.contains(privilege)) {
+              throw new InvalidObjectException(privilege + " is already granted by " + grantor);
+            }
+            MGlobalPrivilege mGlobalPrivs=new MGlobalPrivilege(userName,principalType.toString(),privilege,now,grantor,grantorType,grantOption);
+            persistentObjs.add(mGlobalPrivs);
+          }
+        }
+ else         if (hiveObject.getObjectType() == HiveObjectType.DATABASE) {
+          MDatabase dbObj=getMDatabase(hiveObject.getDbName());
+          if (dbObj != null) {
+            List<MDBPrivilege> dbPrivs=this.listPrincipalDBGrants(userName,principalType,hiveObject.getDbName());
+            if (dbPrivs != null) {
+              for (              MDBPrivilege priv : dbPrivs) {
+                if (priv.getGrantor().equalsIgnoreCase(grantor)) {
+                  privSet.add(priv.getPrivilege());
+                }
+              }
+            }
+            for (            String privilege : privs) {
+              if (privSet.contains(privilege)) {
+                throw new InvalidObjectException(privilege + " is already granted on database " + hiveObject.getDbName()+ " by "+ grantor);
+              }
+              MDBPrivilege mDb=new MDBPrivilege(userName,principalType.toString(),dbObj,privilege,now,grantor,grantorType,grantOption);
+              persistentObjs.add(mDb);
+            }
+          }
+        }
+ else         if (hiveObject.getObjectType() == HiveObjectType.TABLE) {
+          MTable tblObj=getMTable(hiveObject.getDbName(),hiveObject.getObjectName());
+          if (tblObj != null) {
+            List<MTablePrivilege> tablePrivs=this.listAllTableGrants(userName,principalType,hiveObject.getDbName(),hiveObject.getObjectName());
+            if (tablePrivs != null) {
+              for (              MTablePrivilege priv : tablePrivs) {
+                if (priv.getGrantor() != null && priv.getGrantor().equalsIgnoreCase(grantor)) {
+                  privSet.add(priv.getPrivilege());
+                }
+              }
+            }
+            for (            String privilege : privs) {
+              if (privSet.contains(privilege)) {
+                throw new InvalidObjectException(privilege + " is already granted on table [" + hiveObject.getDbName()+ ","+ hiveObject.getObjectName()+ "] by "+ grantor);
+              }
+              MTablePrivilege mTab=new MTablePrivilege(userName,principalType.toString(),tblObj,privilege,now,grantor,grantorType,grantOption);
+              persistentObjs.add(mTab);
+            }
+          }
+        }
+ else         if (hiveObject.getObjectType() == HiveObjectType.PARTITION) {
+          MPartition partObj=this.getMPartition(hiveObject.getDbName(),hiveObject.getObjectName(),hiveObject.getPartValues());
+          String partName=null;
+          if (partObj != null) {
+            partName=partObj.getPartitionName();
+            List<MPartitionPrivilege> partPrivs=this.listPrincipalPartitionGrants(userName,principalType,hiveObject.getDbName(),hiveObject.getObjectName(),partObj.getPartitionName());
+            if (partPrivs != null) {
+              for (              MPartitionPrivilege priv : partPrivs) {
+                if (priv.getGrantor().equalsIgnoreCase(grantor)) {
+                  privSet.add(priv.getPrivilege());
+                }
+              }
+            }
+            for (            String privilege : privs) {
+              if (privSet.contains(privilege)) {
+                throw new InvalidObjectException(privilege + " is already granted on partition [" + hiveObject.getDbName()+ ","+ hiveObject.getObjectName()+ ","+ partName+ "] by "+ grantor);
+              }
+              MPartitionPrivilege mTab=new MPartitionPrivilege(userName,principalType.toString(),partObj,privilege,now,grantor,grantorType,grantOption);
+              persistentObjs.add(mTab);
+            }
+          }
+        }
+ else         if (hiveObject.getObjectType() == HiveObjectType.COLUMN) {
+          MTable tblObj=getMTable(hiveObject.getDbName(),hiveObject.getObjectName());
+          if (tblObj != null) {
+            if (hiveObject.getPartValues() != null) {
+              MPartition partObj=null;
+              List<MPartitionColumnPrivilege> colPrivs=null;
+              partObj=this.getMPartition(hiveObject.getDbName(),hiveObject.getObjectName(),hiveObject.getPartValues());
+              if (partObj == null) {
+                continue;
+              }
+              colPrivs=this.listPrincipalPartitionColumnGrants(userName,principalType,hiveObject.getDbName(),hiveObject.getObjectName(),partObj.getPartitionName(),hiveObject.getColumnName());
+              if (colPrivs != null) {
+                for (                MPartitionColumnPrivilege priv : colPrivs) {
+                  if (priv.getGrantor().equalsIgnoreCase(grantor)) {
+                    privSet.add(priv.getPrivilege());
+                  }
+                }
+              }
+              for (              String privilege : privs) {
+                if (privSet.contains(privilege)) {
+                  throw new InvalidObjectException(privilege + " is already granted on column " + hiveObject.getColumnName()+ " ["+ hiveObject.getDbName()+ ","+ hiveObject.getObjectName()+ ","+ partObj.getPartitionName()+ "] by "+ grantor);
+                }
+                MPartitionColumnPrivilege mCol=new MPartitionColumnPrivilege(userName,principalType.toString(),partObj,hiveObject.getColumnName(),privilege,now,grantor,grantorType,grantOption);
+                persistentObjs.add(mCol);
+              }
+            }
+ else {
+              List<MTableColumnPrivilege> colPrivs=null;
+              colPrivs=this.listPrincipalTableColumnGrants(userName,principalType,hiveObject.getDbName(),hiveObject.getObjectName(),hiveObject.getColumnName());
+              if (colPrivs != null) {
+                for (                MTableColumnPrivilege priv : colPrivs) {
+                  if (priv.getGrantor().equalsIgnoreCase(grantor)) {
+                    privSet.add(priv.getPrivilege());
+                  }
+                }
+              }
+              for (              String privilege : privs) {
+                if (privSet.contains(privilege)) {
+                  throw new InvalidObjectException(privilege + " is already granted on column " + hiveObject.getColumnName()+ " ["+ hiveObject.getDbName()+ ","+ hiveObject.getObjectName()+ "] by "+ grantor);
+                }
+                MTableColumnPrivilege mCol=new MTableColumnPrivilege(userName,principalType.toString(),tblObj,hiveObject.getColumnName(),privilege,now,grantor,grantorType,grantOption);
+                persistentObjs.add(mCol);
+              }
+            }
+          }
+        }
+      }
+    }
+    if (persistentObjs.size() > 0) {
+      pm.makePersistentAll(persistentObjs);
+    }
+    committed=commitTransaction();
+  }
+  finally {
+    if (!committed) {
+      rollbackTransaction();
+    }
+  }
+  return committed;
+}

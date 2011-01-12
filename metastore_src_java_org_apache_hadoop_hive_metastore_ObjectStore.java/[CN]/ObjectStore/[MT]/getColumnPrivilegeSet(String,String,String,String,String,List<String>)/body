@@ -1,0 +1,38 @@
+{
+  tableName=tableName.toLowerCase().trim();
+  dbName=dbName.toLowerCase().trim();
+  columnName=columnName.toLowerCase().trim();
+  boolean commited=false;
+  PrincipalPrivilegeSet ret=new PrincipalPrivilegeSet();
+  try {
+    openTransaction();
+    if (userName != null) {
+      Map<String,List<PrivilegeGrantInfo>> columnUserPriv=new HashMap<String,List<PrivilegeGrantInfo>>();
+      columnUserPriv.put(userName,getColumnPrivilege(dbName,tableName,columnName,partitionName,userName,PrincipalType.USER));
+      ret.setUserPrivileges(columnUserPriv);
+    }
+    if (groupNames != null && groupNames.size() > 0) {
+      Map<String,List<PrivilegeGrantInfo>> columnGroupPriv=new HashMap<String,List<PrivilegeGrantInfo>>();
+      for (      String groupName : groupNames) {
+        columnGroupPriv.put(groupName,getColumnPrivilege(dbName,tableName,columnName,partitionName,groupName,PrincipalType.GROUP));
+      }
+      ret.setGroupPrivileges(columnGroupPriv);
+    }
+    List<MRoleMap> roles=listRoles(userName,groupNames);
+    if (roles != null && roles.size() > 0) {
+      Map<String,List<PrivilegeGrantInfo>> columnRolePriv=new HashMap<String,List<PrivilegeGrantInfo>>();
+      for (      MRoleMap role : roles) {
+        String roleName=role.getRole().getRoleName();
+        columnRolePriv.put(roleName,getColumnPrivilege(dbName,tableName,columnName,partitionName,roleName,PrincipalType.ROLE));
+      }
+      ret.setRolePrivileges(columnRolePriv);
+    }
+    commited=commitTransaction();
+  }
+  finally {
+    if (!commited) {
+      rollbackTransaction();
+    }
+  }
+  return ret;
+}

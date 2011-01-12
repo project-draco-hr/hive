@@ -1,0 +1,97 @@
+{
+  HashSet<ReadEntity> inputs=sem.getInputs();
+  HashSet<WriteEntity> outputs=sem.getOutputs();
+  SessionState ss=SessionState.get();
+  HiveOperation op=ss.getHiveOperation();
+  Hive db=sem.getDb();
+  if (op != null) {
+    if (op.equals(HiveOperation.CREATETABLE_AS_SELECT) || op.equals(HiveOperation.CREATETABLE)) {
+      ss.getAuthorizer().authorize(db.getDatabase(db.getCurrentDatabase()),null,HiveOperation.CREATETABLE_AS_SELECT.getOutputRequiredPrivileges());
+    }
+    if (outputs != null && outputs.size() > 0) {
+      for (      WriteEntity write : outputs) {
+        if (write.getType() == WriteEntity.Type.PARTITION) {
+          Partition part=db.getPartition(write.getTable(),write.getPartition().getSpec(),false);
+          if (part != null) {
+            ss.getAuthorizer().authorize(write.getPartition(),null,op.getOutputRequiredPrivileges());
+            continue;
+          }
+        }
+        if (write.getTable() != null) {
+          ss.getAuthorizer().authorize(write.getTable(),null,op.getOutputRequiredPrivileges());
+        }
+      }
+    }
+  }
+  if (inputs != null && inputs.size() > 0) {
+    Map<Table,List<String>> tab2Cols=new HashMap<Table,List<String>>();
+    Map<Partition,List<String>> part2Cols=new HashMap<Partition,List<String>>();
+    for (    ReadEntity read : inputs) {
+      boolean part=read.getPartition() != null;
+      if (part) {
+        part2Cols.put(read.getPartition(),new ArrayList<String>());
+      }
+ else {
+        tab2Cols.put(read.getTable(),new ArrayList<String>());
+      }
+    }
+    if (op.equals(HiveOperation.CREATETABLE_AS_SELECT) || op.equals(HiveOperation.QUERY)) {
+      SemanticAnalyzer querySem=(SemanticAnalyzer)sem;
+      ParseContext parseCtx=querySem.getParseContext();
+      Map<TableScanOperator,Table> tsoTopMap=parseCtx.getTopToTable();
+      for (      Map.Entry<String,Operator<? extends Serializable>> topOpMap : querySem.getParseContext().getTopOps().entrySet()) {
+        Operator<? extends Serializable> topOp=topOpMap.getValue();
+        if (topOp instanceof TableScanOperator && tsoTopMap.containsKey(topOp)) {
+          TableScanOperator tableScanOp=(TableScanOperator)topOp;
+          Table tbl=tsoTopMap.get(tableScanOp);
+          List<Integer> neededColumnIds=tableScanOp.getNeededColumnIDs();
+          List<FieldSchema> columns=tbl.getCols();
+          List<String> cols=new ArrayList<String>();
+          if (neededColumnIds != null && neededColumnIds.size() > 0) {
+            for (int i=0; i < neededColumnIds.size(); i++) {
+              cols.add(columns.get(neededColumnIds.get(i)).getName());
+            }
+          }
+ else {
+            for (int i=0; i < columns.size(); i++) {
+              cols.add(columns.get(i).getName());
+            }
+          }
+          if (tbl.isPartitioned()) {
+            String alias_id=topOpMap.getKey();
+            PrunedPartitionList partsList=PartitionPruner.prune(parseCtx.getTopToTable().get(topOp),parseCtx.getOpToPartPruner().get(topOp),parseCtx.getConf(),alias_id,parseCtx.getPrunedPartitions());
+            Set<Partition> parts=new HashSet<Partition>();
+            parts.addAll(partsList.getConfirmedPartns());
+            parts.addAll(partsList.getUnknownPartns());
+            for (            Partition part : parts) {
+              part2Cols.put(part,cols);
+            }
+          }
+ else {
+            tab2Cols.put(tbl,cols);
+          }
+        }
+      }
+    }
+    for (    ReadEntity read : inputs) {
+      if (read.getPartition() != null) {
+        List<String> cols=part2Cols.get(read.getPartition());
+        if (cols != null && cols.size() > 0) {
+          ss.getAuthorizer().authorize(read.getPartition().getTable(),read.getPartition(),cols,op.getInputRequiredPrivileges(),null);
+        }
+ else {
+          ss.getAuthorizer().authorize(read.getPartition(),op.getInputRequiredPrivileges(),null);
+        }
+      }
+ else       if (read.getTable() != null) {
+        List<String> cols=tab2Cols.get(read.getTable());
+        if (cols != null && cols.size() > 0) {
+          ss.getAuthorizer().authorize(read.getTable(),null,cols,op.getInputRequiredPrivileges(),null);
+        }
+ else {
+          ss.getAuthorizer().authorize(read.getTable(),op.getInputRequiredPrivileges(),null);
+        }
+      }
+    }
+  }
+}

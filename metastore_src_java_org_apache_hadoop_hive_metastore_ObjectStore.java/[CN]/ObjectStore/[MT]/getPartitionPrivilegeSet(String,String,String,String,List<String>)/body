@@ -1,0 +1,37 @@
+{
+  boolean commited=false;
+  PrincipalPrivilegeSet ret=new PrincipalPrivilegeSet();
+  tableName=tableName.toLowerCase().trim();
+  dbName=dbName.toLowerCase().trim();
+  try {
+    openTransaction();
+    if (userName != null) {
+      Map<String,List<PrivilegeGrantInfo>> partUserPriv=new HashMap<String,List<PrivilegeGrantInfo>>();
+      partUserPriv.put(userName,getPartitionPrivilege(dbName,tableName,partition,userName,PrincipalType.USER));
+      ret.setUserPrivileges(partUserPriv);
+    }
+    if (groupNames != null && groupNames.size() > 0) {
+      Map<String,List<PrivilegeGrantInfo>> partGroupPriv=new HashMap<String,List<PrivilegeGrantInfo>>();
+      for (      String groupName : groupNames) {
+        partGroupPriv.put(groupName,getPartitionPrivilege(dbName,tableName,partition,groupName,PrincipalType.GROUP));
+      }
+      ret.setGroupPrivileges(partGroupPriv);
+    }
+    List<MRoleMap> roles=listRoles(userName,groupNames);
+    if (roles != null && roles.size() > 0) {
+      Map<String,List<PrivilegeGrantInfo>> partRolePriv=new HashMap<String,List<PrivilegeGrantInfo>>();
+      for (      MRoleMap role : roles) {
+        String roleName=role.getRole().getRoleName();
+        partRolePriv.put(roleName,getPartitionPrivilege(dbName,tableName,partition,roleName,PrincipalType.ROLE));
+      }
+      ret.setRolePrivileges(partRolePriv);
+    }
+    commited=commitTransaction();
+  }
+  finally {
+    if (!commited) {
+      rollbackTransaction();
+    }
+  }
+  return ret;
+}

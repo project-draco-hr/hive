@@ -1,0 +1,27 @@
+{
+  boolean success=false;
+  try {
+    openTransaction();
+    List<MPartition> mparts=listMPartitions(dbName,tblName,maxParts);
+    List<Partition> parts=new ArrayList<Partition>(mparts.size());
+    if (mparts != null && mparts.size() > 0) {
+      for (      MPartition mpart : mparts) {
+        MTable mtbl=mpart.getTable();
+        Partition part=convertToPart(mpart);
+        parts.add(part);
+        if ("TRUE".equalsIgnoreCase(mtbl.getParameters().get("PARTITION_LEVEL_PRIVILEGE"))) {
+          String partName=Warehouse.makePartName(this.convertToFieldSchemas(mtbl.getPartitionKeys()),part.getValues());
+          PrincipalPrivilegeSet partAuth=this.getPartitionPrivilegeSet(dbName,tblName,partName,userName,groupNames);
+          part.setPrivileges(partAuth);
+        }
+      }
+    }
+    success=commitTransaction();
+    return parts;
+  }
+  finally {
+    if (!success) {
+      rollbackTransaction();
+    }
+  }
+}

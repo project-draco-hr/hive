@@ -1,0 +1,35 @@
+{
+  BitSetChecker checker=BitSetChecker.getBitSetChecker(inputRequiredPriv,outputRequiredPriv);
+  boolean[] inputCheck=checker.inputCheck;
+  boolean[] outputCheck=checker.outputCheck;
+  String partName=null;
+  List<String> partValues=null;
+  if (part != null && (table.getParameters().get("PARTITION_LEVEL_PRIVILEGE") != null && ("TRUE".equalsIgnoreCase(table.getParameters().get("PARTITION_LEVEL_PRIVILEGE"))))) {
+    partName=part.getName();
+    partValues=part.getValues();
+  }
+  if (partValues == null) {
+    if (authorizeUserDBAndTable(table,inputRequiredPriv,outputRequiredPriv,inputCheck,outputCheck)) {
+      return;
+    }
+  }
+ else {
+    if (authorizeUserDbAndPartition(part,inputRequiredPriv,outputRequiredPriv,inputCheck,outputCheck)) {
+      return;
+    }
+  }
+  for (  String col : columns) {
+    BitSetChecker checker2=BitSetChecker.getBitSetChecker(inputRequiredPriv,outputRequiredPriv);
+    boolean[] inputCheck2=checker2.inputCheck;
+    boolean[] outputCheck2=checker2.outputCheck;
+    PrincipalPrivilegeSet partColumnPrivileges=hive_db.get_privilege_set(HiveObjectType.COLUMN,table.getDbName(),table.getTableName(),partValues,col,this.getAuthenticator().getUserName(),this.getAuthenticator().getGroupNames());
+    authorizePrivileges(partColumnPrivileges,inputRequiredPriv,inputCheck2,outputRequiredPriv,outputCheck2);
+    if (inputCheck2 != null) {
+      booleanArrayOr(inputCheck2,inputCheck);
+    }
+    if (outputCheck2 != null) {
+      booleanArrayOr(inputCheck2,inputCheck);
+    }
+    checkAndThrowAuthorizationException(inputRequiredPriv,outputRequiredPriv,inputCheck2,outputCheck2,table.getDbName(),table.getTableName(),partName,col);
+  }
+}
