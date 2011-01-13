@@ -1,12 +1,14 @@
 {
-  List<LockObject> locks=new LinkedList<LockObject>();
+  List<HiveLockObj> locks=new LinkedList<HiveLockObj>();
   HiveLockObjectData lockData=new HiveLockObjectData(plan.getQueryId(),String.valueOf(System.currentTimeMillis()),"IMPLICIT");
   if (t != null) {
-    locks.add(new LockObject(new HiveLockObject(t,lockData),mode));
+    locks.add(new HiveLockObj(new HiveLockObject(t,lockData),mode));
     return locks;
   }
   if (p != null) {
-    locks.add(new LockObject(new HiveLockObject(p,lockData),mode));
+    if (!(p instanceof DummyPartition)) {
+      locks.add(new HiveLockObj(new HiveLockObject(p,lockData),mode));
+    }
     mode=HiveLockMode.SHARED;
     String name=p.getName();
     if (p instanceof DummyPartition) {
@@ -15,18 +17,19 @@
     String partName=name;
     String partialName="";
     String[] partns=name.split("/");
-    for (int idx=0; idx < partns.length - 1; idx++) {
+    int len=p instanceof DummyPartition ? partns.length : partns.length - 1;
+    for (int idx=0; idx < len; idx++) {
       String partn=partns[idx];
-      partialName+=partialName + partn;
+      partialName+=partn;
       try {
-        locks.add(new LockObject(new HiveLockObject(new DummyPartition(p.getTable(),p.getTable().getDbName() + "@" + p.getTable().getTableName()+ "@"+ partialName),lockData),mode));
+        locks.add(new HiveLockObj(new HiveLockObject(new DummyPartition(p.getTable(),p.getTable().getDbName() + "/" + p.getTable().getTableName()+ "/"+ partialName),lockData),mode));
         partialName+="/";
       }
  catch (      HiveException e) {
         throw new SemanticException(e.getMessage());
       }
     }
-    locks.add(new LockObject(new HiveLockObject(p.getTable(),lockData),mode));
+    locks.add(new HiveLockObj(new HiveLockObject(p.getTable(),lockData),mode));
   }
   return locks;
 }

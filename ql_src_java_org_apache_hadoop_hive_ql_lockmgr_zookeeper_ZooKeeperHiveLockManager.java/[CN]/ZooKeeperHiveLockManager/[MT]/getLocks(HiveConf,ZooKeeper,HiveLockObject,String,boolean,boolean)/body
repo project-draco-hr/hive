@@ -1,36 +1,64 @@
 {
   List<HiveLock> locks=new ArrayList<HiveLock>();
   List<String> children;
+  boolean recurse=true;
+  String commonParent;
   try {
-    children=zkpClient.getChildren("/" + parent,false);
+    if (key != null) {
+      commonParent="/" + parent + "/"+ key.getName();
+      children=zkpClient.getChildren(commonParent,false);
+      recurse=false;
+    }
+ else {
+      commonParent="/" + parent;
+      children=zkpClient.getChildren(commonParent,false);
+    }
   }
  catch (  Exception e) {
     return locks;
   }
-  for (  String child : children) {
-    child="/" + parent + "/"+ child;
-    HiveLockMode mode=getLockMode(conf,child);
+  Queue<String> childn=new LinkedList<String>();
+  if (children != null && !children.isEmpty()) {
+    for (    String child : children) {
+      childn.add(commonParent + "/" + child);
+    }
+  }
+  while (true) {
+    String curChild=childn.poll();
+    if (curChild == null) {
+      return locks;
+    }
+    if (recurse) {
+      try {
+        children=zkpClient.getChildren(curChild,false);
+        for (        String child : children) {
+          childn.add(curChild + "/" + child);
+        }
+      }
+ catch (      Exception e) {
+      }
+    }
+    HiveLockMode mode=getLockMode(conf,curChild);
     if (mode == null) {
       continue;
     }
     HiveLockObjectData data=null;
-    HiveLockObject obj=getLockObject(conf,child,mode,data,verifyTablePartition);
+    HiveLockObject obj=getLockObject(conf,curChild,mode,data,parent,verifyTablePartition);
     if (obj == null) {
       continue;
     }
     if ((key == null) || (obj.getName().equals(key.getName()))) {
       if (fetchData) {
         try {
-          data=new HiveLockObjectData(new String(zkpClient.getData(child,new DummyWatcher(),null)));
+          data=new HiveLockObjectData(new String(zkpClient.getData(curChild,new DummyWatcher(),null)));
         }
  catch (        Exception e) {
-          LOG.error("Error in getting data for " + child + " "+ e);
+          LOG.error("Error in getting data for " + curChild + " "+ e);
         }
       }
       obj.setData(data);
-      HiveLock lck=(HiveLock)(new ZooKeeperHiveLock(child,obj,mode));
+      HiveLock lck=(HiveLock)(new ZooKeeperHiveLock(curChild,obj,mode));
       locks.add(lck);
     }
   }
-  return locks;
 }

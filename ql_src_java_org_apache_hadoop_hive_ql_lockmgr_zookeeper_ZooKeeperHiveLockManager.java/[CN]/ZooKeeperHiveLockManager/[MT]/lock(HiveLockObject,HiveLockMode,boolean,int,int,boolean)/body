@@ -1,0 +1,47 @@
+{
+  String res;
+  try {
+    List<String> names=new ArrayList<String>();
+    String lastName;
+    if (parentCreated) {
+      lastName=getLastObjectName(parent,key);
+      names.add(lastName);
+    }
+ else {
+      names=getObjectNames(key);
+      lastName=names.get(names.size() - 1);
+    }
+    for (    String name : names) {
+      res=createChild(name,new byte[0],CreateMode.PERSISTENT,numRetries,sleepTime);
+    }
+    res=createChild(getLockName(lastName,mode),key.getData().toString().getBytes(),keepAlive ? CreateMode.PERSISTENT_SEQUENTIAL : CreateMode.EPHEMERAL_SEQUENTIAL,numRetries,sleepTime);
+    int seqNo=getSequenceNumber(res,getLockName(lastName,mode));
+    if (seqNo == -1) {
+      zooKeeper.delete(res,-1);
+      return null;
+    }
+    List<String> children=zooKeeper.getChildren(lastName,false);
+    String exLock=getLockName(lastName,HiveLockMode.EXCLUSIVE);
+    String shLock=getLockName(lastName,HiveLockMode.SHARED);
+    for (    String child : children) {
+      child=lastName + "/" + child;
+      int childSeq=seqNo;
+      if (child.startsWith(exLock)) {
+        childSeq=getSequenceNumber(child,exLock);
+      }
+      if ((mode == HiveLockMode.EXCLUSIVE) && child.startsWith(shLock)) {
+        childSeq=getSequenceNumber(child,shLock);
+      }
+      if ((childSeq >= 0) && (childSeq < seqNo)) {
+        zooKeeper.delete(res,-1);
+        console.printError("conflicting lock present for " + key.getDisplayName() + " mode "+ mode);
+        return null;
+      }
+    }
+  }
+ catch (  Exception e) {
+    LOG.error("Failed to get ZooKeeper lock: " + e);
+    throw new LockException(e);
+  }
+  return new ZooKeeperHiveLock(res,key,mode);
+}

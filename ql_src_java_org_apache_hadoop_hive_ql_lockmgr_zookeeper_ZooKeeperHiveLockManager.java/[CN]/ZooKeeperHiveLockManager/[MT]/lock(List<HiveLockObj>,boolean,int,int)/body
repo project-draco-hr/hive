@@ -1,0 +1,41 @@
+{
+  Collections.sort(lockObjects,new Comparator<HiveLockObj>(){
+    @Override public int compare(    HiveLockObj o1,    HiveLockObj o2){
+      int cmp=o1.getName().compareTo(o2.getName());
+      if (cmp == 0) {
+        if (o1.getMode() == o2.getMode()) {
+          return cmp;
+        }
+        if (o1.getMode() == HiveLockMode.EXCLUSIVE) {
+          return -1;
+        }
+        return +1;
+      }
+      return cmp;
+    }
+  }
+);
+  HiveLockObj prevLockObj=null;
+  List<HiveLock> hiveLocks=new ArrayList<HiveLock>();
+  for (  HiveLockObj lockObject : lockObjects) {
+    if ((prevLockObj != null) && (prevLockObj.getName().equals(lockObject.getName()))) {
+      prevLockObj=lockObject;
+      continue;
+    }
+    HiveLock lock=null;
+    try {
+      lock=lock(lockObject.getObj(),lockObject.getMode(),false,numRetries,sleepTime,true);
+    }
+ catch (    LockException e) {
+      console.printError("Error in acquireLocks: " + e.getLocalizedMessage());
+      lock=null;
+    }
+    if (lock == null) {
+      releaseLocks(hiveLocks);
+      return null;
+    }
+    hiveLocks.add(lock);
+    prevLockObj=lockObject;
+  }
+  return hiveLocks;
+}
