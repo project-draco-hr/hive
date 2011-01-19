@@ -15,8 +15,15 @@
     if (useSasl) {
       try {
         HadoopThriftAuthBridge.Client authBridge=ShimLoader.getHadoopThriftAuthBridge().createClient();
-        String principalConfig=conf.getVar(HiveConf.ConfVars.METASTORE_KERBEROS_PRINCIPAL);
-        transport=authBridge.createClientTransport(principalConfig,store.getHost(),"KERBEROS",transport);
+        String tokenSig=conf.get("hive.metastore.token.signature");
+        tokenStrForm=ShimLoader.getHadoopShims().getTokenStrForm(tokenSig);
+        if (tokenStrForm != null) {
+          transport=authBridge.createClientTransport(null,store.getHost(),"DIGEST",tokenStrForm,transport);
+        }
+ else {
+          String principalConfig=conf.getVar(HiveConf.ConfVars.METASTORE_KERBEROS_PRINCIPAL);
+          transport=authBridge.createClientTransport(principalConfig,store.getHost(),"KERBEROS",null,transport);
+        }
       }
  catch (      IOException ioe) {
         LOG.error("Couldn't create client transport",ioe);

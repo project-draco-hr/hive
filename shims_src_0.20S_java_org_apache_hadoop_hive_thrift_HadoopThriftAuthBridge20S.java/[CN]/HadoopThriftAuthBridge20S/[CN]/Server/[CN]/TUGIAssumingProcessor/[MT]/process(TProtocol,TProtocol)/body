@@ -4,9 +4,21 @@
     throw new TException("Unexpected non-SASL transport " + trans.getClass());
   }
   TSaslServerTransport saslTrans=(TSaslServerTransport)trans;
-  String authId=saslTrans.getSaslServer().getAuthorizationID();
+  SaslServer saslServer=saslTrans.getSaslServer();
+  String authId=saslServer.getAuthorizationID();
+  LOG.debug("AUTH ID ======>" + authId);
+  String endUser=authId;
+  if (saslServer.getMechanismName().equals("DIGEST-MD5")) {
+    try {
+      TokenIdentifier tokenId=SaslRpcServer.getIdentifier(authId,secretManager);
+      endUser=tokenId.getUser().getUserName();
+    }
+ catch (    InvalidToken e) {
+      throw new TException(e.getMessage());
+    }
+  }
   try {
-    UserGroupInformation clientUgi=UserGroupInformation.createProxyUser(authId,UserGroupInformation.getLoginUser());
+    UserGroupInformation clientUgi=UserGroupInformation.createProxyUser(endUser,UserGroupInformation.getLoginUser());
     return clientUgi.doAs(new PrivilegedExceptionAction<Boolean>(){
       public Boolean run(){
         try {

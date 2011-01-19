@@ -1,0 +1,37 @@
+{
+  String tokenStrForm;
+  if (tokenSig == null) {
+    tokenStrForm=HiveMetaStore.getDelegationToken(clientUgi.getShortUserName());
+  }
+ else {
+    tokenStrForm=HiveMetaStore.getDelegationToken(clientUgi.getShortUserName(),tokenSig);
+    conf.set("hive.metastore.token.signature",tokenSig);
+  }
+  Token<DelegationTokenIdentifier> t=new Token<DelegationTokenIdentifier>();
+  t.decodeFromUrlString(tokenStrForm);
+  clientUgi.addToken(t);
+  HiveMetaStoreClient hiveClient=clientUgi.doAs(new PrivilegedExceptionAction<HiveMetaStoreClient>(){
+    public HiveMetaStoreClient run() throws Exception {
+      HiveMetaStoreClient hiveClient=new HiveMetaStoreClient(conf);
+      return hiveClient;
+    }
+  }
+);
+  assertTrue("Couldn't connect to metastore",hiveClient != null);
+  createDBAndVerifyExistence(hiveClient);
+  hiveClient.close();
+  HiveMetaStore.cancelDelegationToken(tokenStrForm);
+  hiveClient=clientUgi.doAs(new PrivilegedExceptionAction<HiveMetaStoreClient>(){
+    public HiveMetaStoreClient run(){
+      try {
+        HiveMetaStoreClient hiveClient=new HiveMetaStoreClient(conf);
+        return hiveClient;
+      }
+ catch (      MetaException e) {
+        return null;
+      }
+    }
+  }
+);
+  assertTrue("Expected metastore operations to fail",hiveClient == null);
+}
