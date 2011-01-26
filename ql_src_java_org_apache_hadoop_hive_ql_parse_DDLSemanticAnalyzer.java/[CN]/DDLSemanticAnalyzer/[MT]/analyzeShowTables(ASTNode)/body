@@ -1,12 +1,30 @@
 {
   ShowTablesDesc showTblsDesc;
-  if (ast.getChildCount() == 1) {
-    String tableNames=unescapeSQLString(ast.getChild(0).getText());
-    showTblsDesc=new ShowTablesDesc(ctx.getResFile(),tableNames);
+  String dbName=db.getCurrentDatabase();
+  String tableNames=null;
+  if (ast.getChildCount() > 3) {
+    throw new SemanticException(ErrorMsg.GENERIC_ERROR.getMsg());
   }
- else {
-    showTblsDesc=new ShowTablesDesc(ctx.getResFile());
-  }
-  rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),showTblsDesc),conf));
-  setFetchTask(createFetchTask(showTblsDesc.getSchema()));
+switch (ast.getChildCount()) {
+case 1:
+    tableNames=unescapeSQLString(ast.getChild(0).getText());
+  showTblsDesc=new ShowTablesDesc(ctx.getResFile(),dbName,tableNames);
+break;
+case 2:
+assert(ast.getChild(0).getType() == HiveParser.TOK_FROM);
+dbName=unescapeIdentifier(ast.getChild(1).getText());
+showTblsDesc=new ShowTablesDesc(ctx.getResFile(),dbName);
+break;
+case 3:
+assert(ast.getChild(0).getType() == HiveParser.TOK_FROM);
+dbName=unescapeIdentifier(ast.getChild(1).getText());
+tableNames=unescapeSQLString(ast.getChild(2).getText());
+showTblsDesc=new ShowTablesDesc(ctx.getResFile(),dbName,tableNames);
+break;
+default :
+showTblsDesc=new ShowTablesDesc(ctx.getResFile(),dbName);
+break;
+}
+rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),showTblsDesc),conf));
+setFetchTask(createFetchTask(showTblsDesc.getSchema()));
 }
