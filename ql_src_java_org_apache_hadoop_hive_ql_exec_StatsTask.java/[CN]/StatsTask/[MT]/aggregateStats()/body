@@ -1,15 +1,13 @@
 {
+  String statsImplementationClass=HiveConf.getVar(conf,HiveConf.ConfVars.HIVESTATSDBCLASS);
+  StatsFactory.setImplementation(statsImplementationClass,conf);
+  StatsAggregator statsAggregator=StatsFactory.getStatsAggregator();
   try {
     Warehouse wh=new Warehouse(conf);
     FileSystem fileSys;
     FileStatus[] fileStatus;
-    StatsAggregator statsAggregator;
-    String statsImplementationClass=HiveConf.getVar(conf,HiveConf.ConfVars.HIVESTATSDBCLASS);
-    StatsFactory.setImplementation(statsImplementationClass,conf);
-    statsAggregator=StatsFactory.getStatsAggregator();
     if (!statsAggregator.connect(conf)) {
-      console.printInfo("[WARNING] Could not update table/partition level stats.","StatsAggregator.connect() failed: stats class = " + statsImplementationClass);
-      return 0;
+      throw new HiveException("StatsAggregator connect failed " + statsImplementationClass);
     }
     TableStatistics tblStats=new TableStatistics();
     if (table.isPartitioned()) {
@@ -43,6 +41,11 @@
       if (rows != null) {
         tblStats.setNumRows(Long.parseLong(rows));
       }
+ else {
+        if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_STATS_ATOMIC)) {
+          throw new HiveException("StatsAggregator failed to get numRows.");
+        }
+      }
     }
  else {
       for (      Partition partn : partitions) {
@@ -51,6 +54,11 @@
         String rows=statsAggregator.aggregateStats(partitionID,StatsSetupConst.ROW_COUNT);
         if (rows != null) {
           newPartStats.setNumRows(Long.parseLong(rows));
+        }
+ else {
+          if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_STATS_ATOMIC)) {
+            throw new HiveException("StatsAggregator failed to get numRows.");
+          }
         }
         fileSys=partn.getPartitionPath().getFileSystem(conf);
         fileStatus=Utilities.getFileStatusRecurse(partn.getPartitionPath(),1,fileSys);
@@ -81,7 +89,6 @@
         console.printInfo("Partition " + table.getTableName() + partn.getSpec()+ " stats: ["+ newPartStats.toString()+ ']');
       }
     }
-    statsAggregator.closeConnection();
     org.apache.hadoop.hive.metastore.api.Table tTable=table.getTTable();
     Map<String,String> parameters=tTable.getParameters();
     parameters.put(StatsSetupConst.ROW_COUNT,Long.toString(tblStats.getNumRows()));
@@ -91,10 +98,12 @@
     tTable.setParameters(parameters);
     db.alterTable(table.getTableName(),new Table(tTable));
     console.printInfo("Table " + table.getTableName() + " stats: ["+ tblStats.toString()+ ']');
-    return 0;
   }
  catch (  Exception e) {
     console.printInfo("[Warning] could not update stats.","Failed with exception " + e.getMessage() + "\n"+ StringUtils.stringifyException(e));
-    return 0;
   }
+ finally {
+    statsAggregator.closeConnection();
+  }
+  return 0;
 }
