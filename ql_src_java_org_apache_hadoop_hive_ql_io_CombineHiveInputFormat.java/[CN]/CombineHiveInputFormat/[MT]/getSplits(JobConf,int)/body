@@ -1,5 +1,7 @@
 {
   init(job);
+  Map<String,ArrayList<String>> pathToAliases=mrwork.getPathToAliases();
+  Map<String,Operator<? extends Serializable>> aliasToWork=mrwork.getAliasToWork();
   CombineFileInputFormatShim combine=ShimLoader.getHadoopShims().getCombineFileInputFormat();
   if (combine == null) {
     return super.getSplits(job,numSplits);
@@ -9,6 +11,7 @@
   }
   ArrayList<InputSplit> result=new ArrayList<InputSplit>();
   Path[] paths=combine.getInputPathsShim(job);
+  Map<CombinePathInputFormat,CombineFilter> poolMap=new HashMap<CombinePathInputFormat,CombineFilter>();
   Set<Path> poolSet=new HashSet<Path>();
   for (  Path path : paths) {
     PartitionDesc part=HiveFileFormatUtils.getPartitionDescFromPathRecursively(pathToPartitionInfo,path,IOPrepareCache.get().allocatePartitionDescMap());
@@ -17,6 +20,7 @@
       return super.getSplits(job,numSplits);
     }
     Class inputFormatClass=part.getInputFileFormatClass();
+    String inputFormatClassName=inputFormatClass.getName();
     InputFormat inputFormat=getInputFormatFromCache(inputFormatClass,job);
     if (this.mrwork != null && !this.mrwork.getHadoopSupportsSplittable()) {
       FileSystem inpFs=path.getFileSystem(job);
@@ -47,16 +51,36 @@
       return super.getSplits(job,numSplits);
     }
     Path filterPath=path;
-    if (!path.getFileSystem(job).getFileStatus(path).isDir()) {
+    if (mrwork.isMapperCannotSpanPartns() && !path.getFileSystem(job).getFileStatus(path).isDir()) {
       filterPath=path.getParent();
     }
-    if (!poolSet.contains(filterPath)) {
-      LOG.info("CombineHiveInputSplit creating pool for " + path + "; using filter path "+ filterPath);
-      combine.createPool(job,new CombineFilter(filterPath));
-      poolSet.add(filterPath);
+    CombineFilter f=null;
+    List<Operator<? extends Serializable>> opList=null;
+    boolean done=false;
+    if (!mrwork.isMapperCannotSpanPartns()) {
+      opList=HiveFileFormatUtils.doGetAliasesFromPath(pathToAliases,aliasToWork,filterPath);
+      f=poolMap.get(new CombinePathInputFormat(opList,inputFormatClassName));
     }
  else {
-      LOG.info("CombineHiveInputSplit: pool is already created for " + path + "; using filter path "+ filterPath);
+      if (poolSet.contains(filterPath)) {
+        LOG.info("CombineHiveInputSplit: pool is already created for " + path + "; using filter path "+ filterPath);
+        done=true;
+      }
+      poolSet.add(filterPath);
+    }
+    if (!done) {
+      if (f == null) {
+        f=new CombineFilter(filterPath);
+        LOG.info("CombineHiveInputSplit creating pool for " + path + "; using filter path "+ filterPath);
+        combine.createPool(job,f);
+        if (!mrwork.isMapperCannotSpanPartns()) {
+          poolMap.put(new CombinePathInputFormat(opList,inputFormatClassName),f);
+        }
+      }
+ else {
+        LOG.info("CombineHiveInputSplit: pool is already created for " + path + "; using filter path "+ filterPath);
+        f.addPath(filterPath);
+      }
     }
   }
   InputSplitShim[] iss=combine.getSplits(job,1);
