@@ -1,0 +1,27 @@
+{
+  try {
+    RCFileKeyBufferWrapper key=null;
+    if (k instanceof CombineHiveKey) {
+      key=(RCFileKeyBufferWrapper)((CombineHiveKey)k).getKey();
+    }
+ else {
+      key=(RCFileKeyBufferWrapper)k;
+    }
+    if (outWriter == null) {
+      codec=key.codec;
+      columnNumber=key.keyBuffer.getColumnNumber();
+      jc.setInt(RCFile.COLUMN_NUMBER_CONF_STR,columnNumber);
+      outWriter=new RCFile.Writer(fs,jc,outPath,null,codec);
+    }
+    boolean sameCodec=((codec == key.codec) || codec.getClass().equals(key.codec.getClass()));
+    if ((key.keyBuffer.getColumnNumber() != columnNumber) || (!sameCodec)) {
+      throw new IOException("RCFileMerge failed because the input files use different CompressionCodec or have different column number setting.");
+    }
+    outWriter.flushBlock(key.keyBuffer,value.valueBuffer,key.recordLength,key.keyLength,key.compressedKeyLength);
+  }
+ catch (  Throwable e) {
+    this.exception=true;
+    close();
+    throw new IOException(e);
+  }
+}

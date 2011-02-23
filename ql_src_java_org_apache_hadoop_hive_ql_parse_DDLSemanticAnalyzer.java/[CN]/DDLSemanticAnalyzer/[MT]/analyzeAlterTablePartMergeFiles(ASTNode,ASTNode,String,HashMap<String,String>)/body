@@ -1,0 +1,58 @@
+{
+  AlterTablePartMergeFilesDesc mergeDesc=new AlterTablePartMergeFilesDesc(tableName,partSpec);
+  List<String> inputDir=new ArrayList<String>();
+  String outputDir=null;
+  try {
+    Table tblObj=db.getTable(tableName);
+    List<String> bucketCols=null;
+    Class<? extends InputFormat> inputFormatClass=null;
+    boolean isArchived=false;
+    List<Index> indexes=db.getIndexes(tblObj.getDbName(),tableName,Short.MAX_VALUE);
+    if (indexes != null && indexes.size() > 0) {
+      throw new SemanticException("can not do merge because source table " + tableName + " is indexed.");
+    }
+    if (tblObj.isPartitioned()) {
+      if (partSpec == null) {
+        throw new SemanticException("source table " + tableName + " is partitioned but no partition desc found.");
+      }
+ else {
+        Partition part=db.getPartition(tblObj,partSpec,false);
+        if (part == null) {
+          throw new SemanticException("source table " + tableName + " is partitioned but partition not found.");
+        }
+        bucketCols=part.getBucketCols();
+        inputFormatClass=part.getInputFormatClass();
+        isArchived=Utilities.isArchived(part);
+        outputDir=part.getDataLocation().toString();
+      }
+    }
+ else {
+      inputFormatClass=tblObj.getInputFormatClass();
+      bucketCols=tblObj.getBucketCols();
+      outputDir=tblObj.getDataLocation().toString();
+    }
+    if (!inputFormatClass.equals(RCFileInputFormat.class)) {
+      throw new SemanticException("Only RCFileFormat is supportted right now.");
+    }
+    if (bucketCols != null && bucketCols.size() > 0) {
+      throw new SemanticException("Merge can not perform on bucketized partition/table.");
+    }
+    if (isArchived) {
+      throw new SemanticException("Merge can not perform on archived partitions.");
+    }
+  }
+ catch (  HiveException e) {
+    throw new SemanticException(e);
+  }
+  inputDir.add(outputDir);
+  mergeDesc.setInputDir(inputDir);
+  mergeDesc.setOutputDir(outputDir);
+  addInputsOutputsAlterTable(tableName,partSpec);
+  Task<? extends Serializable> mergeTask=TaskFactory.get(new DDLWork(getInputs(),getOutputs(),mergeDesc),conf);
+  tableSpec tablepart=new tableSpec(this.db,conf,tablePartAST);
+  StatsWork statDesc=new StatsWork(tablepart);
+  statDesc.setNoStatsAggregator(true);
+  Task<? extends Serializable> statTask=TaskFactory.get(statDesc,conf);
+  mergeTask.addDependentTask(statTask);
+  rootTasks.add(mergeTask);
+}

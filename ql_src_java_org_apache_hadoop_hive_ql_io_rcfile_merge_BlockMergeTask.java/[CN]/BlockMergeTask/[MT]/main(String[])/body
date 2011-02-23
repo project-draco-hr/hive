@@ -1,0 +1,88 @@
+{
+  ArrayList<String> jobConfArgs=new ArrayList<String>();
+  String inputPathStr=null;
+  String outputDir=null;
+  try {
+    for (int i=0; i < args.length; i++) {
+      if (args[i].equals("-input")) {
+        inputPathStr=args[++i];
+      }
+ else       if (args[i].equals("-jobconf")) {
+        jobConfArgs.add(args[++i]);
+      }
+ else       if (args[i].equals("-outputDir")) {
+        outputDir=args[++i];
+      }
+    }
+  }
+ catch (  IndexOutOfBoundsException e) {
+    System.err.println("Missing argument to option");
+    printUsage();
+  }
+  if (inputPathStr == null || outputDir == null || outputDir.trim().equals("")) {
+    printUsage();
+  }
+  List<String> inputPaths=new ArrayList<String>();
+  String[] paths=inputPathStr.split(INPUT_SEPERATOR);
+  if (paths == null || paths.length == 0) {
+    printUsage();
+  }
+  FileSystem fs=null;
+  JobConf conf=new JobConf(BlockMergeTask.class);
+  HiveConf hiveConf=new HiveConf(conf,BlockMergeTask.class);
+  for (  String path : paths) {
+    try {
+      Path pathObj=new Path(path);
+      if (fs == null) {
+        fs=FileSystem.get(pathObj.toUri(),conf);
+      }
+      FileStatus fstatus=fs.getFileStatus(pathObj);
+      if (fstatus.isDir()) {
+        FileStatus[] fileStatus=fs.listStatus(pathObj);
+        for (        FileStatus st : fileStatus) {
+          inputPaths.add(st.getPath().toString());
+        }
+      }
+ else {
+        inputPaths.add(fstatus.getPath().toString());
+      }
+    }
+ catch (    IOException e) {
+      e.printStackTrace(System.err);
+    }
+  }
+  StringBuilder sb=new StringBuilder("JobConf:\n");
+  for (  String one : jobConfArgs) {
+    int eqIndex=one.indexOf('=');
+    if (eqIndex != -1) {
+      try {
+        String key=one.substring(0,eqIndex);
+        String value=URLDecoder.decode(one.substring(eqIndex + 1),"UTF-8");
+        conf.set(key,value);
+        sb.append(key).append("=").append(value).append("\n");
+      }
+ catch (      UnsupportedEncodingException e) {
+        System.err.println("Unexpected error " + e.getMessage() + " while encoding "+ one.substring(eqIndex + 1));
+        System.exit(3);
+      }
+    }
+  }
+  Log LOG=LogFactory.getLog(BlockMergeTask.class.getName());
+  boolean isSilent=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVESESSIONSILENT);
+  LogHelper console=new LogHelper(LOG,isSilent);
+  for (  Appender appender : Collections.list((Enumeration<Appender>)LogManager.getRootLogger().getAllAppenders())) {
+    if (appender instanceof FileAppender) {
+      console.printInfo("Execution log at: " + ((FileAppender)appender).getFile());
+    }
+  }
+  LOG.info(sb.toString());
+  MergeWork mergeWork=new MergeWork(inputPaths,outputDir);
+  DriverContext driverCxt=new DriverContext();
+  BlockMergeTask taskExec=new BlockMergeTask();
+  taskExec.initialize(hiveConf,null,driverCxt);
+  taskExec.setWork(mergeWork);
+  int ret=taskExec.execute(driverCxt);
+  if (ret != 0) {
+    System.exit(2);
+  }
+}
