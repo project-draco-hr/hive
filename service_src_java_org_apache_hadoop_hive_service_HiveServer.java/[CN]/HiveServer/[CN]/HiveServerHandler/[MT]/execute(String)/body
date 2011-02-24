@@ -1,6 +1,6 @@
 {
   HiveServerHandler.LOG.info("Running the query: " + cmd);
-  SessionState.get();
+  SessionState session=SessionState.get();
   String cmd_trimmed=cmd.trim();
   String[] tokens=cmd_trimmed.split("\\s");
   String cmd_1=cmd_trimmed.substring(tokens[0].length()).trim();
@@ -12,12 +12,14 @@
     CommandProcessorResponse response=null;
     if (proc != null) {
       if (proc instanceof Driver) {
-        ((Driver)proc).destroy();
         isHiveQuery=true;
+        driver=(Driver)proc;
         response=driver.run(cmd);
       }
  else {
         isHiveQuery=false;
+        driver=null;
+        setupSessionIO(session);
         response=proc.run(cmd_1);
       }
       ret=response.getResponseCode();
@@ -28,6 +30,7 @@
  catch (  Exception e) {
     HiveServerException ex=new HiveServerException();
     ex.setMessage("Error running query: " + e.toString());
+    ex.setErrorCode(ret == 0 ? -10000 : ret);
     throw ex;
   }
   if (ret != 0) {

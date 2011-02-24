@@ -1,5 +1,5 @@
 {
-  SessionState ss=SessionState.get();
+  CliSessionState ss=(CliSessionState)SessionState.get();
   String cmd_trimmed=cmd.trim();
   String[] tokens=cmd_trimmed.split("\\s+");
   String cmd_1=cmd_trimmed.substring(tokens[0].length()).trim();
@@ -56,6 +56,53 @@
       Set<String> s=ss.list_resource(t,filter);
       if (s != null && !s.isEmpty()) {
         ss.out.println(StringUtils.join(s,"\n"));
+      }
+    }
+  }
+ else   if (ss.isRemoteMode()) {
+    HiveClient client=ss.getClient();
+    PrintStream out=ss.out;
+    PrintStream err=ss.err;
+    try {
+      client.execute(cmd_trimmed);
+      List<String> results;
+      do {
+        results=client.fetchN(LINES_TO_FETCH);
+        for (        String line : results) {
+          out.println(line);
+        }
+      }
+ while (results.size() == LINES_TO_FETCH);
+    }
+ catch (    HiveServerException e) {
+      ret=e.getErrorCode();
+      if (ret != 0) {
+        String errMsg=e.getMessage();
+        if (errMsg == null) {
+          errMsg=e.toString();
+        }
+        ret=e.getErrorCode();
+        err.println("[Hive Error]: " + errMsg);
+      }
+    }
+catch (    TException e) {
+      String errMsg=e.getMessage();
+      if (errMsg == null) {
+        errMsg=e.toString();
+      }
+      ret=-10002;
+      err.println("[Thrift Error]: " + errMsg);
+    }
+ finally {
+      try {
+        client.clean();
+      }
+ catch (      TException e) {
+        String errMsg=e.getMessage();
+        if (errMsg == null) {
+          errMsg=e.toString();
+        }
+        err.println("[Thrift Error]: Hive server is not cleaned due to thrift exception: " + errMsg);
       }
     }
   }
