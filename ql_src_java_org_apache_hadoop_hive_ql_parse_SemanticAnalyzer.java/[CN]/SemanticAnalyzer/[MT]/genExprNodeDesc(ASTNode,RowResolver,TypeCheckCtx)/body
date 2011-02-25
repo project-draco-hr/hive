@@ -1,0 +1,39 @@
+{
+  ColumnInfo colInfo=input.getExpression(expr);
+  if (colInfo != null) {
+    ASTNode source=input.getExpressionSource(expr);
+    if (source != null) {
+      unparseTranslator.addCopyTranslation(expr,source);
+    }
+    return new ExprNodeColumnDesc(colInfo.getType(),colInfo.getInternalName(),colInfo.getTabAlias(),colInfo.getIsVirtualCol());
+  }
+  tcCtx.setUnparseTranslator(unparseTranslator);
+  HashMap<Node,Object> nodeOutputs=TypeCheckProcFactory.genExprNode(expr,tcCtx);
+  ExprNodeDesc desc=(ExprNodeDesc)nodeOutputs.get(expr);
+  if (desc == null) {
+    throw new SemanticException(tcCtx.getError());
+  }
+  if (!unparseTranslator.isEnabled()) {
+    return desc;
+  }
+  for (  Map.Entry<Node,Object> entry : nodeOutputs.entrySet()) {
+    if (!(entry.getKey() instanceof ASTNode)) {
+      continue;
+    }
+    if (!(entry.getValue() instanceof ExprNodeColumnDesc)) {
+      continue;
+    }
+    ASTNode node=(ASTNode)entry.getKey();
+    ExprNodeColumnDesc columnDesc=(ExprNodeColumnDesc)entry.getValue();
+    if ((columnDesc.getTabAlias() == null) || (columnDesc.getTabAlias().length() == 0)) {
+      continue;
+    }
+    String[] tmp=input.reverseLookup(columnDesc.getColumn());
+    StringBuilder replacementText=new StringBuilder();
+    replacementText.append(HiveUtils.unparseIdentifier(tmp[0]));
+    replacementText.append(".");
+    replacementText.append(HiveUtils.unparseIdentifier(tmp[1]));
+    unparseTranslator.addTranslation(node,replacementText.toString());
+  }
+  return desc;
+}

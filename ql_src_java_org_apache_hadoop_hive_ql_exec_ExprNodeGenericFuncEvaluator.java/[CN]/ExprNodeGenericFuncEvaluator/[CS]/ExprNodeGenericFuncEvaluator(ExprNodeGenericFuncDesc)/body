@@ -1,11 +1,28 @@
 {
   this.expr=expr;
   children=new ExprNodeEvaluator[expr.getChildExprs().size()];
+  isEager=false;
   for (int i=0; i < children.length; i++) {
-    children[i]=ExprNodeEvaluatorFactory.get(expr.getChildExprs().get(i));
+    ExprNodeDesc child=expr.getChildExprs().get(i);
+    ExprNodeEvaluator nodeEvaluator=ExprNodeEvaluatorFactory.get(child);
+    children[i]=nodeEvaluator;
+    if (nodeEvaluator instanceof ExprNodeGenericFuncEvaluator) {
+      if (((ExprNodeGenericFuncEvaluator)nodeEvaluator).isEager) {
+        isEager=true;
+      }
+      GenericUDF childUDF=((ExprNodeGenericFuncDesc)child).getGenericUDF();
+      if (FunctionRegistry.isStateful(childUDF)) {
+        isEager=true;
+      }
+    }
   }
-  deferredChildren=new DeferredExprObject[expr.getChildExprs().size()];
+  deferredChildren=new GenericUDF.DeferredObject[expr.getChildExprs().size()];
   for (int i=0; i < deferredChildren.length; i++) {
-    deferredChildren[i]=new DeferredExprObject(children[i]);
+    if (isEager) {
+      deferredChildren[i]=new EagerExprObject(children[i]);
+    }
+ else {
+      deferredChildren[i]=new DeferredExprObject(children[i]);
+    }
   }
 }
