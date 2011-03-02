@@ -37,6 +37,27 @@
     sb.append(HiveUtils.unparseIdentifier(createVwDesc.getViewName()));
     expandedText=sb.toString();
   }
+  if (createVwDesc.getPartColNames() != null) {
+    List<String> partColNames=createVwDesc.getPartColNames();
+    if (partColNames.size() > derivedSchema.size()) {
+      throw new SemanticException(ErrorMsg.VIEW_PARTITION_MISMATCH.getMsg());
+    }
+    List<FieldSchema> partitionColumns=derivedSchema.subList(derivedSchema.size() - partColNames.size(),derivedSchema.size());
+    Iterator<String> colNameIter=partColNames.iterator();
+    Iterator<FieldSchema> schemaIter=partitionColumns.iterator();
+    while (colNameIter.hasNext()) {
+      String colName=colNameIter.next();
+      FieldSchema fieldSchema=schemaIter.next();
+      if (!fieldSchema.getName().equals(colName)) {
+        throw new SemanticException(ErrorMsg.VIEW_PARTITION_MISMATCH.getMsg());
+      }
+    }
+    if (partColNames.size() == derivedSchema.size()) {
+      throw new SemanticException(ErrorMsg.VIEW_PARTITION_TOTAL.getMsg());
+    }
+    createVwDesc.setPartCols(new ArrayList<FieldSchema>(partitionColumns));
+    partitionColumns.clear();
+  }
   createVwDesc.setSchema(derivedSchema);
   createVwDesc.setViewExpandedText(expandedText);
 }

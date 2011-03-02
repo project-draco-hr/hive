@@ -1,0 +1,95 @@
+{
+  String tblName=getUnescapedName((ASTNode)ast.getChild(0));
+  boolean isView=false;
+  Table tab;
+  try {
+    tab=db.getTable(db.getCurrentDatabase(),tblName,false);
+    if (tab != null) {
+      inputs.add(new ReadEntity(tab));
+      isView=tab.isView();
+    }
+  }
+ catch (  HiveException e) {
+    throw new SemanticException(ErrorMsg.INVALID_TABLE.getMsg(tblName));
+  }
+  List<Map<String,String>> partSpecs=getPartitionSpecs(ast);
+  addTablePartsOutputs(tblName,partSpecs);
+  Iterator<Map<String,String>> partIter=partSpecs.iterator();
+  String currentLocation=null;
+  Map<String,String> currentPart=null;
+  boolean ifNotExists=false;
+  List<AddPartitionDesc> partitionDescs=new ArrayList<AddPartitionDesc>();
+  int numCh=ast.getChildCount();
+  for (int num=1; num < numCh; num++) {
+    CommonTree child=(CommonTree)ast.getChild(num);
+switch (child.getToken().getType()) {
+case HiveParser.TOK_IFNOTEXISTS:
+      ifNotExists=true;
+    break;
+case HiveParser.TOK_PARTSPEC:
+  if (currentPart != null) {
+    validatePartitionValues(currentPart);
+    AddPartitionDesc addPartitionDesc=new AddPartitionDesc(db.getCurrentDatabase(),tblName,currentPart,currentLocation,ifNotExists,expectView);
+    partitionDescs.add(addPartitionDesc);
+  }
+currentLocation=null;
+currentPart=partIter.next();
+break;
+case HiveParser.TOK_PARTITIONLOCATION:
+currentLocation=unescapeSQLString(child.getChild(0).getText());
+break;
+default :
+throw new SemanticException("Unknown child: " + child);
+}
+}
+if (currentPart != null) {
+validatePartitionValues(currentPart);
+AddPartitionDesc addPartitionDesc=new AddPartitionDesc(db.getCurrentDatabase(),tblName,currentPart,currentLocation,ifNotExists,expectView);
+partitionDescs.add(addPartitionDesc);
+}
+for (AddPartitionDesc addPartitionDesc : partitionDescs) {
+rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),addPartitionDesc),conf));
+}
+if (isView) {
+StringBuilder cmd=new StringBuilder();
+cmd.append("SELECT * FROM ");
+cmd.append(HiveUtils.unparseIdentifier(tblName));
+cmd.append(" WHERE ");
+boolean firstOr=true;
+for (AddPartitionDesc partitionDesc : partitionDescs) {
+try {
+tab.isValidSpec(partitionDesc.getPartSpec());
+}
+ catch (HiveException ex) {
+throw new SemanticException(ex.getMessage(),ex);
+}
+if (firstOr) {
+firstOr=false;
+}
+ else {
+cmd.append(" OR ");
+}
+boolean firstAnd=true;
+cmd.append("(");
+for (Map.Entry<String,String> entry : partitionDesc.getPartSpec().entrySet()) {
+if (firstAnd) {
+firstAnd=false;
+}
+ else {
+cmd.append(" AND ");
+}
+cmd.append(HiveUtils.unparseIdentifier(entry.getKey()));
+cmd.append(" = '");
+cmd.append(HiveUtils.escapeString(entry.getValue()));
+cmd.append("'");
+}
+cmd.append(")");
+}
+Driver driver=new Driver(conf);
+int rc=driver.compile(cmd.toString());
+if (rc != 0) {
+throw new SemanticException(ErrorMsg.NO_VALID_PARTN.getMsg());
+}
+inputs.addAll(driver.getPlan().getInputs());
+}
+}
