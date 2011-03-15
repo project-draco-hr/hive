@@ -1,0 +1,103 @@
+{
+{
+    EximUtil.validateTable(table);
+    if (!table.isPartitioned()) {
+      if (tableDesc.isExternal()) {
+        throw new SemanticException(ErrorMsg.INCOMPATIBLE_SCHEMA.getMsg(" External table cannot overwrite existing table." + " Drop existing table first."));
+      }
+    }
+ else {
+      if (tableDesc.isExternal()) {
+        if (!table.getTableType().equals(TableType.EXTERNAL_TABLE)) {
+          throw new SemanticException(ErrorMsg.INCOMPATIBLE_SCHEMA.getMsg(" External table cannot overwrite existing table." + " Drop existing table first."));
+        }
+      }
+    }
+  }
+{
+    if (!table.isPartitioned()) {
+      if (tableDesc.getLocation() != null) {
+        if (!table.getDataLocation().equals(new URI(tableDesc.getLocation()))) {
+          throw new SemanticException(ErrorMsg.INCOMPATIBLE_SCHEMA.getMsg(" Location does not match"));
+        }
+      }
+    }
+  }
+{
+    List<FieldSchema> existingTableCols=table.getCols();
+    List<FieldSchema> importedTableCols=tableDesc.getCols();
+    if (!EximUtil.schemaCompare(importedTableCols,existingTableCols)) {
+      throw new SemanticException(ErrorMsg.INCOMPATIBLE_SCHEMA.getMsg(" Column Schema does not match"));
+    }
+  }
+{
+    List<FieldSchema> existingTablePartCols=table.getPartCols();
+    List<FieldSchema> importedTablePartCols=tableDesc.getPartCols();
+    if (!EximUtil.schemaCompare(importedTablePartCols,existingTablePartCols)) {
+      throw new SemanticException(ErrorMsg.INCOMPATIBLE_SCHEMA.getMsg(" Partition Schema does not match"));
+    }
+  }
+{
+    Map<String,String> existingTableParams=table.getParameters();
+    Map<String,String> importedTableParams=tableDesc.getTblProps();
+    String error=checkParams(existingTableParams,importedTableParams,new String[]{"howl.isd","howl.osd"});
+    if (error != null) {
+      throw new SemanticException(ErrorMsg.INCOMPATIBLE_SCHEMA.getMsg(" Table parameters do not match: " + error));
+    }
+  }
+{
+    String existingifc=table.getInputFormatClass().getName();
+    String importedifc=tableDesc.getInputFormat();
+    String existingofc=table.getOutputFormatClass().getName();
+    String importedofc=tableDesc.getOutputFormat();
+    if ((!existingifc.equals(importedifc)) || (!existingofc.equals(importedofc))) {
+      throw new SemanticException(ErrorMsg.INCOMPATIBLE_SCHEMA.getMsg(" Table inputformat/outputformats do not match"));
+    }
+    String existingSerde=table.getSerializationLib();
+    String importedSerde=tableDesc.getSerName();
+    if (!existingSerde.equals(importedSerde)) {
+      throw new SemanticException(ErrorMsg.INCOMPATIBLE_SCHEMA.getMsg(" Table Serde class does not match"));
+    }
+    String existingSerdeFormat=table.getSerdeParam(Constants.SERIALIZATION_FORMAT);
+    String importedSerdeFormat=tableDesc.getSerdeProps().get(Constants.SERIALIZATION_FORMAT);
+    if (!ObjectUtils.equals(existingSerdeFormat,importedSerdeFormat)) {
+      throw new SemanticException(ErrorMsg.INCOMPATIBLE_SCHEMA.getMsg(" Table Serde format does not match"));
+    }
+  }
+{
+    if (!ObjectUtils.equals(table.getBucketCols(),tableDesc.getBucketCols())) {
+      throw new SemanticException(ErrorMsg.INCOMPATIBLE_SCHEMA.getMsg(" Table bucketing spec does not match"));
+    }
+    List<Order> existingOrder=table.getSortCols();
+    List<Order> importedOrder=tableDesc.getSortCols();
+final class OrderComparator implements Comparator<Order> {
+      @Override public int compare(      Order o1,      Order o2){
+        if (o1.getOrder() < o2.getOrder()) {
+          return -1;
+        }
+ else {
+          if (o1.getOrder() == o2.getOrder()) {
+            return 0;
+          }
+ else {
+            return 1;
+          }
+        }
+      }
+    }
+    if (existingOrder != null) {
+      if (importedOrder != null) {
+        Collections.sort(existingOrder,new OrderComparator());
+        Collections.sort(importedOrder,new OrderComparator());
+        if (!existingOrder.equals(importedOrder)) {
+          throw new SemanticException(ErrorMsg.INCOMPATIBLE_SCHEMA.getMsg(" Table sorting spec does not match"));
+        }
+      }
+    }
+ else {
+      if (importedOrder != null) {
+        throw new SemanticException(ErrorMsg.INCOMPATIBLE_SCHEMA.getMsg(" Table sorting spec does not match"));
+      }
+    }
+  }
+}

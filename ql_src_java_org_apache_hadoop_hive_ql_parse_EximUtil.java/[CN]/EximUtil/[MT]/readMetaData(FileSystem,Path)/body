@@ -1,0 +1,41 @@
+{
+  try {
+    FSDataInputStream mdstream=fs.open(metadataPath);
+    byte[] buffer=new byte[1024];
+    ByteArrayOutputStream sb=new ByteArrayOutputStream();
+    int read=mdstream.read(buffer);
+    while (read != -1) {
+      sb.write(buffer,0,read);
+      read=mdstream.read(buffer);
+    }
+    String md=new String(sb.toByteArray(),"UTF-8");
+    JSONObject jsonContainer=new JSONObject(md);
+    String version=jsonContainer.getString("version");
+    String fcversion=null;
+    try {
+      fcversion=jsonContainer.getString("fcversion");
+    }
+ catch (    JSONException ignored) {
+    }
+    checkCompatibility(version,fcversion);
+    String tableDesc=jsonContainer.getString("table");
+    Table table=new Table();
+    TDeserializer deserializer=new TDeserializer(new TJSONProtocol.Factory());
+    deserializer.deserialize(table,tableDesc,"UTF-8");
+    JSONArray jsonPartitions=new JSONArray(jsonContainer.getString("partitions"));
+    List<Partition> partitionsList=new ArrayList<Partition>(jsonPartitions.length());
+    for (int i=0; i < jsonPartitions.length(); ++i) {
+      String partDesc=jsonPartitions.getString(i);
+      Partition partition=new Partition();
+      deserializer.deserialize(partition,partDesc,"UTF-8");
+      partitionsList.add(partition);
+    }
+    return new AbstractMap.SimpleEntry<Table,List<Partition>>(table,partitionsList);
+  }
+ catch (  JSONException e) {
+    throw new SemanticException(ErrorMsg.GENERIC_ERROR.getMsg("Error in serializing metadata"),e);
+  }
+catch (  TException e) {
+    throw new SemanticException(ErrorMsg.GENERIC_ERROR.getMsg("Error in serializing metadata"),e);
+  }
+}

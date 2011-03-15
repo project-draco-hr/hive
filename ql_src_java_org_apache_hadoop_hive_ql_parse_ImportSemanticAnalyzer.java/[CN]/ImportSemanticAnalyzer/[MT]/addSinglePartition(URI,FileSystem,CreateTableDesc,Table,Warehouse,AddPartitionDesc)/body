@@ -1,0 +1,35 @@
+{
+  if (tblDesc.isExternal() && tblDesc.getLocation() == null) {
+    LOG.debug("Importing in-place: adding AddPart for partition " + partSpecToString(addPartitionDesc.getPartSpec()));
+    Task<?> addPartTask=TaskFactory.get(new DDLWork(getInputs(),getOutputs(),addPartitionDesc),conf);
+    return addPartTask;
+  }
+ else {
+    String srcLocation=addPartitionDesc.getLocation();
+    Path tgtPath=null;
+    if (tblDesc.getLocation() == null) {
+      if (table.getDataLocation() != null) {
+        tgtPath=new Path(table.getDataLocation().toString(),Warehouse.makePartPath(addPartitionDesc.getPartSpec()));
+      }
+ else {
+        tgtPath=new Path(wh.getDnsPath(wh.getDefaultTablePath(db.getCurrentDatabase(),tblDesc.getTableName())),Warehouse.makePartPath(addPartitionDesc.getPartSpec()));
+      }
+    }
+ else {
+      tgtPath=new Path(tblDesc.getLocation());
+    }
+    checkTargetLocationEmpty(fs,tgtPath);
+    addPartitionDesc.setLocation(tgtPath.toString());
+    LOG.debug("adding dependent CopyWork/AddPart/MoveWork for partition " + partSpecToString(addPartitionDesc.getPartSpec()) + " with source location: "+ srcLocation);
+    String tmpURI=ctx.getExternalTmpFileURI(fromURI);
+    Task<?> copyTask=TaskFactory.get(new CopyWork(srcLocation,tmpURI,false),conf);
+    Task<?> addPartTask=TaskFactory.get(new DDLWork(getInputs(),getOutputs(),addPartitionDesc),conf);
+    LoadTableDesc loadTableWork=new LoadTableDesc(tmpURI,ctx.getExternalTmpFileURI(fromURI),Utilities.getTableDesc(table),addPartitionDesc.getPartSpec(),true);
+    loadTableWork.setInheritTableSpecs(false);
+    Task<?> loadPartTask=TaskFactory.get(new MoveWork(getInputs(),getOutputs(),loadTableWork,null,false),conf);
+    copyTask.addDependentTask(loadPartTask);
+    addPartTask.addDependentTask(loadPartTask);
+    rootTasks.add(copyTask);
+    return addPartTask;
+  }
+}

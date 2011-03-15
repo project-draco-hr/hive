@@ -1,0 +1,62 @@
+{
+  Tree tableTree=ast.getChild(0);
+  Tree toTree=ast.getChild(1);
+  String tmpPath=stripQuotes(toTree.getText());
+  URI toURI=EximUtil.getValidatedURI(conf,tmpPath);
+  tableSpec ts=new tableSpec(db,conf,(ASTNode)tableTree,false,true);
+  EximUtil.validateTable(ts.tableHandle);
+  try {
+    FileSystem fs=FileSystem.get(toURI,conf);
+    Path toPath=new Path(toURI.getScheme(),toURI.getAuthority(),toURI.getPath());
+    try {
+      FileStatus tgt=fs.getFileStatus(toPath);
+      if (!tgt.isDir()) {
+        throw new SemanticException(ErrorMsg.INVALID_PATH.getMsg(ast,"Target is not a directory : " + toURI));
+      }
+ else {
+        FileStatus[] files=fs.listStatus(toPath);
+        if (files != null) {
+          throw new SemanticException(ErrorMsg.INVALID_PATH.getMsg(ast,"Target is not an empty directory : " + toURI));
+        }
+      }
+    }
+ catch (    FileNotFoundException e) {
+    }
+  }
+ catch (  IOException e) {
+    throw new SemanticException(ErrorMsg.INVALID_PATH.getMsg(ast),e);
+  }
+  List<Partition> partitions=null;
+  try {
+    partitions=null;
+    if (ts.tableHandle.isPartitioned()) {
+      partitions=(ts.partitions != null) ? ts.partitions : db.getPartitions(ts.tableHandle);
+    }
+    String tmpfile=ctx.getLocalTmpFileURI();
+    Path path=new Path(tmpfile,"_metadata");
+    EximUtil.createExportDump(FileSystem.getLocal(conf),path,ts.tableHandle,partitions);
+    Task<? extends Serializable> rTask=TaskFactory.get(new CopyWork(path.toString(),toURI.toString(),false),conf);
+    rootTasks.add(rTask);
+    LOG.debug("_metadata file written into " + path.toString() + " and then copied to "+ toURI.toString());
+  }
+ catch (  Exception e) {
+    throw new SemanticException(ErrorMsg.GENERIC_ERROR.getMsg("Exception while writing out the local file"),e);
+  }
+  if (ts.tableHandle.isPartitioned()) {
+    for (    Partition partition : partitions) {
+      URI fromURI=partition.getDataLocation();
+      Path toPartPath=new Path(toURI.toString(),partition.getName());
+      Task<? extends Serializable> rTask=TaskFactory.get(new CopyWork(fromURI.toString(),toPartPath.toString(),false),conf);
+      rootTasks.add(rTask);
+      inputs.add(new ReadEntity(partition));
+    }
+  }
+ else {
+    URI fromURI=ts.tableHandle.getDataLocation();
+    Path toDataPath=new Path(toURI.toString(),"data");
+    Task<? extends Serializable> rTask=TaskFactory.get(new CopyWork(fromURI.toString(),toDataPath.toString(),false),conf);
+    rootTasks.add(rTask);
+    inputs.add(new ReadEntity(ts.tableHandle));
+  }
+  outputs.add(new WriteEntity(toURI.toString(),toURI.getScheme().equals("hdfs") ? true : false));
+}

@@ -1,0 +1,31 @@
+{
+  try {
+    JSONObject jsonContainer=new JSONObject();
+    jsonContainer.put("version",METADATA_FORMAT_VERSION);
+    if (METADATA_FORMAT_FORWARD_COMPATIBLE_VERSION != null) {
+      jsonContainer.put("fcversion",METADATA_FORMAT_FORWARD_COMPATIBLE_VERSION);
+    }
+    TSerializer serializer=new TSerializer(new TJSONProtocol.Factory());
+    try {
+      String tableDesc=serializer.toString(tableHandle.getTTable(),"UTF-8");
+      jsonContainer.put("table",tableDesc);
+      JSONArray jsonPartitions=new JSONArray();
+      if (partitions != null) {
+        for (        org.apache.hadoop.hive.ql.metadata.Partition partition : partitions) {
+          String partDesc=serializer.toString(partition.getTPartition(),"UTF-8");
+          jsonPartitions.put(partDesc);
+        }
+      }
+      jsonContainer.put("partitions",jsonPartitions);
+    }
+ catch (    TException e) {
+      throw new SemanticException(ErrorMsg.GENERIC_ERROR.getMsg("Exception while serializing the metastore objects"),e);
+    }
+    OutputStream out=fs.create(metadataPath);
+    out.write(jsonContainer.toString().getBytes("UTF-8"));
+    out.close();
+  }
+ catch (  JSONException e) {
+    throw new SemanticException(ErrorMsg.GENERIC_ERROR.getMsg("Error in serializing metadata"),e);
+  }
+}
