@@ -1,0 +1,34 @@
+{
+  for (  String partName : Hive.get().getPartitionNames(tab.getDbName(),tab.getTableName(),(short)-1)) {
+    LinkedHashMap<String,String> partSpec=Warehouse.makeSpecFromName(partName);
+    LOG.trace("about to process partition " + partSpec + " for pruning ");
+    if (prunerExpr != null) {
+      Boolean r=(Boolean)PartExprEvalUtils.evalExprWithPart(prunerExpr,partSpec,rowObjectInspector);
+      if (Boolean.FALSE.equals(r)) {
+        if (denied_parts.isEmpty()) {
+          Partition part=Hive.get().getPartition(tab,partSpec,Boolean.FALSE);
+          denied_parts.add(part);
+        }
+        LOG.trace("pruned partition: " + partSpec);
+      }
+ else {
+        Partition part=Hive.get().getPartition(tab,partSpec,Boolean.FALSE);
+        String state="retained";
+        if (Boolean.TRUE.equals(r)) {
+          true_parts.add(part);
+        }
+ else {
+          assert(r == null);
+          unkn_parts.add(part);
+          state="unknown";
+        }
+        if (LOG.isDebugEnabled()) {
+          LOG.debug(state + " partition: " + partSpec);
+        }
+      }
+    }
+ else {
+      true_parts.add(Hive.get().getPartition(tab,partSpec,Boolean.FALSE));
+    }
+  }
+}

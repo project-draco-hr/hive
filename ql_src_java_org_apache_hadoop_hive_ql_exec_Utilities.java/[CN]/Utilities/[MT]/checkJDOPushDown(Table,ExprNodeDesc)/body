@@ -1,0 +1,36 @@
+{
+  if (expr instanceof ExprNodeConstantDesc) {
+    Object value=((ExprNodeConstantDesc)expr).getValue();
+    return (value instanceof String);
+  }
+ else   if (expr instanceof ExprNodeColumnDesc) {
+    TypeInfo type=expr.getTypeInfo();
+    if (type.getTypeName().equals(Constants.STRING_TYPE_NAME)) {
+      String colName=((ExprNodeColumnDesc)expr).getColumn();
+      for (      FieldSchema fs : tab.getPartCols()) {
+        if (fs.getName().equals(colName)) {
+          return fs.getType().equals(Constants.STRING_TYPE_NAME);
+        }
+      }
+      assert(false);
+    }
+ else {
+      return false;
+    }
+  }
+ else   if (expr instanceof ExprNodeGenericFuncDesc) {
+    ExprNodeGenericFuncDesc funcDesc=(ExprNodeGenericFuncDesc)expr;
+    GenericUDF func=funcDesc.getGenericUDF();
+    if (!supportedJDOFuncs(func)) {
+      return false;
+    }
+    List<ExprNodeDesc> children=funcDesc.getChildExprs();
+    for (    ExprNodeDesc child : children) {
+      if (!checkJDOPushDown(tab,child)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  return false;
+}

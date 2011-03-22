@@ -18,44 +18,36 @@
     StructObjectInspector rowObjectInspector=(StructObjectInspector)tab.getDeserializer().getObjectInspector();
     Object[] rowWithPart=new Object[2];
     if (tab.isPartitioned()) {
-      LOG.debug("tabname = " + tab.getTableName() + " is partitioned");
-      for (      String partName : Hive.get().getPartitionNames(tab.getDbName(),tab.getTableName(),(short)-1)) {
-        if ("strict".equalsIgnoreCase(HiveConf.getVar(conf,HiveConf.ConfVars.HIVEMAPREDMODE))) {
-          if (!hasColumnExpr(prunerExpr)) {
-            throw new SemanticException(ErrorMsg.NO_PARTITION_PREDICATE.getMsg("for Alias \"" + alias + "\" Table \""+ tab.getTableName()+ "\""));
-          }
-        }
-        LinkedHashMap<String,String> partSpec=Warehouse.makeSpecFromName(partName);
-        LOG.trace("about to process partition " + partSpec + " for pruning ");
-        if (prunerExpr != null) {
-          Boolean r=(Boolean)PartExprEvalUtils.evalExprWithPart(prunerExpr,partSpec,rowObjectInspector);
-          LOG.trace("prune result for partition " + partSpec + ": "+ r);
-          if (Boolean.FALSE.equals(r)) {
-            if (denied_parts.isEmpty()) {
-              Partition part=Hive.get().getPartition(tab,partSpec,Boolean.FALSE);
-              denied_parts.add(part);
-            }
-            LOG.trace("pruned partition: " + partSpec);
-          }
- else {
-            Partition part=Hive.get().getPartition(tab,partSpec,Boolean.FALSE);
-            String state="retained";
-            if (Boolean.TRUE.equals(r)) {
-              true_parts.add(part);
-            }
- else {
-              unkn_parts.add(part);
-              state="unknown";
-            }
-            if (LOG.isDebugEnabled()) {
-              LOG.debug(state + " partition: " + partSpec);
-            }
-          }
-        }
- else {
-          true_parts.add(Hive.get().getPartition(tab,partSpec,Boolean.FALSE));
+      if ("strict".equalsIgnoreCase(HiveConf.getVar(conf,HiveConf.ConfVars.HIVEMAPREDMODE))) {
+        if (!hasColumnExpr(prunerExpr)) {
+          throw new SemanticException(ErrorMsg.NO_PARTITION_PREDICATE.getMsg("for Alias \"" + alias + "\" Table \""+ tab.getTableName()+ "\""));
         }
       }
+      if (prunerExpr == null) {
+        true_parts.addAll(Hive.get().getPartitions(tab));
+      }
+ else {
+        ExprNodeDesc compactExpr=prunerExpr.clone();
+        compactExpr=compactExpr(compactExpr);
+        LOG.debug("Filter w/ compacting: " + ((compactExpr != null) ? compactExpr.getExprString() : "null") + "; filter w/o compacting: "+ ((prunerExpr != null) ? prunerExpr.getExprString() : "null"));
+        if (compactExpr == null) {
+          true_parts.addAll(Hive.get().getPartitions(tab));
+        }
+ else         if (Utilities.checkJDOPushDown(tab,compactExpr)) {
+          String filter=compactExpr.getExprString();
+          String oldFilter=prunerExpr.getExprString();
+          if (filter.equals(oldFilter)) {
+            pruneByPushDown(tab,true_parts,filter);
+          }
+ else {
+            pruneByPushDown(tab,unkn_parts,filter);
+          }
+        }
+ else {
+          pruneBySequentialScan(tab,true_parts,unkn_parts,denied_parts,prunerExpr,rowObjectInspector);
+        }
+      }
+      LOG.debug("tabname = " + tab.getTableName() + " is partitioned");
     }
  else {
       true_parts.addAll(Hive.get().getPartitions(tab));
