@@ -1,0 +1,31 @@
+{
+  if (!tbl.isPartitioned()) {
+    throw new HiveException("Partition spec should only be supplied for a " + "partitioned table");
+  }
+  List<Partition> partitions=new ArrayList<Partition>(partNames.size());
+  int batchSize=HiveConf.getIntVar(conf,HiveConf.ConfVars.METASTORE_BATCH_RETRIEVE_MAX);
+  int nParts=partNames.size();
+  int nBatches=nParts / batchSize;
+  try {
+    for (int i=0; i < nBatches; ++i) {
+      List<org.apache.hadoop.hive.metastore.api.Partition> tParts=getMSC().getPartitionsByNames(tbl.getDbName(),tbl.getTableName(),partNames.subList(i * batchSize,(i + 1) * batchSize));
+      if (tParts != null) {
+        for (        org.apache.hadoop.hive.metastore.api.Partition tpart : tParts) {
+          partitions.add(new Partition(tbl,tpart));
+        }
+      }
+    }
+    if (nParts > nBatches * batchSize) {
+      List<org.apache.hadoop.hive.metastore.api.Partition> tParts=getMSC().getPartitionsByNames(tbl.getDbName(),tbl.getTableName(),partNames.subList(nBatches * batchSize,nParts));
+      if (tParts != null) {
+        for (        org.apache.hadoop.hive.metastore.api.Partition tpart : tParts) {
+          partitions.add(new Partition(tbl,tpart));
+        }
+      }
+    }
+  }
+ catch (  Exception e) {
+    throw new HiveException(e);
+  }
+  return partitions;
+}
