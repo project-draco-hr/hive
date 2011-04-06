@@ -1,14 +1,14 @@
 {
-  String tokenStrForm;
-  if (tokenSig == null) {
-    tokenStrForm=HiveMetaStore.getDelegationToken(clientUgi.getShortUserName());
-  }
- else {
-    tokenStrForm=HiveMetaStore.getDelegationToken(clientUgi.getShortUserName(),tokenSig);
-    conf.set("hive.metastore.token.signature",tokenSig);
-  }
+  String tokenStrForm=getDelegationTokenStr(clientUgi,clientUgi);
   Token<DelegationTokenIdentifier> t=new Token<DelegationTokenIdentifier>();
   t.decodeFromUrlString(tokenStrForm);
+  DelegationTokenIdentifier d=new DelegationTokenIdentifier();
+  d.readFields(new DataInputStream(new ByteArrayInputStream(t.getIdentifier())));
+  assertTrue("Usernames don't match",clientUgi.getShortUserName().equals(d.getUser().getShortUserName()));
+  if (tokenSig != null) {
+    conf.set("hive.metastore.token.signature",tokenSig);
+    t.setService(new Text(tokenSig));
+  }
   clientUgi.addToken(t);
   HiveMetaStoreClient hiveClient=clientUgi.doAs(new PrivilegedExceptionAction<HiveMetaStoreClient>(){
     public HiveMetaStoreClient run() throws Exception {
@@ -19,6 +19,14 @@
 );
   assertTrue("Couldn't connect to metastore",hiveClient != null);
   createDBAndVerifyExistence(hiveClient);
+  boolean pass=false;
+  try {
+    hiveClient.getDelegationToken(clientUgi.getUserName());
+  }
+ catch (  MetaException ex) {
+    pass=true;
+  }
+  assertTrue("Expected the getDelegationToken call to fail",pass == true);
   hiveClient.close();
   HiveMetaStore.cancelDelegationToken(tokenStrForm);
   hiveClient=clientUgi.doAs(new PrivilegedExceptionAction<HiveMetaStoreClient>(){

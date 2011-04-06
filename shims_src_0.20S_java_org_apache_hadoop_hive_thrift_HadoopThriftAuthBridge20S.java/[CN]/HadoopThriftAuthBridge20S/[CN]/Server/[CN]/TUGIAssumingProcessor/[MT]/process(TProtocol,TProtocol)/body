@@ -6,16 +6,22 @@
   TSaslServerTransport saslTrans=(TSaslServerTransport)trans;
   SaslServer saslServer=saslTrans.getSaslServer();
   String authId=saslServer.getAuthorizationID();
+  authenticationMethod.set(AuthenticationMethod.KERBEROS);
   LOG.debug("AUTH ID ======>" + authId);
   String endUser=authId;
   if (saslServer.getMechanismName().equals("DIGEST-MD5")) {
     try {
       TokenIdentifier tokenId=SaslRpcServer.getIdentifier(authId,secretManager);
       endUser=tokenId.getUser().getUserName();
+      authenticationMethod.set(AuthenticationMethod.TOKEN);
     }
  catch (    InvalidToken e) {
       throw new TException(e.getMessage());
     }
+  }
+  if (TSocket.class.isAssignableFrom(inProt.getTransport().getClass())) {
+    Socket socket=((TSocket)inProt.getTransport()).getSocket();
+    remoteAddress.set(socket.getInetAddress());
   }
   try {
     UserGroupInformation clientUgi=UserGroupInformation.createProxyUser(endUser,UserGroupInformation.getLoginUser());
