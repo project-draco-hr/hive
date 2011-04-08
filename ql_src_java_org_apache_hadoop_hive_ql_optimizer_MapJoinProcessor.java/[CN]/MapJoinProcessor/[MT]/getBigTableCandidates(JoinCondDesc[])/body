@@ -1,0 +1,44 @@
+{
+  HashSet<Integer> bigTableCandidates=new HashSet<Integer>();
+  boolean seenOuterJoin=false;
+  Set<Integer> seenPostitions=new HashSet<Integer>();
+  Set<Integer> leftPosListOfLastRightOuterJoin=new HashSet<Integer>();
+  boolean lastSeenRightOuterJoin=false;
+  for (  JoinCondDesc condn : condns) {
+    int joinType=condn.getType();
+    seenPostitions.add(condn.getLeft());
+    seenPostitions.add(condn.getRight());
+    if (joinType == JoinDesc.FULL_OUTER_JOIN) {
+      seenOuterJoin=true;
+      lastSeenRightOuterJoin=false;
+      return null;
+    }
+ else     if (joinType == JoinDesc.LEFT_OUTER_JOIN || joinType == JoinDesc.LEFT_SEMI_JOIN) {
+      seenOuterJoin=true;
+      if (bigTableCandidates.size() == 0) {
+        bigTableCandidates.add(condn.getLeft());
+      }
+      lastSeenRightOuterJoin=false;
+    }
+ else     if (joinType == JoinDesc.RIGHT_OUTER_JOIN) {
+      seenOuterJoin=true;
+      lastSeenRightOuterJoin=true;
+      leftPosListOfLastRightOuterJoin.clear();
+      leftPosListOfLastRightOuterJoin.addAll(seenPostitions);
+      leftPosListOfLastRightOuterJoin.remove(condn.getRight());
+      bigTableCandidates.clear();
+      bigTableCandidates.add(condn.getRight());
+    }
+ else     if (joinType == JoinDesc.INNER_JOIN) {
+      if (!seenOuterJoin || lastSeenRightOuterJoin) {
+        if (!leftPosListOfLastRightOuterJoin.contains(condn.getLeft())) {
+          bigTableCandidates.add(condn.getLeft());
+        }
+        if (!leftPosListOfLastRightOuterJoin.contains(condn.getRight())) {
+          bigTableCandidates.add(condn.getRight());
+        }
+      }
+    }
+  }
+  return bigTableCandidates;
+}
