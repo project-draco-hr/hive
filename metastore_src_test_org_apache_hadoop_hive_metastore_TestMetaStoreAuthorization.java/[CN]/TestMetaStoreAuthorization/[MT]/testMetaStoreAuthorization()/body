@@ -1,0 +1,45 @@
+{
+  setup();
+  MetaStoreUtils.startMetaStore(port,ShimLoader.getHadoopThriftAuthBridge());
+  HiveMetaStoreClient client=new HiveMetaStoreClient(conf);
+  FileSystem fs=null;
+  String dbName="simpdb";
+  Database db1=null;
+  Path p=null;
+  try {
+    try {
+      db1=client.getDatabase(dbName);
+      client.dropDatabase(dbName);
+    }
+ catch (    NoSuchObjectException noe) {
+    }
+    if (db1 != null) {
+      p=new Path(db1.getLocationUri());
+      fs=p.getFileSystem(conf);
+      fs.delete(p,true);
+    }
+    db1=new Database();
+    db1.setName(dbName);
+    client.createDatabase(db1);
+    Database db=client.getDatabase(dbName);
+    assertTrue("Databases do not match",db1.getName().equals(db.getName()));
+    p=new Path(db.getLocationUri());
+    if (fs == null) {
+      fs=p.getFileSystem(conf);
+    }
+    fs.setPermission(p.getParent(),FsPermission.createImmutable((short)0555));
+    try {
+      client.dropDatabase(dbName);
+      throw new Exception("Expected dropDatabase call to fail");
+    }
+ catch (    MetaException me) {
+    }
+    fs.setPermission(p.getParent(),FsPermission.createImmutable((short)0755));
+    client.dropDatabase(dbName);
+  }
+  finally {
+    if (p != null) {
+      fs.delete(p,true);
+    }
+  }
+}

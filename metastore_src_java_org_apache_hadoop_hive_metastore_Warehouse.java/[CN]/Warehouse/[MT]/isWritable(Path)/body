@@ -1,0 +1,39 @@
+{
+  if (!storageAuthCheck) {
+    return true;
+  }
+  if (path == null) {
+    return false;
+  }
+  final FileStatus stat;
+  try {
+    stat=getFs(path).getFileStatus(path);
+  }
+ catch (  FileNotFoundException fnfe) {
+    return true;
+  }
+catch (  Exception e) {
+    return false;
+  }
+  final UserGroupInformation ugi;
+  try {
+    ugi=ShimLoader.getHadoopShims().getUGIForConf(conf);
+  }
+ catch (  LoginException le) {
+    throw new IOException(le);
+  }
+  String user=ShimLoader.getHadoopShims().getShortUserName(ugi);
+  if (stat.getOwner().equals(user) && stat.getPermission().getUserAction().implies(FsAction.WRITE)) {
+    return true;
+  }
+  if (stat.getPermission().getGroupAction().implies(FsAction.WRITE)) {
+    String[] groups=ugi.getGroupNames();
+    if (ArrayUtils.contains(groups,stat.getGroup())) {
+      return true;
+    }
+  }
+  if (stat.getPermission().getOtherAction().implies(FsAction.WRITE)) {
+    return true;
+  }
+  return false;
+}
