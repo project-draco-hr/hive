@@ -27,36 +27,49 @@ catch (    java.io.UnsupportedEncodingException uex) {
     if (proc != null) {
       if (proc instanceof Driver) {
         Driver qp=(Driver)proc;
-        queryRet.add(new Integer(qp.run(cmd).getResponseCode()));
-        ArrayList<String> res=new ArrayList<String>();
+        qp.setTryCount(Integer.MAX_VALUE);
         try {
-          while (qp.getResults(res)) {
-            ArrayList<String> resCopy=new ArrayList<String>();
-            resCopy.addAll(res);
-            resultBucket.add(resCopy);
-            if (resultBucket.size() > resultBucketMaxSize) {
-              resultBucket.remove(0);
-            }
-            for (            String row : res) {
-              if (ss != null) {
-                if (ss.out != null) {
-                  ss.out.println(row);
+          queryRet.add(new Integer(qp.run(cmd).getResponseCode()));
+          ArrayList<String> res=new ArrayList<String>();
+          try {
+            while (qp.getResults(res)) {
+              ArrayList<String> resCopy=new ArrayList<String>();
+              resCopy.addAll(res);
+              resultBucket.add(resCopy);
+              if (resultBucket.size() > resultBucketMaxSize) {
+                resultBucket.remove(0);
+              }
+              for (              String row : res) {
+                if (ss != null) {
+                  if (ss.out != null) {
+                    ss.out.println(row);
+                  }
+                }
+ else {
+                  throw new RuntimeException("ss was null");
                 }
               }
- else {
-                throw new RuntimeException("ss was null");
-              }
+              res.clear();
             }
-            res.clear();
+          }
+ catch (          IOException ex) {
+            l4j.error(getSessionName() + " getting results " + getResultFile()+ " caused exception.",ex);
           }
         }
- catch (        IOException ex) {
-          l4j.error(getSessionName() + " getting results " + getResultFile()+ " caused exception.",ex);
+ catch (        CommandNeedRetryException e) {
+          l4j.error(getSessionName() + " Exception when executing",e);
         }
-        qp.close();
+ finally {
+          qp.close();
+        }
       }
  else {
-        queryRet.add(new Integer(proc.run(cmd_1).getResponseCode()));
+        try {
+          queryRet.add(new Integer(proc.run(cmd_1).getResponseCode()));
+        }
+ catch (        CommandNeedRetryException e) {
+          l4j.error(getSessionName() + " Exception when executing",e);
+        }
       }
     }
  else {

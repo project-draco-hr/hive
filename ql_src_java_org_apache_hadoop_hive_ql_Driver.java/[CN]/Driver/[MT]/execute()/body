@@ -55,6 +55,13 @@
       hookContext.addCompleteTask(tskRun);
       int exitVal=tskRes.getExitVal();
       if (exitVal != 0) {
+        if (tsk.ifRetryCmdWhenFail()) {
+          if (running.size() != 0) {
+            taskCleanup();
+          }
+          ctx.restoreOriginalTracker();
+          throw new CommandNeedRetryException();
+        }
         Task<? extends Serializable> backupTask=tsk.getAndInitBackupTask();
         if (backupTask != null) {
           errorMessage="FAILED: Execution Error, return code " + exitVal + " from "+ tsk.getClass().getName();
@@ -117,7 +124,10 @@
       SessionState.get().getHiveHistory().printRowCount(queryId);
     }
   }
- catch (  Exception e) {
+ catch (  CommandNeedRetryException e) {
+    throw e;
+  }
+catch (  Exception e) {
     ctx.restoreOriginalTracker();
     if (SessionState.get() != null) {
       SessionState.get().getHiveHistory().setQueryProperty(queryId,Keys.QUERY_RET_CODE,String.valueOf(12));

@@ -1,0 +1,32 @@
+{
+  LOG.info("Path pattern = " + pathPattern);
+  FileStatus srcs[]=fs.globStatus(new Path(pathPattern));
+  Arrays.sort(srcs);
+  boolean hasFile=false, allFile=true;
+  for (  FileStatus src : srcs) {
+    if (sizeLeft <= 0) {
+      allFile=false;
+      break;
+    }
+    if (src.isDir()) {
+      LOG.info("Got directory: " + src.getPath());
+      AddPathReturnStatus ret=addPath(fs,src.getPath().toString() + "/*",sizeLeft,fileLimit,retPathList);
+      if (ret == null) {
+        return null;
+      }
+      sizeLeft=ret.sizeLeft;
+      hasFile|=ret.hasFile;
+      allFile&=ret.allFile;
+    }
+ else {
+      LOG.info("Got file: " + src.getPath());
+      hasFile=true;
+      retPathList.add(src.getPath());
+      sizeLeft-=src.getLen();
+      if (retPathList.size() >= fileLimit && sizeLeft > 0) {
+        return null;
+      }
+    }
+  }
+  return new AddPathReturnStatus(hasFile,allFile,sizeLeft);
+}
