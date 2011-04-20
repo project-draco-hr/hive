@@ -2,14 +2,42 @@
   errorMessage=null;
   SQLState=null;
   int ret=compile(command);
+  boolean requireLock=false;
+  boolean ckLock=checkLockManager();
   if (ret != 0) {
     releaseLocks(ctx.getHiveLocks());
     return new CommandProcessorResponse(ret,errorMessage,SQLState);
   }
-  ret=acquireReadWriteLocks();
-  if (ret != 0) {
-    releaseLocks(ctx.getHiveLocks());
-    return new CommandProcessorResponse(ret,errorMessage,SQLState);
+  if (ckLock) {
+    ctx.setHiveLockMgr(hiveLockMgr);
+    boolean lockOnlyMapred=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_LOCK_MAPRED_ONLY);
+    if (lockOnlyMapred) {
+      Queue<Task<? extends Serializable>> taskQueue=new LinkedList<Task<? extends Serializable>>();
+      taskQueue.addAll(plan.getRootTasks());
+      while (taskQueue.peek() != null) {
+        Task<? extends Serializable> tsk=taskQueue.remove();
+        requireLock=requireLock || tsk.requireLock();
+        if (requireLock) {
+          break;
+        }
+        if (tsk instanceof ConditionalTask) {
+          taskQueue.addAll(((ConditionalTask)tsk).getListTasks());
+        }
+        if (tsk.getChildTasks() != null) {
+          taskQueue.addAll(tsk.getChildTasks());
+        }
+      }
+    }
+ else {
+      requireLock=true;
+    }
+  }
+  if (requireLock) {
+    ret=acquireReadWriteLocks();
+    if (ret != 0) {
+      releaseLocks(ctx.getHiveLocks());
+      return new CommandProcessorResponse(ret,errorMessage,SQLState);
+    }
   }
   ret=execute();
   if (ret != 0) {
