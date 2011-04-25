@@ -1,0 +1,33 @@
+{
+  try {
+    TableDesc desc=Utilities.getTableDesc(indexTbl);
+    List<Partition> newBaseTblPartitions=new ArrayList<Partition>();
+    List<Task<?>> indexBuilderTasks=new ArrayList<Task<?>>();
+    if (!baseTbl.isPartitioned()) {
+      Task<?> indexBuilder=getIndexBuilderMapRedTask(inputs,outputs,index.getSd().getCols(),false,new PartitionDesc(desc,null),indexTbl.getTableName(),new PartitionDesc(Utilities.getTableDesc(baseTbl),null),baseTbl.getTableName(),indexTbl.getDbName());
+      indexBuilderTasks.add(indexBuilder);
+    }
+ else {
+      for (int i=0; i < indexTblPartitions.size(); i++) {
+        Partition indexPart=indexTblPartitions.get(i);
+        Partition basePart=null;
+        for (int j=0; j < baseTblPartitions.size(); j++) {
+          if (baseTblPartitions.get(j).getName().equals(indexPart.getName())) {
+            basePart=baseTblPartitions.get(j);
+            newBaseTblPartitions.add(baseTblPartitions.get(j));
+            break;
+          }
+        }
+        if (basePart == null) {
+          throw new RuntimeException("Partitions of base table and index table are inconsistent.");
+        }
+        Task<?> indexBuilder=getIndexBuilderMapRedTask(inputs,outputs,index.getSd().getCols(),true,new PartitionDesc(indexPart),indexTbl.getTableName(),new PartitionDesc(basePart),baseTbl.getTableName(),indexTbl.getDbName());
+        indexBuilderTasks.add(indexBuilder);
+      }
+    }
+    return indexBuilderTasks;
+  }
+ catch (  Exception e) {
+    throw new SemanticException(e);
+  }
+}
