@@ -1,0 +1,38 @@
+{
+  Map<String,PartitionDesc> pathToParts=work.getPathToPartitionInfo();
+  List<String> toRemovePaths=new ArrayList<String>();
+  Map<String,PartitionDesc> toAddPathToPart=new HashMap<String,PartitionDesc>();
+  Map<String,ArrayList<String>> pathToAliases=work.getPathToAliases();
+  for (  Map.Entry<String,PartitionDesc> pathPartEntry : pathToParts.entrySet()) {
+    String path=pathPartEntry.getKey();
+    PartitionDesc partDesc=pathPartEntry.getValue();
+    if (partDesc.getInputFileFormatClass().equals(SymlinkTextInputFormat.class)) {
+      partDesc.setInputFileFormatClass(TextInputFormat.class);
+      Path symlinkDir=new Path(path);
+      FileSystem fileSystem=symlinkDir.getFileSystem(job);
+      FileStatus fStatus=fileSystem.getFileStatus(symlinkDir);
+      FileStatus[] symlinks=null;
+      if (!fStatus.isDir()) {
+        symlinks=new FileStatus[]{fStatus};
+      }
+ else {
+        symlinks=fileSystem.listStatus(symlinkDir);
+      }
+      toRemovePaths.add(path);
+      ArrayList<String> aliases=pathToAliases.remove(path);
+      for (      FileStatus symlink : symlinks) {
+        BufferedReader reader=new BufferedReader(new InputStreamReader(fileSystem.open(symlink.getPath())));
+        partDesc.setInputFileFormatClass(TextInputFormat.class);
+        String line;
+        while ((line=reader.readLine()) != null) {
+          toAddPathToPart.put(line,partDesc);
+          pathToAliases.put(line,aliases);
+        }
+      }
+    }
+  }
+  pathToParts.putAll(toAddPathToPart);
+  for (  String toRemove : toRemovePaths) {
+    pathToParts.remove(toRemove);
+  }
+}
