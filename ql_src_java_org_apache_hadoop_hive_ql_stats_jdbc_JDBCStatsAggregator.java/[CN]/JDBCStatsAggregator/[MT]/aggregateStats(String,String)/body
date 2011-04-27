@@ -4,28 +4,56 @@
     LOG.warn("Warning. Invalid statistic. Currently " + "row count is the only supported statistic");
     return null;
   }
-  try {
-    long retval=0;
-    Statement stmt=conn.createStatement();
-    stmt.setQueryTimeout(timeout);
-    String select="SELECT /* " + comment + " */ "+ " SUM("+ JDBCStatsSetupConstants.PART_STAT_ROW_COUNT_COLUMN_NAME+ ")"+ " FROM "+ JDBCStatsSetupConstants.PART_STAT_TABLE_NAME+ " WHERE "+ JDBCStatsSetupConstants.PART_STAT_ID_COLUMN_NAME+ " LIKE '"+ fileID+ "%'";
-    ResultSet result=stmt.executeQuery(select);
-    if (result.next()) {
-      retval=result.getLong(1);
+  Utilities.SQLCommand<ResultSet> execQuery=new Utilities.SQLCommand<ResultSet>(){
+    @Override public ResultSet run(    PreparedStatement stmt) throws SQLException {
+      return stmt.executeQuery();
     }
- else {
-      LOG.warn("Warning. Nothing published. Nothing aggregated.");
-      return "";
-    }
-    stmt.clearBatch();
-    String delete="DELETE /* " + comment + " */ "+ " FROM "+ JDBCStatsSetupConstants.PART_STAT_TABLE_NAME+ " WHERE "+ JDBCStatsSetupConstants.PART_STAT_ID_COLUMN_NAME+ " LIKE '"+ fileID+ "%'";
-    stmt.executeUpdate(delete);
-    stmt.close();
-    LOG.info("Stats aggregator got " + retval);
-    return Long.toString(retval);
   }
- catch (  SQLException e) {
-    LOG.error("Error during publishing aggregation. " + e);
-    return null;
+;
+  Utilities.SQLCommand<Void> execUpdate=new Utilities.SQLCommand<Void>(){
+    @Override public Void run(    PreparedStatement stmt) throws SQLException {
+      stmt.executeUpdate();
+      return null;
+    }
+  }
+;
+  for (int failures=0; ; failures++) {
+    try {
+      long retval=0;
+      String keyPrefix=fileID + "%";
+      selStmt.setString(1,keyPrefix);
+      ResultSet result=Utilities.executeWithRetry(execQuery,selStmt,waitWindow,maxRetries);
+      if (result.next()) {
+        retval=result.getLong(1);
+      }
+ else {
+        LOG.warn("Warning. Nothing published. Nothing aggregated.");
+        return "";
+      }
+      delStmt.setString(1,keyPrefix);
+      Utilities.executeWithRetry(execUpdate,delStmt,waitWindow,maxRetries);
+      LOG.info("Stats aggregator got " + retval);
+      return Long.toString(retval);
+    }
+ catch (    SQLRecoverableException e) {
+      if (failures >= maxRetries) {
+        return null;
+      }
+      closeConnection();
+      long waitTime=Utilities.getRandomWaitTime(waitWindow,failures,r);
+      try {
+        Thread.sleep(waitTime);
+      }
+ catch (      InterruptedException iex) {
+      }
+      if (!connect(hiveconf)) {
+        LOG.error("Error during publishing aggregation. " + e);
+        return null;
+      }
+    }
+catch (    SQLException e) {
+      LOG.error("Error during publishing aggregation. " + e);
+      return null;
+    }
   }
 }

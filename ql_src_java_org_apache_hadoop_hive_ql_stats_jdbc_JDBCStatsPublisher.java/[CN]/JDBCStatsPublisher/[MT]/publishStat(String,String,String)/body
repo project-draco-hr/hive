@@ -8,26 +8,57 @@
     return false;
   }
   LOG.info("Stats publishing for key " + fileID + ". Value = "+ value);
-  try {
-    selStmt.setString(1,fileID);
-    ResultSet result=selStmt.executeQuery();
-    if (result.next()) {
-      long currval=result.getLong(1);
-      if (currval < Long.parseLong(value)) {
-        updStmt.setString(1,value);
-        updStmt.setString(2,fileID);
-        updStmt.executeUpdate();
+  Utilities.SQLCommand<ResultSet> execQuery=new Utilities.SQLCommand<ResultSet>(){
+    @Override public ResultSet run(    PreparedStatement stmt) throws SQLException {
+      return stmt.executeQuery();
+    }
+  }
+;
+  Utilities.SQLCommand<Void> execUpdate=new Utilities.SQLCommand<Void>(){
+    @Override public Void run(    PreparedStatement stmt) throws SQLException {
+      stmt.executeUpdate();
+      return null;
+    }
+  }
+;
+  for (int failures=0; ; failures++) {
+    try {
+      selStmt.setString(1,fileID);
+      ResultSet result=Utilities.executeWithRetry(execQuery,selStmt,waitWindow,maxRetries);
+      if (result.next()) {
+        long currval=result.getLong(1);
+        if (currval < Long.parseLong(value)) {
+          updStmt.setString(1,value);
+          updStmt.setString(2,fileID);
+          Utilities.executeWithRetry(execUpdate,updStmt,waitWindow,maxRetries);
+        }
+      }
+ else {
+        insStmt.setString(1,fileID);
+        insStmt.setString(2,value);
+        Utilities.executeWithRetry(execUpdate,insStmt,waitWindow,maxRetries);
+      }
+      return true;
+    }
+ catch (    SQLRecoverableException e) {
+      if (failures >= maxRetries) {
+        return false;
+      }
+      closeConnection();
+      long waitTime=Utilities.getRandomWaitTime(waitWindow,failures,r);
+      try {
+        Thread.sleep(waitTime);
+      }
+ catch (      InterruptedException iex) {
+      }
+      if (!connect(hiveconf)) {
+        LOG.error("Error during publishing aggregation. " + e);
+        return false;
       }
     }
- else {
-      insStmt.setString(1,fileID);
-      insStmt.setString(2,value);
-      insStmt.executeUpdate();
+catch (    SQLException e) {
+      LOG.error("Error during publishing statistics. ",e);
+      return false;
     }
-    return true;
-  }
- catch (  SQLException e) {
-    LOG.error("Error during publishing statistics. ",e);
-    return false;
   }
 }
