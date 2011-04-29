@@ -1,0 +1,51 @@
+{
+  HashMap<String,SplitSample> nameToSamples=mrwork.getNameToSplitSample();
+  List<InputSplitShim> retLists=new ArrayList<InputSplitShim>();
+  Map<String,ArrayList<InputSplitShim>> aliasToSplitList=new HashMap<String,ArrayList<InputSplitShim>>();
+  Map<String,ArrayList<String>> pathToAliases=mrwork.getPathToAliases();
+  for (  InputSplitShim split : splits) {
+    String alias=null;
+    for (    Path path : split.getPaths()) {
+      List<String> l=HiveFileFormatUtils.doGetAliasesFromPath(pathToAliases,path);
+      if (l.size() != 1 || !nameToSamples.containsKey(l.get(0)) || (alias != null && l.get(0) != alias)) {
+        alias=null;
+        break;
+      }
+      alias=l.get(0);
+    }
+    if (alias != null) {
+      if (!aliasToSplitList.containsKey(alias)) {
+        aliasToSplitList.put(alias,new ArrayList<InputSplitShim>());
+      }
+      aliasToSplitList.get(alias).add(split);
+    }
+ else {
+      retLists.add(split);
+    }
+  }
+  for (  Map.Entry<String,ArrayList<InputSplitShim>> entry : aliasToSplitList.entrySet()) {
+    ArrayList<InputSplitShim> splitList=entry.getValue();
+    long totalSize=0;
+    for (    InputSplitShim split : splitList) {
+      totalSize+=split.getLength();
+    }
+    long targetSize=(long)(totalSize * nameToSamples.get(entry.getKey()).getPercent() / 100D);
+    int startIndex=nameToSamples.get(entry.getKey()).getSeedNum() % splitList.size();
+    int size=0;
+    for (int i=0; i < splitList.size(); i++) {
+      InputSplitShim split=splitList.get((startIndex + i) % splitList.size());
+      retLists.add(split);
+      long splitgLength=split.getLength();
+      if (size + splitgLength >= targetSize) {
+        LOG.info("Sample alias " + entry.getValue() + " using "+ (i + 1)+ "splits");
+        if (size + splitgLength > targetSize) {
+          split.shrinkSplit(targetSize - size);
+        }
+        break;
+      }
+      size+=splitgLength;
+    }
+  }
+  InputSplitShim[] retArray=new InputSplitShim[retLists.size()];
+  return retLists.toArray(retArray);
+}

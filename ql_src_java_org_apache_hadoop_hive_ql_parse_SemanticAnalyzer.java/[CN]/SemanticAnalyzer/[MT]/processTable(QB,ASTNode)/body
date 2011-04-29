@@ -1,10 +1,14 @@
 {
   boolean tableSamplePresent=false;
+  boolean splitSamplePresent=false;
   int aliasIndex=0;
   if (tabref.getChildCount() == 2) {
     ASTNode ct=(ASTNode)tabref.getChild(1);
-    if (ct.getToken().getType() == HiveParser.TOK_TABLESAMPLE) {
+    if (ct.getToken().getType() == HiveParser.TOK_TABLEBUCKETSAMPLE) {
       tableSamplePresent=true;
+    }
+ else     if (ct.getToken().getType() == HiveParser.TOK_TABLESPLITSAMPLE) {
+      splitSamplePresent=true;
     }
  else {
       aliasIndex=1;
@@ -12,7 +16,13 @@
   }
  else   if (tabref.getChildCount() == 3) {
     aliasIndex=2;
-    tableSamplePresent=true;
+    ASTNode ct=(ASTNode)tabref.getChild(1);
+    if (ct.getToken().getType() == HiveParser.TOK_TABLEBUCKETSAMPLE) {
+      tableSamplePresent=true;
+    }
+ else     if (ct.getToken().getType() == HiveParser.TOK_TABLESPLITSAMPLE) {
+      splitSamplePresent=true;
+    }
   }
   ASTNode tableTree=(ASTNode)(tabref.getChild(0));
   String tabIdName=getUnescapedName(tableTree);
@@ -37,6 +47,20 @@
         unparseTranslator.addIdentifierTranslation((ASTNode)sampleCol.getChild(0));
       }
     }
+  }
+ else   if (splitSamplePresent) {
+    String inputFormat=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEINPUTFORMAT);
+    if (!inputFormat.equals(CombineHiveInputFormat.class.getName())) {
+      throw new SemanticException("Percentage sampling is not supported in " + inputFormat);
+    }
+    ASTNode sampleClause=(ASTNode)tabref.getChild(1);
+    String alias_id=getAliasId(alias,qb);
+    String strPercentage=unescapeIdentifier(sampleClause.getChild(0).getText());
+    Double percent=Double.valueOf(strPercentage).doubleValue();
+    if (percent < 0 || percent > 100) {
+      throw new SemanticException("Sampling percentage should be between 0 and 100.");
+    }
+    nameToSplitSample.put(alias_id,new SplitSample(percent,conf.getIntVar(ConfVars.HIVESAMPLERANDOMNUM)));
   }
   qb.setTabAlias(alias,tabIdName);
   qb.addAlias(alias);
