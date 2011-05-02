@@ -1,0 +1,24 @@
+{
+  DecomposedPredicate decomposedPredicate=decomposePredicate(predicate,index,queryContext.getQueryPartitions());
+  if (decomposedPredicate == null) {
+    queryContext.setQueryTasks(null);
+    return;
+  }
+  queryContext.setResidualPredicate(decomposedPredicate.residualPredicate);
+  StringBuilder qlCommand=new StringBuilder("INSERT OVERWRITE DIRECTORY ");
+  String tmpFile=pctx.getContext().getMRTmpFileURI();
+  qlCommand.append("\"" + tmpFile + "\" ");
+  qlCommand.append("SELECT `_bucketname` ,  `_offsets` FROM ");
+  qlCommand.append(HiveUtils.unparseIdentifier(index.getIndexTableName()));
+  qlCommand.append(" WHERE ");
+  String predicateString=decomposedPredicate.pushedPredicate.getExprString();
+  qlCommand.append(predicateString);
+  LOG.info("Generating tasks for re-entrant QL query: " + qlCommand.toString());
+  Driver driver=new Driver(pctx.getConf());
+  driver.compile(qlCommand.toString(),false);
+  queryContext.setIndexInputFormat(HiveCompactIndexInputFormat.class.getName());
+  queryContext.setIndexIntermediateFile(tmpFile);
+  queryContext.addAdditionalSemanticInputs(driver.getPlan().getInputs());
+  queryContext.setQueryTasks(driver.getPlan().getRootTasks());
+  return;
+}

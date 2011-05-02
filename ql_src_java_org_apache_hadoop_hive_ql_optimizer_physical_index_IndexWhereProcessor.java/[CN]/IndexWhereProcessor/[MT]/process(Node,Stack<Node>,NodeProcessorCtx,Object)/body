@@ -1,0 +1,47 @@
+{
+  FilterOperator operator=(FilterOperator)nd;
+  FilterDesc operatorDesc=operator.getConf();
+  ExprNodeDesc predicate=operatorDesc.getPredicate();
+  IndexWhereProcCtx context=(IndexWhereProcCtx)procCtx;
+  ParseContext pctx=context.getParseContext();
+  Set<Partition> queryPartitions;
+  try {
+    queryPartitions=checkPartitionsCoveredByIndex(operator,pctx);
+    if (queryPartitions == null) {
+      return null;
+    }
+  }
+ catch (  HiveException e) {
+    LOG.error("Fatal Error: problem accessing metastore",e);
+    throw new SemanticException(e);
+  }
+  if (!context.getCurrentTask().isMapRedTask()) {
+    return null;
+  }
+  MapRedTask currentTask=(MapRedTask)context.getCurrentTask();
+  Map<Index,HiveIndexQueryContext> queryContexts=new HashMap<Index,HiveIndexQueryContext>();
+  Collection<List<Index>> tableIndexes=indexes.values();
+  for (  List<Index> indexesOnTable : tableIndexes) {
+    for (    Index index : indexesOnTable) {
+      HiveIndexQueryContext queryContext=new HiveIndexQueryContext();
+      queryContext.setQueryPartitions(queryPartitions);
+      rewriteForIndex(predicate,index,pctx,currentTask,queryContext);
+      List<Task<?>> indexTasks=queryContext.getQueryTasks();
+      if (indexTasks != null && indexTasks.size() > 0) {
+        queryContexts.put(index,queryContext);
+      }
+    }
+  }
+  if (queryContexts.size() > 0) {
+    Index chosenIndex=queryContexts.keySet().iterator().next();
+    HiveIndexQueryContext queryContext=queryContexts.get(chosenIndex);
+    MapredWork work=currentTask.getWork();
+    work.setInputformat(queryContext.getIndexInputFormat());
+    work.setIndexIntermediateFile(queryContext.getIndexIntermediateFile());
+    Set<ReadEntity> inputs=pctx.getSemanticInputs();
+    inputs.addAll(queryContext.getAdditionalSemanticInputs());
+    List<Task<?>> chosenRewrite=queryContext.getQueryTasks();
+    insertIndexQuery(pctx,context,chosenRewrite);
+  }
+  return null;
+}

@@ -1,0 +1,91 @@
+{
+  Utilities.PerfLogBegin(LOG,"compile");
+  if (plan != null) {
+    close();
+    plan=null;
+  }
+  if (resetTaskIds) {
+    TaskFactory.resetId();
+  }
+  try {
+    command=new VariableSubstitution().substitute(conf,command);
+    ctx=new Context(conf);
+    ctx.setTryCount(getTryCount());
+    ParseDriver pd=new ParseDriver();
+    ASTNode tree=pd.parse(command,ctx);
+    tree=ParseUtils.findRootNonNullToken(tree);
+    BaseSemanticAnalyzer sem=SemanticAnalyzerFactory.get(conf,tree);
+    List<AbstractSemanticAnalyzerHook> saHooks=getSemanticAnalyzerHooks();
+    if (saHooks != null) {
+      HiveSemanticAnalyzerHookContext hookCtx=new HiveSemanticAnalyzerHookContextImpl();
+      hookCtx.setConf(conf);
+      for (      AbstractSemanticAnalyzerHook hook : saHooks) {
+        tree=hook.preAnalyze(hookCtx,tree);
+      }
+      sem.analyze(tree,ctx);
+      for (      AbstractSemanticAnalyzerHook hook : saHooks) {
+        hook.postAnalyze(hookCtx,sem.getRootTasks());
+      }
+    }
+ else {
+      sem.analyze(tree,ctx);
+    }
+    LOG.info("Semantic Analysis Completed");
+    sem.validate();
+    plan=new QueryPlan(command,sem);
+    if (plan.getFetchTask() != null) {
+      plan.getFetchTask().initialize(conf,plan,null);
+    }
+    schema=getSchema(sem,conf);
+    if ("true".equalsIgnoreCase(System.getProperty("test.serialize.qplan"))) {
+      String queryPlanFileName=ctx.getLocalScratchDir(true) + Path.SEPARATOR_CHAR + "queryplan.xml";
+      LOG.info("query plan = " + queryPlanFileName);
+      queryPlanFileName=new Path(queryPlanFileName).toUri().getPath();
+      FileOutputStream fos=new FileOutputStream(queryPlanFileName);
+      Utilities.serializeQueryPlan(plan,fos);
+      fos.close();
+      FileInputStream fis=new FileInputStream(queryPlanFileName);
+      QueryPlan newPlan=Utilities.deserializeQueryPlan(fis,conf);
+      fis.close();
+      plan=newPlan;
+    }
+    if (plan.getFetchTask() != null) {
+      plan.getFetchTask().initialize(conf,plan,null);
+    }
+    if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_AUTHORIZATION_ENABLED)) {
+      try {
+        Utilities.PerfLogBegin(LOG,"doAuthorization");
+        doAuthorization(sem);
+      }
+ catch (      AuthorizationException authExp) {
+        console.printError("Authorization failed:" + authExp.getMessage() + ". Use show grant to get more details.");
+        return 403;
+      }
+ finally {
+        Utilities.PerfLogEnd(LOG,"doAuthorization");
+      }
+    }
+    return 0;
+  }
+ catch (  SemanticException e) {
+    errorMessage="FAILED: Error in semantic analysis: " + e.getMessage();
+    SQLState=ErrorMsg.findSQLState(e.getMessage());
+    console.printError(errorMessage,"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
+    return (10);
+  }
+catch (  ParseException e) {
+    errorMessage="FAILED: Parse Error: " + e.getMessage();
+    SQLState=ErrorMsg.findSQLState(e.getMessage());
+    console.printError(errorMessage,"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
+    return (11);
+  }
+catch (  Exception e) {
+    errorMessage="FAILED: Hive Internal Error: " + Utilities.getNameMessage(e);
+    SQLState=ErrorMsg.findSQLState(e.getMessage());
+    console.printError(errorMessage + "\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
+    return (12);
+  }
+ finally {
+    Utilities.PerfLogEnd(LOG,"compile");
+  }
+}
