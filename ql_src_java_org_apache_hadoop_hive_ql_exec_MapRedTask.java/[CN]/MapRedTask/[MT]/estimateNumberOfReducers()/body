@@ -5,7 +5,28 @@
     inputSummary=Utilities.getInputSummary(driverContext.getCtx(),work,null);
   }
   long totalInputFileSize=inputSummary.getLength();
-  LOG.info("BytesPerReducer=" + bytesPerReducer + " maxReducers="+ maxReducers+ " totalInputFileSize="+ totalInputFileSize);
+  double highestSamplePercentage=0;
+  boolean allSample=false;
+  for (  String alias : work.getAliasToWork().keySet()) {
+    if (work.getNameToSplitSample().containsKey(alias)) {
+      allSample=true;
+      double rate=work.getNameToSplitSample().get(alias).getPercent();
+      if (rate > highestSamplePercentage) {
+        highestSamplePercentage=rate;
+      }
+    }
+ else {
+      allSample=false;
+      break;
+    }
+  }
+  if (allSample) {
+    totalInputFileSize=Math.min((long)(totalInputFileSize * highestSamplePercentage / 100D),totalInputFileSize);
+    LOG.info("BytesPerReducer=" + bytesPerReducer + " maxReducers="+ maxReducers+ " estimated totalInputFileSize="+ totalInputFileSize);
+  }
+ else {
+    LOG.info("BytesPerReducer=" + bytesPerReducer + " maxReducers="+ maxReducers+ " totalInputFileSize="+ totalInputFileSize);
+  }
   int reducers=(int)((totalInputFileSize + bytesPerReducer - 1) / bytesPerReducer);
   reducers=Math.max(1,reducers);
   reducers=Math.min(maxReducers,reducers);
