@@ -17,12 +17,20 @@
  else {
       paths.add(indexFilePath);
     }
+    long maxEntriesToLoad=HiveConf.getLongVar(conf,HiveConf.ConfVars.HIVE_INDEX_COMPACT_QUERY_MAX_ENTRIES);
+    if (maxEntriesToLoad < 0) {
+      maxEntriesToLoad=Long.MAX_VALUE;
+    }
+    long lineCounter=0;
     for (    Path indexFinalPath : paths) {
       FSDataInputStream ifile=fs.open(indexFinalPath);
       LineReader lr=new LineReader(ifile,conf);
       try {
         Text line=new Text();
         while (lr.readLine(line) > 0) {
+          if (++lineCounter > maxEntriesToLoad) {
+            throw new HiveException("Number of compact index entries loaded during the query exceeded the maximum of " + maxEntriesToLoad + " set in "+ HiveConf.ConfVars.HIVE_INDEX_COMPACT_QUERY_MAX_ENTRIES.varname);
+          }
           add(line);
         }
       }
