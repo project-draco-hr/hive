@@ -1,0 +1,31 @@
+{
+  if (!HBaseStatsUtils.isValidStatisticSet(stats.keySet())) {
+    LOG.warn("Warning. Invalid statistic: " + stats.keySet().toString() + ", supported stats: "+ HBaseStatsUtils.getSupportedStatistics());
+    return false;
+  }
+  try {
+    Get get=new Get(Bytes.toBytes(rowID));
+    Result result=htable.get(get);
+    byte[] family=HBaseStatsUtils.getFamilyName();
+    byte[] column=HBaseStatsUtils.getColumnName(HBaseStatsUtils.getBasicStat());
+    long val=Long.parseLong(HBaseStatsUtils.getStatFromMap(HBaseStatsUtils.getBasicStat(),stats));
+    long oldVal=0;
+    if (!result.isEmpty()) {
+      oldVal=Long.parseLong(Bytes.toString(result.getValue(family,column)));
+    }
+    if (oldVal >= val) {
+      return true;
+    }
+    Put row=new Put(Bytes.toBytes(rowID));
+    for (    String statType : HBaseStatsUtils.getSupportedStatistics()) {
+      column=HBaseStatsUtils.getColumnName(statType);
+      row.add(family,column,Bytes.toBytes(HBaseStatsUtils.getStatFromMap(statType,stats)));
+    }
+    htable.put(row);
+    return true;
+  }
+ catch (  IOException e) {
+    LOG.error("Error during publishing statistics. " + e);
+    return false;
+  }
+}

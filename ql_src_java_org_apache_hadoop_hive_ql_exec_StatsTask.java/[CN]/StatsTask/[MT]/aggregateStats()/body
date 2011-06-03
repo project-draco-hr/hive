@@ -16,17 +16,13 @@
     org.apache.hadoop.hive.metastore.api.Table tTable=table.getTTable();
     Map<String,String> parameters=tTable.getParameters();
     boolean tableStatsExist=this.existStats(parameters);
-    if (parameters.containsKey(StatsSetupConst.ROW_COUNT)) {
-      tblStats.setNumRows(Long.parseLong(parameters.get(StatsSetupConst.ROW_COUNT)));
+    for (    String statType : supportedStats) {
+      if (parameters.containsKey(statType)) {
+        tblStats.setStat(statType,Long.parseLong(parameters.get(statType)));
+      }
     }
     if (parameters.containsKey(StatsSetupConst.NUM_PARTITIONS)) {
       tblStats.setNumPartitions(Integer.parseInt(parameters.get(StatsSetupConst.NUM_PARTITIONS)));
-    }
-    if (parameters.containsKey(StatsSetupConst.NUM_FILES)) {
-      tblStats.setNumFiles(Integer.parseInt(parameters.get(StatsSetupConst.NUM_FILES)));
-    }
-    if (parameters.containsKey(StatsSetupConst.TOTAL_SIZE)) {
-      tblStats.setSize(Long.parseLong(parameters.get(StatsSetupConst.TOTAL_SIZE)));
     }
     List<Partition> partitions=getPartitionsList();
     boolean atomic=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_STATS_ATOMIC);
@@ -37,22 +33,26 @@
       Path tablePath=wh.getDefaultTablePath(table.getDbName(),table.getTableName());
       fileSys=tablePath.getFileSystem(conf);
       fileStatus=Utilities.getFileStatusRecurse(tablePath,1,fileSys);
-      tblStats.setNumFiles(fileStatus.length);
+      tblStats.setStat(StatsSetupConst.NUM_FILES,fileStatus.length);
       long tableSize=0L;
       for (int i=0; i < fileStatus.length; i++) {
         tableSize+=fileStatus[i].getLen();
       }
-      tblStats.setSize(tableSize);
+      tblStats.setStat(StatsSetupConst.TOTAL_SIZE,tableSize);
       if (statsAggregator != null) {
-        String rows=statsAggregator.aggregateStats(work.getAggKey(),StatsSetupConst.ROW_COUNT);
-        if (rows != null) {
-          tblStats.setNumRows(Long.parseLong(rows));
-        }
+        String value;
+        for (        String statType : collectableStats) {
+          value=statsAggregator.aggregateStats(work.getAggKey(),statType);
+          if (value != null) {
+            tblStats.setStat(statType,Long.parseLong(value));
+          }
  else {
-          if (atomic) {
-            throw new HiveException("StatsAggregator failed to get numRows.");
+            if (atomic) {
+              throw new HiveException("StatsAggregator failed to get statistics.");
+            }
           }
         }
+        statsAggregator.cleanUp(work.getAggKey());
       }
     }
  else {
@@ -63,54 +63,68 @@
         if (!hasStats && atomic) {
           continue;
         }
-        int nf=parameters.containsKey(StatsSetupConst.NUM_FILES) ? Integer.parseInt(parameters.get(StatsSetupConst.NUM_FILES)) : 0;
-        long nr=parameters.containsKey(StatsSetupConst.ROW_COUNT) ? Long.parseLong(parameters.get(StatsSetupConst.ROW_COUNT)) : 0L;
-        long sz=parameters.containsKey(StatsSetupConst.TOTAL_SIZE) ? Long.parseLong(parameters.get(StatsSetupConst.TOTAL_SIZE)) : 0L;
+        Map<String,Long> currentValues=new HashMap<String,Long>();
+        for (        String statType : supportedStats) {
+          Long val=parameters.containsKey(statType) ? Long.parseLong(parameters.get(statType)) : 0L;
+          currentValues.put(statType,val);
+        }
         PartitionStatistics newPartStats=new PartitionStatistics();
         String partitionID=work.getAggKey() + Warehouse.makePartPath(partn.getSpec());
+        LOG.info("Stats aggregator : " + partitionID);
         if (statsAggregator != null) {
-          String rows=statsAggregator.aggregateStats(partitionID,StatsSetupConst.ROW_COUNT);
-          if (rows != null) {
-            newPartStats.setNumRows(Long.parseLong(rows));
-          }
+          String value;
+          for (          String statType : collectableStats) {
+            value=statsAggregator.aggregateStats(partitionID,statType);
+            if (value != null) {
+              newPartStats.setStat(statType,Long.parseLong(value));
+            }
  else {
-            if (atomic) {
-              throw new HiveException("StatsAggregator failed to get numRows.");
+              if (atomic) {
+                throw new HiveException("StatsAggregator failed to get statistics.");
+              }
             }
           }
         }
  else {
-          newPartStats.setNumRows(nr);
+          for (          String statType : collectableStats) {
+            newPartStats.setStat(statType,currentValues.get(statType));
+          }
         }
         fileSys=partn.getPartitionPath().getFileSystem(conf);
         fileStatus=Utilities.getFileStatusRecurse(partn.getPartitionPath(),1,fileSys);
-        newPartStats.setNumFiles(fileStatus.length);
+        newPartStats.setStat(StatsSetupConst.NUM_FILES,fileStatus.length);
         long partitionSize=0L;
         for (int i=0; i < fileStatus.length; i++) {
           partitionSize+=fileStatus[i].getLen();
         }
-        newPartStats.setSize(partitionSize);
+        newPartStats.setStat(StatsSetupConst.TOTAL_SIZE,partitionSize);
         if (hasStats) {
-          PartitionStatistics oldPartStats=new PartitionStatistics(nf,nr,sz);
+          PartitionStatistics oldPartStats=new PartitionStatistics(currentValues);
           tblStats.updateStats(oldPartStats,newPartStats);
         }
  else {
           tblStats.addPartitionStats(newPartStats);
         }
-        parameters.put(StatsSetupConst.ROW_COUNT,Long.toString(newPartStats.getNumRows()));
-        parameters.put(StatsSetupConst.NUM_FILES,Integer.toString(newPartStats.getNumFiles()));
-        parameters.put(StatsSetupConst.TOTAL_SIZE,Long.toString(newPartStats.getSize()));
+        for (        String statType : supportedStats) {
+          long statValue=newPartStats.getStat(statType);
+          if (statValue >= 0) {
+            parameters.put(statType,Long.toString(newPartStats.getStat(statType)));
+          }
+        }
         tPart.setParameters(parameters);
         String tableFullName=table.getDbName() + "." + table.getTableName();
         db.alterPartition(tableFullName,new Partition(table,tPart));
+        if (statsAggregator != null) {
+          statsAggregator.cleanUp(partitionID);
+        }
         console.printInfo("Partition " + tableFullName + partn.getSpec()+ " stats: ["+ newPartStats.toString()+ ']');
       }
     }
     parameters=tTable.getParameters();
-    parameters.put(StatsSetupConst.ROW_COUNT,Long.toString(tblStats.getNumRows()));
+    for (    String statType : supportedStats) {
+      parameters.put(statType,Long.toString(tblStats.getStat(statType)));
+    }
     parameters.put(StatsSetupConst.NUM_PARTITIONS,Integer.toString(tblStats.getNumPartitions()));
-    parameters.put(StatsSetupConst.NUM_FILES,Integer.toString(tblStats.getNumFiles()));
-    parameters.put(StatsSetupConst.TOTAL_SIZE,Long.toString(tblStats.getSize()));
     tTable.setParameters(parameters);
     String tableFullName=table.getDbName() + "." + table.getTableName();
     db.alterTable(tableFullName,new Table(tTable));

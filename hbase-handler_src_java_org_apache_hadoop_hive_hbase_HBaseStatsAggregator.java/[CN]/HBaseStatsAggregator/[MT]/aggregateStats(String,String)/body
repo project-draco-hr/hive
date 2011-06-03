@@ -1,23 +1,22 @@
 {
-  if (key != StatsSetupConst.ROW_COUNT) {
-    LOG.warn("Warning. Invalid statistic. Currently " + "row count is the only supported statistic");
+  byte[] family, column;
+  if (!HBaseStatsUtils.isValidStatistic(key)) {
+    LOG.warn("Warning. Invalid statistic: " + key + ", supported stats: "+ HBaseStatsUtils.getSupportedStatistics());
     return null;
   }
-  int retValue=0;
+  family=HBaseStatsUtils.getFamilyName();
+  column=HBaseStatsUtils.getColumnName(key);
   try {
+    long retValue=0;
     Scan scan=new Scan();
-    scan.addColumn(rowCountFamily,rowCountColumn);
+    scan.addColumn(family,column);
     PrefixFilter filter=new PrefixFilter(Bytes.toBytes(rowID));
     scan.setFilter(filter);
     ResultScanner scanner=htable.getScanner(scan);
-    ArrayList<Delete> toDelete=new ArrayList<Delete>();
     for (    Result result : scanner) {
-      retValue+=Integer.parseInt(Bytes.toString(result.getValue(rowCountFamily,rowCountColumn)));
-      Delete delete=new Delete(result.getRow());
-      toDelete.add(delete);
+      retValue+=Long.parseLong(Bytes.toString(result.getValue(family,column)));
     }
-    htable.delete(toDelete);
-    return Integer.toString(retValue);
+    return Long.toString(retValue);
   }
  catch (  IOException e) {
     LOG.error("Error during publishing aggregation. ",e);

@@ -1,0 +1,38 @@
+{
+  if (!qbp.isAnalyzeCommand()) {
+    tsDesc.setGatherStats(false);
+  }
+ else {
+    tsDesc.setGatherStats(true);
+    Iterator<VirtualColumn> vcs=VirtualColumn.getStatsRegistry(conf).iterator();
+    List<VirtualColumn> vcList=new ArrayList<VirtualColumn>();
+    while (vcs.hasNext()) {
+      VirtualColumn vc=vcs.next();
+      rwsch.put(alias,vc.getName(),new ColumnInfo(vc.getName(),vc.getTypeInfo(),alias,true,vc.getIsHidden()));
+      vcList.add(vc);
+    }
+    tsDesc.addVirtualCols(vcList);
+    String tblName=tab.getTableName();
+    tableSpec tblSpec=qbp.getTableSpec(alias);
+    Map<String,String> partSpec=tblSpec.getPartSpec();
+    if (partSpec != null) {
+      List<String> cols=new ArrayList<String>();
+      cols.addAll(partSpec.keySet());
+      tsDesc.setPartColumns(cols);
+    }
+    String k=tblName + Path.SEPARATOR;
+    tsDesc.setStatsAggPrefix(k);
+    outputs.add(new WriteEntity(tab,true));
+    if (tab.isPartitioned()) {
+      if (partSpec == null) {
+        throw new SemanticException(ErrorMsg.NEED_PARTITION_SPECIFICATION.getMsg());
+      }
+      List<Partition> partitions=qbp.getTableSpec().partitions;
+      if (partitions != null) {
+        for (        Partition partn : partitions) {
+          outputs.add(new WriteEntity(partn,true));
+        }
+      }
+    }
+  }
+}

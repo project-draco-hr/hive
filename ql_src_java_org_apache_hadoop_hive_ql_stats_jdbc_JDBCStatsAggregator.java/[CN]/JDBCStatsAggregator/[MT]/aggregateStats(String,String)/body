@@ -1,7 +1,6 @@
 {
-  LOG.info("Stats Aggregator for key " + fileID);
-  if (statType != StatsSetupConst.ROW_COUNT) {
-    LOG.warn("Warning. Invalid statistic. Currently " + "row count is the only supported statistic");
+  if (!JDBCStatsUtils.isValidStatistic(statType)) {
+    LOG.warn("Warning. Invalid statistic: " + statType + ", supported stats: "+ JDBCStatsUtils.getSupportedStatistics());
     return null;
   }
   Utilities.SQLCommand<ResultSet> execQuery=new Utilities.SQLCommand<ResultSet>(){
@@ -10,17 +9,11 @@
     }
   }
 ;
-  Utilities.SQLCommand<Void> execUpdate=new Utilities.SQLCommand<Void>(){
-    @Override public Void run(    PreparedStatement stmt) throws SQLException {
-      stmt.executeUpdate();
-      return null;
-    }
-  }
-;
   String keyPrefix=Utilities.escapeSqlLike(fileID) + "%";
   for (int failures=0; ; failures++) {
     try {
       long retval=0;
+      PreparedStatement selStmt=columnMapping.get(statType);
       selStmt.setString(1,keyPrefix);
       selStmt.setString(2,Character.toString(Utilities.sqlEscapeChar));
       ResultSet result=Utilities.executeWithRetry(execQuery,selStmt,waitWindow,maxRetries);
@@ -29,12 +22,8 @@
       }
  else {
         LOG.warn("Warning. Nothing published. Nothing aggregated.");
-        return "";
+        return null;
       }
-      delStmt.setString(1,keyPrefix);
-      delStmt.setString(2,Character.toString(Utilities.sqlEscapeChar));
-      Utilities.executeWithRetry(execUpdate,delStmt,waitWindow,maxRetries);
-      LOG.info("Stats aggregator got " + retval);
       return Long.toString(retval);
     }
  catch (    SQLRecoverableException e) {

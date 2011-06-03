@@ -1,0 +1,62 @@
+{
+  if (conn == null) {
+    LOG.error("JDBC connection is null. Cannot publish stats without JDBC connection.");
+    return false;
+  }
+  if (!JDBCStatsUtils.isValidStatisticSet(stats.keySet())) {
+    LOG.warn("Warning. Invalid statistic.");
+    return false;
+  }
+  LOG.info("Stats publishing for key " + fileID);
+  Utilities.SQLCommand<Void> execUpdate=new Utilities.SQLCommand<Void>(){
+    @Override public Void run(    PreparedStatement stmt) throws SQLException {
+      stmt.executeUpdate();
+      return null;
+    }
+  }
+;
+  List<String> supportedStatistics=JDBCStatsUtils.getSupportedStatistics();
+  for (int failures=0; ; failures++) {
+    try {
+      insStmt.setString(1,fileID);
+      for (int i=0; i < JDBCStatsUtils.getSupportedStatistics().size(); i++) {
+        insStmt.setString(i + 2,stats.get(supportedStatistics.get(i)));
+      }
+      Utilities.executeWithRetry(execUpdate,insStmt,waitWindow,maxRetries);
+      return true;
+    }
+ catch (    SQLIntegrityConstraintViolationException e) {
+      for (int updateFailures=0; ; updateFailures++) {
+        try {
+          int i;
+          for (i=0; i < JDBCStatsUtils.getSupportedStatistics().size(); i++) {
+            updStmt.setString(i + 1,stats.get(supportedStatistics.get(i)));
+          }
+          updStmt.setString(supportedStatistics.size() + 1,fileID);
+          updStmt.setString(supportedStatistics.size() + 2,stats.get(JDBCStatsUtils.getBasicStat()));
+          updStmt.setString(supportedStatistics.size() + 3,fileID);
+          Utilities.executeWithRetry(execUpdate,updStmt,waitWindow,maxRetries);
+          return true;
+        }
+ catch (        SQLRecoverableException ue) {
+          if (!handleSQLRecoverableException(ue,updateFailures)) {
+            return false;
+          }
+        }
+catch (        SQLException ue) {
+          LOG.error("Error during publishing statistics. ",e);
+          return false;
+        }
+      }
+    }
+catch (    SQLRecoverableException e) {
+      if (!handleSQLRecoverableException(e,failures)) {
+        return false;
+      }
+    }
+catch (    SQLException e) {
+      LOG.error("Error during publishing statistics. ",e);
+      return false;
+    }
+  }
+}
