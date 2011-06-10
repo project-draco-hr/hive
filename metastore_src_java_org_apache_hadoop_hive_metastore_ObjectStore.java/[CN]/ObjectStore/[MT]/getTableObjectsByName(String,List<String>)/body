@@ -1,0 +1,34 @@
+{
+  List<Table> tables=new ArrayList<Table>();
+  boolean committed=false;
+  try {
+    openTransaction();
+    db=db.toLowerCase().trim();
+    Query dbExistsQuery=pm.newQuery(MDatabase.class,"name == db");
+    dbExistsQuery.declareParameters("java.lang.String db");
+    dbExistsQuery.setUnique(true);
+    dbExistsQuery.setResult("name");
+    String dbNameIfExists=(String)dbExistsQuery.execute(db);
+    if (dbNameIfExists == null || dbNameIfExists.isEmpty()) {
+      throw new UnknownDBException("Could not find database " + db);
+    }
+    List<String> lowered_tbl_names=new ArrayList<String>();
+    for (    String t : tbl_names) {
+      lowered_tbl_names.add(t.toLowerCase().trim());
+    }
+    Query query=pm.newQuery(MTable.class);
+    query.setFilter("database.name == db && tbl_names.contains(tableName)");
+    query.declareParameters("java.lang.String db, java.util.Collection tbl_names");
+    Collection mtables=(Collection)query.execute(db,lowered_tbl_names);
+    for (Iterator iter=mtables.iterator(); iter.hasNext(); ) {
+      tables.add(convertToTable((MTable)iter.next()));
+    }
+    committed=commitTransaction();
+  }
+  finally {
+    if (!committed) {
+      rollbackTransaction();
+    }
+  }
+  return tables;
+}
