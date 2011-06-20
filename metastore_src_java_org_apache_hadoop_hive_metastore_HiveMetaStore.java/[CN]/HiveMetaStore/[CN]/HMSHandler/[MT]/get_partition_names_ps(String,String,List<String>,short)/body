@@ -1,28 +1,23 @@
 {
   startPartitionFunction("get_partitions_names_ps",db_name,tbl_name,part_vals);
+  List<String> ret;
   try {
-    Table t;
-    try {
-      t=get_table(db_name,tbl_name);
-    }
- catch (    NoSuchObjectException e) {
-      throw new MetaException(e.getMessage());
-    }
-    List<String> partNames=get_partition_names(db_name,tbl_name,max_parts);
-    List<String> filteredPartNames=new ArrayList<String>();
-    for (    String name : partNames) {
-      LinkedHashMap<String,String> spec=Warehouse.makeSpecFromName(name);
-      List<String> vals=new ArrayList<String>();
-      for (      String val : spec.values()) {
-        vals.add(val);
-      }
-      if (MetaStoreUtils.pvalMatches(part_vals,vals)) {
-        filteredPartNames.add(name);
+    ret=executeWithRetry(new Command<List<String>>(){
+      @Override public List<String> run(      RawStore ms) throws Exception {
+        return ms.listPartitionNamesPs(db_name,tbl_name,part_vals,max_parts);
       }
     }
-    return filteredPartNames;
+);
   }
-  finally {
+ catch (  MetaException e) {
+    throw e;
+  }
+catch (  Exception e) {
+    assert(e instanceof RuntimeException);
+    throw (RuntimeException)e;
+  }
+ finally {
     endFunction("get_partitions_names_ps");
   }
+  return ret;
 }

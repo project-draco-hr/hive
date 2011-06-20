@@ -1,22 +1,26 @@
 {
   startPartitionFunction("get_partitions_ps_with_auth",db_name,tbl_name,part_vals);
-  List<Partition> parts=null;
-  List<Partition> matchingParts=new ArrayList<Partition>();
+  List<Partition> ret;
   try {
-    try {
-      parts=get_partitions(db_name,tbl_name,(short)-1);
-    }
- catch (    NoSuchObjectException e) {
-      throw new MetaException(e.getMessage());
-    }
-    for (    Partition p : parts) {
-      if (MetaStoreUtils.pvalMatches(part_vals,p.getValues())) {
-        matchingParts.add(p);
+    ret=executeWithRetry(new Command<List<Partition>>(){
+      @Override public List<Partition> run(      RawStore ms) throws Exception {
+        return ms.listPartitionsPsWithAuth(db_name,tbl_name,part_vals,max_parts,userName,groupNames);
       }
     }
-    return matchingParts;
+);
   }
-  finally {
+ catch (  MetaException e) {
+    throw e;
+  }
+catch (  InvalidObjectException e) {
+    throw new MetaException(e.getMessage());
+  }
+catch (  Exception e) {
+    assert(e instanceof RuntimeException);
+    throw (RuntimeException)e;
+  }
+ finally {
     endFunction("get_partitions_ps_with_auth");
   }
+  return ret;
 }

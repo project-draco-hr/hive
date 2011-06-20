@@ -1,0 +1,26 @@
+{
+  List<Partition> partitions=new ArrayList<Partition>();
+  boolean success=false;
+  try {
+    openTransaction();
+    LOG.debug("executing listPartitionNamesPsWithAuth");
+    Collection parts=getPartitionPsQueryResults(db_name,tbl_name,part_vals,max_parts,null);
+    MTable mtbl=getMTable(db_name,tbl_name);
+    for (    Object o : parts) {
+      Partition part=convertToPart((MPartition)o);
+      if (null != userName && null != groupNames && "TRUE".equalsIgnoreCase(mtbl.getParameters().get("PARTITION_LEVEL_PRIVILEGE"))) {
+        String partName=Warehouse.makePartName(this.convertToFieldSchemas(mtbl.getPartitionKeys()),part.getValues());
+        PrincipalPrivilegeSet partAuth=getPartitionPrivilegeSet(db_name,tbl_name,partName,userName,groupNames);
+        part.setPrivileges(partAuth);
+      }
+      partitions.add(part);
+    }
+    success=commitTransaction();
+  }
+  finally {
+    if (!success) {
+      rollbackTransaction();
+    }
+  }
+  return partitions;
+}
