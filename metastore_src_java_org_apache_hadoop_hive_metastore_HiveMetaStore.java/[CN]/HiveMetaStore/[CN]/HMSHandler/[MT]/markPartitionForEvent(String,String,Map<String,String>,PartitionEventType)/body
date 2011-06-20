@@ -1,0 +1,51 @@
+{
+  try {
+    startPartitionFunction("markPartitionForEvent",db_name,tbl_name,partName);
+    Table tbl=null;
+    try {
+      tbl=executeWithRetry(new Command<Table>(){
+        @Override public Table run(        RawStore ms) throws Exception {
+          return ms.markPartitionForEvent(db_name,tbl_name,partName,evtType);
+        }
+      }
+);
+    }
+ catch (    Exception original) {
+      LOG.error(original);
+      if (original instanceof NoSuchObjectException) {
+        throw (NoSuchObjectException)original;
+      }
+ else       if (original instanceof UnknownTableException) {
+        throw (UnknownTableException)original;
+      }
+ else       if (original instanceof UnknownDBException) {
+        throw (UnknownDBException)original;
+      }
+ else       if (original instanceof UnknownPartitionException) {
+        throw (UnknownPartitionException)original;
+      }
+ else       if (original instanceof InvalidPartitionException) {
+        throw (InvalidPartitionException)original;
+      }
+ else       if (original instanceof MetaException) {
+        throw (MetaException)original;
+      }
+ else {
+        MetaException me=new MetaException(original.toString());
+        me.initCause(original);
+        throw me;
+      }
+    }
+    if (null == tbl) {
+      throw new UnknownTableException("Table: " + tbl_name + " not found.");
+    }
+ else {
+      for (      MetaStoreEventListener listener : listeners) {
+        listener.onLoadPartitionDone(new LoadPartitionDoneEvent(true,this,tbl,partName));
+      }
+    }
+  }
+  finally {
+    endFunction("markPartitionForEvent");
+  }
+}
