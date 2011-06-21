@@ -1,9 +1,16 @@
 {
-  FilterOperator operator=(FilterOperator)nd;
-  FilterDesc operatorDesc=operator.getConf();
-  ExprNodeDesc predicate=operatorDesc.getPredicate();
+  TableScanOperator operator=(TableScanOperator)nd;
+  List<Node> opChildren=operator.getChildren();
+  TableScanDesc operatorDesc=operator.getConf();
+  ExprNodeDesc predicate=operatorDesc.getFilterExpr();
   IndexWhereProcCtx context=(IndexWhereProcCtx)procCtx;
   ParseContext pctx=context.getParseContext();
+  LOG.info("Processing predicate for index optimization");
+  if (predicate == null) {
+    LOG.info("null predicate pushed down");
+    return null;
+  }
+  LOG.info(predicate.getExprString());
   Set<Partition> queryPartitions;
   try {
     queryPartitions=checkPartitionsCoveredByIndex(operator,pctx);
@@ -22,14 +29,38 @@
   Map<Index,HiveIndexQueryContext> queryContexts=new HashMap<Index,HiveIndexQueryContext>();
   Collection<List<Index>> tableIndexes=indexes.values();
   for (  List<Index> indexesOnTable : tableIndexes) {
+    List<List<Index>> indexesByType=new ArrayList<List<Index>>();
     for (    Index index : indexesOnTable) {
-      HiveIndexQueryContext queryContext=new HiveIndexQueryContext();
-      queryContext.setQueryPartitions(queryPartitions);
-      rewriteForIndex(predicate,index,pctx,currentTask,queryContext);
-      List<Task<?>> indexTasks=queryContext.getQueryTasks();
-      if (indexTasks != null && indexTasks.size() > 0) {
-        queryContexts.put(index,queryContext);
+      boolean added=false;
+      for (      List<Index> indexType : indexesByType) {
+        if (indexType.isEmpty()) {
+          indexType.add(index);
+          added=true;
+        }
+ else         if (indexType.get(0).getIndexHandlerClass().equals(index.getIndexHandlerClass())) {
+          indexType.add(index);
+          added=true;
+          break;
+        }
       }
+      if (!added) {
+        List<Index> newType=new ArrayList<Index>();
+        newType.add(index);
+        indexesByType.add(newType);
+      }
+    }
+    List<Index> bestIndexes=indexesByType.get(0);
+    for (    List<Index> indexTypes : indexesByType) {
+      if (bestIndexes.size() < indexTypes.size()) {
+        bestIndexes=indexTypes;
+      }
+    }
+    HiveIndexQueryContext queryContext=new HiveIndexQueryContext();
+    queryContext.setQueryPartitions(queryPartitions);
+    rewriteForIndexes(predicate,bestIndexes,pctx,currentTask,queryContext);
+    List<Task<?>> indexTasks=queryContext.getQueryTasks();
+    if (indexTasks != null && indexTasks.size() > 0) {
+      queryContexts.put(bestIndexes.get(0),queryContext);
     }
   }
   if (queryContexts.size() > 0) {
