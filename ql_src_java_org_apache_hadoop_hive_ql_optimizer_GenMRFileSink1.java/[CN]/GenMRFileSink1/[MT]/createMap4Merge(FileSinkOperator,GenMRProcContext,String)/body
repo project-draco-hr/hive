@@ -30,7 +30,22 @@
   }
   MapRedTask currTask=(MapRedTask)ctx.getCurrTask();
   MoveWork dummyMv=new MoveWork(null,null,null,new LoadFileDesc(fsInputDesc.getDirName(),finalName,true,null,null),false);
-  MapredWork cplan=createMergeTask(ctx.getConf(),tsMerge,fsInputDesc);
+  MapredWork cplan;
+  if (parseCtx.getConf().getBoolVar(HiveConf.ConfVars.HIVEMERGERCFILEBLOCKLEVEL) && fsInputDesc.getTableInfo().getInputFileFormatClass().equals(RCFileInputFormat.class)) {
+    String inputFormatClass=parseCtx.getConf().getVar(HiveConf.ConfVars.HIVEMERGEINPUTFORMATBLOCKLEVEL);
+    try {
+      Class c=(Class<? extends InputFormat>)Class.forName(inputFormatClass);
+      LOG.info("RCFile format- Using block level merge");
+      cplan=createRCFileMergeTask(fsInputDesc,finalName,dpCtx != null && dpCtx.getNumDPCols() > 0);
+    }
+ catch (    ClassNotFoundException e) {
+      String msg="Illegal input format class: " + inputFormatClass;
+      throw new SemanticException(msg);
+    }
+  }
+ else {
+    cplan=createMergeTask(ctx.getConf(),tsMerge,fsInputDesc);
+  }
   cplan.setInputformat("org.apache.hadoop.hive.ql.io.CombineHiveInputFormat");
   ConditionalTask cndTsk=createCondTask(ctx.getConf(),ctx.getCurrTask(),dummyMv,cplan,fsInputDesc.getDirName());
   ConditionalResolverMergeFilesCtx mrCtx=(ConditionalResolverMergeFilesCtx)cndTsk.getResolverCtx();
