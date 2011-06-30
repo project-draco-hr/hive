@@ -1,0 +1,21 @@
+{
+  boolean commited=false;
+  long delCnt;
+  LOG.debug("Begin executing cleanupEvents");
+  Long expiryTime=HiveConf.getLongVar(getConf(),ConfVars.METASTORE_EVENT_EXPIRY_DURATION) * 1000L;
+  Long curTime=System.currentTimeMillis();
+  try {
+    openTransaction();
+    Query query=pm.newQuery(MPartitionEvent.class,"curTime - eventTime > expiryTime");
+    query.declareParameters("java.lang.Long curTime, java.lang.Long expiryTime");
+    delCnt=query.deletePersistentAll(curTime,expiryTime);
+    commited=commitTransaction();
+  }
+  finally {
+    if (!commited) {
+      rollbackTransaction();
+    }
+    LOG.debug("Done executing cleanupEvents");
+  }
+  return delCnt;
+}
