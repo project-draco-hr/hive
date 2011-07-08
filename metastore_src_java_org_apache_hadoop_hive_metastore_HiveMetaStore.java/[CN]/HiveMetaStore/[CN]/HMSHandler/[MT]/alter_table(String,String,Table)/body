@@ -4,19 +4,26 @@
     newTable.putToParameters(Constants.DDL_TIME,Long.toString(System.currentTimeMillis() / 1000));
   }
   try {
-    executeWithRetry(new Command<Boolean>(){
+    Table oldt=get_table(dbname,name);
+    boolean success=executeWithRetry(new Command<Boolean>(){
       @Override public Boolean run(      RawStore ms) throws Exception {
         alterHandler.alterTable(ms,wh,dbname,name,newTable);
         return Boolean.TRUE;
       }
     }
 );
+    for (    MetaStoreEventListener listener : listeners) {
+      listener.onAlterTable(new AlterTableEvent(oldt,newTable,success,this));
+    }
   }
  catch (  MetaException e) {
     throw e;
   }
 catch (  InvalidOperationException e) {
     throw e;
+  }
+catch (  NoSuchObjectException e) {
+    throw new InvalidOperationException(e.getMessage());
   }
 catch (  Exception e) {
     assert(e instanceof RuntimeException);
