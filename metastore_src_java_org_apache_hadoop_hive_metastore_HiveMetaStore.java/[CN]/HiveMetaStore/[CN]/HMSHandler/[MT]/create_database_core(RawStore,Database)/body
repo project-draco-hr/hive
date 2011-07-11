@@ -2,21 +2,32 @@
   if (!validateName(db.getName())) {
     throw new InvalidObjectException(db.getName() + " is not a valid database name");
   }
+  if (null == db.getLocationUri()) {
+    db.setLocationUri(getDefaultDatabasePath(db.getName()).toString());
+  }
+ else {
+    db.setLocationUri(wh.getDnsPath(new Path(db.getLocationUri())).toString());
+  }
+  Path dbPath=new Path(db.getLocationUri());
   boolean success=false;
+  boolean madeDir=false;
   try {
-    ms.openTransaction();
-    if (null == db.getLocationUri()) {
-      db.setLocationUri(wh.getDefaultDatabasePath(db.getName()).toString());
+    if (!wh.isDir(dbPath)) {
+      if (!wh.mkdirs(dbPath)) {
+        throw new MetaException("Unable to create database path " + dbPath + ", failed to create database "+ db.getName());
+      }
+      madeDir=true;
     }
+    ms.openTransaction();
     ms.createDatabase(db);
     success=ms.commitTransaction();
   }
   finally {
     if (!success) {
       ms.rollbackTransaction();
-    }
- else {
-      wh.mkdirs(new Path(db.getLocationUri()));
+      if (madeDir) {
+        wh.deleteDir(dbPath,true);
+      }
     }
     for (    MetaStoreEventListener listener : listeners) {
       listener.onCreateDatabase(new CreateDatabaseEvent(db,success,this));
