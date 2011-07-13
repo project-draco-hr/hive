@@ -1,11 +1,12 @@
 {
+  boolean hasUnpushedPredicates=false;
   if (nd.getChildren() == null || nd.getChildren().size() > 1) {
-    return;
+    return hasUnpushedPredicates;
   }
   Operator<? extends Serializable> op=(Operator<? extends Serializable>)nd;
   ExprWalkerInfo childPreds=owi.getPrunedPreds((Operator<? extends Serializable>)nd.getChildren().get(0));
   if (childPreds == null) {
-    return;
+    return hasUnpushedPredicates;
   }
   if (ewi == null) {
     ewi=new ExprWalkerInfo();
@@ -13,9 +14,13 @@
   for (  Entry<String,List<ExprNodeDesc>> e : childPreds.getFinalCandidates().entrySet()) {
     if (ignoreAliases || aliases == null || aliases.contains(e.getKey()) || e.getKey() == null) {
       ExprWalkerInfo extractPushdownPreds=ExprWalkerProcFactory.extractPushdownPreds(owi,op,e.getValue());
+      if (!extractPushdownPreds.getNonFinalCandidates().isEmpty()) {
+        hasUnpushedPredicates=true;
+      }
       ewi.merge(extractPushdownPreds);
       logExpr(nd,extractPushdownPreds);
     }
   }
   owi.putPrunedPreds((Operator<? extends Serializable>)nd,ewi);
+  return hasUnpushedPredicates;
 }

@@ -3,15 +3,23 @@
   OpWalkerInfo owi=(OpWalkerInfo)procCtx;
   Operator<? extends Serializable> op=(Operator<? extends Serializable>)nd;
   ExprNodeDesc predicate=(((FilterOperator)nd).getConf()).getPredicate();
-  ExprWalkerInfo ewi=ExprWalkerProcFactory.extractPushdownPreds(owi,op,predicate);
-  if (!ewi.isDeterministic()) {
-    if (op.getChildren() != null && op.getChildren().size() == 1) {
-      createFilter(op,owi.getPrunedPreds((Operator<? extends Serializable>)(op.getChildren().get(0))),owi);
+  ExprWalkerInfo ewi=new ExprWalkerInfo();
+  if (!((FilterOperator)op).getConf().getIsSamplingPred()) {
+    ewi=ExprWalkerProcFactory.extractPushdownPreds(owi,op,predicate);
+    if (!ewi.isDeterministic()) {
+      if (op.getChildren() != null && op.getChildren().size() == 1) {
+        createFilter(op,owi.getPrunedPreds((Operator<? extends Serializable>)(op.getChildren().get(0))),owi);
+      }
+      return null;
     }
-    return null;
+    if (HiveConf.getBoolVar(owi.getParseContext().getConf(),HiveConf.ConfVars.HIVEPPDREMOVEDUPLICATEFILTERS)) {
+      if (ewi.getNonFinalCandidates().values().isEmpty()) {
+        owi.addCandidateFilterOp((FilterOperator)op);
+      }
+    }
+    logExpr(nd,ewi);
+    owi.putPrunedPreds((Operator<? extends Serializable>)nd,ewi);
   }
-  logExpr(nd,ewi);
-  owi.putPrunedPreds(op,ewi);
   mergeWithChildrenPred(op,owi,ewi,null,false);
   return null;
 }
