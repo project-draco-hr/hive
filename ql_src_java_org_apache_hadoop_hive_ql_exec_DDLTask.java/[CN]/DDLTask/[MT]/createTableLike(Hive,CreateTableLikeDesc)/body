@@ -1,23 +1,62 @@
 {
-  Table tbl=db.getTable(crtTbl.getLikeTableName());
-  String targetTableName=crtTbl.getTableName();
-  Table newTable=db.newTable(targetTableName);
-  tbl.setDbName(newTable.getDbName());
-  tbl.setTableName(newTable.getTableName());
-  if (crtTbl.isExternal()) {
-    tbl.setProperty("EXTERNAL","TRUE");
+  Table oldtbl=db.getTable(crtTbl.getLikeTableName());
+  Table tbl;
+  if (oldtbl.getTableType() == TableType.VIRTUAL_VIEW) {
+    String targetTableName=crtTbl.getTableName();
+    tbl=db.newTable(targetTableName);
+    tbl.setTableType(TableType.MANAGED_TABLE);
+    if (crtTbl.isExternal()) {
+      tbl.setProperty("EXTERNAL","TRUE");
+      tbl.setTableType(TableType.EXTERNAL_TABLE);
+    }
+    tbl.setFields(oldtbl.getCols());
+    tbl.setPartCols(oldtbl.getPartCols());
+    if (crtTbl.getDefaultSerName() == null) {
+      LOG.info("Default to LazySimpleSerDe for table " + crtTbl.getTableName());
+      tbl.setSerializationLib(org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe.class.getName());
+    }
+ else {
+      validateSerDe(crtTbl.getDefaultSerName());
+      tbl.setSerializationLib(crtTbl.getDefaultSerName());
+    }
+    if (crtTbl.getDefaultSerdeProps() != null) {
+      Iterator<Entry<String,String>> iter=crtTbl.getDefaultSerdeProps().entrySet().iterator();
+      while (iter.hasNext()) {
+        Entry<String,String> m=iter.next();
+        tbl.setSerdeParam(m.getKey(),m.getValue());
+      }
+    }
+    tbl.setInputFormatClass(crtTbl.getDefaultInputFormat());
+    tbl.setOutputFormatClass(crtTbl.getDefaultOutputFormat());
+    tbl.getTTable().getSd().setInputFormat(tbl.getInputFormatClass().getName());
+    tbl.getTTable().getSd().setOutputFormat(tbl.getOutputFormatClass().getName());
   }
  else {
-    tbl.setProperty("EXTERNAL","FALSE");
-  }
-  if (crtTbl.getLocation() != null) {
-    tbl.setDataLocation(new Path(crtTbl.getLocation()).toUri());
-  }
+    tbl=oldtbl;
+    String targetTableName=crtTbl.getTableName();
+    Table newTable=db.newTable(targetTableName);
+    tbl.setDbName(newTable.getDbName());
+    tbl.setTableName(newTable.getTableName());
+    if (crtTbl.getLocation() != null) {
+      tbl.setDataLocation(new Path(crtTbl.getLocation()).toUri());
+    }
  else {
-    tbl.unsetDataLocation();
+      tbl.unsetDataLocation();
+    }
+    Map<String,String> params=tbl.getParameters();
+    params.clear();
+    if (crtTbl.isExternal()) {
+      tbl.setProperty("EXTERNAL","TRUE");
+      tbl.setTableType(TableType.EXTERNAL_TABLE);
+    }
+ else {
+      tbl.getParameters().remove("EXTERNAL");
+    }
   }
-  Map<String,String> params=tbl.getParameters();
-  params.clear();
+  int rc=setGenericTableAttributes(tbl);
+  if (rc != 0) {
+    return rc;
+  }
   db.createTable(tbl,crtTbl.getIfNotExists());
   work.getOutputs().add(new WriteEntity(tbl));
   return 0;
