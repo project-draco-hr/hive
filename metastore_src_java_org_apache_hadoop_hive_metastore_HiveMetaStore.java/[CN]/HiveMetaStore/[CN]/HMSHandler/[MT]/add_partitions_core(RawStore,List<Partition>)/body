@@ -3,10 +3,12 @@
   String tbl=parts.get(0).getTableName();
   logInfo("add_partitions : db=" + db + " tbl="+ tbl);
   boolean success=false;
+  Map<Partition,Boolean> addedPartitions=new HashMap<Partition,Boolean>();
   try {
     ms.openTransaction();
     for (    Partition part : parts) {
-      add_partition(part);
+      Entry<Partition,Boolean> e=add_partition_core_notxn(ms,part);
+      addedPartitions.put(e.getKey(),e.getValue());
     }
     success=true;
     ms.commitTransaction();
@@ -14,6 +16,11 @@
   finally {
     if (!success) {
       ms.rollbackTransaction();
+      for (      Entry<Partition,Boolean> e : addedPartitions.entrySet()) {
+        if (e.getValue()) {
+          wh.deleteDir(new Path(e.getKey().getSd().getLocation()),true);
+        }
+      }
     }
   }
   return parts.size();
