@@ -3,24 +3,27 @@
   String tableName=colPath.substring(0,colPath.indexOf('.') == -1 ? colPath.length() : colPath.indexOf('.'));
   Table tbl=db.getTable(tableName,false);
   Partition part=null;
+  DataOutput outStream=null;
   try {
     Path resFile=new Path(descTbl.getResFile());
     if (tbl == null) {
       FileSystem fs=resFile.getFileSystem(conf);
-      DataOutput outStream=(DataOutput)fs.open(resFile);
+      outStream=(DataOutput)fs.open(resFile);
       String errMsg="Table " + tableName + " does not exist";
       outStream.write(errMsg.getBytes("UTF-8"));
       ((FSDataOutputStream)outStream).close();
+      outStream=null;
       return 0;
     }
     if (descTbl.getPartSpec() != null) {
       part=db.getPartition(tbl,descTbl.getPartSpec(),false);
       if (part == null) {
         FileSystem fs=resFile.getFileSystem(conf);
-        DataOutput outStream=(DataOutput)fs.open(resFile);
+        outStream=(DataOutput)fs.open(resFile);
         String errMsg="Partition " + descTbl.getPartSpec() + " for table "+ tableName+ " does not exist";
         outStream.write(errMsg.getBytes("UTF-8"));
         ((FSDataOutputStream)outStream).close();
+        outStream=null;
         return 0;
       }
       tbl=part.getTable();
@@ -34,11 +37,14 @@ catch (  IOException e) {
     LOG.info("describe table: " + stringifyException(e));
     return 1;
   }
+ finally {
+    IOUtils.closeStream((FSDataOutputStream)outStream);
+  }
   try {
     LOG.info("DDLTask: got data for " + tbl.getTableName());
     Path resFile=new Path(descTbl.getResFile());
     FileSystem fs=resFile.getFileSystem(conf);
-    DataOutput outStream=fs.create(resFile);
+    outStream=fs.create(resFile);
     if (colPath.equals(tableName)) {
       if (!descTbl.isFormatted()) {
         List<FieldSchema> cols=tbl.getCols();
@@ -89,6 +95,7 @@ catch (  IOException e) {
     }
     LOG.info("DDLTask: written data for " + tbl.getTableName());
     ((FSDataOutputStream)outStream).close();
+    outStream=null;
   }
  catch (  FileNotFoundException e) {
     LOG.info("describe table: " + stringifyException(e));
@@ -100,6 +107,9 @@ catch (  IOException e) {
   }
 catch (  Exception e) {
     throw new HiveException(e);
+  }
+ finally {
+    IOUtils.closeStream((FSDataOutputStream)outStream);
   }
   return 0;
 }
