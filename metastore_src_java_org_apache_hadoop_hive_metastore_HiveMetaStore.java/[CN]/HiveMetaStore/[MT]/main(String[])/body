@@ -1,10 +1,24 @@
 {
-  int port=9083;
-  if (args.length > 0) {
-    port=new Integer(args[0]);
+  HiveMetastoreCli cli=new HiveMetastoreCli();
+  cli.parse(args);
+  Properties hiveconf=cli.addHiveconfToSystemProperties();
+  try {
+    LogUtils.initHiveLog4j();
+  }
+ catch (  LogInitializationException e) {
+    HMSHandler.LOG.warn(e.getMessage());
   }
   try {
-    startMetaStore(port,ShimLoader.getHadoopThriftAuthBridge());
+    String msg="Starting hive metastore on port " + cli.port;
+    HMSHandler.LOG.info(msg);
+    if (cli.isVerbose()) {
+      System.err.println(msg);
+    }
+    HiveConf conf=new HiveConf(HMSHandler.class);
+    for (    Map.Entry<Object,Object> item : hiveconf.entrySet()) {
+      conf.set((String)item.getKey(),(String)item.getValue());
+    }
+    startMetaStore(cli.port,ShimLoader.getHadoopThriftAuthBridge(),conf);
   }
  catch (  Throwable t) {
     HMSHandler.LOG.error("Metastore Thrift Server threw an exception...",t);

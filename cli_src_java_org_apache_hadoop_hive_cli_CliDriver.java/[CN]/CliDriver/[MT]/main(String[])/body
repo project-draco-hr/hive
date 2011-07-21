@@ -3,7 +3,15 @@
   if (!oproc.process_stage1(args)) {
     System.exit(1);
   }
-  SessionState.initHiveLog4j();
+  boolean logInitFailed=false;
+  String logInitDetailMessage;
+  try {
+    logInitDetailMessage=LogUtils.initHiveLog4j();
+  }
+ catch (  LogInitializationException e) {
+    logInitFailed=true;
+    logInitDetailMessage=e.getMessage();
+  }
   CliSessionState ss=new CliSessionState(new HiveConf(SessionState.class));
   ss.in=System.in;
   try {
@@ -16,7 +24,14 @@
   if (!oproc.process_stage2(ss)) {
     System.exit(2);
   }
-  ss.printInitInfo();
+  if (!ss.getIsSilent()) {
+    if (logInitFailed) {
+      System.err.println(logInitDetailMessage);
+    }
+ else {
+      SessionState.getConsole().printInfo(logInitDetailMessage);
+    }
+  }
   HiveConf conf=ss.getConf();
   for (  Map.Entry<Object,Object> item : ss.cmdProperties.entrySet()) {
     conf.set((String)item.getKey(),(String)item.getValue());

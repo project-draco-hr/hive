@@ -1,0 +1,35 @@
+{
+  try {
+    HMSHandler handler=new HMSHandler("new db based metaserver",conf);
+    int minWorkerThreads=conf.getIntVar(HiveConf.ConfVars.METASTORESERVERMINTHREADS);
+    int maxWorkerThreads=conf.getIntVar(HiveConf.ConfVars.METASTORESERVERMAXTHREADS);
+    boolean tcpKeepAlive=conf.getBoolVar(HiveConf.ConfVars.METASTORE_TCP_KEEP_ALIVE);
+    useSasl=conf.getBoolVar(HiveConf.ConfVars.METASTORE_USE_THRIFT_SASL);
+    TServerTransport serverTransport=tcpKeepAlive ? new TServerSocketKeepAlive(port) : new TServerSocket(port);
+    TProcessor processor=new ThriftHiveMetastore.Processor(handler);
+    TTransportFactory transFactory;
+    if (useSasl) {
+      saslServer=bridge.createServer(conf.getVar(HiveConf.ConfVars.METASTORE_KERBEROS_KEYTAB_FILE),conf.getVar(HiveConf.ConfVars.METASTORE_KERBEROS_PRINCIPAL));
+      saslServer.startDelegationTokenSecretManager(conf);
+      transFactory=saslServer.createTransportFactory();
+      processor=saslServer.wrapProcessor(processor);
+    }
+ else {
+      transFactory=new TTransportFactory();
+    }
+    TThreadPoolServer.Options options=new TThreadPoolServer.Options();
+    options.minWorkerThreads=minWorkerThreads;
+    options.maxWorkerThreads=maxWorkerThreads;
+    TServer tServer=new TThreadPoolServer(processor,serverTransport,transFactory,transFactory,new TBinaryProtocol.Factory(),new TBinaryProtocol.Factory(),options);
+    HMSHandler.LOG.info("Started the new metaserver on port [" + port + "]...");
+    HMSHandler.LOG.info("Options.minWorkerThreads = " + options.minWorkerThreads);
+    HMSHandler.LOG.info("Options.maxWorkerThreads = " + options.maxWorkerThreads);
+    HMSHandler.LOG.info("TCP keepalive = " + tcpKeepAlive);
+    tServer.serve();
+  }
+ catch (  Throwable x) {
+    x.printStackTrace();
+    HMSHandler.LOG.error(StringUtils.stringifyException(x));
+    throw x;
+  }
+}

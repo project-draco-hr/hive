@@ -1,20 +1,29 @@
 {
   try {
-    SessionState.initHiveLog4j();
-    int port=10000;
-    int minWorkerThreads=100;
-    if (args.length >= 1) {
-      port=Integer.parseInt(args[0]);
+    HiveServerCli cli=new HiveServerCli();
+    cli.parse(args);
+    Properties hiveconf=cli.addHiveconfToSystemProperties();
+    try {
+      LogUtils.initHiveLog4j();
     }
-    if (args.length >= 2) {
-      minWorkerThreads=Integer.parseInt(args[1]);
+ catch (    LogInitializationException e) {
+      HiveServerHandler.LOG.warn(e.getMessage());
     }
-    TServerTransport serverTransport=new TServerSocket(port);
-    ThriftHiveProcessorFactory hfactory=new ThriftHiveProcessorFactory(null);
+    TServerTransport serverTransport=new TServerSocket(cli.port);
+    HiveConf conf=new HiveConf(HiveServerHandler.class);
+    for (    Map.Entry<Object,Object> item : hiveconf.entrySet()) {
+      conf.set((String)item.getKey(),(String)item.getValue());
+    }
+    ThriftHiveProcessorFactory hfactory=new ThriftHiveProcessorFactory(null,conf);
     TThreadPoolServer.Options options=new TThreadPoolServer.Options();
-    options.minWorkerThreads=minWorkerThreads;
+    options.minWorkerThreads=cli.minWorkerThreads;
+    options.maxWorkerThreads=cli.maxWorkerThreads;
     TServer server=new TThreadPoolServer(hfactory,serverTransport,new TTransportFactory(),new TTransportFactory(),new TBinaryProtocol.Factory(),new TBinaryProtocol.Factory(),options);
-    HiveServerHandler.LOG.info("Starting hive server on port " + port);
+    String msg="Starting hive server on port " + cli.port + " with "+ cli.minWorkerThreads+ " min worker threads and "+ cli.maxWorkerThreads+ " max worker threads";
+    HiveServerHandler.LOG.info(msg);
+    if (cli.isVerbose()) {
+      System.err.println(msg);
+    }
     server.serve();
   }
  catch (  Exception x) {
