@@ -1,0 +1,23 @@
+{
+  TextStringMapHolder o1=new TextStringMapHolder();
+  StructObjectInspector oi1=(StructObjectInspector)ObjectInspectorFactory.getReflectionObjectInspector(TextStringMapHolder.class,ObjectInspectorOptions.JAVA);
+  LazySimpleSerDe serde=new LazySimpleSerDe();
+  Configuration conf=new Configuration();
+  Properties tbl=new Properties();
+  tbl.setProperty(Constants.LIST_COLUMNS,ObjectInspectorUtils.getFieldNames(oi1));
+  tbl.setProperty(Constants.LIST_COLUMN_TYPES,ObjectInspectorUtils.getFieldTypes(oi1));
+  SerDeParameters serdeParams=LazySimpleSerDe.initSerdeParams(conf,tbl,LazySimpleSerDe.class.getName());
+  serde.initialize(conf,tbl);
+  ObjectInspector oi2=serde.getObjectInspector();
+  Object o2=serializeAndDeserialize(o1,oi1,serde,serdeParams);
+  int rc=ObjectInspectorUtils.compare(o1,oi1,o2,oi2,new CrossMapEqualComparer());
+  assertEquals(0,rc);
+  o1.mMap.put(new Text("42"),"The answer to Life, Universe And Everything");
+  o1.mMap.put(new Text("1729"),"A taxi cab number");
+  o2=serializeAndDeserialize(o1,oi1,serde,serdeParams);
+  rc=ObjectInspectorUtils.compare(o1,oi1,o2,oi2,new CrossMapEqualComparer());
+  assertEquals(0,rc);
+  o1.mMap.put(new Text("1729"),"Hardy-Ramanujan Number");
+  rc=ObjectInspectorUtils.compare(o1,oi1,o2,oi2,new CrossMapEqualComparer());
+  assertFalse(0 == rc);
+}
