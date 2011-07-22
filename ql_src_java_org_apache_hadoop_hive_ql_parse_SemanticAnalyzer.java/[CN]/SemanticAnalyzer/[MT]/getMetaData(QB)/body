@@ -2,6 +2,7 @@
   try {
     LOG.info("Get metadata for source tables");
     List<String> tabAliases=new ArrayList<String>(qb.getTabAliases());
+    Map<String,String> aliasToViewName=new HashMap<String,String>();
     for (    String alias : tabAliases) {
       String tab_name=qb.getTabNameForAlias(alias);
       Table tab=null;
@@ -24,7 +25,12 @@
         if (qb.getParseInfo().isAnalyzeCommand()) {
           throw new SemanticException(ErrorMsg.ANALYZE_VIEW.getMsg());
         }
+        String fullViewName=tab.getDbName() + "." + tab.getTableName();
+        if (viewsExpanded.contains(fullViewName)) {
+          throw new SemanticException("Recursive view " + fullViewName + " detected (cycle: "+ StringUtils.join(viewsExpanded," -> ")+ " -> "+ fullViewName+ ").");
+        }
         replaceViewReferenceWithDefinition(qb,tab,tab_name,alias);
+        aliasToViewName.put(alias,fullViewName);
         continue;
       }
       if (!InputFormat.class.isAssignableFrom(tab.getInputFormatClass())) {
@@ -46,8 +52,15 @@
     }
     LOG.info("Get metadata for subqueries");
     for (    String alias : qb.getSubqAliases()) {
+      boolean wasView=aliasToViewName.containsKey(alias);
+      if (wasView) {
+        viewsExpanded.add(aliasToViewName.get(alias));
+      }
       QBExpr qbexpr=qb.getSubqForAlias(alias);
       getMetaData(qbexpr);
+      if (wasView) {
+        viewsExpanded.remove(viewsExpanded.size() - 1);
+      }
     }
     LOG.info("Get metadata for destination tables");
     QBParseInfo qbp=qb.getParseInfo();
