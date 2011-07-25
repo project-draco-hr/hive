@@ -10,6 +10,9 @@
   long pullInterval=HiveConf.getLongVar(job,HiveConf.ConfVars.HIVECOUNTERSPULLINTERVAL);
   boolean initializing=true;
   boolean initOutputPrinted=false;
+  long cpuMsec=-1;
+  int numMap=-1;
+  int numReduce=-1;
   while (!rj.isComplete()) {
     try {
       Thread.sleep(pullInterval);
@@ -31,7 +34,7 @@
         logMapper="no information for number of mappers; ";
       }
  else {
-        int numMap=mappers.length;
+        numMap=mappers.length;
         if (ss != null) {
           ss.getHiveHistory().setTaskProperty(SessionState.get().getQueryId(),getId(),Keys.TASK_NUM_MAPPERS,Integer.toString(numMap));
         }
@@ -42,7 +45,7 @@
         logReducer="no information for number of reducers. ";
       }
  else {
-        int numReduce=reducers.length;
+        numReduce=reducers.length;
         if (ss != null) {
           ss.getHiveHistory().setTaskProperty(SessionState.get().getQueryId(),getId(),Keys.TASK_NUM_REDUCERS,Integer.toString(numReduce));
         }
@@ -72,6 +75,14 @@
     updateCounters(ctrs,rj);
     String report=" " + getId() + " map = "+ mapProgress+ "%,  reduce = "+ reduceProgress+ "%";
     if (!report.equals(lastReport) || System.currentTimeMillis() >= reportTime + maxReportInterval) {
+      Counter counterCpuMsec=ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","CPU_MILLISECONDS");
+      if (counterCpuMsec != null) {
+        long newCpuMSec=counterCpuMsec.getValue();
+        if (newCpuMSec > 0) {
+          cpuMsec=newCpuMSec;
+          report+=", Cumulative CPU " + (cpuMsec / 1000D) + " sec";
+        }
+      }
       String output=dateFormat.format(Calendar.getInstance().getTime()) + report;
       SessionState ss=SessionState.get();
       if (ss != null) {
@@ -84,6 +95,9 @@
       lastReport=report;
       reportTime=System.currentTimeMillis();
     }
+  }
+  if (cpuMsec > 0) {
+    console.printInfo("MapReduce Total cumulative CPU time: " + Utilities.formatMsecToStr(cpuMsec));
   }
   boolean success;
   Counters ctrs=th.getCounters();
@@ -99,11 +113,48 @@
       success=rj.isSuccessful();
     }
   }
+  Counter counterCpuMsec=ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","CPU_MILLISECONDS");
+  if (counterCpuMsec != null) {
+    long newCpuMSec=counterCpuMsec.getValue();
+    if (newCpuMSec > cpuMsec) {
+      cpuMsec=newCpuMSec;
+    }
+  }
+  MapRedStats mapRedStats=new MapRedStats(numMap,numReduce,cpuMsec,success);
+  Counter ctr;
+  ctr=ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","REDUCE_SHUFFLE_BYTES");
+  if (ctr != null) {
+    mapRedStats.setReduceShuffleBytes(ctr.getValue());
+  }
+  ctr=ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","MAP_INPUT_RECORDS");
+  if (ctr != null) {
+    mapRedStats.setMapInputRecords(ctr.getValue());
+  }
+  ctr=ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","MAP_OUTPUT_RECORDS");
+  if (ctr != null) {
+    mapRedStats.setMapOutputRecords(ctr.getValue());
+  }
+  ctr=ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","REDUCE_INPUT_RECORDS");
+  if (ctr != null) {
+    mapRedStats.setReduceInputRecords(ctr.getValue());
+  }
+  ctr=ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","REDUCE_OUTPUT_RECORDS");
+  if (ctr != null) {
+    mapRedStats.setReduceOutputRecords(ctr.getValue());
+  }
+  ctr=ctrs.findCounter("FileSystemCounters","HDFS_BYTES_READ");
+  if (ctr != null) {
+    mapRedStats.setHdfsRead(ctr.getValue());
+  }
+  ctr=ctrs.findCounter("FileSystemCounters","HDFS_BYTES_WRITTEN");
+  if (ctr != null) {
+    mapRedStats.setHdfsWrite(ctr.getValue());
+  }
   this.task.setDone();
   updateCounters(ctrs,rj);
   SessionState ss=SessionState.get();
   if (ss != null) {
     this.callBackObj.logPlanProgress(ss);
   }
-  return (success);
+  return mapRedStats;
 }
