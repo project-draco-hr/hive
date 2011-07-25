@@ -11,6 +11,8 @@
   }
   ArrayList<InputSplit> result=new ArrayList<InputSplit>();
   Path[] paths=combine.getInputPathsShim(job);
+  List<Path> inpDirs=new ArrayList<Path>();
+  List<Path> inpFiles=new ArrayList<Path>();
   Map<CombinePathInputFormat,CombineFilter> poolMap=new HashMap<CombinePathInputFormat,CombineFilter>();
   Set<Path> poolSet=new HashSet<Path>();
   for (  Path path : paths) {
@@ -51,9 +53,6 @@
       return super.getSplits(job,numSplits);
     }
     Path filterPath=path;
-    if (mrwork.isMapperCannotSpanPartns() && !path.getFileSystem(job).getFileStatus(path).isDir()) {
-      filterPath=path.getParent();
-    }
     CombineFilter f=null;
     List<Operator<? extends Serializable>> opList=null;
     boolean done=false;
@@ -62,11 +61,15 @@
       f=poolMap.get(new CombinePathInputFormat(opList,inputFormatClassName));
     }
  else {
-      if (poolSet.contains(filterPath)) {
-        LOG.info("CombineHiveInputSplit: pool is already created for " + path + "; using filter path "+ filterPath);
-        done=true;
+      if (!path.getFileSystem(job).getFileStatus(path).isDir()) {
+        filterPath=path.getParent();
+        inpFiles.add(path);
+        poolSet.add(filterPath);
       }
-      poolSet.add(filterPath);
+ else {
+        inpDirs.add(path);
+      }
+      done=true;
     }
     if (!done) {
       if (f == null) {
@@ -83,7 +86,21 @@
       }
     }
   }
-  InputSplitShim[] iss=combine.getSplits(job,1);
+  List<InputSplitShim> iss=new ArrayList<InputSplitShim>();
+  if (!mrwork.isMapperCannotSpanPartns()) {
+    iss=Arrays.asList(combine.getSplits(job,1));
+  }
+ else {
+    for (    Path path : inpDirs) {
+      processPaths(job,combine,iss,path);
+    }
+    if (inpFiles.size() > 0) {
+      for (      Path filterPath : poolSet) {
+        combine.createPool(job,new CombineFilter(filterPath));
+      }
+      processPaths(job,combine,iss,inpFiles.toArray(new Path[0]));
+    }
+  }
   if (mrwork.getNameToSplitSample() != null && !mrwork.getNameToSplitSample().isEmpty()) {
     iss=sampleSplits(iss);
   }
