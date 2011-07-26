@@ -1,0 +1,18 @@
+{
+  StructObjectInspector oi=(StructObjectInspector)ObjectInspectorFactory.getReflectionObjectInspector(OuterStruct.class,ObjectInspectorOptions.JAVA);
+  String cols=ObjectInspectorUtils.getFieldNames(oi);
+  Properties props=new Properties();
+  props.setProperty(Constants.LIST_COLUMNS,cols);
+  props.setProperty(Constants.LIST_COLUMN_TYPES,ObjectInspectorUtils.getFieldTypes(oi));
+  LazyBinaryColumnarSerDe serde=new LazyBinaryColumnarSerDe();
+  serde.initialize(new Configuration(),props);
+  OuterStruct outerStruct=new OuterStruct();
+  BytesRefArrayWritable braw=(BytesRefArrayWritable)serde.serialize(outerStruct,oi);
+  ObjectInspector out_oi=serde.getObjectInspector();
+  Object out_o=serde.deserialize(braw);
+  if (0 != ObjectInspectorUtils.compare(outerStruct,oi,out_o,out_oi,new SimpleMapEqualComparer())) {
+    System.out.println("expected = " + SerDeUtils.getJSONString(outerStruct,oi));
+    System.out.println("actual = " + SerDeUtils.getJSONString(out_o,out_oi));
+    fail("Deserialized object does not compare");
+  }
+}
