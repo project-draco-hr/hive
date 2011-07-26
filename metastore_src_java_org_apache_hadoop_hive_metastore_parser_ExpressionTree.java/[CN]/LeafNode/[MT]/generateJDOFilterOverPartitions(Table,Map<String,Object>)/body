@@ -1,0 +1,58 @@
+{
+  int partitionColumnCount=table.getPartitionKeys().size();
+  int partitionColumnIndex;
+  for (partitionColumnIndex=0; partitionColumnIndex < partitionColumnCount; partitionColumnIndex++) {
+    if (table.getPartitionKeys().get(partitionColumnIndex).getName().equalsIgnoreCase(keyName)) {
+      break;
+    }
+  }
+  assert(table.getPartitionKeys().size() > 0);
+  if (partitionColumnIndex == table.getPartitionKeys().size()) {
+    throw new MetaException("Specified key <" + keyName + "> is not a partitioning key for the table");
+  }
+  if (!table.getPartitionKeys().get(partitionColumnIndex).getType().equals(org.apache.hadoop.hive.serde.Constants.STRING_TYPE_NAME)) {
+    throw new MetaException("Filtering is supported only on partition keys of type string");
+  }
+  String valueParam=null;
+  try {
+    valueParam=(String)value;
+  }
+ catch (  ClassCastException e) {
+    throw new MetaException("Filtering is supported only on partition keys of type string");
+  }
+  String paramName=PARAM_PREFIX + params.size();
+  params.put(paramName,valueParam);
+  String filter;
+  String keyEqual=FileUtils.escapePathName(keyName) + "=";
+  int keyEqualLength=keyEqual.length();
+  String valString;
+  if (partitionColumnIndex == (partitionColumnCount - 1)) {
+    valString="partitionName.substring(partitionName.indexOf(\"" + keyEqual + "\")+"+ keyEqualLength+ ")";
+  }
+ else {
+    valString="partitionName.substring(partitionName.indexOf(\"" + keyEqual + "\")+"+ keyEqualLength+ ").substring(0, partitionName.substring(partitionName.indexOf(\""+ keyEqual+ "\")+"+ keyEqualLength+ ").indexOf(\"/\"))";
+  }
+  if (isReverseOrder) {
+    if (operator == Operator.LIKE) {
+      throw new MetaException("Value should be on the RHS for LIKE operator : " + "Key <" + keyName + ">");
+    }
+ else     if (operator == Operator.EQUALS) {
+      filter=makeFilterForEquals(keyName,valueParam,paramName,params,partitionColumnIndex,partitionColumnCount);
+    }
+ else {
+      filter=paramName + " " + operator.getJdoOp()+ " "+ valString;
+    }
+  }
+ else {
+    if (operator == Operator.LIKE) {
+      filter=" " + valString + "."+ operator.getJdoOp()+ "("+ paramName+ ") ";
+    }
+ else     if (operator == Operator.EQUALS) {
+      filter=makeFilterForEquals(keyName,valueParam,paramName,params,partitionColumnIndex,partitionColumnCount);
+    }
+ else {
+      filter=" " + valString + " "+ operator.getJdoOp()+ " "+ paramName;
+    }
+  }
+  return filter;
+}

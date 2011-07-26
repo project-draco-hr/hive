@@ -1,0 +1,41 @@
+{
+  boolean success=false;
+  List<String> tableNames=new ArrayList<String>();
+  try {
+    openTransaction();
+    LOG.debug("Executing listTableNamesByFilter");
+    dbName=dbName.toLowerCase().trim();
+    Map<String,Object> params=new HashMap<String,Object>();
+    String queryFilterString=makeTableQueryFilterString(filter,params);
+    Query query=pm.newQuery(MTable.class);
+    query.declareImports("import java.lang.String");
+    query.setResult("tableName");
+    query.setResultClass(java.lang.String.class);
+    if (maxTables >= 0) {
+      query.setRange(0,maxTables);
+    }
+    LOG.debug("filter specified is " + filter + ","+ " JDOQL filter is "+ queryFilterString);
+    params.put("dbName",dbName);
+    for (    Entry<String,Object> entry : params.entrySet()) {
+      LOG.debug("key: " + entry.getKey() + " value: "+ entry.getValue()+ " class: "+ entry.getValue().getClass().getName());
+    }
+    String parameterDeclaration=makeParameterDeclarationStringObj(params);
+    query.declareParameters(parameterDeclaration);
+    query.setFilter(queryFilterString);
+    Collection names=(Collection)query.executeWithMap(params);
+    Set<String> tableNamesSet=new HashSet<String>();
+    for (Iterator i=names.iterator(); i.hasNext(); ) {
+      tableNamesSet.add((String)i.next());
+    }
+    tableNames=new ArrayList<String>(tableNamesSet);
+    LOG.debug("Done executing query for listTableNamesByFilter");
+    success=commitTransaction();
+    LOG.debug("Done retrieving all objects for listTableNamesByFilter");
+  }
+  finally {
+    if (!success) {
+      rollbackTransaction();
+    }
+  }
+  return tableNames;
+}
