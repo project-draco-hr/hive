@@ -5,11 +5,6 @@
     queryContext.setQueryTasks(null);
     return;
   }
-  StringBuilder qlCommand=new StringBuilder("INSERT OVERWRITE DIRECTORY ");
-  String tmpFile=pctx.getContext().getMRTmpFileURI();
-  qlCommand.append("\"" + tmpFile + "\" ");
-  qlCommand.append("SELECT bucketname AS `_bucketname` , COLLECT_SET(offset) AS `_offsets` FROM ");
-  qlCommand.append("(SELECT `_bucketname` AS bucketname , `_offset` AS offset FROM ");
   List<BitmapInnerQuery> iqs=new ArrayList<BitmapInnerQuery>(indexes.size());
   int i=0;
   for (  Index index : indexes) {
@@ -18,6 +13,12 @@
       iqs.add(new BitmapInnerQuery(index.getIndexTableName(),indexPredicate,"ind" + i++));
     }
   }
+  queryContext.setIndexInputFormat(HiveIndexedInputFormat.class.getName());
+  StringBuilder qlCommand=new StringBuilder("INSERT OVERWRITE DIRECTORY ");
+  String tmpFile=pctx.getContext().getMRTmpFileURI();
+  qlCommand.append("\"" + tmpFile + "\" ");
+  qlCommand.append("SELECT bucketname AS `_bucketname` , COLLECT_SET(offset) AS `_offsets` FROM ");
+  qlCommand.append("(SELECT `_bucketname` AS bucketname , `_offset` AS offset FROM ");
   BitmapQuery head=iqs.get(0);
   for (i=1; i < iqs.size(); i++) {
     head=new BitmapOuterQuery("oind" + i,head,iqs.get(i));
@@ -27,7 +28,6 @@
   LOG.info("Generating tasks for re-entrant QL query: " + qlCommand.toString());
   Driver driver=new Driver(pctx.getConf());
   driver.compile(qlCommand.toString(),false);
-  queryContext.setIndexInputFormat(HiveIndexedInputFormat.class.getName());
   queryContext.setIndexIntermediateFile(tmpFile);
   queryContext.addAdditionalSemanticInputs(driver.getPlan().getInputs());
   queryContext.setQueryTasks(driver.getPlan().getRootTasks());

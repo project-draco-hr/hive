@@ -2,6 +2,9 @@
   TableScanOperator operator=(TableScanOperator)nd;
   List<Node> opChildren=operator.getChildren();
   TableScanDesc operatorDesc=operator.getConf();
+  if (operatorDesc == null) {
+    return null;
+  }
   ExprNodeDesc predicate=operatorDesc.getFilterExpr();
   IndexWhereProcCtx context=(IndexWhereProcCtx)procCtx;
   ParseContext pctx=context.getParseContext();
@@ -27,48 +30,42 @@
   }
   MapRedTask currentTask=(MapRedTask)context.getCurrentTask();
   Map<Index,HiveIndexQueryContext> queryContexts=new HashMap<Index,HiveIndexQueryContext>();
-  Collection<List<Index>> tableIndexes=indexes.values();
-  for (  List<Index> indexesOnTable : tableIndexes) {
-    List<List<Index>> indexesByType=new ArrayList<List<Index>>();
-    for (    Index index : indexesOnTable) {
-      boolean added=false;
-      for (      List<Index> indexType : indexesByType) {
-        if (indexType.isEmpty()) {
-          indexType.add(index);
-          added=true;
-        }
- else         if (indexType.get(0).getIndexHandlerClass().equals(index.getIndexHandlerClass())) {
-          indexType.add(index);
-          added=true;
-          break;
-        }
-      }
-      if (!added) {
-        List<Index> newType=new ArrayList<Index>();
-        newType.add(index);
-        indexesByType.add(newType);
-      }
+  TableDesc tblDesc=operator.getTableDesc();
+  Table srcTable=pctx.getTopToTable().get(operator);
+  if (indexes == null || indexes.get(srcTable) == null) {
+    return null;
+  }
+  List<Index> tableIndexes=indexes.get(srcTable);
+  Map<String,List<Index>> indexesByType=new HashMap<String,List<Index>>();
+  for (  Index indexOnTable : tableIndexes) {
+    if (indexesByType.get(indexOnTable.getIndexHandlerClass()) == null) {
+      List<Index> newType=new ArrayList<Index>();
+      newType.add(indexOnTable);
+      indexesByType.put(indexOnTable.getIndexHandlerClass(),newType);
     }
-    List<Index> bestIndexes=indexesByType.get(0);
-    for (    List<Index> indexTypes : indexesByType) {
-      if (bestIndexes.size() < indexTypes.size()) {
-        bestIndexes=indexTypes;
-      }
+ else {
+      indexesByType.get(indexOnTable.getIndexHandlerClass()).add(indexOnTable);
     }
-    HiveIndexQueryContext queryContext=new HiveIndexQueryContext();
-    queryContext.setQueryPartitions(queryPartitions);
-    rewriteForIndexes(predicate,bestIndexes,pctx,currentTask,queryContext);
-    List<Task<?>> indexTasks=queryContext.getQueryTasks();
-    if (indexTasks != null && indexTasks.size() > 0) {
-      queryContexts.put(bestIndexes.get(0),queryContext);
+  }
+  List<Index> bestIndexes=indexesByType.values().iterator().next();
+  for (  List<Index> indexTypes : indexesByType.values()) {
+    if (bestIndexes.size() < indexTypes.size()) {
+      bestIndexes=indexTypes;
     }
+  }
+  HiveIndexQueryContext tmpQueryContext=new HiveIndexQueryContext();
+  tmpQueryContext.setQueryPartitions(queryPartitions);
+  rewriteForIndexes(predicate,bestIndexes,pctx,currentTask,tmpQueryContext);
+  List<Task<?>> indexTasks=tmpQueryContext.getQueryTasks();
+  if (indexTasks != null && indexTasks.size() > 0) {
+    queryContexts.put(bestIndexes.get(0),tmpQueryContext);
   }
   if (queryContexts.size() > 0) {
     Index chosenIndex=queryContexts.keySet().iterator().next();
     HiveIndexQueryContext queryContext=queryContexts.get(chosenIndex);
     MapredWork work=currentTask.getWork();
     work.setInputformat(queryContext.getIndexInputFormat());
-    work.setIndexIntermediateFile(queryContext.getIndexIntermediateFile());
+    work.addIndexIntermediateFile(queryContext.getIndexIntermediateFile());
     Set<ReadEntity> inputs=pctx.getSemanticInputs();
     inputs.addAll(queryContext.getAdditionalSemanticInputs());
     List<Task<?>> chosenRewrite=queryContext.getQueryTasks();
