@@ -59,6 +59,36 @@
     if (!failed) {
       assertTrue("Able to rename table with invalid name: " + invTblName,false);
     }
+    Table tbl_pk=client.getTable(tbl.getDbName(),tbl.getTableName());
+    List<FieldSchema> partitionKeys=tbl_pk.getPartitionKeys();
+    for (    FieldSchema fs : partitionKeys) {
+      fs.setName("invalid_to_change_name");
+      fs.setComment("can_change_comment");
+    }
+    tbl_pk.setPartitionKeys(partitionKeys);
+    try {
+      client.alter_table(dbName,tblName,tbl_pk);
+    }
+ catch (    InvalidOperationException ex) {
+      failed=true;
+    }
+    assertTrue("Should not have succeeded in altering partition key name",failed);
+    failed=false;
+    tbl_pk=client.getTable(tbl.getDbName(),tbl.getTableName());
+    partitionKeys=tbl_pk.getPartitionKeys();
+    for (    FieldSchema fs : partitionKeys) {
+      fs.setComment("can_change_comment");
+    }
+    tbl_pk.setPartitionKeys(partitionKeys);
+    try {
+      client.alter_table(dbName,tblName,tbl_pk);
+    }
+ catch (    InvalidOperationException ex) {
+      failed=true;
+    }
+    assertFalse("Should not have failed alter table partition comment",failed);
+    Table newT=client.getTable(tbl.getDbName(),tbl.getTableName());
+    assertEquals(partitionKeys,newT.getPartitionKeys());
     tbl2.setTableName(tblName + "_renamed");
     tbl2.getSd().setCols(cols);
     tbl2.getSd().setNumBuckets(32);
