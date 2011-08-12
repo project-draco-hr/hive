@@ -1,0 +1,52 @@
+{
+  console.printError("Error during job, obtaining debugging information...");
+  TaskLogGrabber tlg=new TaskLogGrabber();
+  Thread t=new Thread(tlg);
+  try {
+    t.start();
+    t.join(HiveConf.getIntVar(conf,HiveConf.ConfVars.TASKLOG_DEBUG_TIMEOUT));
+  }
+ catch (  InterruptedException e) {
+    console.printError("Timed out trying to finish grabbing task log URLs, " + "some task info may be missing");
+  }
+  for (  String task : successes) {
+    failures.remove(task);
+  }
+  if (failures.keySet().size() == 0) {
+    return;
+  }
+  int maxFailures=0;
+  for (  Integer failCount : failures.values()) {
+    if (maxFailures < failCount.intValue()) {
+      maxFailures=failCount.intValue();
+    }
+  }
+  String jtUrl=JobTrackerURLResolver.getURL(conf);
+  for (  String task : failures.keySet()) {
+    if (failures.get(task).intValue() == maxFailures) {
+      TaskInfo ti=taskIdToInfo.get(task);
+      String jobId=ti.getJobId();
+      String taskUrl=jtUrl + "/taskdetails.jsp?jobid=" + jobId+ "&tipid="+ task.toString();
+      TaskLogProcessor tlp=new TaskLogProcessor(conf);
+      for (      String logUrl : ti.getLogUrls()) {
+        tlp.addTaskAttemptLogUrl(logUrl);
+      }
+      List<ErrorAndSolution> errors=tlp.getErrors();
+      StringBuilder sb=new StringBuilder();
+      sb.append("\n");
+      sb.append("Task with the most failures(" + maxFailures + "): \n");
+      sb.append("-----\n");
+      sb.append("Task ID:\n  " + task + "\n\n");
+      sb.append("URL:\n  " + taskUrl + "\n");
+      for (      ErrorAndSolution e : errors) {
+        sb.append("\n");
+        sb.append("Possible error:\n  " + e.getError() + "\n\n");
+        sb.append("Solution:\n  " + e.getSolution() + "\n");
+      }
+      sb.append("-----\n");
+      console.printError(sb.toString());
+      break;
+    }
+  }
+  return;
+}
