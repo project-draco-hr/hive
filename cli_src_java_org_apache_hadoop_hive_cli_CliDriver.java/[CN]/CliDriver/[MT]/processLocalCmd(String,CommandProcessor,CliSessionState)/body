@@ -1,0 +1,67 @@
+{
+  int tryCount=0;
+  boolean needRetry;
+  int ret=0;
+  do {
+    try {
+      needRetry=false;
+      if (proc != null) {
+        if (proc instanceof Driver) {
+          Driver qp=(Driver)proc;
+          PrintStream out=ss.out;
+          long start=System.currentTimeMillis();
+          if (ss.getIsVerbose()) {
+            out.println(cmd);
+          }
+          qp.setTryCount(tryCount);
+          ret=qp.run(cmd).getResponseCode();
+          if (ret != 0) {
+            qp.close();
+            return ret;
+          }
+          ArrayList<String> res=new ArrayList<String>();
+          printHeader(qp,out);
+          try {
+            while (qp.getResults(res)) {
+              for (              String r : res) {
+                out.println(r);
+              }
+              res.clear();
+              if (out.checkError()) {
+                break;
+              }
+            }
+          }
+ catch (          IOException e) {
+            console.printError("Failed with exception " + e.getClass().getName() + ":"+ e.getMessage(),"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
+            ret=1;
+          }
+          int cret=qp.close();
+          if (ret == 0) {
+            ret=cret;
+          }
+          long end=System.currentTimeMillis();
+          if (end > start) {
+            double timeTaken=(end - start) / 1000.0;
+            console.printInfo("Time taken: " + timeTaken + " seconds",null);
+          }
+        }
+ else {
+          String firstToken=tokenizeCmd(cmd.trim())[0];
+          String cmd_1=getFirstCmd(cmd.trim(),firstToken.length());
+          if (ss.getIsVerbose()) {
+            ss.out.println(firstToken + " " + cmd_1);
+          }
+          ret=proc.run(cmd_1).getResponseCode();
+        }
+      }
+    }
+ catch (    CommandNeedRetryException e) {
+      console.printInfo("Retry query with a different approach...");
+      tryCount++;
+      needRetry=true;
+    }
+  }
+ while (needRetry);
+  return ret;
+}
