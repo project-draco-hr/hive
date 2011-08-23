@@ -32,7 +32,7 @@
   }
   columnNumber=Integer.parseInt(metadata.get(new Text(COLUMN_NUMBER_METADATA_STR)).toString());
   java.util.ArrayList<Integer> notSkipIDs=ColumnProjectionUtils.getReadColumnIDs(conf);
-  skippedColIDs=new boolean[columnNumber];
+  boolean[] skippedColIDs=new boolean[columnNumber];
   if (notSkipIDs.size() > 0) {
     for (int i=0; i < skippedColIDs.length; i++) {
       skippedColIDs[i]=true;
@@ -56,23 +56,24 @@
       }
     }
   }
-  prjColIDs=new int[loadColumnNum];
+  revPrjColIDs=new int[columnNumber];
+  selectedColumns=new SelectedColumn[loadColumnNum];
+  colValLenBufferReadIn=new NonSyncDataInputBuffer[loadColumnNum];
   for (int i=0, j=0; i < columnNumber; ++i) {
     if (!skippedColIDs[i]) {
-      prjColIDs[j++]=i;
+      SelectedColumn col=new SelectedColumn();
+      col.colIndex=i;
+      col.runLength=0;
+      col.prvLength=-1;
+      col.rowReadIndex=0;
+      selectedColumns[j]=col;
+      colValLenBufferReadIn[j]=new NonSyncDataInputBuffer();
+      revPrjColIDs[i]=j;
+      j++;
     }
-  }
-  colValLenBufferReadIn=new NonSyncDataInputBuffer[columnNumber];
-  columnRunLength=new int[columnNumber];
-  columnPrvLength=new int[columnNumber];
-  columnRowReadIndex=new int[columnNumber];
-  for (int i=0; i < columnNumber; i++) {
-    columnRowReadIndex[i]=0;
-    if (!skippedColIDs[i]) {
-      colValLenBufferReadIn[i]=new NonSyncDataInputBuffer();
+ else {
+      revPrjColIDs[i]=-1;
     }
-    columnRunLength[i]=0;
-    columnPrvLength[i]=-1;
   }
   currentKey=createKeyBuffer();
   currentValue=new ValueBuffer(null,columnNumber,skippedColIDs,codec);

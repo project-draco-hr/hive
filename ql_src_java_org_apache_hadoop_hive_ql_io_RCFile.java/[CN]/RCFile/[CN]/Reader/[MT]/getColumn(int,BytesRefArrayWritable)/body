@@ -1,5 +1,6 @@
 {
-  if (skippedColIDs[columnID]) {
+  int selColIdx=revPrjColIDs[columnID];
+  if (selColIdx == -1) {
     return null;
   }
   if (rest == null) {
@@ -11,14 +12,25 @@
   }
   int columnNextRowStart=0;
   fetchColumnTempBuf.reset(currentKey.allCellValLenBuffer[columnID].getData(),currentKey.allCellValLenBuffer[columnID].getLength());
+  SelectedColumn selCol=selectedColumns[selColIdx];
+  byte[] uncompData=null;
+  ValueBuffer.LazyDecompressionCallbackImpl decompCallBack=null;
+  boolean decompressed=currentValue.decompressedFlag[selColIdx];
+  if (decompressed) {
+    uncompData=currentValue.loadedColumnsValueBuffer[selColIdx].getData();
+  }
+ else {
+    decompCallBack=currentValue.lazyDecompressCallbackObjs[selColIdx];
+  }
   for (int i=0; i < recordsNumInValBuffer; i++) {
-    int length=getColumnNextValueLength(columnID);
+    colAdvanceRow(selColIdx,selCol);
+    int length=selCol.prvLength;
     BytesRefWritable currentCell=rest.get(i);
-    if (currentValue.decompressedFlag[columnID]) {
-      currentCell.set(currentValue.loadedColumnsValueBuffer[columnID].getData(),columnNextRowStart,length);
+    if (decompressed) {
+      currentCell.set(uncompData,columnNextRowStart,length);
     }
  else {
-      currentCell.set(currentValue.lazyDecompressCallbackObjs[columnID],columnNextRowStart,length);
+      currentCell.set(decompCallBack,columnNextRowStart,length);
     }
     columnNextRowStart=columnNextRowStart + length;
   }

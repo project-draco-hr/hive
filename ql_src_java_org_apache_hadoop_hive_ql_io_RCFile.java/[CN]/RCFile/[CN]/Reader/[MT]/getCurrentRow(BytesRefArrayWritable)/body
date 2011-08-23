@@ -6,17 +6,29 @@
     currentValueBuffer();
     ret.resetValid(columnNumber);
   }
-  for (int j=0; j < prjColIDs.length; ++j) {
-    int i=prjColIDs[j];
-    BytesRefWritable ref=ret.unCheckedGet(i);
-    int columnCurrentRowStart=columnRowReadIndex[i];
-    int length=getColumnNextValueLength(i);
-    columnRowReadIndex[i]=columnCurrentRowStart + length;
-    if (currentValue.decompressedFlag[j]) {
-      ref.set(currentValue.loadedColumnsValueBuffer[j].getData(),columnCurrentRowStart,length);
-    }
+  if (currentValue.numCompressed > 0) {
+    for (int j=0; j < selectedColumns.length; ++j) {
+      SelectedColumn col=selectedColumns[j];
+      int i=col.colIndex;
+      BytesRefWritable ref=ret.unCheckedGet(i);
+      colAdvanceRow(j,col);
+      if (currentValue.decompressedFlag[j]) {
+        ref.set(currentValue.loadedColumnsValueBuffer[j].getData(),col.rowReadIndex,col.prvLength);
+      }
  else {
-      ref.set(currentValue.lazyDecompressCallbackObjs[j],columnCurrentRowStart,length);
+        ref.set(currentValue.lazyDecompressCallbackObjs[j],col.rowReadIndex,col.prvLength);
+      }
+      col.rowReadIndex+=col.prvLength;
+    }
+  }
+ else {
+    for (int j=0; j < selectedColumns.length; ++j) {
+      SelectedColumn col=selectedColumns[j];
+      int i=col.colIndex;
+      BytesRefWritable ref=ret.unCheckedGet(i);
+      colAdvanceRow(j,col);
+      ref.set(currentValue.loadedColumnsValueBuffer[j].getData(),col.rowReadIndex,col.prvLength);
+      col.rowReadIndex+=col.prvLength;
     }
   }
   rowFetched=true;
