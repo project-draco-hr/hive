@@ -80,4 +80,21 @@ catch (  URISyntaxException e) {
     rTask=TaskFactory.get(new MoveWork(getInputs(),getOutputs(),loadTableWork,null,true),conf);
   }
   rootTasks.add(rTask);
+  if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVEINDEXAUTOUPDATE)) {
+    IndexUpdater indexUpdater=new IndexUpdater(loadTableWork,getInputs(),conf);
+    try {
+      List<Task<? extends Serializable>> indexUpdateTasks=indexUpdater.generateUpdateTasks();
+      for (      Task<? extends Serializable> updateTask : indexUpdateTasks) {
+        if (rTask.getChildren() == null || rTask.getChildren().size() == 0) {
+          rTask.addDependentTask(updateTask);
+        }
+ else {
+          ((Task<? extends Serializable>)rTask.getChildren().get(0)).addDependentTask(updateTask);
+        }
+      }
+    }
+ catch (    HiveException e) {
+      console.printInfo("WARNING: could not auto-update stale indexes, indexes are not out of sync");
+    }
+  }
 }
