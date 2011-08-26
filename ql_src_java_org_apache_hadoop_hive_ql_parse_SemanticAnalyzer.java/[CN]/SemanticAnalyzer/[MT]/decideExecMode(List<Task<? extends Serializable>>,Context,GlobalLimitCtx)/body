@@ -18,10 +18,21 @@
     try {
       ContentSummary inputSummary=Utilities.getInputSummary(ctx,(MapredWork)mrtask.getWork(),p);
       int numReducers=getNumberOfReducers(mrtask.getWork(),conf);
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Task: " + mrtask.getId() + ", Summary: "+ inputSummary.getLength()+ ","+ inputSummary.getFileCount()+ ","+ numReducers);
+      long estimatedInput;
+      if (globalLimitCtx != null && globalLimitCtx.isEnable()) {
+        long sizePerRow=HiveConf.getLongVar(conf,HiveConf.ConfVars.HIVELIMITMAXROWSIZE);
+        estimatedInput=globalLimitCtx.getGlobalLimit() * sizePerRow;
+        long minSplitSize=HiveConf.getLongVar(conf,HiveConf.ConfVars.MAPREDMINSPLITSIZE);
+        long estimatedNumMap=inputSummary.getLength() / minSplitSize + 1;
+        estimatedInput=estimatedInput * (estimatedNumMap + 1);
       }
-      if (MapRedTask.isEligibleForLocalMode(conf,numReducers,inputSummary.getLength(),inputSummary.getFileCount()) != null) {
+ else {
+        estimatedInput=inputSummary.getLength();
+      }
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Task: " + mrtask.getId() + ", Summary: "+ inputSummary.getLength()+ ","+ inputSummary.getFileCount()+ ","+ numReducers+ ", estimated Input: "+ estimatedInput);
+      }
+      if (MapRedTask.isEligibleForLocalMode(conf,numReducers,estimatedInput,inputSummary.getFileCount()) != null) {
         hasNonLocalJob=true;
         break;
       }
