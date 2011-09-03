@@ -1,0 +1,47 @@
+{
+  ExprWalkerInfo prunePreds=owi.getPrunedPreds((Operator<? extends Serializable>)nd);
+  if (prunePreds != null) {
+    Map<String,RowResolver> aliasToRR=new HashMap<String,RowResolver>();
+    for (    Operator<? extends Serializable> o : (nd).getParentOperators()) {
+      for (      String alias : owi.getRowResolver(o).getTableNames()) {
+        aliasToRR.put(alias,owi.getRowResolver(o));
+      }
+    }
+    ArrayList<ArrayList<ASTNode>> eqExpressions=owi.getParseContext().getJoinContext().get(nd).getExpressions();
+    int numColumns=eqExpressions.size();
+    int numEqualities=eqExpressions.get(0).size();
+    JoinCondDesc[] joins=(nd).getConf().getConds();
+    Map<String,List<ExprNodeDesc>> oldFilters=prunePreds.getFinalCandidates();
+    Map<String,List<ExprNodeDesc>> newFilters=new HashMap<String,List<ExprNodeDesc>>();
+    for (int i=0; i < numEqualities; i++) {
+      ColumnInfo[] equalColumns=new ColumnInfo[numColumns];
+      for (int j=0; j < numColumns; j++) {
+        equalColumns[j]=getColumnInfoFromAST(eqExpressions.get(j).get(i),aliasToRR);
+      }
+      for (int j=0; j < numColumns; j++) {
+        for (int k=0; k < numColumns; k++) {
+          if (j != k && equalColumns[j] != null && equalColumns[k] != null) {
+            ColumnInfo left=equalColumns[j];
+            ColumnInfo right=equalColumns[k];
+            if (oldFilters.get(left.getTabAlias()) != null) {
+              for (              ExprNodeDesc expr : oldFilters.get(left.getTabAlias())) {
+                Set<String> colsreferenced=new HashSet<String>(expr.getCols());
+                if (colsreferenced.size() == 1 && colsreferenced.contains(left.getInternalName())) {
+                  ExprNodeDesc newexpr=expr.clone();
+                  replaceColumnReference(newexpr,left.getInternalName(),right.getInternalName());
+                  if (newFilters.get(right.getTabAlias()) == null) {
+                    newFilters.put(right.getTabAlias(),new ArrayList<ExprNodeDesc>());
+                  }
+                  newFilters.get(right.getTabAlias()).add(newexpr);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    for (    Entry<String,List<ExprNodeDesc>> aliasToFilters : newFilters.entrySet()) {
+      owi.getPrunedPreds((Operator<? extends Serializable>)nd).addPushDowns(aliasToFilters.getKey(),aliasToFilters.getValue());
+    }
+  }
+}
