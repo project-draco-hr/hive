@@ -1,0 +1,57 @@
+{
+  GroupByOperator operator=(GroupByOperator)nd;
+  rewriteQueryCtx=(RewriteQueryUsingAggregateIndexCtx)ctx;
+  if (rewriteQueryCtx.getParseContext().getGroupOpToInputTables().containsKey(operator)) {
+    List<ExprNodeDesc> gbyKeyList=operator.getConf().getKeys();
+    String gbyKeys=null;
+    Iterator<ExprNodeDesc> gbyKeyListItr=gbyKeyList.iterator();
+    while (gbyKeyListItr.hasNext()) {
+      ExprNodeDesc expr=gbyKeyListItr.next().clone();
+      if (expr instanceof ExprNodeColumnDesc) {
+        ExprNodeColumnDesc colExpr=(ExprNodeColumnDesc)expr;
+        gbyKeys=colExpr.getColumn();
+        if (gbyKeyListItr.hasNext()) {
+          gbyKeys=gbyKeys + ",";
+        }
+      }
+    }
+    String selReplacementCommand="select sum(`" + rewriteQueryCtx.getAggregateFunction() + "`)"+ " from "+ rewriteQueryCtx.getIndexName()+ " group by "+ gbyKeys+ " ";
+    ParseContext newDAGContext=RewriteParseContextGenerator.generateOperatorTree(rewriteQueryCtx.getParseContext().getConf(),selReplacementCommand);
+    Map<GroupByOperator,Set<String>> newGbyOpMap=newDAGContext.getGroupOpToInputTables();
+    GroupByOperator newGbyOperator=newGbyOpMap.keySet().iterator().next();
+    GroupByDesc oldConf=operator.getConf();
+    ExprNodeColumnDesc aggrExprNode=null;
+    GroupByDesc newConf=newGbyOperator.getConf();
+    List<AggregationDesc> newAggrList=newConf.getAggregators();
+    if (newAggrList != null && newAggrList.size() > 0) {
+      for (      AggregationDesc aggregationDesc : newAggrList) {
+        rewriteQueryCtx.setEval(aggregationDesc.getGenericUDAFEvaluator());
+        aggrExprNode=(ExprNodeColumnDesc)aggregationDesc.getParameters().get(0);
+        rewriteQueryCtx.setAggrExprNode(aggrExprNode);
+      }
+    }
+    OpParseContext gbyOPC=rewriteQueryCtx.getOpc().get(operator);
+    RowResolver gbyRR=newDAGContext.getOpParseCtx().get(newGbyOperator).getRowResolver();
+    gbyOPC.setRowResolver(gbyRR);
+    rewriteQueryCtx.getOpc().put(operator,gbyOPC);
+    oldConf.setAggregators((ArrayList<AggregationDesc>)newAggrList);
+    operator.setConf(oldConf);
+  }
+ else {
+    GroupByDesc childConf=(GroupByDesc)operator.getConf();
+    List<AggregationDesc> childAggrList=childConf.getAggregators();
+    if (childAggrList != null && childAggrList.size() > 0) {
+      for (      AggregationDesc aggregationDesc : childAggrList) {
+        List<ExprNodeDesc> paraList=aggregationDesc.getParameters();
+        List<TypeInfo> parametersTypeInfoList=new ArrayList<TypeInfo>();
+        for (        ExprNodeDesc expr : paraList) {
+          parametersTypeInfoList.add(expr.getTypeInfo());
+        }
+        GenericUDAFEvaluator evaluator=FunctionRegistry.getGenericUDAFEvaluator("sum",parametersTypeInfoList,false,false);
+        aggregationDesc.setGenericUDAFEvaluator(evaluator);
+        aggregationDesc.setGenericUDAFName("sum");
+      }
+    }
+  }
+  return null;
+}

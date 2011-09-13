@@ -1,0 +1,39 @@
+{
+  boolean canApply=false;
+  if (ifQueryHasMultipleTables()) {
+    return false;
+  }
+ else {
+    Map<TableScanOperator,Table> topToTable=parseContext.getTopToTable();
+    Iterator<TableScanOperator> topOpItr=topToTable.keySet().iterator();
+    while (topOpItr.hasNext()) {
+      TableScanOperator topOp=topOpItr.next();
+      Table table=topToTable.get(topOp);
+      baseTableName=table.getTableName();
+      Map<Table,List<Index>> indexes=getIndexesForRewrite();
+      if (indexes == null) {
+        LOG.debug("Error getting valid indexes for rewrite, " + "skipping " + getName() + " optimization");
+        return false;
+      }
+      if (indexes.size() == 0) {
+        LOG.debug("No Valid Index Found to apply Rewrite, " + "skipping " + getName() + " optimization");
+        return false;
+      }
+ else {
+        if (parseContext.getOpToPartList() != null && parseContext.getOpToPartList().size() > 0) {
+          if (checkIfIndexBuiltOnAllTablePartitions(topOp,indexes)) {
+            canApply=checkIfRewriteCanBeApplied(topOp,table,indexes);
+          }
+ else {
+            LOG.debug("Index is not built for all table partitions, " + "skipping " + getName() + " optimization");
+            return false;
+          }
+        }
+ else {
+          canApply=checkIfRewriteCanBeApplied(topOp,table,indexes);
+        }
+      }
+    }
+  }
+  return canApply;
+}
