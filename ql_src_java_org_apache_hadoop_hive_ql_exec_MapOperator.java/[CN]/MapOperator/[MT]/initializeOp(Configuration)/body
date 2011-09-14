@@ -1,7 +1,13 @@
 {
   state=State.INIT;
   List<Operator<? extends Serializable>> children=getChildOperators();
-  Path fpath=new Path((new Path(HiveConf.getVar(hconf,HiveConf.ConfVars.HADOOPMAPFILENAME))).toUri().getPath());
+  for (  Entry<Operator<? extends Serializable>,MapOpCtx> entry : childrenOpToOpCtxMap.entrySet()) {
+    Operator<? extends Serializable> child=entry.getKey();
+    MapOpCtx mapOpCtx=entry.getValue();
+    HiveConf.setVar(hconf,HiveConf.ConfVars.HIVETABLENAME,mapOpCtx.tableName);
+    HiveConf.setVar(hconf,HiveConf.ConfVars.HIVEPARTITIONNAME,mapOpCtx.partName);
+    child.initialize(hconf,new ObjectInspector[]{mapOpCtx.getRowObjectInspector()});
+  }
   for (  Entry<MapInputPath,MapOpCtx> entry : opCtxMap.entrySet()) {
     HiveConf.setVar(hconf,HiveConf.ConfVars.HIVETABLENAME,entry.getValue().tableName);
     HiveConf.setVar(hconf,HiveConf.ConfVars.HIVEPARTITIONNAME,entry.getValue().partName);
@@ -12,16 +18,6 @@
         extraChildrenToClose=new ArrayList<Operator<? extends Serializable>>();
       }
       extraChildrenToClose.add(op);
-    }
-    boolean shouldInit=true;
-    List<String> paths=operatorToPaths.get(op);
-    for (    String path : paths) {
-      if (childrenPaths.contains(path) && !path.equals(input.path)) {
-        shouldInit=false;
-        break;
-      }
-    }
-    if (shouldInit) {
       op.initialize(hconf,new ObjectInspector[]{entry.getValue().getRowObjectInspector()});
     }
   }
