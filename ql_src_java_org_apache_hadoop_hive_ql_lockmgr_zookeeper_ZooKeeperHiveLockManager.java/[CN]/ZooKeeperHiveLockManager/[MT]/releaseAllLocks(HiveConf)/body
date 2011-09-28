@@ -3,17 +3,27 @@
   try {
     int sessionTimeout=conf.getIntVar(HiveConf.ConfVars.HIVE_ZOOKEEPER_SESSION_TIMEOUT);
     String quorumServers=getQuorumServers(conf);
-    zkpClient=new ZooKeeper(quorumServers,sessionTimeout,new DummyWatcher());
+    Watcher dummWatcher=new DummyWatcher();
+    zkpClient=new ZooKeeper(quorumServers,sessionTimeout,dummWatcher);
     String parent=conf.getVar(HiveConf.ConfVars.HIVE_ZOOKEEPER_NAMESPACE);
     List<HiveLock> locks=getLocks(conf,zkpClient,null,parent,false,false);
+    Exception lastExceptionGot=null;
     if (locks != null) {
       for (      HiveLock lock : locks) {
-        unlock(conf,zkpClient,lock,parent);
+        try {
+          unlockPrimitive(conf,zkpClient,lock,parent);
+        }
+ catch (        Exception e) {
+          lastExceptionGot=e;
+        }
       }
+    }
+    if (lastExceptionGot != null) {
+      throw lastExceptionGot;
     }
   }
  catch (  Exception e) {
-    LOG.error("Failed to release all locks: " + e.getMessage());
+    LOG.error("Failed to release all locks: ",e);
     throw new Exception(ErrorMsg.ZOOKEEPER_CLIENT_COULD_NOT_BE_INITIALIZED.getMsg());
   }
  finally {
