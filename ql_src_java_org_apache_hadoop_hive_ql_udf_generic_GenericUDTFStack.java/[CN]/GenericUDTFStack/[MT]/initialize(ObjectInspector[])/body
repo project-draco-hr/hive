@@ -1,0 +1,33 @@
+{
+  if (args.length < 2) {
+    throw new UDFArgumentException("STACK() expects at least two arguments.");
+  }
+  if (!(args[0] instanceof WritableConstantIntObjectInspector)) {
+    throw new UDFArgumentException("The first argument to STACK() must be a constant integer (got " + args[0].getTypeName() + " instead).");
+  }
+  numRows=((WritableConstantIntObjectInspector)args[0]).getWritableConstantValue();
+  if (numRows == null || numRows.get() < 1) {
+    throw new UDFArgumentException("STACK() expects its first argument to be >= 1.");
+  }
+  numCols=(args.length - 1 + numRows.get() - 1) / numRows.get();
+  for (int jj=0; jj < numCols; ++jj) {
+    returnOIResolvers.add(new ReturnObjectInspectorResolver());
+    for (int ii=0; ii < numRows.get(); ++ii) {
+      int index=ii * numCols + jj + 1;
+      if (index < args.length && !returnOIResolvers.get(jj).update(args[index])) {
+        throw new UDFArgumentException("Argument " + (jj + 1) + "'s type ("+ args[jj + 1].getTypeName()+ ") should be equal to argument "+ index+ "'s type ("+ args[index].getTypeName()+ ")");
+      }
+    }
+  }
+  forwardObj=new Object[numCols];
+  for (int ii=0; ii < args.length; ++ii) {
+    argOIs.add(args[ii]);
+  }
+  ArrayList<String> fieldNames=new ArrayList<String>();
+  ArrayList<ObjectInspector> fieldOIs=new ArrayList<ObjectInspector>();
+  for (int ii=0; ii < numCols; ++ii) {
+    fieldNames.add("col" + ii);
+    fieldOIs.add(returnOIResolvers.get(ii).get());
+  }
+  return ObjectInspectorFactory.getStandardStructObjectInspector(fieldNames,fieldOIs);
+}
