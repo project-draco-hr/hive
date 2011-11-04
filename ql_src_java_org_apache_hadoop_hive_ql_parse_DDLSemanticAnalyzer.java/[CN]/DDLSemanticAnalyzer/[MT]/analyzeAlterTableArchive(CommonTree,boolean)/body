@@ -4,8 +4,9 @@
   }
   String tblName=getUnescapedName((ASTNode)ast.getChild(0));
   List<Map<String,String>> partSpecs=getPartitionSpecs(ast);
+  Table tab=null;
   try {
-    Table tab=db.getTable(db.getCurrentDatabase(),tblName,false);
+    tab=db.getTable(db.getCurrentDatabase(),tblName,false);
     if (tab != null) {
       inputs.add(new ReadEntity(tab));
     }
@@ -13,7 +14,7 @@
  catch (  HiveException e) {
     throw new SemanticException(ErrorMsg.INVALID_TABLE.getMsg(tblName));
   }
-  addTablePartsOutputs(tblName,partSpecs);
+  addTablePartsOutputs(tblName,partSpecs,true);
   if (partSpecs.size() > 1) {
     throw new SemanticException(isUnArchive ? ErrorMsg.UNARCHIVE_ON_MULI_PARTS.getMsg() : ErrorMsg.ARCHIVE_ON_MULI_PARTS.getMsg());
   }
@@ -21,6 +22,12 @@
     throw new SemanticException(ErrorMsg.ARCHIVE_ON_TABLE.getMsg());
   }
   Map<String,String> partSpec=partSpecs.get(0);
+  try {
+    isValidPrefixSpec(tab,partSpec);
+  }
+ catch (  HiveException e) {
+    throw new SemanticException(e.getMessage(),e);
+  }
   AlterTableSimpleDesc archiveDesc=new AlterTableSimpleDesc(db.getCurrentDatabase(),tblName,partSpec,(isUnArchive ? AlterTableTypes.UNARCHIVE : AlterTableTypes.ARCHIVE));
   rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),archiveDesc),conf));
 }

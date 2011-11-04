@@ -1,0 +1,37 @@
+{
+  List<FieldSchema> partKeys=tbl.getPartitionKeys();
+  int partSpecLevel=0;
+  for (  FieldSchema partKey : partKeys) {
+    if (!partSpec.containsKey(partKey.getName())) {
+      break;
+    }
+    partSpecLevel++;
+  }
+  if (partSpecLevel != partSpec.size()) {
+    throw new HiveException("partspec " + partSpec + " is wrong for table "+ tbl.getTableName());
+  }
+  Map<String,String> spec=new HashMap<String,String>(partSpec);
+  List<String> reversedKeys=new LinkedList<String>();
+  for (  FieldSchema fs : tbl.getPartCols()) {
+    if (spec.containsKey(fs.getName())) {
+      reversedKeys.add(0,fs.getName());
+    }
+  }
+  for (  String rk : reversedKeys) {
+    List<Partition> parts=db.getPartitions(tbl,spec,(short)1);
+    if (parts.size() != 0) {
+      Partition p=parts.get(0);
+      if (!isArchived(p)) {
+        return null;
+      }
+ else       if (getArchivingLevel(p) > spec.size()) {
+        return null;
+      }
+ else {
+        return getPartialName(p,getArchivingLevel(p));
+      }
+    }
+    spec.remove(rk);
+  }
+  return null;
+}

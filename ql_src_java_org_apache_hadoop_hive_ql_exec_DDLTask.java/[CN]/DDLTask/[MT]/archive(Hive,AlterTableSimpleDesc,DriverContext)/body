@@ -3,26 +3,38 @@
   String tblName=simpleDesc.getTableName();
   Table tbl=db.getTable(dbName,tblName);
   validateAlterTableType(tbl,AlterTableDesc.AlterTableTypes.ARCHIVE);
-  Map<String,String> partSpec=simpleDesc.getPartSpec();
-  Partition p=db.getPartition(tbl,partSpec,false);
   if (tbl.getTableType() != TableType.MANAGED_TABLE) {
     throw new HiveException("ARCHIVE can only be performed on managed tables");
   }
-  if (p == null) {
-    throw new HiveException("Specified partition does not exist");
+  Map<String,String> partSpec=simpleDesc.getPartSpec();
+  PartSpecInfo partSpecInfo=PartSpecInfo.create(tbl,partSpec);
+  List<Partition> partitions=db.getPartitions(tbl,partSpec);
+  Path originalDir=null;
+  if (partitions.isEmpty()) {
+    throw new HiveException("No partition matches the specification");
   }
-  if (Utilities.isArchived(p)) {
-    Path originalDir=new Path(getOriginalLocation(p));
-    Path leftOverIntermediateOriginal=new Path(originalDir.getParent(),originalDir.getName() + INTERMEDIATE_ORIGINAL_DIR_SUFFIX);
-    if (pathExists(leftOverIntermediateOriginal)) {
-      console.printInfo("Deleting " + leftOverIntermediateOriginal + " left over from a previous archiving operation");
-      deleteDir(leftOverIntermediateOriginal);
+ else   if (partSpecInfo.values.size() != tbl.getPartCols().size()) {
+    for (    Partition p : partitions) {
+      if (partitionInCustomLocation(tbl,p)) {
+        String message=String.format("ARCHIVE cannot run for partition " + "groups with custom locations like %s",p.getLocation());
+        throw new HiveException(message);
+      }
     }
-    throw new HiveException("Specified partition is already archived");
+    originalDir=partSpecInfo.createPath(tbl);
   }
-  Path originalDir=p.getPartitionPath();
+ else {
+    Partition p=partitions.get(0);
+    if (ArchiveUtils.isArchived(p)) {
+      originalDir=new Path(getOriginalLocation(p));
+    }
+ else {
+      originalDir=p.getPartitionPath();
+    }
+  }
   Path intermediateArchivedDir=new Path(originalDir.getParent(),originalDir.getName() + INTERMEDIATE_ARCHIVED_DIR_SUFFIX);
   Path intermediateOriginalDir=new Path(originalDir.getParent(),originalDir.getName() + INTERMEDIATE_ORIGINAL_DIR_SUFFIX);
+  console.printInfo("intermediate.archived is " + intermediateArchivedDir.toString());
+  console.printInfo("intermediate.original is " + intermediateOriginalDir.toString());
   String archiveName="data.har";
   FileSystem fs=null;
   try {
@@ -31,19 +43,39 @@
  catch (  IOException e) {
     throw new HiveException(e);
   }
+  URI archiveUri=(new Path(originalDir,archiveName)).toUri();
+  URI originalUri=ArchiveUtils.addSlash(originalDir.toUri());
+  ArchiveUtils.HarPathHelper harHelper=new ArchiveUtils.HarPathHelper(conf,archiveUri,originalUri);
+  for (  Partition p : partitions) {
+    if (ArchiveUtils.isArchived(p)) {
+      if (ArchiveUtils.getArchivingLevel(p) != partSpecInfo.values.size()) {
+        String name=ArchiveUtils.getPartialName(p,ArchiveUtils.getArchivingLevel(p));
+        String m=String.format("Conflict with existing archive %s",name);
+        throw new HiveException(m);
+      }
+ else {
+        throw new HiveException("Partition(s) already archived");
+      }
+    }
+  }
+  boolean recovery=false;
+  if (pathExists(intermediateArchivedDir) || pathExists(intermediateOriginalDir)) {
+    recovery=true;
+    console.printInfo("Starting recovery after failed ARCHIVE");
+  }
   if (!pathExists(intermediateArchivedDir) && !pathExists(intermediateOriginalDir)) {
-    Path tmpDir=new Path(driverContext.getCtx().getExternalTmpFileURI(originalDir.toUri()),"partlevel");
+    Path tmpPath=new Path(driverContext.getCtx().getExternalTmpFileURI(originalDir.toUri()),"partlevel");
     console.printInfo("Creating " + archiveName + " for "+ originalDir.toString());
-    console.printInfo("in " + tmpDir);
+    console.printInfo("in " + tmpPath);
     console.printInfo("Please wait... (this may take a while)");
     HadoopShims shim=ShimLoader.getHadoopShims();
     int ret=0;
     try {
       int maxJobNameLen=conf.getIntVar(HiveConf.ConfVars.HIVEJOBNAMELENGTH);
-      String jobname=String.format("Archiving %s@%s",tbl.getTableName(),p.getName());
+      String jobname=String.format("Archiving %s@%s",tbl.getTableName(),partSpecInfo.getName());
       jobname=Utilities.abbreviate(jobname,maxJobNameLen - 6);
       conf.setVar(HiveConf.ConfVars.HADOOPJOBNAME,jobname);
-      ret=shim.createHadoopArchive(conf,originalDir,tmpDir,archiveName);
+      ret=shim.createHadoopArchive(conf,originalDir,tmpPath,archiveName);
     }
  catch (    Exception e) {
       throw new HiveException(e);
@@ -52,11 +84,11 @@
       throw new HiveException("Error while creating HAR");
     }
     try {
-      console.printInfo("Moving " + tmpDir + " to "+ intermediateArchivedDir);
+      console.printInfo("Moving " + tmpPath + " to "+ intermediateArchivedDir);
       if (pathExists(intermediateArchivedDir)) {
         throw new HiveException("The intermediate archive directory already exists.");
       }
-      fs.rename(tmpDir,intermediateArchivedDir);
+      fs.rename(tmpPath,intermediateArchivedDir);
     }
  catch (    IOException e) {
       throw new HiveException("Error while moving tmp directory");
@@ -82,20 +114,22 @@
     console.printInfo(originalDir + " already exists. " + "Assuming it contains the archived version of the partition");
   }
   try {
-    boolean parentSettable=conf.getBoolVar(HiveConf.ConfVars.HIVEHARPARENTDIRSETTABLE);
-    String dirInArchive="";
-    if (!parentSettable) {
-      dirInArchive=originalDir.toUri().getPath();
-      if (dirInArchive.length() > 1 && dirInArchive.charAt(0) == '/') {
-        dirInArchive=dirInArchive.substring(1);
-      }
+    for (    Partition p : partitions) {
+      URI originalPartitionUri=ArchiveUtils.addSlash(p.getPartitionPath().toUri());
+      URI harPartitionDir=harHelper.getHarUri(originalPartitionUri);
+      Path harPath=new Path(harPartitionDir.getScheme(),harPartitionDir.getAuthority(),harPartitionDir.getPath());
+      setArchived(p,harPath,partSpecInfo.values.size());
+      db.alterPartition(tblName,p);
     }
-    setArchived(p,originalDir,dirInArchive,archiveName);
-    db.alterPartition(tblName,p);
   }
  catch (  Exception e) {
     throw new HiveException("Unable to change the partition info for HAR",e);
   }
-  deleteDir(intermediateOriginalDir);
+  if (pathExists(intermediateOriginalDir)) {
+    deleteDir(intermediateOriginalDir);
+  }
+  if (recovery) {
+    console.printInfo("Recovery after ARCHIVE succeeded");
+  }
   return 0;
 }

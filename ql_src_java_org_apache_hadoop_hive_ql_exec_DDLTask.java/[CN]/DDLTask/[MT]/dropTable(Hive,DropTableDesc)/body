@@ -47,12 +47,27 @@
     List<Partition> partsToDelete=new ArrayList<Partition>();
     for (    Map<String,String> partSpec : dropTbl.getPartSpecs()) {
       List<Partition> partitions=db.getPartitions(tbl,partSpec);
+      int partPrefixToDrop=0;
+      for (      FieldSchema fs : tbl.getPartCols()) {
+        if (partSpec.get(fs.getName()) != null) {
+          partPrefixToDrop+=1;
+        }
+ else {
+          break;
+        }
+      }
       for (      Partition p : partitions) {
         if (!p.canDrop()) {
           throw new HiveException("Table " + tbl.getTableName() + " Partition "+ p.getName()+ " is protected from being dropped");
         }
-        partsToDelete.add(p);
+ else         if (ArchiveUtils.isArchived(p)) {
+          int partAchiveLevel=ArchiveUtils.getArchivingLevel(p);
+          if (partAchiveLevel < partPrefixToDrop) {
+            throw new HiveException("Cannot drop a subset of partitions in an archive, partition " + p.getName());
+          }
+        }
       }
+      partsToDelete.addAll(partitions);
     }
     for (    Partition partition : partsToDelete) {
       console.printInfo("Dropping the partition " + partition.getName());

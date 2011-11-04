@@ -1,4 +1,5 @@
 {
+  LOG.debug("validation start");
   for (  ReadEntity readEntity : getInputs()) {
     ReadEntity.Type type=readEntity.getType();
     if (type != ReadEntity.Type.TABLE && type != ReadEntity.Type.PARTITION) {
@@ -15,7 +16,25 @@
   }
   for (  WriteEntity writeEntity : getOutputs()) {
     WriteEntity.Type type=writeEntity.getType();
+    if (type == WriteEntity.Type.PARTITION || type == WriteEntity.Type.DUMMYPARTITION) {
+      String conflictingArchive;
+      try {
+        Partition usedp=writeEntity.getPartition();
+        Table tbl=usedp.getTable();
+        LOG.debug("validated " + usedp.getName());
+        LOG.debug(usedp.getTable());
+        conflictingArchive=ArchiveUtils.conflictingArchiveNameOrNull(db,tbl,usedp.getSpec());
+      }
+ catch (      HiveException e) {
+        throw new SemanticException(e);
+      }
+      if (conflictingArchive != null) {
+        String message=String.format("Insert conflict with existing archive: %s",conflictingArchive);
+        throw new SemanticException(message);
+      }
+    }
     if (type != WriteEntity.Type.TABLE && type != WriteEntity.Type.PARTITION) {
+      LOG.debug("not validating writeEntity, because entity is neither table nor partition");
       continue;
     }
     Table tbl;
@@ -39,6 +58,7 @@
       }
     }
  else {
+      LOG.debug("Not a partition.");
       tbl=writeEntity.getTable();
     }
     if (tbl.isOffline()) {
