@@ -140,6 +140,9 @@
           Path targetPath;
           try {
             dumpTable=db.newTable(qb.getTableDesc().getTableName());
+            if (!db.databaseExists(dumpTable.getDbName())) {
+              throw new SemanticException("ERROR: The database " + dumpTable.getDbName() + " does not exist.");
+            }
             Warehouse wh=new Warehouse(conf);
             targetPath=wh.getTablePath(db.getDatabase(dumpTable.getDbName()),dumpTable.getTableName());
           }
@@ -201,7 +204,18 @@ catch (          MetaException e) {
     getLeafTasks(rootTasks,leaves);
     assert(leaves.size() > 0);
     for (    Task<? extends Serializable> task : leaves) {
-      task.addDependentTask(crtTblTask);
+      if (task instanceof StatsTask) {
+        for (        Task<? extends Serializable> parentOfStatsTask : task.getParentTasks()) {
+          parentOfStatsTask.addDependentTask(crtTblTask);
+        }
+        for (        Task<? extends Serializable> parentOfCrtTblTask : crtTblTask.getParentTasks()) {
+          parentOfCrtTblTask.removeDependentTask(task);
+        }
+        crtTblTask.addDependentTask(task);
+      }
+ else {
+        task.addDependentTask(crtTblTask);
+      }
     }
   }
   if (globalLimitCtx.isEnable() && fetchTask != null) {
