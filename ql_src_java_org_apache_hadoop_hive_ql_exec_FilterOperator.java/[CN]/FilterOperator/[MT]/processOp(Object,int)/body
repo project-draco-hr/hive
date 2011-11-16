@@ -3,7 +3,30 @@
   if (conditionInspector == null) {
     conditionInspector=(PrimitiveObjectInspector)conditionEvaluator.initialize(rowInspector);
   }
+  if (conf.isSortedFilter() && ioContext.useSorted()) {
+    if (!(conditionEvaluator instanceof ExprNodeGenericFuncEvaluator)) {
+      LOG.error("Attempted to use the fact data is sorted when the conditionEvaluator is not " + "of type ExprNodeGenericFuncEvaluator");
+      ioContext.setUseSorted(false);
+      return;
+    }
+ else {
+      ioContext.setComparison(((ExprNodeGenericFuncEvaluator)conditionEvaluator).compare(row));
+    }
+    if (ioContext.getGenericUDFClassName() == null) {
+      ioContext.setGenericUDFClassName(((ExprNodeGenericFuncEvaluator)conditionEvaluator).genericUDF.getClass().getName());
+    }
+    if (ioContext.isBinarySearching()) {
+      consecutiveSearches++;
+      if (((consecutiveSearches % heartbeatInterval) == 0) && (reporter != null)) {
+        reporter.progress();
+      }
+      return;
+    }
+  }
   Object condition=conditionEvaluator.evaluate(row);
+  if (ioContext.isBinarySearching()) {
+    return;
+  }
   Boolean ret=(Boolean)conditionInspector.getPrimitiveJavaObject(condition);
   if (Boolean.TRUE.equals(ret)) {
     forward(row,rowInspector);

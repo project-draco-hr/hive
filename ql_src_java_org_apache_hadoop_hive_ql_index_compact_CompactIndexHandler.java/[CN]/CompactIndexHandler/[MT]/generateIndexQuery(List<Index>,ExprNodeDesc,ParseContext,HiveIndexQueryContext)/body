@@ -21,6 +21,45 @@
   HiveConf.setBoolVar(queryConf,HiveConf.ConfVars.COMPRESSRESULT,false);
   Driver driver=new Driver(queryConf);
   driver.compile(qlCommand.toString(),false);
+  if (pctx.getConf().getBoolVar(ConfVars.HIVE_INDEX_COMPACT_BINARY_SEARCH) && useSorted) {
+    MapredWork work=null;
+    String originalInputFormat=null;
+    for (    Task task : driver.getPlan().getRootTasks()) {
+      if (task.getWork() instanceof MapredWork) {
+        if (work != null) {
+          LOG.error("Tried to use a binary search on a compact index but there were an " + "unexpected number (>1) of root level map reduce tasks in the " + "reentrant query plan.");
+          work.setInputformat(null);
+          work.setInputFormatSorted(false);
+          break;
+        }
+        work=(MapredWork)task.getWork();
+        String inputFormat=work.getInputformat();
+        originalInputFormat=inputFormat;
+        if (inputFormat == null) {
+          inputFormat=HiveConf.getVar(pctx.getConf(),HiveConf.ConfVars.HIVEINPUTFORMAT);
+        }
+        try {
+          if (!HiveInputFormat.class.isAssignableFrom(Class.forName(inputFormat))) {
+            work=null;
+            break;
+          }
+        }
+ catch (        ClassNotFoundException e) {
+          LOG.error("Map reduce work's input format class: " + inputFormat + " was not found. "+ "Cannot use the fact the compact index is sorted.");
+          work=null;
+          break;
+        }
+        work.setInputFormatSorted(true);
+      }
+    }
+    if (work != null) {
+      if (!findIndexColumnFilter(work.getAliasToWork().values())) {
+        LOG.error("Could not locate the index column's filter operator and expr node. Cannot " + "use the fact the compact index is sorted.");
+        work.setInputformat(originalInputFormat);
+        work.setInputFormatSorted(false);
+      }
+    }
+  }
   queryContext.addAdditionalSemanticInputs(driver.getPlan().getInputs());
   queryContext.setQueryTasks(driver.getPlan().getRootTasks());
   return;
