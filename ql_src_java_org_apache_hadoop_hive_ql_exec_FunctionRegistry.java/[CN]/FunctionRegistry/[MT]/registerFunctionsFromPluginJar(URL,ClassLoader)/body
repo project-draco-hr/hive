@@ -1,0 +1,28 @@
+{
+  URL url=new URL("jar:" + jarLocation + "!/META-INF/class-info.xml");
+  InputStream inputStream=null;
+  try {
+    inputStream=url.openStream();
+    DocumentBuilderFactory dbf=DocumentBuilderFactory.newInstance();
+    DocumentBuilder docBuilder=dbf.newDocumentBuilder();
+    Document doc=docBuilder.parse(inputStream);
+    Element root=doc.getDocumentElement();
+    if (!root.getTagName().equals("ClassList")) {
+      return;
+    }
+    NodeList children=root.getElementsByTagName("Class");
+    for (int i=0; i < children.getLength(); ++i) {
+      Element child=(Element)children.item(i);
+      String javaName=child.getAttribute("javaname");
+      String sqlName=child.getAttribute("sqlname");
+      Class<?> udfClass=Class.forName(javaName,true,classLoader);
+      boolean registered=registerTemporaryFunction(sqlName,udfClass);
+      if (!registered) {
+        throw new RuntimeException("Class " + udfClass + " is not a Hive function implementation");
+      }
+    }
+  }
+  finally {
+    IOUtils.closeStream(inputStream);
+  }
+}
