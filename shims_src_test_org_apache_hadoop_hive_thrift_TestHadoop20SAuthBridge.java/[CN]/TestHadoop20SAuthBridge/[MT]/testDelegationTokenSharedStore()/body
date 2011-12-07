@@ -1,0 +1,40 @@
+{
+  UserGroupInformation clientUgi=UserGroupInformation.getCurrentUser();
+  TokenStoreDelegationTokenSecretManager tokenManager=new TokenStoreDelegationTokenSecretManager(0,60 * 60 * 1000,60 * 60 * 1000,0,MyHadoopThriftAuthBridge20S.Server.TOKEN_STORE);
+  tokenManager.startThreads();
+  tokenManager.stopThreads();
+  String tokenStrForm=tokenManager.getDelegationToken(clientUgi.getShortUserName());
+  Token<DelegationTokenIdentifier> t=new Token<DelegationTokenIdentifier>();
+  t.decodeFromUrlString(tokenStrForm);
+  DelegationTokenIdentifier d=new DelegationTokenIdentifier();
+  d.readFields(new DataInputStream(new ByteArrayInputStream(t.getIdentifier())));
+  assertTrue("Usernames don't match",clientUgi.getShortUserName().equals(d.getUser().getShortUserName()));
+  DelegationTokenInformation tokenInfo=MyHadoopThriftAuthBridge20S.Server.TOKEN_STORE.getToken(d);
+  assertNotNull("token not in store",tokenInfo);
+  assertFalse("duplicate token add",MyHadoopThriftAuthBridge20S.Server.TOKEN_STORE.addToken(d,tokenInfo));
+  TokenStoreDelegationTokenSecretManager anotherManager=new TokenStoreDelegationTokenSecretManager(0,0,0,0,MyHadoopThriftAuthBridge20S.Server.TOKEN_STORE);
+  assertEquals("master keys empty on init",0,anotherManager.getAllKeys().length);
+  assertNotNull("token loaded",anotherManager.retrievePassword(d));
+  anotherManager.renewToken(t,clientUgi.getShortUserName());
+  assertEquals("master keys not loaded from store",MyHadoopThriftAuthBridge20S.Server.TOKEN_STORE.getMasterKeys().length,anotherManager.getAllKeys().length);
+  tokenManager.cancelDelegationToken(tokenStrForm);
+  assertNull("token not removed from store after cancel",MyHadoopThriftAuthBridge20S.Server.TOKEN_STORE.getToken(d));
+  assertFalse("token removed (again)",MyHadoopThriftAuthBridge20S.Server.TOKEN_STORE.removeToken(d));
+  try {
+    anotherManager.retrievePassword(d);
+    fail("InvalidToken expected after cancel");
+  }
+ catch (  InvalidToken ex) {
+  }
+  MyHadoopThriftAuthBridge20S.Server.TOKEN_STORE.addToken(d,new DelegationTokenInformation(0,t.getPassword()));
+  assertNotNull(MyHadoopThriftAuthBridge20S.Server.TOKEN_STORE.getToken(d));
+  anotherManager.removeExpiredTokens();
+  assertNull("Expired token not removed",MyHadoopThriftAuthBridge20S.Server.TOKEN_STORE.getToken(d));
+  anotherManager.startThreads();
+  anotherManager.stopThreads();
+  DelegationKey expiredKey=new DelegationKey(-1,0,anotherManager.getAllKeys()[0].getKey());
+  anotherManager.logUpdateMasterKey(expiredKey);
+  assertTrue("expired key not in allKeys",anotherManager.reloadKeys().containsKey(expiredKey.getKeyId()));
+  anotherManager.rollMasterKeyExt();
+  assertFalse("Expired key not removed",anotherManager.reloadKeys().containsKey(expiredKey.getKeyId()));
+}
