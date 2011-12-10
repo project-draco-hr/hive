@@ -1,0 +1,36 @@
+def load(config_file='~/.hive_ptest.conf'):
+    global local, qfile_set, other_set, remote_set, all_set
+    global master_base_path, host_base_path, java_home
+    config_file = os.path.expanduser(config_file)
+    cfg = None
+    try:
+        with open(config_file) as f:
+            cfg = json.loads(f.read())
+        host_nodes = {}
+
+        def get_node(host):
+            if (not (host in host_nodes)):
+                host_nodes[host] = (-1)
+            host_nodes[host] += 1
+            return SSHConnection(host, host_nodes[host])
+        qfile = []
+        for (host, num) in cfg['qfile_hosts']:
+            for i in range(num):
+                qfile.append(get_node(host))
+        other = []
+        for (host, num) in cfg['other_hosts']:
+            for i in range(num):
+                other.append(get_node(host))
+        local = SSHConnection('localhost')
+        qfile_set = SSHSet(qfile)
+        other_set = SSHSet(other)
+        remote_set = SSHSet(copy.copy(qfile))
+        remote_set.add(copy.copy(other))
+        all_set = SSHSet(copy.copy(qfile))
+        all_set.add(copy.copy(other))
+        all_set.add(local)
+        master_base_path = cfg['master_base_path']
+        host_base_path = ((cfg['host_base_path'] + '-') + getpass.getuser())
+        java_home = cfg['java_home']
+    except Exception as e:
+        raise Exception((('Failed to parse your configuration file (' + config_file) + ').  Maybe you forgot the `--config` switch?'), e)

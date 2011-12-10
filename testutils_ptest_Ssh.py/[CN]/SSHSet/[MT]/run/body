@@ -1,0 +1,25 @@
+def run(self, cmd, parallel=True, quiet=False, vewy_quiet=False, abandon_output=True, warn_only=False):
+    if (not parallel):
+        for conn in self.conn:
+            conn.run(cmd, quiet=quiet, vewy_quiet=vewy_quiet, abandon_output=abandon_output, warn_only=warn_only)
+    else:
+        threads = []
+        queue = Queue()
+
+        def wrapper(conn, cmd, queue):
+            try:
+                conn.run(cmd, quiet=quiet, vewy_quiet=vewy_quiet, abandon_output=abandon_output, warn_only=warn_only)
+            except Exception as e:
+                queue.put(Exception(((conn.hostname + ' => ') + str(e))))
+        for conn in self.conn:
+            thread = Thread(target=wrapper, args=(conn, cmd, queue))
+            thread.start()
+            threads.append(thread)
+        for thread in threads:
+            thread.join()
+        if (not queue.empty()):
+            l = []
+            while (not queue.empty()):
+                e = queue.get()
+                l.append(str(e))
+            raise Exception('\n'.join(l))

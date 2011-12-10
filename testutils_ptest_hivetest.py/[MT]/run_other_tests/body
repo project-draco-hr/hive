@@ -1,0 +1,30 @@
+def run_other_tests():
+
+    def get_other_list():
+        local.cd(code_path)
+        local.run('ant -Dtestcase=nothing test')
+        tests = local.run(' | '.join(['find build/*/test/classes -name "Test*.class"', 'sed -e "s:[^/]*/::g"', 'grep -v TestSerDe.class', 'grep -v TestHiveMetaStore.class', 'grep -v TestCliDriver.class', 'grep -v TestNegativeCliDriver.class', 'grep -v ".*\\$.*\\.class"', 'sed -e "s:\\.class::"']), abandon_output=False)
+        return tests.split()
+
+    def segment_other():
+
+        def get_command(test):
+            return '; '.join([(('ant -Dtestcase=' + test) + ' -Doffline=true test'), ((((((('cp "`find . -name "TEST-*.xml"`" "' + report_path) + '/logs/" || ') + 'touch "') + report_path) + '/logs/{host}-') + test) + '.fail"'), (((('cp "build/ql/tmp/hive.log" "' + report_path) + '/logs/hive-{host}-') + test) + '.log"')])
+        cmd = []
+        i = 0
+        for test in get_other_list():
+            if (len(other_set) > 1):
+                if re.match('.*minimr.*', test.lower()):
+                    host = other_set.conn[0].hostname
+                else:
+                    i = ((i + 1) % len(other_set))
+                    if (i == 0):
+                        i = 1
+                    host = other_set.conn[i].hostname
+            else:
+                host = other_set.conn[0].hostname
+            cmd.append((((('if [[ "{host}" == "' + host) + '" ]]; then ') + get_command(test)) + '; fi'))
+        return ' ; '.join(cmd)
+    command = segment_other()
+    other_set.cd(host_code_path)
+    other_set.run(command, quiet=True, warn_only=True)
