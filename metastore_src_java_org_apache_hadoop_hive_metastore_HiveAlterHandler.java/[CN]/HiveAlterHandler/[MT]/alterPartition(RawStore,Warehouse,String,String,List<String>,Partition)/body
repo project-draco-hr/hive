@@ -13,11 +13,8 @@
   }
   if (part_vals == null || part_vals.size() == 0) {
     try {
-      oldPart=ms.getPartition(dbname,name,new_part.getValues());
-      ms.alterPartition(dbname,name,new_part.getValues(),new_part);
-      for (      MetaStoreEventListener listener : listeners) {
-        listener.onAlterPartition(new AlterPartitionEvent(oldPart,new_part,true,this));
-      }
+      oldPart=msdb.getPartition(dbname,name,new_part.getValues());
+      msdb.alterPartition(dbname,name,new_part.getValues(),new_part);
     }
  catch (    InvalidObjectException e) {
       throw new InvalidOperationException("alter is not possible");
@@ -25,19 +22,19 @@
 catch (    NoSuchObjectException e) {
       throw new InvalidOperationException("alter is not possible");
     }
-    return;
+    return oldPart;
   }
   try {
-    ms.openTransaction();
+    msdb.openTransaction();
     try {
-      oldPart=ms.getPartition(dbname,name,part_vals);
+      oldPart=msdb.getPartition(dbname,name,part_vals);
     }
  catch (    NoSuchObjectException e) {
       throw new InvalidObjectException("Unable to rename partition because old partition does not exist");
     }
     Partition check_part=null;
     try {
-      check_part=ms.getPartition(dbname,name,new_part.getValues());
+      check_part=msdb.getPartition(dbname,name,new_part.getValues());
     }
  catch (    NoSuchObjectException e) {
       check_part=null;
@@ -45,12 +42,12 @@ catch (    NoSuchObjectException e) {
     if (check_part != null) {
       throw new AlreadyExistsException("Partition already exists:" + dbname + "."+ name+ "."+ new_part.getValues());
     }
-    tbl=ms.getTable(dbname,name);
+    tbl=msdb.getTable(dbname,name);
     if (tbl == null) {
       throw new InvalidObjectException("Unable to rename partition because table or database do not exist");
     }
     try {
-      destPath=new Path(wh.getTablePath(ms.getDatabase(dbname),name),Warehouse.makePartName(tbl.getPartitionKeys(),new_part.getValues()));
+      destPath=new Path(wh.getTablePath(msdb.getDatabase(dbname),name),Warehouse.makePartName(tbl.getPartitionKeys(),new_part.getValues()));
     }
  catch (    NoSuchObjectException e) {
       LOG.debug(e);
@@ -79,13 +76,13 @@ catch (    NoSuchObjectException e) {
         throw new InvalidOperationException("Unable to access new location " + destPath + " for partition "+ tbl.getDbName()+ "."+ tbl.getTableName()+ " "+ new_part.getValues());
       }
       new_part.getSd().setLocation(newPartLoc);
-      ms.alterPartition(dbname,name,part_vals,new_part);
+      msdb.alterPartition(dbname,name,part_vals,new_part);
     }
-    success=ms.commitTransaction();
+    success=msdb.commitTransaction();
   }
   finally {
     if (!success) {
-      ms.rollbackTransaction();
+      msdb.rollbackTransaction();
     }
     if (success && newPartLoc.compareTo(oldPartLoc) != 0) {
       try {
@@ -101,21 +98,19 @@ catch (    NoSuchObjectException e) {
  catch (      IOException e) {
         boolean revertMetaDataTransaction=false;
         try {
-          ms.openTransaction();
-          ms.alterPartition(dbname,name,new_part.getValues(),oldPart);
-          revertMetaDataTransaction=ms.commitTransaction();
+          msdb.openTransaction();
+          msdb.alterPartition(dbname,name,new_part.getValues(),oldPart);
+          revertMetaDataTransaction=msdb.commitTransaction();
         }
  catch (        Exception e1) {
           LOG.error("Reverting metadata opeation failed During HDFS operation failed",e1);
           if (!revertMetaDataTransaction) {
-            ms.rollbackTransaction();
+            msdb.rollbackTransaction();
           }
         }
         throw new InvalidOperationException("Unable to access old location " + srcPath + " for partition "+ tbl.getDbName()+ "."+ tbl.getTableName()+ " "+ part_vals);
       }
     }
-    for (    MetaStoreEventListener listener : listeners) {
-      listener.onAlterPartition(new AlterPartitionEvent(oldPart,new_part,true,this));
-    }
   }
+  return oldPart;
 }

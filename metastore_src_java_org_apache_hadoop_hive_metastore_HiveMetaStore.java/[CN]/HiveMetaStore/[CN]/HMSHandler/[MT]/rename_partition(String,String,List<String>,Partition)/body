@@ -4,17 +4,22 @@
   if (part_vals != null && part_vals.size() > 0) {
     LOG.info("Old Partition values:" + part_vals);
   }
-  boolean success=false;
+  Partition oldPart=null;
   try {
-    success=executeWithRetry(new Command<Boolean>(){
-      @Override public Boolean run(      RawStore ms) throws Exception {
-        alter_partition_core(ms,db_name,tbl_name,part_vals,new_part);
-        return Boolean.TRUE;
+    oldPart=executeWithRetry(new Command<Partition>(){
+      @Override public Partition run(      RawStore ms) throws Exception {
+        return alterHandler.alterPartition(ms,wh,db_name,tbl_name,part_vals,new_part);
       }
     }
 );
+    for (    MetaStoreEventListener listener : listeners) {
+      listener.onAlterPartition(new AlterPartitionEvent(oldPart,new_part,true,this));
+    }
   }
- catch (  InvalidObjectException e) {
+ catch (  NoSuchObjectException e) {
+    throw new InvalidOperationException("alter is not possible");
+  }
+catch (  InvalidObjectException e) {
     throw new InvalidOperationException(e.getMessage());
   }
 catch (  AlreadyExistsException e) {
@@ -31,7 +36,7 @@ catch (  Exception e) {
     throw (RuntimeException)e;
   }
  finally {
-    endFunction("alter_partition",success);
+    endFunction("alter_partition",oldPart != null);
   }
   return;
 }
