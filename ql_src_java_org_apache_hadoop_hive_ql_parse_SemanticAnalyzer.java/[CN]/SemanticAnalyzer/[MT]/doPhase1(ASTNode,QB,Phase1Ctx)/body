@@ -1,4 +1,5 @@
 {
+  boolean phase1Result=true;
   QBParseInfo qbp=qb.getParseInfo();
   boolean skipRecursion=false;
   if (ast.getToken() != null) {
@@ -116,6 +117,42 @@ case HiveParser.TOK_UNION:
 if (!qbp.getIsSubQ()) {
 throw new SemanticException(generateErrorMessage(ast,ErrorMsg.UNION_NOTIN_SUBQ.getMsg()));
 }
+case HiveParser.TOK_INSERT:
+ASTNode destination=(ASTNode)ast.getChild(0);
+Tree tab=destination.getChild(0);
+if (destination.getChildCount() == 2 && tab.getChildCount() == 2 && destination.getChild(1).getType() == HiveParser.TOK_IFNOTEXISTS) {
+String tableName=tab.getChild(0).getChild(0).getText();
+Tree partitions=tab.getChild(1);
+int childCount=partitions.getChildCount();
+HashMap<String,String> partition=new HashMap<String,String>();
+for (int i=0; i < childCount; i++) {
+String partitionName=partitions.getChild(i).getChild(0).getText();
+Tree pvalue=partitions.getChild(i).getChild(1);
+if (pvalue == null) {
+break;
+}
+String partitionVal=stripQuotes(pvalue.getText());
+partition.put(partitionName,partitionVal);
+}
+if (childCount == partition.size()) {
+try {
+Table table=db.getTable(tableName);
+Partition parMetaData=db.getPartition(table,partition,false);
+if (parMetaData != null) {
+phase1Result=false;
+skipRecursion=true;
+LOG.info("Partition already exists so insert into overwrite " + "skipped for partition : " + parMetaData.toString());
+break;
+}
+}
+ catch (HiveException e) {
+LOG.info("Error while getting metadata : ",e);
+}
+}
+ else {
+throw new SemanticException(ErrorMsg.INSERT_INTO_DYNAMICPARTITION_IFNOTEXISTS.getMsg(partition.toString()));
+}
+}
 default :
 skipRecursion=false;
 break;
@@ -123,8 +160,9 @@ break;
 }
 if (!skipRecursion) {
 int child_count=ast.getChildCount();
-for (int child_pos=0; child_pos < child_count; ++child_pos) {
-doPhase1((ASTNode)ast.getChild(child_pos),qb,ctx_1);
+for (int child_pos=0; child_pos < child_count && phase1Result; ++child_pos) {
+phase1Result=phase1Result && doPhase1((ASTNode)ast.getChild(child_pos),qb,ctx_1);
 }
 }
+return phase1Result;
 }
