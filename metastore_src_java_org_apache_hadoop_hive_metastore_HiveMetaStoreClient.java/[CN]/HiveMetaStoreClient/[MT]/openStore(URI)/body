@@ -11,12 +11,13 @@
     }
     transport=new TSocket(store.getHost(),store.getPort());
     ((TSocket)transport).setTimeout(1000 * conf.getIntVar(ConfVars.METASTORE_CLIENT_SOCKET_TIMEOUT));
-    boolean useSasl=conf.getBoolVar(HiveConf.ConfVars.METASTORE_USE_THRIFT_SASL);
+    HadoopShims shim=ShimLoader.getHadoopShims();
+    boolean useSasl=conf.getBoolVar(ConfVars.METASTORE_USE_THRIFT_SASL);
     if (useSasl) {
       try {
         HadoopThriftAuthBridge.Client authBridge=ShimLoader.getHadoopThriftAuthBridge().createClient();
         String tokenSig=conf.get("hive.metastore.token.signature");
-        tokenStrForm=ShimLoader.getHadoopShims().getTokenStrForm(tokenSig);
+        tokenStrForm=shim.getTokenStrForm(tokenSig);
         if (tokenStrForm != null) {
           transport=authBridge.createClientTransport(null,store.getHost(),"DIGEST",tokenStrForm,transport);
         }
@@ -42,6 +43,21 @@
       }
  else {
         LOG.warn("Failed to connect to the MetaStore Server...");
+      }
+    }
+    if (!useSasl && conf.getBoolVar(ConfVars.METASTORE_EXECUTE_SET_UGI)) {
+      try {
+        UserGroupInformation ugi=shim.getUGIForConf(conf);
+        client.set_ugi(ugi.getUserName(),Arrays.asList(ugi.getGroupNames()));
+      }
+ catch (      LoginException e) {
+        LOG.warn("Failed to do login. set_ugi() is not successful, Continuing without it.",e);
+      }
+catch (      IOException e) {
+        LOG.warn("Failed to find ugi of client set_ugi() is not successful, " + "Continuing without it.",e);
+      }
+catch (      TException e) {
+        LOG.warn("set_ugi() not successful, Likely cause: new client talking to old server. " + "Continuing without it.",e);
       }
     }
   }
