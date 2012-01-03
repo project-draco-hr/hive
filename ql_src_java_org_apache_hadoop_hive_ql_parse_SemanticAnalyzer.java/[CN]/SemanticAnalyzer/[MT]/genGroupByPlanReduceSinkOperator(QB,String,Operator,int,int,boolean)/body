@@ -4,71 +4,15 @@
   RowResolver reduceSinkOutputRowResolver=new RowResolver();
   reduceSinkOutputRowResolver.setIsExprResolver(true);
   Map<String,ExprNodeDesc> colExprMap=new HashMap<String,ExprNodeDesc>();
-  ArrayList<ExprNodeDesc> reduceKeys=new ArrayList<ExprNodeDesc>();
   List<String> outputKeyColumnNames=new ArrayList<String>();
   List<String> outputValueColumnNames=new ArrayList<String>();
   List<ASTNode> grpByExprs=getGroupByForClause(parseInfo,dest);
-  for (int i=0; i < grpByExprs.size(); ++i) {
-    ASTNode grpbyExpr=grpByExprs.get(i);
-    ExprNodeDesc inputExpr=genExprNodeDesc(grpbyExpr,reduceSinkInputRowResolver);
-    reduceKeys.add(inputExpr);
-    if (reduceSinkOutputRowResolver.getExpression(grpbyExpr) == null) {
-      outputKeyColumnNames.add(getColumnInternalName(reduceKeys.size() - 1));
-      String field=Utilities.ReduceField.KEY.toString() + "." + getColumnInternalName(reduceKeys.size() - 1);
-      ColumnInfo colInfo=new ColumnInfo(field,reduceKeys.get(reduceKeys.size() - 1).getTypeInfo(),null,false);
-      reduceSinkOutputRowResolver.putExpression(grpbyExpr,colInfo);
-      colExprMap.put(colInfo.getInternalName(),inputExpr);
-    }
- else {
-      throw new SemanticException(ErrorMsg.DUPLICATE_GROUPBY_KEY.getMsg(grpbyExpr));
-    }
-  }
-  List<List<Integer>> distinctColIndices=new ArrayList<List<Integer>>();
-  if (!parseInfo.getDistinctFuncExprsForClause(dest).isEmpty()) {
-    List<ASTNode> distFuncs=parseInfo.getDistinctFuncExprsForClause(dest);
-    String colName=getColumnInternalName(reduceKeys.size());
-    outputKeyColumnNames.add(colName);
-    for (int i=0; i < distFuncs.size(); i++) {
-      ASTNode value=distFuncs.get(i);
-      int numExprs=0;
-      List<Integer> distinctIndices=new ArrayList<Integer>();
-      for (int j=1; j < value.getChildCount(); j++) {
-        ASTNode parameter=(ASTNode)value.getChild(j);
-        ExprNodeDesc expr=genExprNodeDesc(parameter,reduceSinkInputRowResolver);
-        int ri;
-        for (ri=0; ri < reduceKeys.size(); ri++) {
-          if (reduceKeys.get(ri).getExprString().equals(expr.getExprString())) {
-            break;
-          }
-        }
-        if (ri == reduceKeys.size()) {
-          reduceKeys.add(expr);
-        }
-        distinctIndices.add(ri);
-        String name=getColumnInternalName(numExprs);
-        String field=Utilities.ReduceField.KEY.toString() + "." + colName+ ":"+ i+ "."+ name;
-        ColumnInfo colInfo=new ColumnInfo(field,expr.getTypeInfo(),null,false);
-        reduceSinkOutputRowResolver.putExpression(parameter,colInfo);
-        numExprs++;
-      }
-      distinctColIndices.add(distinctIndices);
-    }
-  }
+  ArrayList<ExprNodeDesc> reduceKeys=getReduceKeysForReduceSink(grpByExprs,dest,reduceSinkInputRowResolver,reduceSinkOutputRowResolver,outputKeyColumnNames,colExprMap);
+  List<List<Integer>> distinctColIndices=getDistinctColIndicesForReduceSink(parseInfo,dest,reduceKeys,reduceSinkInputRowResolver,reduceSinkOutputRowResolver,outputKeyColumnNames);
   ArrayList<ExprNodeDesc> reduceValues=new ArrayList<ExprNodeDesc>();
   HashMap<String,ASTNode> aggregationTrees=parseInfo.getAggregationExprsForClause(dest);
   if (!mapAggrDone) {
-    for (    Map.Entry<String,ASTNode> entry : aggregationTrees.entrySet()) {
-      ASTNode value=entry.getValue();
-      for (int i=1; i < value.getChildCount(); i++) {
-        ASTNode parameter=(ASTNode)value.getChild(i);
-        if (reduceSinkOutputRowResolver.getExpression(parameter) == null) {
-          reduceValues.add(genExprNodeDesc(parameter,reduceSinkInputRowResolver));
-          outputValueColumnNames.add(getColumnInternalName(reduceValues.size() - 1));
-          String field=Utilities.ReduceField.VALUE.toString() + "." + getColumnInternalName(reduceValues.size() - 1);
-          reduceSinkOutputRowResolver.putExpression(parameter,new ColumnInfo(field,reduceValues.get(reduceValues.size() - 1).getTypeInfo(),null,false));
-        }
-      }
-    }
+    getReduceValuesForReduceSinkNoMapAgg(parseInfo,dest,reduceSinkInputRowResolver,reduceSinkOutputRowResolver,outputValueColumnNames,reduceValues);
   }
  else {
     int inputField=reduceKeys.size();

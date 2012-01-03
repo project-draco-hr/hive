@@ -2,28 +2,9 @@
   QBParseInfo qbp=qb.getParseInfo();
   TreeSet<String> ks=new TreeSet<String>(qbp.getClauseNames());
   List<ASTNode> commonDistinctExprs=getCommonDistinctExprs(qb,input);
-  List<ASTNode> commonGbyKeys=getCommonGroupbyKeys(qb,input);
-  LOG.warn("Common Gby keys:" + commonGbyKeys);
   boolean optimizeMultiGroupBy=commonDistinctExprs != null;
-  boolean singlemrMultiGroupBy=conf.getBoolVar(HiveConf.ConfVars.HIVEMULTIGROUPBYSINGLEMR) && commonGbyKeys != null && !commonGbyKeys.isEmpty() && (!distinctExprsExists(qb) || commonDistinctExprs != null);
   Operator curr=input;
-  if (singlemrMultiGroupBy) {
-    curr=createCommonReduceSink1(qb,input);
-    RowResolver currRR=opParseCtx.get(curr).getRowResolver();
-    input=putOpInsertMap(OperatorFactory.getAndMakeChild(new ForwardDesc(),new RowSchema(currRR.getColumnInfos()),curr),currRR);
-    for (    String dest : ks) {
-      curr=input;
-      curr=genGroupByPlan1MRMultiGroupBy(dest,qb,curr);
-      curr=genSelectPlan(dest,qb,curr);
-      Integer limit=qbp.getDestLimit(dest);
-      if (limit != null) {
-        curr=genLimitMapRedPlan(dest,qb,curr,limit.intValue(),true);
-        qb.getParseInfo().setOuterQueryLimit(limit.intValue());
-      }
-      curr=genFileSinkPlan(dest,qb,curr);
-    }
-  }
- else   if (optimizeMultiGroupBy) {
+  if (optimizeMultiGroupBy) {
     curr=createCommonReduceSink(qb,input);
     RowResolver currRR=opParseCtx.get(curr).getRowResolver();
     input=putOpInsertMap(OperatorFactory.getAndMakeChild(new ForwardDesc(),new RowSchema(currRR.getColumnInfos()),curr),currRR);
@@ -40,73 +21,57 @@
     }
   }
  else {
-    for (    String dest : ks) {
-      curr=input;
-      if (qbp.getWhrForClause(dest) != null) {
-        curr=genFilterPlan(dest,qb,curr);
+    List<List<String>> commonGroupByDestGroups=null;
+    if (conf.getBoolVar(HiveConf.ConfVars.HIVEMULTIGROUPBYSINGLEREDUCER)) {
+      try {
+        commonGroupByDestGroups=getCommonGroupByDestGroups(qb,curr);
       }
-      if (qbp.getAggregationExprsForClause(dest).size() != 0 || getGroupByForClause(qbp,dest).size() > 0) {
-        if (conf.getBoolVar(HiveConf.ConfVars.HIVEGROUPBYSKEW) && qbp.getDistinctFuncExprsForClause(dest).size() > 1) {
-          throw new SemanticException(ErrorMsg.UNSUPPORTED_MULTIPLE_DISTINCTS.getMsg());
+ catch (      SemanticException e) {
+        LOG.error("Failed to group clauses by common spray keys.",e);
+      }
+    }
+    if (commonGroupByDestGroups == null) {
+      commonGroupByDestGroups=new ArrayList<List<String>>();
+      commonGroupByDestGroups.add(new ArrayList<String>(ks));
+    }
+    if (!commonGroupByDestGroups.isEmpty()) {
+      for (      List<String> commonGroupByDestGroup : commonGroupByDestGroups) {
+        if (commonGroupByDestGroup.isEmpty()) {
+          continue;
         }
-        curr=insertSelectAllPlanForGroupBy(dest,curr);
-        if (conf.getBoolVar(HiveConf.ConfVars.HIVEMAPSIDEAGGREGATE)) {
-          if (!conf.getBoolVar(HiveConf.ConfVars.HIVEGROUPBYSKEW)) {
-            curr=genGroupByPlanMapAggr1MR(dest,qb,curr);
-          }
+        String firstDest=commonGroupByDestGroup.get(0);
+        if (commonGroupByDestGroup.size() == 1 || (qbp.getAggregationExprsForClause(firstDest).size() == 0 && getGroupByForClause(qbp,firstDest).size() == 0) || conf.getBoolVar(HiveConf.ConfVars.HIVEGROUPBYSKEW) || !conf.getBoolVar(HiveConf.ConfVars.HIVEMULTIGROUPBYSINGLEREDUCER)) {
+          for (          String dest : commonGroupByDestGroup) {
+            curr=input;
+            if (qbp.getWhrForClause(dest) != null) {
+              curr=genFilterPlan(dest,qb,curr);
+            }
+            if (qbp.getAggregationExprsForClause(dest).size() != 0 || getGroupByForClause(qbp,dest).size() > 0) {
+              if (conf.getBoolVar(HiveConf.ConfVars.HIVEGROUPBYSKEW) && qbp.getDistinctFuncExprsForClause(dest).size() > 1) {
+                throw new SemanticException(ErrorMsg.UNSUPPORTED_MULTIPLE_DISTINCTS.getMsg());
+              }
+              curr=insertSelectAllPlanForGroupBy(curr);
+              if (conf.getBoolVar(HiveConf.ConfVars.HIVEMAPSIDEAGGREGATE)) {
+                if (!conf.getBoolVar(HiveConf.ConfVars.HIVEGROUPBYSKEW)) {
+                  curr=genGroupByPlanMapAggr1MR(dest,qb,curr);
+                }
  else {
-            curr=genGroupByPlanMapAggr2MR(dest,qb,curr);
+                  curr=genGroupByPlanMapAggr2MR(dest,qb,curr);
+                }
+              }
+ else               if (conf.getBoolVar(HiveConf.ConfVars.HIVEGROUPBYSKEW)) {
+                curr=genGroupByPlan2MR(dest,qb,curr);
+              }
+ else {
+                curr=genGroupByPlan1MR(dest,qb,curr);
+              }
+            }
+            curr=genPostGroupByBodyPlan(curr,dest,qb);
           }
         }
- else         if (conf.getBoolVar(HiveConf.ConfVars.HIVEGROUPBYSKEW)) {
-          curr=genGroupByPlan2MR(dest,qb,curr);
-        }
  else {
-          curr=genGroupByPlan1MR(dest,qb,curr);
+          curr=genGroupByPlan1MRMultiReduceGB(commonGroupByDestGroup,qb,input);
         }
-      }
-      if (qbp.getHavingForClause(dest) != null) {
-        if (getGroupByForClause(qbp,dest).size() == 0) {
-          throw new SemanticException("HAVING specified without GROUP BY");
-        }
-        curr=genHavingPlan(dest,qb,curr);
-      }
-      curr=genSelectPlan(dest,qb,curr);
-      Integer limit=qbp.getDestLimit(dest);
-      if (qbp.getClusterByForClause(dest) != null || qbp.getDistributeByForClause(dest) != null || qbp.getOrderByForClause(dest) != null || qbp.getSortByForClause(dest) != null) {
-        int numReducers=-1;
-        if (qbp.getOrderByForClause(dest) != null) {
-          numReducers=1;
-        }
-        curr=genReduceSinkPlan(dest,qb,curr,numReducers);
-      }
-      if (qbp.getIsSubQ()) {
-        if (limit != null) {
-          curr=genLimitMapRedPlan(dest,qb,curr,limit.intValue(),qbp.getOrderByForClause(dest) != null ? false : true);
-        }
-      }
- else {
-        curr=genConversionOps(dest,qb,curr);
-        if (limit != null) {
-          boolean extraMRStep=true;
-          if (qb.getIsQuery() && qbp.getClusterByForClause(dest) == null && qbp.getSortByForClause(dest) == null) {
-            extraMRStep=false;
-          }
-          curr=genLimitMapRedPlan(dest,qb,curr,limit.intValue(),extraMRStep);
-          qb.getParseInfo().setOuterQueryLimit(limit.intValue());
-        }
-        curr=genFileSinkPlan(dest,qb,curr);
-      }
-      if (qb.getParseInfo().getAlias() != null) {
-        RowResolver rr=opParseCtx.get(curr).getRowResolver();
-        RowResolver newRR=new RowResolver();
-        String alias=qb.getParseInfo().getAlias();
-        for (        ColumnInfo colInfo : rr.getColumnInfos()) {
-          String name=colInfo.getInternalName();
-          String[] tmp=rr.reverseLookup(name);
-          newRR.put(alias,tmp[1],colInfo);
-        }
-        opParseCtx.get(curr).setRowResolver(newRR);
       }
     }
   }
