@@ -1,0 +1,45 @@
+{
+  String dbName="concurrentdb";
+  String tblName="concurrenttbl";
+  String renameTblName="rename_concurrenttbl";
+  try {
+    client.dropTable(dbName,tblName);
+    silentDropDatabase(dbName);
+    Database db=new Database();
+    db.setName(dbName);
+    client.createDatabase(db);
+    ArrayList<FieldSchema> cols=new ArrayList<FieldSchema>(2);
+    cols.add(new FieldSchema("c1",Constants.STRING_TYPE_NAME,""));
+    cols.add(new FieldSchema("c2",Constants.INT_TYPE_NAME,""));
+    Table tbl=new Table();
+    tbl.setDbName(dbName);
+    tbl.setTableName(tblName);
+    StorageDescriptor sd=new StorageDescriptor();
+    tbl.setSd(sd);
+    sd.setCols(cols);
+    sd.setCompressed(false);
+    sd.setNumBuckets(1);
+    sd.setParameters(new HashMap<String,String>());
+    sd.getParameters().put("test_param_1","Use this for comments etc");
+    sd.setBucketCols(new ArrayList<String>(2));
+    sd.getBucketCols().add("name");
+    sd.setSerdeInfo(new SerDeInfo());
+    sd.getSerdeInfo().setName(tbl.getTableName());
+    sd.getSerdeInfo().setParameters(new HashMap<String,String>());
+    sd.getSerdeInfo().getParameters().put(org.apache.hadoop.hive.serde.Constants.SERIALIZATION_FORMAT,"1");
+    client.createTable(tbl);
+    Table tbl2=client.getTable(dbName,tblName);
+    assertEquals("Client returned table with different name.",tbl2.getTableName(),tblName);
+    updateTableNameInDB(tblName,renameTblName);
+    Table tbl3=client.getTable(dbName,renameTblName);
+    assertEquals("Client returned table with different name after rename.",tbl3.getTableName(),renameTblName);
+  }
+ catch (  Exception e) {
+    System.err.println(StringUtils.stringifyException(e));
+    System.err.println("testConcurrentMetastores() failed.");
+    throw e;
+  }
+ finally {
+    silentDropDatabase(dbName);
+  }
+}
