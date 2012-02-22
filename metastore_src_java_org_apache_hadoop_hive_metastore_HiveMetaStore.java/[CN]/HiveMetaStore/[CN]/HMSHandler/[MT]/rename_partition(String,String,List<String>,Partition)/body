@@ -1,39 +1,23 @@
 {
   startTableFunction("alter_partition",db_name,tbl_name);
-  LOG.info("New partition values:" + new_part.getValues());
-  if (part_vals != null && part_vals.size() > 0) {
-    LOG.info("Old Partition values:" + part_vals);
+  if (LOG.isInfoEnabled()) {
+    LOG.info("New partition values:" + new_part.getValues());
+    if (part_vals != null && part_vals.size() > 0) {
+      LOG.info("Old Partition values:" + part_vals);
+    }
   }
   Partition oldPart=null;
   try {
-    oldPart=executeWithRetry(new Command<Partition>(){
-      @Override public Partition run(      RawStore ms) throws Exception {
-        return alterHandler.alterPartition(ms,wh,db_name,tbl_name,part_vals,new_part);
-      }
-    }
-);
+    oldPart=alterHandler.alterPartition(getMS(),wh,db_name,tbl_name,part_vals,new_part);
     for (    MetaStoreEventListener listener : listeners) {
       listener.onAlterPartition(new AlterPartitionEvent(oldPart,new_part,true,this));
     }
   }
- catch (  NoSuchObjectException e) {
-    throw new InvalidOperationException("alter is not possible");
-  }
-catch (  InvalidObjectException e) {
+ catch (  InvalidObjectException e) {
     throw new InvalidOperationException(e.getMessage());
   }
 catch (  AlreadyExistsException e) {
     throw new InvalidOperationException(e.getMessage());
-  }
-catch (  MetaException e) {
-    throw e;
-  }
-catch (  TException e) {
-    throw e;
-  }
-catch (  Exception e) {
-    assert(e instanceof RuntimeException);
-    throw (RuntimeException)e;
   }
  finally {
     endFunction("alter_partition",oldPart != null);
