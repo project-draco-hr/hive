@@ -1,7 +1,8 @@
 {
   AlterTablePartMergeFilesDesc mergeDesc=new AlterTablePartMergeFilesDesc(tableName,partSpec);
   List<String> inputDir=new ArrayList<String>();
-  String tblPartLoc=null;
+  Path oldTblPartLoc=null;
+  Path newTblPartLoc=null;
   Table tblObj=null;
   try {
     tblObj=db.getTable(tableName);
@@ -27,13 +28,17 @@
         bucketCols=part.getBucketCols();
         inputFormatClass=part.getInputFormatClass();
         isArchived=ArchiveUtils.isArchived(part);
-        tblPartLoc=part.getPartitionPath().toString();
+        Path tabPath=tblObj.getPath();
+        Path partPath=part.getPartitionPath();
+        newTblPartLoc=new Path(tabPath.toUri().getScheme(),tabPath.toUri().getAuthority(),partPath.toUri().getPath());
+        oldTblPartLoc=partPath;
       }
     }
  else {
       inputFormatClass=tblObj.getInputFormatClass();
       bucketCols=tblObj.getBucketCols();
-      tblPartLoc=tblObj.getPath().toString();
+      oldTblPartLoc=tblObj.getPath();
+      newTblPartLoc=tblObj.getPath();
     }
     if (!inputFormatClass.equals(RCFileInputFormat.class)) {
       throw new SemanticException("Only RCFileFormat is supportted right now.");
@@ -44,23 +49,31 @@
     if (isArchived) {
       throw new SemanticException("Merge can not perform on archived partitions.");
     }
-    inputDir.add(tblPartLoc);
+    inputDir.add(oldTblPartLoc.toString());
     mergeDesc.setInputDir(inputDir);
     addInputsOutputsAlterTable(tableName,partSpec);
     DDLWork ddlWork=new DDLWork(getInputs(),getOutputs(),mergeDesc);
     ddlWork.setNeedLock(true);
     Task<? extends Serializable> mergeTask=TaskFactory.get(ddlWork,conf);
     TableDesc tblDesc=Utilities.getTableDesc(tblObj);
-    String queryTmpdir=ctx.getExternalTmpFileURI((new Path(tblPartLoc)).toUri());
+    String queryTmpdir=ctx.getExternalTmpFileURI(newTblPartLoc.toUri());
     mergeDesc.setOutputDir(queryTmpdir);
     LoadTableDesc ltd=new LoadTableDesc(queryTmpdir,queryTmpdir,tblDesc,partSpec == null ? new HashMap<String,String>() : partSpec);
     Task<MoveWork> moveTsk=TaskFactory.get(new MoveWork(null,null,ltd,null,false),conf);
     mergeTask.addDependentTask(moveTsk);
-    tableSpec tablepart=new tableSpec(this.db,conf,tablePartAST);
-    StatsWork statDesc=new StatsWork(tablepart);
-    statDesc.setNoStatsAggregator(true);
-    Task<? extends Serializable> statTask=TaskFactory.get(statDesc,conf);
-    moveTsk.addDependentTask(statTask);
+    if (conf.getBoolVar(HiveConf.ConfVars.HIVESTATSAUTOGATHER)) {
+      StatsWork statDesc;
+      if (oldTblPartLoc.equals(newTblPartLoc)) {
+        tableSpec tablepart=new tableSpec(this.db,conf,tablePartAST);
+        statDesc=new StatsWork(tablepart);
+      }
+ else {
+        statDesc=new StatsWork(ltd);
+      }
+      statDesc.setNoStatsAggregator(true);
+      Task<? extends Serializable> statTask=TaskFactory.get(statDesc,conf);
+      moveTsk.addDependentTask(statTask);
+    }
     rootTasks.add(mergeTask);
   }
  catch (  Exception e) {
