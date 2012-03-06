@@ -4,9 +4,9 @@
     return tableSplit;
   }
   ExprNodeDesc filterExpr=Utilities.deserializeExpression(filterExprSerialized,jobConf);
-  String columnNameProperty=jobConf.get(Constants.LIST_COLUMNS);
-  List<String> columnNames=Arrays.asList(columnNameProperty.split(","));
-  IndexPredicateAnalyzer analyzer=newIndexPredicateAnalyzer(columnNames.get(iKey));
+  String colName=jobConf.get(Constants.LIST_COLUMNS).split(",")[iKey];
+  String colType=jobConf.get(Constants.LIST_COLUMN_TYPES).split(",")[iKey];
+  IndexPredicateAnalyzer analyzer=newIndexPredicateAnalyzer(colName,colType);
   List<IndexSearchCondition> searchConditions=new ArrayList<IndexSearchCondition>();
   ExprNodeDesc residualPredicate=analyzer.analyzePredicate(filterExpr,searchConditions);
   if (residualPredicate != null) {
@@ -17,25 +17,43 @@
   }
   IndexSearchCondition sc=searchConditions.get(0);
   ExprNodeConstantEvaluator eval=new ExprNodeConstantEvaluator(sc.getConstantDesc());
-  byte[] startRow;
+  byte[] row;
   try {
     ObjectInspector objInspector=eval.initialize(null);
     Object writable=eval.evaluate(null);
     ByteStream.Output serializeStream=new ByteStream.Output();
     LazyUtils.writePrimitiveUTF8(serializeStream,writable,(PrimitiveObjectInspector)objInspector,false,(byte)0,null);
-    startRow=new byte[serializeStream.getCount()];
-    System.arraycopy(serializeStream.getData(),0,startRow,0,serializeStream.getCount());
+    row=new byte[serializeStream.getCount()];
+    System.arraycopy(serializeStream.getData(),0,row,0,serializeStream.getCount());
   }
  catch (  HiveException ex) {
     throw new IOException(ex);
   }
-  byte[] stopRow=new byte[startRow.length + 1];
-  System.arraycopy(startRow,0,stopRow,0,startRow.length);
+  byte[] startRow=HConstants.EMPTY_START_ROW, stopRow=HConstants.EMPTY_END_ROW;
+  String comparisonOp=sc.getComparisonOp();
+  if ("org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPEqual".equals(comparisonOp)) {
+    startRow=row;
+    stopRow=getNextBA(row);
+  }
+ else   if ("org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPLessThan".equals(comparisonOp)) {
+    stopRow=row;
+  }
+ else   if ("org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPEqualOrGreaterThan".equals(comparisonOp)) {
+    startRow=row;
+  }
+ else   if ("org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPGreaterThan".equals(comparisonOp)) {
+    startRow=getNextBA(row);
+  }
+ else   if ("org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPEqualOrLessThan".equals(comparisonOp)) {
+    stopRow=getNextBA(row);
+  }
+ else {
+    throw new IOException(comparisonOp + " is not a supported comparison operator");
+  }
   if (tableSplit != null) {
     tableSplit=new TableSplit(tableSplit.getTableName(),startRow,stopRow,tableSplit.getRegionLocation());
   }
   scan.setStartRow(startRow);
   scan.setStopRow(stopRow);
-  scan.setFilter(new WhileMatchFilter(new RowFilter(CompareFilter.CompareOp.EQUAL,new BinaryComparator(startRow))));
   return tableSplit;
 }
