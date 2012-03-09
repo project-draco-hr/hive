@@ -1,22 +1,20 @@
 {
-  if (!getFieldInited()[fieldID]) {
-    getFieldInited()[fieldID]=true;
+  LazyObject<?>[] fields=getFields();
+  boolean[] fieldsInited=getFieldInited();
+  if (!fieldsInited[fieldID]) {
+    fieldsInited[fieldID]=true;
     ByteArrayRef ref=null;
-    String columnFamily=hbaseColumnFamilies.get(fieldID);
-    String columnQualifier=hbaseColumnQualifiers.get(fieldID);
-    byte[] columnFamilyBytes=hbaseColumnFamiliesBytes.get(fieldID);
-    byte[] columnQualifierBytes=hbaseColumnQualifiersBytes.get(fieldID);
-    if (HBaseSerDe.isSpecialColumn(columnFamily)) {
-      assert(columnQualifier == null);
+    ColumnMapping colMap=columnsMapping.get(fieldID);
+    if (colMap.hbaseRowKey) {
       ref=new ByteArrayRef();
       ref.setData(result.getRow());
     }
  else {
-      if (columnQualifier == null) {
-        ((LazyHBaseCellMap)getFields()[fieldID]).init(result,columnFamilyBytes);
+      if (colMap.qualifierName == null) {
+        ((LazyHBaseCellMap)fields[fieldID]).init(result,colMap.familyNameBytes,colMap.binaryStorage);
       }
  else {
-        byte[] res=result.getValue(columnFamilyBytes,columnQualifierBytes);
+        byte[] res=result.getValue(colMap.familyNameBytes,colMap.qualifierNameBytes);
         if (res == null) {
           return null;
         }
@@ -27,8 +25,8 @@
       }
     }
     if (ref != null) {
-      getFields()[fieldID].init(ref,0,ref.getData().length);
+      fields[fieldID].init(ref,0,ref.getData().length);
     }
   }
-  return getFields()[fieldID].getObject();
+  return fields[fieldID].getObject();
 }

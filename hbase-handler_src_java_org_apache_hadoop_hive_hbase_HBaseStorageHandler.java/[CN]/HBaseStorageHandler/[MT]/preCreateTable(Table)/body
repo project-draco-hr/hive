@@ -7,20 +7,18 @@
     String tableName=getHBaseTableName(tbl);
     Map<String,String> serdeParam=tbl.getSd().getSerdeInfo().getParameters();
     String hbaseColumnsMapping=serdeParam.get(HBaseSerDe.HBASE_COLUMNS_MAPPING);
-    if (hbaseColumnsMapping == null) {
-      throw new MetaException("No hbase.columns.mapping defined in Serde.");
-    }
-    List<String> hbaseColumnFamilies=new ArrayList<String>();
-    List<String> hbaseColumnQualifiers=new ArrayList<String>();
-    List<byte[]> hbaseColumnFamiliesBytes=new ArrayList<byte[]>();
-    List<byte[]> hbaseColumnQualifiersBytes=new ArrayList<byte[]>();
-    int iKey=HBaseSerDe.parseColumnMapping(hbaseColumnsMapping,hbaseColumnFamilies,hbaseColumnFamiliesBytes,hbaseColumnQualifiers,hbaseColumnQualifiersBytes);
+    List<ColumnMapping> columnsMapping=null;
+    columnsMapping=HBaseSerDe.parseColumnsMapping(hbaseColumnsMapping);
     HTableDescriptor tableDesc;
     if (!getHBaseAdmin().tableExists(tableName)) {
       if (!isExternal) {
         tableDesc=new HTableDescriptor(tableName);
-        Set<String> uniqueColumnFamilies=new HashSet<String>(hbaseColumnFamilies);
-        uniqueColumnFamilies.remove(hbaseColumnFamilies.get(iKey));
+        Set<String> uniqueColumnFamilies=new HashSet<String>();
+        for (        ColumnMapping colMap : columnsMapping) {
+          if (!colMap.hbaseRowKey) {
+            uniqueColumnFamilies.add(colMap.familyName);
+          }
+        }
         for (        String columnFamily : uniqueColumnFamilies) {
           tableDesc.addFamily(new HColumnDescriptor(Bytes.toBytes(columnFamily)));
         }
@@ -35,12 +33,13 @@
         throw new MetaException("Table " + tableName + " already exists"+ " within HBase; use CREATE EXTERNAL TABLE instead to"+ " register it in Hive.");
       }
       tableDesc=getHBaseAdmin().getTableDescriptor(Bytes.toBytes(tableName));
-      for (int i=0; i < hbaseColumnFamilies.size(); i++) {
-        if (i == iKey) {
+      for (int i=0; i < columnsMapping.size(); i++) {
+        ColumnMapping colMap=columnsMapping.get(i);
+        if (colMap.hbaseRowKey) {
           continue;
         }
-        if (!tableDesc.hasFamily(hbaseColumnFamiliesBytes.get(i))) {
-          throw new MetaException("Column Family " + hbaseColumnFamilies.get(i) + " is not defined in hbase table "+ tableName);
+        if (!tableDesc.hasFamily(colMap.familyNameBytes)) {
+          throw new MetaException("Column Family " + colMap.familyName + " is not defined in hbase table "+ tableName);
         }
       }
     }

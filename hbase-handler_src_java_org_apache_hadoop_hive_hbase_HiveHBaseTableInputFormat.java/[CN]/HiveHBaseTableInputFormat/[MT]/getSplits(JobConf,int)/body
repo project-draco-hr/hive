@@ -1,34 +1,38 @@
 {
   String hbaseTableName=jobConf.get(HBaseSerDe.HBASE_TABLE_NAME);
-  setHTable(new HTable(new HBaseConfiguration(jobConf),Bytes.toBytes(hbaseTableName)));
+  setHTable(new HTable(HBaseConfiguration.create(jobConf),Bytes.toBytes(hbaseTableName)));
   String hbaseColumnsMapping=jobConf.get(HBaseSerDe.HBASE_COLUMNS_MAPPING);
   if (hbaseColumnsMapping == null) {
     throw new IOException("hbase.columns.mapping required for HBase Table.");
   }
-  List<String> hbaseColumnFamilies=new ArrayList<String>();
-  List<String> hbaseColumnQualifiers=new ArrayList<String>();
-  List<byte[]> hbaseColumnFamiliesBytes=new ArrayList<byte[]>();
-  List<byte[]> hbaseColumnQualifiersBytes=new ArrayList<byte[]>();
+  List<ColumnMapping> columnsMapping=null;
+  try {
+    columnsMapping=HBaseSerDe.parseColumnsMapping(hbaseColumnsMapping);
+  }
+ catch (  SerDeException e) {
+    throw new IOException(e);
+  }
   int iKey;
   try {
-    iKey=HBaseSerDe.parseColumnMapping(hbaseColumnsMapping,hbaseColumnFamilies,hbaseColumnFamiliesBytes,hbaseColumnQualifiers,hbaseColumnQualifiersBytes);
+    iKey=HBaseSerDe.getRowKeyColumnOffset(columnsMapping);
   }
- catch (  SerDeException se) {
-    throw new IOException(se);
+ catch (  SerDeException e) {
+    throw new IOException(e);
   }
   Scan scan=new Scan();
-  convertFilter(jobConf,scan,null,iKey);
-  for (int i=0; i < hbaseColumnFamilies.size(); i++) {
-    if (i == iKey) {
+  for (int i=0; i < columnsMapping.size(); i++) {
+    ColumnMapping colMap=columnsMapping.get(i);
+    if (colMap.hbaseRowKey) {
       continue;
     }
-    if (hbaseColumnQualifiers.get(i) == null) {
-      scan.addFamily(hbaseColumnFamiliesBytes.get(i));
+    if (colMap.qualifierName == null) {
+      scan.addFamily(colMap.familyNameBytes);
     }
  else {
-      scan.addColumn(hbaseColumnFamiliesBytes.get(i),hbaseColumnQualifiersBytes.get(i));
+      scan.addColumn(colMap.familyNameBytes,colMap.qualifierNameBytes);
     }
   }
+  convertFilter(jobConf,scan,null,iKey);
   setScan(scan);
   Job job=new Job(jobConf);
   JobContext jobContext=ShimLoader.getHadoopShims().newJobContext(job);

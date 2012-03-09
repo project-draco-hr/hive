@@ -1,17 +1,17 @@
 {
   if (getFields() == null) {
     List<? extends StructField> fieldRefs=((StructObjectInspector)getInspector()).getAllStructFieldRefs();
-    setFields(new LazyObject[fieldRefs.size()]);
-    for (int i=0; i < getFields().length; i++) {
-      String hbaseColumnFamily=hbaseColumnFamilies.get(i);
-      String hbaseColumnQualifier=hbaseColumnQualifiers.get(i);
-      if (hbaseColumnQualifier == null && !HBaseSerDe.isSpecialColumn(hbaseColumnFamily)) {
-        getFields()[i]=new LazyHBaseCellMap((LazyMapObjectInspector)fieldRefs.get(i).getFieldObjectInspector());
+    LazyObject<? extends ObjectInspector>[] fields=new LazyObject<?>[fieldRefs.size()];
+    for (int i=0; i < fields.length; i++) {
+      ColumnMapping colMap=columnsMapping.get(i);
+      if (colMap.qualifierName == null && !colMap.hbaseRowKey) {
+        fields[i]=new LazyHBaseCellMap((LazyMapObjectInspector)fieldRefs.get(i).getFieldObjectInspector());
         continue;
       }
-      getFields()[i]=LazyFactory.createLazyObject(fieldRefs.get(i).getFieldObjectInspector());
+      fields[i]=LazyFactory.createLazyObject(fieldRefs.get(i).getFieldObjectInspector(),colMap.binaryStorage.get(0));
     }
-    setFieldInited(new boolean[getFields().length]);
+    setFields(fields);
+    setFieldInited(new boolean[fields.length]);
   }
   Arrays.fill(getFieldInited(),false);
   setParsed(true);

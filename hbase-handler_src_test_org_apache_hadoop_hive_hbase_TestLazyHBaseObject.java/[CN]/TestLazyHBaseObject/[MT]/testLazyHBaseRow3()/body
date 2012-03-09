@@ -1,0 +1,110 @@
+{
+  List<TypeInfo> fieldTypeInfos=TypeInfoUtils.getTypeInfosFromTypeString("string,int,tinyint,smallint,bigint,float,double,string,boolean");
+  List<String> fieldNames=Arrays.asList(new String[]{"key","c_int","c_byte","c_short","c_long","c_float","c_double","c_string","c_bool"});
+  Text nullSequence=new Text("\\N");
+  String hbaseColumnsMapping=":key#str,cf-int:cq-int#bin,cf-byte:cq-byte#bin," + "cf-short:cq-short#bin,cf-long:cq-long#bin,cf-float:cq-float#bin,cf-double:cq-double#bin," + "cf-string:cq-string#str,cf-bool:cq-bool#bin";
+  List<ColumnMapping> columnsMapping=null;
+  try {
+    columnsMapping=HBaseSerDe.parseColumnsMapping(hbaseColumnsMapping);
+  }
+ catch (  SerDeException sde) {
+    fail(sde.toString());
+  }
+  for (int i=0; i < columnsMapping.size(); i++) {
+    ColumnMapping colMap=columnsMapping.get(i);
+    if (i == 0 || i == 7) {
+      colMap.binaryStorage.add(false);
+    }
+ else {
+      colMap.binaryStorage.add(true);
+    }
+  }
+  ObjectInspector oi=LazyFactory.createLazyStructInspector(fieldNames,fieldTypeInfos,new byte[]{' ',':','='},nullSequence,false,false,(byte)0);
+  LazyHBaseRow o=new LazyHBaseRow((LazySimpleStructObjectInspector)oi);
+  byte[] rowKey="row-key".getBytes();
+  List<KeyValue> kvs=new ArrayList<KeyValue>();
+  byte[] value;
+  for (int i=1; i < columnsMapping.size(); i++) {
+switch (i) {
+case 1:
+      value=Bytes.toBytes(1);
+    break;
+case 2:
+  value=new byte[]{(byte)1};
+break;
+case 3:
+value=Bytes.toBytes((short)1);
+break;
+case 4:
+value=Bytes.toBytes((long)1);
+break;
+case 5:
+value=Bytes.toBytes((float)1.0F);
+break;
+case 6:
+value=Bytes.toBytes((double)1.0);
+break;
+case 7:
+value="Hadoop, Hive, with HBase storage handler.".getBytes();
+break;
+case 8:
+value=Bytes.toBytes(true);
+break;
+default :
+throw new RuntimeException("Not expected: " + i);
+}
+ColumnMapping colMap=columnsMapping.get(i);
+kvs.add(new KeyValue(rowKey,colMap.familyNameBytes,colMap.qualifierNameBytes,value));
+}
+Collections.sort(kvs,KeyValue.COMPARATOR);
+Result result=new Result(kvs);
+o.init(result,columnsMapping);
+List<? extends StructField> fieldRefs=((StructObjectInspector)oi).getAllStructFieldRefs();
+for (int i=0; i < fieldRefs.size(); i++) {
+Object fieldData=((StructObjectInspector)oi).getStructFieldData(o,fieldRefs.get(i));
+assert(fieldData != null);
+assert(fieldData instanceof LazyPrimitive<?,?>);
+Writable writable=((LazyPrimitive<?,?>)fieldData).getWritableObject();
+switch (i) {
+case 0:
+Text text=new Text("row-key");
+assertEquals(text,writable);
+break;
+case 1:
+IntWritable iw=new IntWritable(1);
+assertEquals(iw,writable);
+break;
+case 2:
+ByteWritable bw=new ByteWritable((byte)1);
+assertEquals(bw,writable);
+break;
+case 3:
+ShortWritable sw=new ShortWritable((short)1);
+assertEquals(sw,writable);
+break;
+case 4:
+LongWritable lw=new LongWritable(1);
+assertEquals(lw,writable);
+break;
+case 5:
+FloatWritable fw=new FloatWritable(1.0F);
+assertEquals(fw,writable);
+break;
+case 6:
+DoubleWritable dw=new DoubleWritable(1.0);
+assertEquals(dw,writable);
+break;
+case 7:
+Text t=new Text("Hadoop, Hive, with HBase storage handler.");
+assertEquals(t,writable);
+break;
+case 8:
+BooleanWritable boolWritable=new BooleanWritable(true);
+assertEquals(boolWritable,writable);
+break;
+default :
+fail("Error: Unanticipated value in deserializing fields for HBaseSerDe.");
+break;
+}
+}
+}

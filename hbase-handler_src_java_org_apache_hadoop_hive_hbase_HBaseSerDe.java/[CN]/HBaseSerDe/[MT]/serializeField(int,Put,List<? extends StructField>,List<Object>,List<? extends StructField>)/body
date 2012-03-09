@@ -1,12 +1,11 @@
 {
-  String hbaseColumnFamily=hbaseColumnFamilies.get(i);
-  String hbaseColumnQualifier=hbaseColumnQualifiers.get(i);
+  ColumnMapping colMap=columnsMapping.get(i);
   ObjectInspector foi=fields.get(i).getFieldObjectInspector();
   Object f=(list == null ? null : list.get(i));
   if (f == null) {
     return null;
   }
-  if (hbaseColumnQualifier == null && !isSpecialColumn(hbaseColumnFamily)) {
+  if (colMap.qualifierName == null && !colMap.hbaseRowKey) {
     MapObjectInspector moi=(MapObjectInspector)foi;
     ObjectInspector koi=moi.getMapKeyObjectInspector();
     ObjectInspector voi=moi.getMapValueObjectInspector();
@@ -17,17 +16,20 @@
  else {
       for (      Map.Entry<?,?> entry : map.entrySet()) {
         serializeStream.reset();
-        serialize(entry.getKey(),koi,3);
+        boolean isNotNull=serialize(entry.getKey(),koi,3,colMap.binaryStorage.get(0));
+        if (!isNotNull) {
+          continue;
+        }
         byte[] columnQualifierBytes=new byte[serializeStream.getCount()];
         System.arraycopy(serializeStream.getData(),0,columnQualifierBytes,0,serializeStream.getCount());
         serializeStream.reset();
-        boolean isNotNull=serialize(entry.getValue(),voi,3);
+        isNotNull=serialize(entry.getValue(),voi,3,colMap.binaryStorage.get(1));
         if (!isNotNull) {
           continue;
         }
         byte[] value=new byte[serializeStream.getCount()];
         System.arraycopy(serializeStream.getData(),0,value,0,serializeStream.getCount());
-        put.add(hbaseColumnFamiliesBytes.get(i),columnQualifierBytes,value);
+        put.add(colMap.familyNameBytes,columnQualifierBytes,value);
       }
     }
   }
@@ -35,10 +37,10 @@
     serializeStream.reset();
     boolean isNotNull;
     if (!foi.getCategory().equals(Category.PRIMITIVE) && (declaredFields == null || declaredFields.get(i).getFieldObjectInspector().getCategory().equals(Category.PRIMITIVE) || useJSONSerialize)) {
-      isNotNull=serialize(SerDeUtils.getJSONString(f,foi),PrimitiveObjectInspectorFactory.javaStringObjectInspector,1);
+      isNotNull=serialize(SerDeUtils.getJSONString(f,foi),PrimitiveObjectInspectorFactory.javaStringObjectInspector,1,false);
     }
  else {
-      isNotNull=serialize(f,foi,1);
+      isNotNull=serialize(f,foi,1,colMap.binaryStorage.get(0));
     }
     if (!isNotNull) {
       return null;
@@ -48,7 +50,7 @@
     if (i == iKey) {
       return key;
     }
-    put.add(hbaseColumnFamiliesBytes.get(i),hbaseColumnQualifiersBytes.get(i),key);
+    put.add(colMap.familyNameBytes,colMap.qualifierNameBytes,key);
   }
   return null;
 }
