@@ -69,13 +69,17 @@
       env[pos++]=name + "=" + value;
     }
     executor=Runtime.getRuntime().exec(cmdLine,env,new File(workDir));
+    CachingPrintStream errPrintStream=new CachingPrintStream(System.err);
     StreamPrinter outPrinter=new StreamPrinter(executor.getInputStream(),null,System.out);
-    StreamPrinter errPrinter=new StreamPrinter(executor.getErrorStream(),null,System.err);
+    StreamPrinter errPrinter=new StreamPrinter(executor.getErrorStream(),null,errPrintStream);
     outPrinter.start();
     errPrinter.start();
     int exitVal=jobExecHelper.progressLocal(executor,getId());
     if (exitVal != 0) {
       LOG.error("Execution failed with exit status: " + exitVal);
+      if (SessionState.get() != null) {
+        SessionState.get().addLocalMapRedErrors(getId(),errPrintStream.getOutput());
+      }
     }
  else {
       LOG.info("Execution completed successfully");
