@@ -4,7 +4,7 @@
   List<String> parts=null;
   tbl=db.getTable(tabName);
   if (!tbl.isPartitioned()) {
-    console.printError("Table " + tabName + " is not a partitioned table");
+    formatter.consoleError(console,"Table " + tabName + " is not a partitioned table",formatter.ERROR);
     return 1;
   }
   if (showParts.getPartSpec() != null) {
@@ -13,26 +13,22 @@
  else {
     parts=db.getPartitionNames(tbl.getDbName(),tbl.getTableName(),(short)-1);
   }
-  DataOutput outStream=null;
+  DataOutputStream outStream=null;
   try {
     Path resFile=new Path(showParts.getResFile());
     FileSystem fs=resFile.getFileSystem(conf);
     outStream=fs.create(resFile);
-    Iterator<String> iterParts=parts.iterator();
-    while (iterParts.hasNext()) {
-      outStream.writeBytes(iterParts.next());
-      outStream.write(terminator);
-    }
+    formatter.showTablePartitons(outStream,parts);
     ((FSDataOutputStream)outStream).close();
     outStream=null;
   }
  catch (  FileNotFoundException e) {
-    LOG.info("show partitions: " + stringifyException(e));
-    throw new HiveException(e);
+    formatter.logWarn(outStream,"show partitions: " + stringifyException(e),MetaDataFormatter.ERROR);
+    return 1;
   }
 catch (  IOException e) {
-    LOG.info("show partitions: " + stringifyException(e));
-    throw new HiveException(e);
+    formatter.logWarn(outStream,"show partitions: " + stringifyException(e),MetaDataFormatter.ERROR);
+    return 1;
   }
 catch (  Exception e) {
     throw new HiveException(e);

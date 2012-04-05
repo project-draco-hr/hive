@@ -3,14 +3,14 @@
   String tableName=colPath.substring(0,colPath.indexOf('.') == -1 ? colPath.length() : colPath.indexOf('.'));
   Table tbl=db.getTable(tableName,false);
   Partition part=null;
-  DataOutput outStream=null;
+  DataOutputStream outStream=null;
   try {
     Path resFile=new Path(descTbl.getResFile());
     if (tbl == null) {
       FileSystem fs=resFile.getFileSystem(conf);
       outStream=fs.create(resFile);
       String errMsg="Table " + tableName + " does not exist";
-      outStream.write(errMsg.getBytes("UTF-8"));
+      formatter.error(outStream,errMsg,formatter.MISSING);
       ((FSDataOutputStream)outStream).close();
       outStream=null;
       return 0;
@@ -21,7 +21,7 @@
         FileSystem fs=resFile.getFileSystem(conf);
         outStream=fs.create(resFile);
         String errMsg="Partition " + descTbl.getPartSpec() + " for table "+ tableName+ " does not exist";
-        outStream.write(errMsg.getBytes("UTF-8"));
+        formatter.error(outStream,errMsg,formatter.MISSING);
         ((FSDataOutputStream)outStream).close();
         outStream=null;
         return 0;
@@ -30,11 +30,11 @@
     }
   }
  catch (  FileNotFoundException e) {
-    LOG.info("describe table: " + stringifyException(e));
+    formatter.logInfo(outStream,"describe table: " + stringifyException(e),formatter.ERROR);
     return 1;
   }
 catch (  IOException e) {
-    LOG.info("describe table: " + stringifyException(e));
+    formatter.logInfo(outStream,"describe table: " + stringifyException(e),formatter.ERROR);
     return 1;
   }
  finally {
@@ -45,64 +45,29 @@ catch (  IOException e) {
     Path resFile=new Path(descTbl.getResFile());
     FileSystem fs=resFile.getFileSystem(conf);
     outStream=fs.create(resFile);
+    List<FieldSchema> cols=null;
     if (colPath.equals(tableName)) {
-      List<FieldSchema> cols=(part == null) ? tbl.getCols() : part.getCols();
+      cols=(part == null) ? tbl.getCols() : part.getCols();
       if (!descTbl.isFormatted()) {
         if (tableName.equals(colPath)) {
           cols.addAll(tbl.getPartCols());
         }
-        outStream.writeBytes(MetaDataFormatUtils.displayColsUnformatted(cols));
-      }
- else {
-        outStream.writeBytes(MetaDataFormatUtils.getAllColumnsInformation(cols,tbl.isPartitioned() ? tbl.getPartCols() : null));
       }
     }
  else {
-      List<FieldSchema> cols=Hive.getFieldsFromDeserializer(colPath,tbl.getDeserializer());
-      if (descTbl.isFormatted()) {
-        outStream.writeBytes(MetaDataFormatUtils.getAllColumnsInformation(cols));
-      }
- else {
-        outStream.writeBytes(MetaDataFormatUtils.displayColsUnformatted(cols));
-      }
+      cols=Hive.getFieldsFromDeserializer(colPath,tbl.getDeserializer());
     }
-    if (tableName.equals(colPath)) {
-      if (descTbl.isFormatted()) {
-        if (part != null) {
-          outStream.writeBytes(MetaDataFormatUtils.getPartitionInformation(part));
-        }
- else {
-          outStream.writeBytes(MetaDataFormatUtils.getTableInformation(tbl));
-        }
-      }
-      if (descTbl.isExt()) {
-        outStream.write(terminator);
-        if (part != null) {
-          outStream.writeBytes("Detailed Partition Information");
-          outStream.write(separator);
-          outStream.writeBytes(part.getTPartition().toString());
-          outStream.write(separator);
-          outStream.write(terminator);
-        }
- else {
-          outStream.writeBytes("Detailed Table Information");
-          outStream.write(separator);
-          outStream.writeBytes(tbl.getTTable().toString());
-          outStream.write(separator);
-          outStream.write(terminator);
-        }
-      }
-    }
+    formatter.describeTable(outStream,colPath,tableName,tbl,part,cols,descTbl.isFormatted(),descTbl.isExt());
     LOG.info("DDLTask: written data for " + tbl.getTableName());
     ((FSDataOutputStream)outStream).close();
     outStream=null;
   }
  catch (  FileNotFoundException e) {
-    LOG.info("describe table: " + stringifyException(e));
+    formatter.logInfo(outStream,"describe table: " + stringifyException(e),formatter.ERROR);
     return 1;
   }
 catch (  IOException e) {
-    LOG.info("describe table: " + stringifyException(e));
+    formatter.logInfo(outStream,"describe table: " + stringifyException(e),formatter.ERROR);
     return 1;
   }
 catch (  Exception e) {

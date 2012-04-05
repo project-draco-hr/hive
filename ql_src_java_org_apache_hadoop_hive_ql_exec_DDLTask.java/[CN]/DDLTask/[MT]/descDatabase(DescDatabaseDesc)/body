@@ -1,39 +1,27 @@
 {
-  DataOutput outStream=null;
+  DataOutputStream outStream=null;
   try {
     Path resFile=new Path(descDatabase.getResFile());
     FileSystem fs=resFile.getFileSystem(conf);
     outStream=fs.create(resFile);
     Database database=db.getDatabase(descDatabase.getDatabaseName());
-    if (database != null) {
-      outStream.writeBytes(database.getName());
-      outStream.write(separator);
-      if (database.getDescription() != null) {
-        outStream.writeBytes(database.getDescription());
-      }
-      outStream.write(separator);
-      if (database.getLocationUri() != null) {
-        outStream.writeBytes(database.getLocationUri());
-      }
-      outStream.write(separator);
-      if (descDatabase.isExt() && database.getParametersSize() > 0) {
-        Map<String,String> params=database.getParameters();
-        outStream.writeBytes(params.toString());
-      }
+    if (database == null) {
+      formatter.error(outStream,"No such database: " + descDatabase.getDatabaseName(),formatter.MISSING);
     }
  else {
-      outStream.writeBytes("No such database: " + descDatabase.getDatabaseName());
+      Map<String,String> params=null;
+      if (descDatabase.isExt())       params=database.getParameters();
+      formatter.showDatabaseDescription(outStream,database.getName(),database.getDescription(),database.getLocationUri(),params);
     }
-    outStream.write(terminator);
     ((FSDataOutputStream)outStream).close();
     outStream=null;
   }
  catch (  FileNotFoundException e) {
-    LOG.warn("describe database: " + stringifyException(e));
+    formatter.logWarn(outStream,"describe database: " + stringifyException(e),formatter.ERROR);
     return 1;
   }
 catch (  IOException e) {
-    LOG.warn("describe database: " + stringifyException(e));
+    formatter.logWarn(outStream,"describe database: " + stringifyException(e),formatter.ERROR);
     return 1;
   }
 catch (  Exception e) {

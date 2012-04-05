@@ -1,0 +1,80 @@
+{
+  try {
+    Iterator<Table> iterTables=tbls.iterator();
+    while (iterTables.hasNext()) {
+      Table tbl=iterTables.next();
+      String tableName=tbl.getTableName();
+      String tblLoc=null;
+      String inputFormattCls=null;
+      String outputFormattCls=null;
+      if (part != null) {
+        if (par != null) {
+          if (par.getLocation() != null) {
+            tblLoc=par.getDataLocation().toString();
+          }
+          inputFormattCls=par.getInputFormatClass().getName();
+          outputFormattCls=par.getOutputFormatClass().getName();
+        }
+      }
+ else {
+        if (tbl.getPath() != null) {
+          tblLoc=tbl.getDataLocation().toString();
+        }
+        inputFormattCls=tbl.getInputFormatClass().getName();
+        outputFormattCls=tbl.getOutputFormatClass().getName();
+      }
+      String owner=tbl.getOwner();
+      List<FieldSchema> cols=tbl.getCols();
+      String ddlCols=MetaStoreUtils.getDDLFromFieldSchema("columns",cols);
+      boolean isPartitioned=tbl.isPartitioned();
+      String partitionCols="";
+      if (isPartitioned) {
+        partitionCols=MetaStoreUtils.getDDLFromFieldSchema("partition_columns",tbl.getPartCols());
+      }
+      outStream.writeBytes("tableName:" + tableName);
+      outStream.write(terminator);
+      outStream.writeBytes("owner:" + owner);
+      outStream.write(terminator);
+      outStream.writeBytes("location:" + tblLoc);
+      outStream.write(terminator);
+      outStream.writeBytes("inputformat:" + inputFormattCls);
+      outStream.write(terminator);
+      outStream.writeBytes("outputformat:" + outputFormattCls);
+      outStream.write(terminator);
+      outStream.writeBytes("columns:" + ddlCols);
+      outStream.write(terminator);
+      outStream.writeBytes("partitioned:" + isPartitioned);
+      outStream.write(terminator);
+      outStream.writeBytes("partitionColumns:" + partitionCols);
+      outStream.write(terminator);
+      Path tblPath=tbl.getPath();
+      List<Path> locations=new ArrayList<Path>();
+      if (isPartitioned) {
+        if (par == null) {
+          for (          Partition curPart : db.getPartitions(tbl)) {
+            if (curPart.getLocation() != null) {
+              locations.add(new Path(curPart.getLocation()));
+            }
+          }
+        }
+ else {
+          if (par.getLocation() != null) {
+            locations.add(new Path(par.getLocation()));
+          }
+        }
+      }
+ else {
+        if (tblPath != null) {
+          locations.add(tblPath);
+        }
+      }
+      if (!locations.isEmpty()) {
+        writeFileSystemStats(outStream,conf,locations,tblPath,false,0);
+      }
+      outStream.write(terminator);
+    }
+  }
+ catch (  IOException e) {
+    throw new HiveException(e);
+  }
+}

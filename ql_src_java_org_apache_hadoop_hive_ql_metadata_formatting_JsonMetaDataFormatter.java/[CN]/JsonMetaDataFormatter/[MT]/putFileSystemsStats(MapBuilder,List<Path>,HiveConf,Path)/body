@@ -1,0 +1,63 @@
+{
+  long totalFileSize=0;
+  long maxFileSize=0;
+  long minFileSize=Long.MAX_VALUE;
+  long lastAccessTime=0;
+  long lastUpdateTime=0;
+  int numOfFiles=0;
+  boolean unknown=false;
+  FileSystem fs=tblPath.getFileSystem(conf);
+  try {
+    FileStatus tmpStatus=fs.getFileStatus(tblPath);
+    lastAccessTime=ShimLoader.getHadoopShims().getAccessTime(tmpStatus);
+    lastUpdateTime=tmpStatus.getModificationTime();
+  }
+ catch (  IOException e) {
+    LOG.warn("Cannot access File System. File System status will be unknown: ",e);
+    unknown=true;
+  }
+  if (!unknown) {
+    for (    Path loc : locations) {
+      try {
+        FileStatus status=fs.getFileStatus(tblPath);
+        FileStatus[] files=fs.listStatus(loc);
+        long accessTime=ShimLoader.getHadoopShims().getAccessTime(status);
+        long updateTime=status.getModificationTime();
+        if (!status.isDir()) {
+          continue;
+        }
+        if (accessTime > lastAccessTime) {
+          lastAccessTime=accessTime;
+        }
+        if (updateTime > lastUpdateTime) {
+          lastUpdateTime=updateTime;
+        }
+        for (        FileStatus currentStatus : files) {
+          if (currentStatus.isDir()) {
+            continue;
+          }
+          numOfFiles++;
+          long fileLen=currentStatus.getLen();
+          totalFileSize+=fileLen;
+          if (fileLen > maxFileSize) {
+            maxFileSize=fileLen;
+          }
+          if (fileLen < minFileSize) {
+            minFileSize=fileLen;
+          }
+          accessTime=ShimLoader.getHadoopShims().getAccessTime(currentStatus);
+          updateTime=currentStatus.getModificationTime();
+          if (accessTime > lastAccessTime) {
+            lastAccessTime=accessTime;
+          }
+          if (updateTime > lastUpdateTime) {
+            lastUpdateTime=updateTime;
+          }
+        }
+      }
+ catch (      IOException e) {
+      }
+    }
+  }
+  builder.put("totalNumberFiles",numOfFiles,!unknown).put("totalFileSize",totalFileSize,!unknown).put("maxFileSize",maxFileSize,!unknown).put("minFileSize",numOfFiles > 0 ? minFileSize : 0,!unknown).put("lastAccessTime",lastAccessTime,!(unknown || lastAccessTime < 0)).put("lastUpdateTime",lastUpdateTime,!unknown);
+}
