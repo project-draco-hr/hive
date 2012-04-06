@@ -1,0 +1,48 @@
+{
+  List<List<String>> stackTraces=new ArrayList<List<String>>();
+  for (  String urlString : taskLogUrls) {
+    URL taskAttemptLogUrl;
+    try {
+      taskAttemptLogUrl=new URL(urlString);
+    }
+ catch (    MalformedURLException e) {
+      throw new RuntimeException("Bad task log url",e);
+    }
+    BufferedReader in;
+    try {
+      in=new BufferedReader(new InputStreamReader(taskAttemptLogUrl.openStream()));
+      String inputLine;
+      String lastLine=null;
+      boolean lastLineMatched=false;
+      List<String> stackTrace=null;
+      Pattern stackTracePattern=Pattern.compile("^\tat .*",Pattern.CASE_INSENSITIVE);
+      Pattern endStackTracePattern=Pattern.compile("^\t... [0-9]+ more.*",Pattern.CASE_INSENSITIVE);
+      while ((inputLine=in.readLine()) != null) {
+        if (stackTracePattern.matcher(inputLine).matches() || endStackTracePattern.matcher(inputLine).matches()) {
+          if (stackTrace == null) {
+            stackTrace=new ArrayList<String>();
+            stackTrace.add(lastLine);
+          }
+ else           if (!lastLineMatched) {
+            stackTrace.add(lastLine);
+          }
+          stackTrace.add(inputLine);
+          lastLineMatched=true;
+        }
+ else {
+          if (!lastLineMatched && stackTrace != null) {
+            stackTraces.add(stackTrace);
+            stackTrace=null;
+          }
+          lastLineMatched=false;
+        }
+        lastLine=inputLine;
+      }
+      in.close();
+    }
+ catch (    IOException e) {
+      throw new RuntimeException("Error while reading from task log url",e);
+    }
+  }
+  return stackTraces;
+}
