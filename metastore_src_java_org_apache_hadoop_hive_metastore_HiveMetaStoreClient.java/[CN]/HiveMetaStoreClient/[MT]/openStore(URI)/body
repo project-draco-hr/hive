@@ -3,8 +3,10 @@
   TTransportException tte=null;
   HadoopShims shim=ShimLoader.getHadoopShims();
   boolean useSasl=conf.getBoolVar(ConfVars.METASTORE_USE_THRIFT_SASL);
+  boolean useFramedTransport=conf.getBoolVar(ConfVars.METASTORE_USE_THRIFT_FRAMED_TRANSPORT);
   transport=new TSocket(store.getHost(),store.getPort());
-  ((TSocket)transport).setTimeout(1000 * conf.getIntVar(ConfVars.METASTORE_CLIENT_SOCKET_TIMEOUT));
+  int clientSocketTimeout=conf.getIntVar(ConfVars.METASTORE_CLIENT_SOCKET_TIMEOUT);
+  transport=new TSocket(store.getHost(),store.getPort(),1000 * clientSocketTimeout);
   if (useSasl) {
     try {
       HadoopThriftAuthBridge.Client authBridge=ShimLoader.getHadoopThriftAuthBridge().createClient();
@@ -22,6 +24,9 @@
       LOG.error("Couldn't create client transport",ioe);
       throw new MetaException(ioe.toString());
     }
+  }
+ else   if (useFramedTransport) {
+    transport=new TFramedTransport(transport);
   }
   client=new ThriftHiveMetastore.Client(new TBinaryProtocol(transport));
   for (int attempt=0; !isConnected && attempt < retries; ++attempt) {
