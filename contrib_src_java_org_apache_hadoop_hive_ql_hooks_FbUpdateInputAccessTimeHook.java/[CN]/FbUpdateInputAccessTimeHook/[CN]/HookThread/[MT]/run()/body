@@ -1,0 +1,44 @@
+{
+  try {
+    if (db == null) {
+      try {
+        db=Hive.get(hiveConf);
+      }
+ catch (      HiveException e) {
+        db=null;
+        return;
+      }
+    }
+    int lastAccessTime=(int)(System.currentTimeMillis() / 1000);
+    HashMap<String,Table> tableMap=new HashMap<String,Table>();
+    for (    ReadEntity re : inputs) {
+      ReadEntity.Type typ=re.getType();
+switch (typ) {
+case TABLE:
+{
+          updateTableAccessTime(tableMap,re.getTable(),lastAccessTime);
+          break;
+        }
+case PARTITION:
+{
+        Partition p=re.getPartition();
+        updateTableAccessTime(tableMap,p.getTable(),lastAccessTime);
+        Table t=tableMap.get(p.getTable().getTableName());
+        p=db.getPartition(t,p.getSpec(),false);
+        p.setLastAccessTime(lastAccessTime);
+        db.alterPartition(t.getTableName(),p);
+        break;
+      }
+default :
+    break;
+}
+}
+success=true;
+}
+ catch (HiveException e) {
+hiveException=e;
+}
+catch (InvalidOperationException e) {
+invalidOperationException=e;
+}
+}

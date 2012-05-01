@@ -1,0 +1,53 @@
+{
+  HiveConf conf=(HiveConf)hookContext.getConf();
+  if (!isEnabled(conf)) {
+    return;
+  }
+  Object configObj=getConfigObject(conf);
+  if (configObj == null || !(configObj instanceof JSONArray)) {
+    LOG.error("config not properly set!");
+    return;
+  }
+  JSONArray configEntries=(JSONArray)configObj;
+  for (int i=0; i < configEntries.length(); i++) {
+    JSONObject configEntry=configEntries.getJSONObject(i);
+    Object percentage=new Integer(100);
+    Object enforce=new Boolean(false);
+    String key=configEntry.getString(KEY_FIELD);
+    String value=configEntry.get(VALUE_FIELD).toString();
+    LOG.debug("SmcConfigHook found configuration KEY: " + key + " VALUE: "+ value);
+    if (configEntry.has(ENFORCE_FIELD)) {
+      enforce=configEntry.get(ENFORCE_FIELD);
+    }
+    LOG.debug("Enforce for key " + key + " is "+ enforce.toString());
+    if (!(enforce instanceof Boolean)) {
+      LOG.error("enforce is not properly set for " + key);
+      continue;
+    }
+    if (!(Boolean)enforce && SessionState.get() != null && SessionState.get().getOverriddenConfigurations().containsKey(key)) {
+      continue;
+    }
+    if (configEntry.has(PERCENTAGE_FIELD)) {
+      percentage=configEntry.getInt(PERCENTAGE_FIELD);
+    }
+    LOG.debug("Percentage for key " + key + " is "+ percentage.toString());
+    if (!(percentage instanceof Integer)) {
+      LOG.error("percentage is not properly set for " + key);
+      continue;
+    }
+    if ((Integer)percentage != 100) {
+      boolean diceRoll=false;
+      try {
+        diceRoll=HookUtils.rollDice(((Integer)percentage).intValue() / 100f);
+      }
+ catch (      Exception e) {
+        LOG.error("percentage is not properly set for " + key);
+        LOG.error(e.getMessage());
+      }
+      if (!diceRoll) {
+        continue;
+      }
+    }
+    conf.set(key,value);
+  }
+}

@@ -1,0 +1,30 @@
+{
+  assert(hookContext != null);
+  if (hookContext.getInputs() == null || hookContext.getInputs().isEmpty()) {
+    return;
+  }
+synchronized (staticLock) {
+    if (lastHookContext == hookContext) {
+      lastHookContext=null;
+      runPosthook(hookContext);
+    }
+ else     if (lastHookContext != null || hookThread != null) {
+      System.err.println("WARNING: FbUpdateInputAccessTimeHook doesn't start with a clear " + "state. Ignore this message if the previous query failed. If " + "previous task succeeded, check whether "+ "FbUpdateInputAccessTimeHook is among the post-execution hooks");
+      if (hookThread != null) {
+        System.err.println("Waiting for pending background thread of " + "FbUpdateInputAccessTimeHook to finish...");
+        hookThread.join();
+        System.err.println("Background thread of FbUpdateInputAccessTimeHook" + " finished.");
+        hookThread=null;
+      }
+      lastHookContext=hookContext;
+      runPrehook(hookContext);
+    }
+ else {
+      if (!hookContext.getCompleteTaskList().isEmpty()) {
+        throw new HiveException("FbUpdateInputAccessTimeHook is not a part of " + "pre-execution hook?");
+      }
+      lastHookContext=hookContext;
+      runPrehook(hookContext);
+    }
+  }
+}

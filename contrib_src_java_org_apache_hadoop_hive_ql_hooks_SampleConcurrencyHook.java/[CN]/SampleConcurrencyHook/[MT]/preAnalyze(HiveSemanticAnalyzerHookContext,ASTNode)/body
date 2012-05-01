@@ -1,0 +1,23 @@
+{
+  HiveSemanticAnalyzerHookContextImpl ctx=(HiveSemanticAnalyzerHookContextImpl)context;
+  HiveConf conf=(HiveConf)ctx.getConf();
+  boolean supportConcurrency=conf.getBoolVar(HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY);
+  if (!supportConcurrency) {
+    return ast;
+  }
+  if (ast.getToken().getType() == HiveParser.TOK_SHOWLOCKS) {
+    return ast;
+  }
+  float pubPercent=conf.getFloat(FBHiveConf.ENABLE_PARTIAL_CONCURRENCY,0);
+  try {
+    if (!HookUtils.rollDice(pubPercent)) {
+      conf.setBoolVar(HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY,false);
+      return ast;
+    }
+  }
+ catch (  Exception e) {
+    throw new SemanticException(e);
+  }
+  conf.setBoolVar(HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY,true);
+  return ast;
+}

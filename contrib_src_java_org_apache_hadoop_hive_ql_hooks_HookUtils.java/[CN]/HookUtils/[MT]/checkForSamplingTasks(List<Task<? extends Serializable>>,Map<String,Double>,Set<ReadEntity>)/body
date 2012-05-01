@@ -1,0 +1,34 @@
+{
+  boolean isThereSampling=false;
+  for (  Task<? extends Serializable> task : tasks) {
+    MapredWork work;
+    if (task.getWork() instanceof MapredWork && (work=(MapredWork)task.getWork()).getNameToSplitSample() != null && !work.getNameToSplitSample().isEmpty()) {
+      isThereSampling=true;
+      for (      Map.Entry<String,ArrayList<String>> entry : work.getPathToAliases().entrySet()) {
+        double percentage=0;
+        for (        String alias : entry.getValue()) {
+          if (work.getNameToSplitSample().containsKey(alias)) {
+            if (work.getNameToSplitSample().get(alias).getPercent() > percentage) {
+              percentage=work.getNameToSplitSample().get(alias).getPercent();
+            }
+          }
+ else {
+            percentage=100;
+            break;
+          }
+        }
+        String path=entry.getKey();
+        if (!topPercentages.containsKey(path) || percentage > topPercentages.get(path)) {
+          topPercentages.put(path,percentage);
+        }
+      }
+    }
+ else     if (task.getQueryPlan() != null) {
+      nonSampledInputs.addAll(task.getQueryPlan().getInputs());
+    }
+    if (task.getDependentTasks() != null) {
+      isThereSampling|=checkForSamplingTasks(task.getDependentTasks(),topPercentages,nonSampledInputs);
+    }
+  }
+  return isThereSampling;
+}

@@ -1,0 +1,56 @@
+{
+  assert(hookContext.getHookType() == HookContext.HookType.PRE_EXEC_HOOK);
+  SessionState sess=SessionState.get();
+  Set<ReadEntity> inputs=hookContext.getInputs();
+  Map<String,ContentSummary> inputToCS=hookContext.getInputPathToContentSummary();
+  QueryPlan queryPlan=hookContext.getQueryPlan();
+  List<Task<? extends Serializable>> rootTasks=queryPlan.getRootTasks();
+  if (rootTasks == null) {
+    return;
+  }
+  if (rootTasks.size() == 1) {
+    Task<? extends Serializable> tsk=rootTasks.get(0);
+    if (tsk instanceof DDLTask) {
+      return;
+    }
+  }
+  HiveConf conf=sess.getConf();
+  if (fifoed) {
+    conf.set("mapred.fairscheduler.pool","");
+    fifoed=false;
+  }
+  String poolValue=conf.get("mapred.fairscheduler.pool",null);
+  if ((poolValue != null) && !poolValue.isEmpty()) {
+    return;
+  }
+  if ("local".equals(conf.getVar(HiveConf.ConfVars.HADOOPJT))) {
+    return;
+  }
+  if (!conf.getBoolean("fbhive.fifopool.auto",false)) {
+    return;
+  }
+  long maxGigaBytes=conf.getLong("fbhive.fifopool.GigaBytes",0L);
+  if (maxGigaBytes == 0) {
+    LOG.info(failure + "fifopool.GigaBytes = 0");
+    return;
+  }
+  long maxBytes=maxGigaBytes * 1024 * 1024* 1024L;
+  if (maxGigaBytes < 0) {
+    LOG.warn(failure + "fifopool.GigaBytes value of " + maxGigaBytes+ "is invalid");
+    return;
+  }
+  Map<String,Double> pathToTopPercentage=new HashMap<String,Double>();
+  Set<ReadEntity> nonSampledInputs=new HashSet<ReadEntity>();
+  boolean isThereSampling=HookUtils.checkForSamplingTasks(hookContext.getQueryPlan().getRootTasks(),pathToTopPercentage,nonSampledInputs);
+  InputInfo info=HookUtils.getInputInfo(inputs,inputToCS,conf,isThereSampling,pathToTopPercentage,nonSampledInputs,Long.MAX_VALUE,maxBytes);
+  if (info.getSize() > maxBytes) {
+    LOG.info("Submitting to the fifo pool since the input length of " + info.getSize() + " is more than "+ maxBytes);
+  }
+ else {
+    LOG.info("Not submitting to the fifo pool since the input length " + info.getSize() + " is less than "+ maxBytes);
+    return;
+  }
+  String fifoPool=conf.get("fbhive.fifopool.name","fifo");
+  fifoed=true;
+  conf.set("mapred.fairscheduler.pool",fifoPool);
+}

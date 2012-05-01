@@ -1,0 +1,71 @@
+{
+  long totalSize=0;
+  Map<String,Triple<String,String,String>> objectLengths=new HashMap<String,Triple<String,String,String>>();
+  Hive db=null;
+  if (loadObjects) {
+    db=Hive.get();
+  }
+  for (  Entity object : objects) {
+    Entity.Type objectType=object.getTyp();
+    Table table=null;
+    String size=null;
+    String numFiles=null;
+    Path path=null;
+switch (objectType) {
+case TABLE:
+      table=object.getTable();
+    if (table.isPartitioned() && !table.isView()) {
+      continue;
+    }
+  if (loadObjects) {
+    table=db.getTable(table.getTableName());
+  }
+if (table.isView()) {
+  path=null;
+  size="0";
+  numFiles="0";
+}
+ else {
+  path=table.getPath();
+  size=table.getProperty("totalSize");
+  numFiles=table.getProperty("numFiles");
+}
+break;
+case PARTITION:
+Partition partition=object.getPartition();
+if (loadObjects) {
+partition=db.getPartition(partition.getTable(),partition.getSpec(),false);
+}
+table=partition.getTable();
+if (table.isView()) {
+path=null;
+size="0";
+numFiles="0";
+}
+ else {
+path=partition.getPartitionPath();
+size=partition.getParameters().get("totalSize");
+numFiles=partition.getParameters().get("numFiles");
+}
+break;
+default :
+break;
+}
+if (table != null) {
+if (size == null) {
+FileSystem fs=path.getFileSystem(conf);
+size=String.valueOf(fs.getContentSummary(path).getLength());
+}
+if (numFiles == null) {
+numFiles=String.valueOf(0);
+}
+Triple<String,String,String> triple=new Triple<String,String,String>(table.getTableType().toString(),size,numFiles);
+objectLengths.put(object.getName(),triple);
+if ((table.getTableType() != TableType.EXTERNAL_TABLE) && (table.getTableType() != TableType.VIRTUAL_VIEW)) {
+totalSize+=Long.valueOf(size);
+}
+}
+}
+ObjectSize objectSize=new ObjectSize(totalSize,objectLengths);
+return objectSize;
+}

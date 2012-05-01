@@ -1,0 +1,57 @@
+{
+  int waitMS=300;
+  Random rand=new Random();
+  for (int i=0; i < numRetries; ++i) {
+    try {
+      String url=urlFactory.getUrl(isWrite);
+      LOG.info("Attepting connection with URL " + url);
+      Connection conn=getConnection(conf,url);
+      PreparedStatement pstmt=conn.prepareStatement(sql);
+      int pos=1;
+      for (      Object param : sqlParams) {
+        if (param instanceof Integer) {
+          pstmt.setInt(pos++,((Integer)param).intValue());
+        }
+ else {
+          pstmt.setString(pos++,(String)param);
+        }
+      }
+      if (insert) {
+        int recordsUpdated=pstmt.executeUpdate();
+        LOG.info("rows inserted: " + recordsUpdated + " sql: "+ sql);
+        pstmt.close();
+        return null;
+      }
+ else {
+        ResultSet result=pstmt.executeQuery();
+        List<List<Object>> results=new ArrayList<List<Object>>();
+        int numColumns=result.getMetaData().getColumnCount();
+        while (result.next()) {
+          List<Object> row=new ArrayList<Object>();
+          results.add(row);
+          for (int index=1; index <= numColumns; index++) {
+            row.add(result.getObject(index));
+          }
+        }
+        pstmt.clearBatch();
+        pstmt.close();
+        LOG.info("rows selected: " + results.size() + " sql: "+ sql);
+        return results;
+      }
+    }
+ catch (    Exception e) {
+      LOG.info("Exception " + e + ". Will retry "+ (numRetries - i)+ " times.");
+      waitMS+=waitMS;
+      if (waitMS > retryMaxInternalSec * 1000) {
+        waitMS=retryMaxInternalSec * 1000;
+      }
+      double waitTime=waitMS + waitMS * rand.nextDouble();
+      Thread.sleep((long)waitTime);
+      if (i + 1 == numRetries) {
+        LOG.error("Still got Exception after " + numRetries + "  retries.",e);
+        throw e;
+      }
+    }
+  }
+  return null;
+}

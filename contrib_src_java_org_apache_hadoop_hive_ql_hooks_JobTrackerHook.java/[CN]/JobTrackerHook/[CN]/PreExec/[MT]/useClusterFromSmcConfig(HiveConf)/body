@@ -1,0 +1,71 @@
+{
+  try {
+    String pool=conf.get("mapred.fairscheduler.pool");
+    if ((pool == null) || (pool.isEmpty())) {
+      return false;
+    }
+    ConnectionUrlFactory connectionUrlFactory=HookUtils.getUrlFactory(conf,FBHiveConf.CONNECTION_FACTORY,FBHiveConf.JOBTRACKER_CONNECTION_FACTORY,FBHiveConf.JOBTRACKER_MYSQL_TIER_VAR_NAME,FBHiveConf.JOBTRACKER_HOST_DATABASE_VAR_NAME);
+    if (connectionUrlFactory == null) {
+      return false;
+    }
+    String s=connectionUrlFactory.getValue(conf.get(FBHiveConf.HIVE_CONFIG_TIER),POOLS);
+    if (s == null) {
+      return false;
+    }
+    JSONObject poolsJSON=new JSONObject(s);
+    Iterator<String> i=(Iterator<String>)poolsJSON.keys();
+    while (i.hasNext()) {
+      String clusterName=i.next();
+      JSONObject jo=(JSONObject)poolsJSON.get(clusterName);
+      String hadoopHome=null;
+      String jobTracker=null;
+      JSONArray poolsObj=null;
+      boolean isCorona=false;
+      if (jo.has("isCorona")) {
+        isCorona=jo.getBoolean("isCorona");
+      }
+      if (!jo.has("hadoopHome") || !jo.has("pools")) {
+        LOG.error("hadoopHome and pools need to be specified for " + clusterName);
+        return false;
+      }
+ else {
+        hadoopHome=jo.getString("hadoopHome");
+        poolsObj=(JSONArray)jo.get("pools");
+      }
+      if (!isCorona && !jo.has("jobTracker")) {
+        LOG.error("jobTracker needs to be specified for non-corona cluster " + clusterName);
+        return false;
+      }
+ else {
+        if (jo.has("jobTracker")) {
+          jobTracker=jo.getString("jobTracker");
+        }
+      }
+      for (int idx=0; idx < poolsObj.length(); idx++) {
+        if (pool.equals(poolsObj.getString(idx))) {
+          LOG.info("Run it on " + clusterName + " due to pool "+ pool);
+          if (isCorona) {
+            runCorona(conf,hadoopHome);
+          }
+ else {
+            preHadoopBin=conf.getVar(HiveConf.ConfVars.HADOOPBIN);
+            conf.setVar(HiveConf.ConfVars.HADOOPBIN,hadoopHome + "/bin/hadoop");
+            preJobTracker=conf.getVar(HiveConf.ConfVars.HADOOPJT);
+            conf.setVar(HiveConf.ConfVars.HADOOPJT,jobTracker);
+          }
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+ catch (  TException e) {
+    return false;
+  }
+catch (  JSONException e) {
+    return false;
+  }
+catch (  Exception e) {
+    return false;
+  }
+}

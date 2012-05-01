@@ -1,0 +1,110 @@
+{
+  assert(hookContext.getHookType() == HookContext.HookType.PRE_EXEC_HOOK);
+  SessionState sess=SessionState.get();
+  Set<ReadEntity> inputs=hookContext.getInputs();
+  Set<WriteEntity> outputs=hookContext.getOutputs();
+  UserGroupInformation ugi=hookContext.getUgi();
+  Map<String,ContentSummary> inputToCS=hookContext.getInputPathToContentSummary();
+  QueryPlan queryPlan=hookContext.getQueryPlan();
+  List<Task<? extends Serializable>> rootTasks=queryPlan.getRootTasks();
+  if (rootTasks == null) {
+    return;
+  }
+  if (rootTasks.size() == 1) {
+    Task<? extends Serializable> tsk=rootTasks.get(0);
+    if (tsk instanceof DDLTask) {
+      return;
+    }
+  }
+  HiveConf conf=sess.getConf();
+  if (preHadoopBin != null) {
+    conf.setVar(HiveConf.ConfVars.HADOOPBIN,preHadoopBin);
+    preHadoopBin=null;
+  }
+  if (preJobTracker != null) {
+    conf.setVar(HiveConf.ConfVars.HADOOPJT,preJobTracker);
+    preJobTracker=null;
+  }
+  Map<String,Double> pathToTopPercentage=new HashMap<String,Double>();
+  Set<ReadEntity> nonSampledInputs=new HashSet<ReadEntity>();
+  boolean isThereSampling=false;
+  if (!hookContext.getQueryPlan().getQueryStr().toUpperCase().contains(" JOIN ")) {
+    isThereSampling=HookUtils.checkForSamplingTasks(hookContext.getQueryPlan().getRootTasks(),pathToTopPercentage,nonSampledInputs);
+  }
+  if ("local".equals(conf.getVar(HiveConf.ConfVars.HADOOPJT))) {
+    return;
+  }
+  if (useClusterFromSmcConfig(conf)) {
+    return;
+  }
+  if (isOnSlaPool(conf)) {
+    return;
+  }
+  if (!"true".equals(conf.get("fbhive.jobtracker.auto",""))) {
+    return;
+  }
+  int bronzePercentage=conf.getInt("fbhive.jobtracker.bronze.percentage",0);
+  boolean isCoronaEnabled=conf.getBoolean("fbhive.jobtracker.corona.enabled",false);
+  int coronaPercentage=0;
+  if (isCoronaEnabled) {
+    coronaPercentage=conf.getInt("fbhive.jobtracker.corona.percentage",0);
+  }
+  int percents[]={bronzePercentage,coronaPercentage};
+  int roll=rollDice(percents);
+  LOG.debug("Dice roll is " + roll);
+  boolean tryBronze=false;
+  boolean tryCorona=false;
+  if (roll == -1) {
+    LOG.info(dislike + "because the coin toss said so");
+    return;
+  }
+ else   if (roll == 0) {
+    tryBronze=true;
+  }
+ else   if (roll == 1) {
+    tryCorona=true;
+  }
+ else {
+    throw new RuntimeException("Invalid roll! Roll was " + roll);
+  }
+  int maxGigaBytes=conf.getInt("fbhive.jobtracker.bronze.maxGigaBytes",0);
+  if (maxGigaBytes == 0) {
+    LOG.info(dislike + "maxGigaBytes = 0");
+    return;
+  }
+  long maxBytes=maxGigaBytes * 1024L * 1024* 1024;
+  if (maxGigaBytes < 0) {
+    LOG.warn(dislike + "maxGigaBytes value of " + maxGigaBytes+ "is invalid");
+    return;
+  }
+  String bronzeHadoopHome=conf.get("fbhive.jobtracker.bronze.hadoopHome","/mnt/vol/hive/sites/bronze/hadoop");
+  String bronzeJobTracker=conf.get("fbhive.jobtracker.bronze.tracker",conf.get(FBHiveConf.FBHIVE_BRONZE_JOBTRACKER));
+  int maxSplits=conf.getInt("fbhive.jobtracker.bronze.maxPartitions",maxGigaBytes * 4);
+  if (!isThereSampling && inputs.size() > maxSplits) {
+    LOG.info(dislike + "number of input tables/partitions: " + inputs.size()+ " exceeded max splits: "+ maxSplits);
+    return;
+  }
+  if (conf.getIntVar(HiveConf.ConfVars.HADOOPNUMREDUCERS) > maxSplits) {
+    LOG.info(dislike + "number of reducers: " + conf.getVar(HiveConf.ConfVars.HADOOPNUMREDUCERS)+ " exceeded max reducers: "+ maxSplits);
+    return;
+  }
+  InputInfo info=HookUtils.getInputInfo(inputs,inputToCS,conf,isThereSampling,pathToTopPercentage,nonSampledInputs,maxSplits,maxBytes);
+  if (info.getEstimatedNumSplits() > maxSplits) {
+    LOG.info(dislike + "the estimated number of input " + "tables/partitions exceeded max splits: "+ maxSplits);
+    return;
+  }
+  if (info.getSize() > maxBytes) {
+    LOG.info(dislike + "input length of " + info.getSize()+ " is more than "+ maxBytes);
+    return;
+  }
+  if (tryBronze) {
+    preHadoopBin=conf.getVar(HiveConf.ConfVars.HADOOPBIN);
+    conf.setVar(HiveConf.ConfVars.HADOOPBIN,bronzeHadoopHome + "/bin/hadoop");
+    preJobTracker=conf.getVar(HiveConf.ConfVars.HADOOPJT);
+    conf.setVar(HiveConf.ConfVars.HADOOPJT,bronzeJobTracker);
+  }
+ else   if (tryCorona) {
+    String coronaHadoopHome=conf.get("fbhive.jobtracker.corona.hadoopHome","/mnt/vol/hive/sites/corona/hadoop");
+    runCorona(conf,coronaHadoopHome);
+  }
+}

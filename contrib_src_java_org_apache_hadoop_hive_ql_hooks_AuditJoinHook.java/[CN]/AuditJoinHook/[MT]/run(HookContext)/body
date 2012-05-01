@@ -1,0 +1,56 @@
+{
+  HiveConf conf=hookContext.getConf();
+  boolean enableConvert=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVECONVERTJOIN);
+  if (!enableConvert) {
+    return;
+  }
+  String command=StringEscapeUtils.escapeJava(SessionState.get().getCmd());
+  QueryPlan plan=hookContext.getQueryPlan();
+  String queryID=StringEscapeUtils.escapeJava(plan.getQueryId());
+  int convertedMapJoin=0;
+  int commonJoin=0;
+  int backupCommonJoin=0;
+  int convertedLocalMapJoin=0;
+  int localMapJoin=0;
+  List<TaskRunner> list=hookContext.getCompleteTaskList();
+  for (  TaskRunner tskRunner : list) {
+    Task tsk=tskRunner.getTask();
+    int tag=tsk.getTaskTag();
+switch (tag) {
+case Task.COMMON_JOIN:
+      commonJoin++;
+    break;
+case Task.CONVERTED_LOCAL_MAPJOIN:
+  convertedLocalMapJoin++;
+break;
+case Task.CONVERTED_MAPJOIN:
+convertedMapJoin++;
+break;
+case Task.BACKUP_COMMON_JOIN:
+backupCommonJoin++;
+break;
+case Task.LOCAL_MAPJOIN:
+localMapJoin++;
+break;
+}
+}
+if ((convertedMapJoin == 0) && (commonJoin == 0) && (backupCommonJoin == 0)&& (convertedLocalMapJoin == 0)&& (localMapJoin == 0)) {
+return;
+}
+ArrayList<Object> sqlParams=new ArrayList<Object>();
+sqlParams.add(StringEscapeUtils.escapeJava(command));
+sqlParams.add(StringEscapeUtils.escapeJava(queryID));
+sqlParams.add(new Integer(convertedLocalMapJoin));
+sqlParams.add(new Integer(convertedMapJoin));
+sqlParams.add(new Integer(localMapJoin));
+sqlParams.add(new Integer(commonJoin));
+sqlParams.add(new Integer(backupCommonJoin));
+String sql="insert into audit_join set " + " command = ?, query_id = ?, converted_local_mapjoin = ?, converted_map_join = ?," + " local_mapjoin = ?, common_join = ?, backup_common_join = ?";
+if (urlFactory == null) {
+urlFactory=HookUtils.getUrlFactory(conf,FBHiveConf.CONNECTION_FACTORY,FBHiveConf.AUDIT_CONNECTION_FACTORY,FBHiveConf.AUDIT_MYSQL_TIER_VAR_NAME,FBHiveConf.AUDIT_HOST_DATABASE_VAR_NAME);
+if (urlFactory == null) {
+throw new RuntimeException("DB parameters not set!");
+}
+}
+HookUtils.runInsert(conf,urlFactory,sql,sqlParams,HookUtils.getSqlNumRetry(conf));
+}

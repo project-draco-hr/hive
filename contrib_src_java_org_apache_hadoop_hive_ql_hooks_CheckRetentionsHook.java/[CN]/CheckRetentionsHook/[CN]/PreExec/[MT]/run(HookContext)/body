@@ -1,0 +1,34 @@
+{
+  assert(hookContext.getHookType() == HookContext.HookType.PRE_EXEC_HOOK);
+  SessionState sess=SessionState.get();
+  Set<ReadEntity> inputs=hookContext.getInputs();
+  Set<WriteEntity> outputs=hookContext.getOutputs();
+  UserGroupInformation ugi=hookContext.getUgi();
+  conf=sess.getConf();
+  warningOnly=conf.getBoolean(FBHiveConf.NO_RETENTION_WARNING_ONLY,true);
+  String whDir=HiveConf.getVar(conf,HiveConf.ConfVars.METASTOREWAREHOUSE);
+  if (whDir == null) {
+    throw new Exception(ErrMsg("Cannot determine which cluster this query is running on: " + "hive.metastore.warehouse.dir is not set!"));
+  }
+  Path p=new Path(whDir);
+  String hostName=p.toUri().getHost();
+  if (hostName.equals(conf.get(FBHiveConf.FBHIVE_SILVER_DFS_PREFIX)) || hostName.equals(conf.get(FBHiveConf.FBHIVE_SILVER_DFS_PREFIX2)) || hostName.equals(conf.get(FBHiveConf.FBHIVE_SILVER_DFS_PREFIX3))) {
+    retentionKey=RETENTION_FLAG;
+  }
+ else   if (hostName.equals(conf.get(FBHiveConf.FBHIVE_PLATINUM_DFS_PREFIX))) {
+    retentionKey=RETENTION_PLATINUM_FLAG;
+  }
+ else {
+    throw new Exception(ErrMsg("Cannot determine which cluster this query is running on: " + "hive.metastore.warehouse.dir=" + whDir + "; does not seems to belong to either silver or platinum!"));
+  }
+  Set<Task<? extends Serializable>> tasks=new HashSet<Task<? extends Serializable>>();
+  getReachableTasks(tasks,hookContext.getQueryPlan());
+  for (  Task task : tasks) {
+    if (task instanceof DDLTask) {
+      DDLWork work=(DDLWork)task.getWork();
+      if (work.getCreateTblDesc() != null) {
+        checkRetention(work.getCreateTblDesc(),retentionKey);
+      }
+    }
+  }
+}

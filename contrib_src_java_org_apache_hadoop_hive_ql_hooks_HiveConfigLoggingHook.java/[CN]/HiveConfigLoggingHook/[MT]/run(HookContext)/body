@@ -1,0 +1,30 @@
+{
+  SessionState ss=SessionState.get();
+  if (ss == null) {
+    return;
+  }
+  HiveConf conf=ss.getConf();
+  String queryId=conf.getVar(HiveConf.ConfVars.HIVEQUERYID);
+  HiveOperation op=ss.getHiveOperation();
+  if ((op == null) || (!op.equals(HiveOperation.CREATETABLE_AS_SELECT) && !op.equals(HiveOperation.LOAD) && !op.equals(HiveOperation.QUERY))) {
+    return;
+  }
+  Map<String,String> overriddenConfig=ss.getOverriddenConfigurations();
+  String sql="insert into query_config_log set queryId = ?, config_key = ?, config_value = ?";
+  List<Object> sqlParams=new ArrayList<Object>();
+  urlFactory=getQueryConfigUrlFactory(conf);
+  if (urlFactory == null) {
+    throw new RuntimeException("DB parameters not set!");
+  }
+  for (  Map.Entry<String,String> e : overriddenConfig.entrySet()) {
+    String key=e.getKey();
+    String val=conf.get(key);
+    if (val != null) {
+      sqlParams.clear();
+      sqlParams.add(StringEscapeUtils.escapeJava(queryId));
+      sqlParams.add(StringEscapeUtils.escapeJava(key));
+      sqlParams.add(StringEscapeUtils.escapeJava(val));
+      HookUtils.runInsert(conf,urlFactory,sql,sqlParams,HookUtils.getSqlNumRetry(conf));
+    }
+  }
+}

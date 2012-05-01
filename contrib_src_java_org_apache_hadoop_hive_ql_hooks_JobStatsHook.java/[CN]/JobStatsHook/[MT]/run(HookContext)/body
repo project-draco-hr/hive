@@ -1,0 +1,125 @@
+{
+  assert(hookContext.getHookType() == HookContext.HookType.POST_EXEC_HOOK || hookContext.getHookType() == HookContext.HookType.ON_FAILURE_HOOK);
+  String queryId="";
+  String querySrc="";
+  String queryTagsStr="";
+  String statsString="";
+  SessionState sess=SessionState.get();
+  String queryFailed=hookContext.getHookType() == HookContext.HookType.ON_FAILURE_HOOK ? "1" : "0";
+  HiveConf conf=sess.getConf();
+  HiveStatsMetricsPublisher metricsPublisher=(HiveStatsMetricsPublisher)HookUtils.getObject(conf,conf.get(FBHiveConf.HIVE_METRICS_PUBLISHER));
+  if (metricsPublisher == null) {
+    return;
+  }
+  metricsPublisher.extractAndOverwriteQueryAttributes(hookContext);
+  JSONObject jobStats=new JSONObject();
+  ConnectionUrlFactory urlFactory=getJobStatsUrlFactory(conf);
+  if (urlFactory == null) {
+    throw new RuntimeException("DB parameters for audit_log not set!");
+  }
+  if (sess != null) {
+    queryId=conf.getVar(HiveConf.ConfVars.HIVEQUERYID);
+    querySrc=conf.get(HIVE_QUERY_SOURCE,"");
+    List<TaskRunner> completedTasks=hookContext.getCompleteTaskList();
+    Map<String,String> jobToStageMap=new HashMap<String,String>();
+    if (completedTasks != null) {
+      for (      TaskRunner taskRunner : completedTasks) {
+        Task<? extends Serializable> task=taskRunner.getTask();
+        if (task.getJobID() != null) {
+          String jobID=StringEscapeUtils.escapeJava(task.getJobID());
+          String stageID=StringEscapeUtils.escapeJava(task.getId());
+          jobToStageMap.put(jobID,stageID);
+        }
+      }
+    }
+    List<MapRedStats> listStats=sess.getLastMapRedStatsList();
+    if (listStats != null && listStats.size() > 0) {
+      Map[] perJobStats=new Map[listStats.size()];
+      for (int i=0; i < listStats.size(); i++) {
+        MapRedStats mps=listStats.get(i);
+        Counters ctrs=mps.getCounters();
+        Map<String,String> counterList=new HashMap<String,String>();
+        Map<String,Double> metrics=new HashMap<String,Double>();
+        counterList.put("job_ID",mps.getJobId());
+        if (jobToStageMap.containsKey(mps.getJobId())) {
+          counterList.put("stage",jobToStageMap.get(mps.getJobId()));
+        }
+        addJobStat(counterList,metrics,"cpu_msec","cpu_sec",mps.getCpuMSec(),1000);
+        addJobStat(counterList,metrics,"map",mps.getNumMap());
+        addJobStat(counterList,metrics,"reduce",mps.getNumReduce());
+        if (ctrs != null) {
+          conditionalAddJobStat(counterList,metrics,"hdfs_read_bytes","hdfs_read_mbytes",ctrs.findCounter("FileSystemCounters","HDFS_BYTES_READ"),1000000);
+          conditionalAddJobStat(counterList,metrics,"hdfs_write_bytes","hdfs_write_mbytes",ctrs.findCounter("FileSystemCounters","HDFS_BYTES_WRITTEN"),1000000);
+          conditionalAddJobStat(counterList,metrics,"hdfs_local_read_bytes","hdfs_read_local_mbytes",ctrs.findCounter("FileSystemCounters","HDFS_BYTES_READ_LOCAL"),1000000);
+          conditionalAddJobStat(counterList,metrics,"hdfs_rack_read_bytes","hdfs_rack_read_mbytes",ctrs.findCounter("FileSystemCounters","HDFS_BYTES_READ_RACK"),1000000);
+          conditionalAddJobStat(counterList,metrics,"hdfs_read_exceptions",ctrs.findCounter("FileSystemCounters","HDFS_READ_EXCEPTIONS"));
+          conditionalAddJobStat(counterList,metrics,"hdfs_write_exceptions",ctrs.findCounter("FileSystemCounters","HDFS_WRITE_EXCEPTIONS"));
+          conditionalAddJobStat(counterList,metrics,"map_input_records","map_input_million_records",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","MAP_INPUT_RECORDS"),1000000);
+          conditionalAddJobStat(counterList,metrics,"map_output_records","map_output_million_records",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","MAP_OUTPUT_RECORDS"),1000000);
+          conditionalAddJobStat(counterList,metrics,"reduce_input_records","reduce_input_million_records",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","REDUCE_INPUT_RECORDS"),1000000);
+          conditionalAddJobStat(counterList,metrics,"reduce_output_records","reduce_output_million_records",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","REDUCE_OUTPUT_RECORDS"),1000000);
+          conditionalAddJobStat(counterList,metrics,"shuffle_bytes","shuffle_mbytes",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","REDUCE_SHUFFLE_BYTES"),1000000);
+          conditionalAddJobStat(counterList,metrics,"map_input_bytes","map_input_mbytes",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","MAP_INPUT_BYTES"),1000000);
+          conditionalAddJobStat(counterList,metrics,"map_spill_cpu_msecs","map_spill_cpu_secs",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","MAP_SPILL_CPU"),1000);
+          conditionalAddJobStat(counterList,metrics,"map_spill_wallclock_msecs","map_spill_walllclock_secs",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","MAP_SPILL_WALLCLOCK"),1000);
+          conditionalAddJobStat(counterList,metrics,"map_spill_number","map_spill_number",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","MAP_SPILL_NUMBER"),1);
+          conditionalAddJobStat(counterList,metrics,"map_spill_bytes","map_spill_mbytes",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","MAP_SPILL_BYTES"),1000000);
+          conditionalAddJobStat(counterList,metrics,"map_mem_sort_cpu_msecs","map_mem_sort_cpu_secs",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","MAP_MEM_SORT_CPU"),1000);
+          conditionalAddJobStat(counterList,metrics,"map_mem_sort_wallclock_msecs","map_mem_sort_wallclock_secs",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","MAP_MEM_SORT_WALLCLOCK"),1000);
+          conditionalAddJobStat(counterList,metrics,"map_merge_cpu_msecs","map_merge_cpu_secs",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","MAP_MERGE_CPU"),1000);
+          conditionalAddJobStat(counterList,metrics,"map_merge_wallclock_msecs","map_merge_wallclock_secs",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","MAP_MERGE_WALLCLOCK"),1000);
+          conditionalAddJobStat(counterList,metrics,"reduce_copy_cpu_msecs","reduce_copy_cpu_secs",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","REDUCE_COPY_CPU"),1000);
+          conditionalAddJobStat(counterList,metrics,"reduce_copy_wallclock_msecs","reduce_copy_wallclock_secs",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","REDUCE_COPY_WALLCLOCK"),1000);
+          conditionalAddJobStat(counterList,metrics,"reduce_sort_cpu_msecs","reduce_sort_cpu_secs",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","REDUCE_SORT_CPU"),1000);
+          conditionalAddJobStat(counterList,metrics,"redcue_sort_wallclock_msecs","reduce_sort_wallclock_secs",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","REDUCE_SORT_WALLCLOCK"),1000);
+          conditionalAddJobStat(counterList,metrics,"map_task_wallclock_msecs","map_task_wallclock_secs",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","MAP_TASK_WALLCLOCK"),1000);
+          conditionalAddJobStat(counterList,metrics,"reduce_task_wallclock_msecs","reduce_task_wallclock_secs",ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","REDUCE_TASK_WALLCLOCK"),1000);
+          conditionalAddJobStat(counterList,metrics,"slots_millis_maps","slots_secs_maps",ctrs.findCounter("org.apache.hadoop.mapred.JobInProgress$Counter","SLOTS_MILLIS_MAPS"),1000);
+          conditionalAddJobStat(counterList,metrics,"slots_millis_reduces","slots_secs_reduces",ctrs.findCounter("org.apache.hadoop.mapred.JobInProgress$Counter","SLOTS_MILLIS_REDUCES"),1000);
+        }
+        addJobStat(counterList,metrics,"success",mps.isSuccess() ? 1 : 0);
+        perJobStats[i]=counterList;
+        metricsPublisher.publishMetricsWithQueryTags(metrics);
+      }
+      jobStats.put("per_job_stats",perJobStats);
+    }
+  }
+  HiveOperation op=sess.getHiveOperation();
+  if ((op != null) && ((op.equals(HiveOperation.CREATETABLE_AS_SELECT)) || (op.equals(HiveOperation.LOAD)) || (op.equals(HiveOperation.QUERY)))) {
+    if (!conf.getBoolVar(HiveConf.ConfVars.HIVESTATSAUTOGATHER)) {
+      if (SessionState.get().getOverriddenConfigurations().containsKey(HiveConf.ConfVars.HIVESTATSAUTOGATHER.varname)) {
+        SessionState.getConsole().printInfo("WARNING: hive.stats.autogather is set to false." + "  Stats were not populated for any outputs of this query.  If any tables or " + "partitions were overwritten as part of this query, their stats may be incorrect");
+      }
+ else {
+        throw new RuntimeException("hive.stats.autogather is set to false");
+      }
+    }
+    HookUtils.ObjectSize inputSizes=HookUtils.getObjectSize(conf,new HashSet<Entity>(hookContext.getInputs()),false);
+    jobStats.put("input_size",String.valueOf(inputSizes.getTotalSize()));
+    if (!inputSizes.getObjectTypeLengths().isEmpty()) {
+      jobStats.put("inputs",inputSizes.getObjectTypeLengths());
+    }
+    String specifiedPool=conf.get("mapred.fairscheduler.pool","");
+    if (specifiedPool.length() > 0) {
+      jobStats.put("pool",conf.get("mapred.fairscheduler.pool"));
+    }
+    if (hookContext.getHookType() != HookContext.HookType.ON_FAILURE_HOOK) {
+      HookUtils.ObjectSize outputSizes=HookUtils.getObjectSize(conf,new HashSet<Entity>(hookContext.getOutputs()),true);
+      jobStats.put("output_size",String.valueOf(outputSizes.getTotalSize()));
+      if (!outputSizes.getObjectTypeLengths().isEmpty()) {
+        jobStats.put("outputs",outputSizes.getObjectTypeLengths());
+      }
+    }
+  }
+  statsString=jobStats.toString();
+  Set<QueryTag> queryTags=metricsPublisher.getQueryAttributes();
+  queryTagsStr=StringUtils.join(queryTags,',');
+  List<Object> sqlParams=new ArrayList<Object>();
+  sqlParams.add(StringEscapeUtils.escapeJava(queryId));
+  sqlParams.add(StringEscapeUtils.escapeJava(querySrc));
+  sqlParams.add(queryFailed);
+  sqlParams.add(queryTagsStr);
+  sqlParams.add(statsString);
+  String sql="insert into job_stats_log set queryId = ?, query_src = ?, query_failed = ?, " + "query_tags = ?, job_stats = ?";
+  HookUtils.runInsert(conf,urlFactory,sql,sqlParams,HookUtils.getSqlNumRetry(conf));
+}

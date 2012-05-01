@@ -1,0 +1,53 @@
+{
+  double estimatedNumSplits=0;
+  long size=0;
+  long fileCount=0;
+  long directoryCount=0;
+  for (  ReadEntity re : inputs) {
+    Path p=null;
+switch (re.getType()) {
+case TABLE:
+      p=re.getTable().getPath();
+    break;
+case PARTITION:
+  p=re.getPartition().getPartitionPath();
+break;
+default :
+break;
+}
+if (p != null) {
+String pathStr=p.toString();
+LOG.debug("Finding from cache Content Summary for " + pathStr);
+ContentSummary cs=(inputToCS == null) ? null : inputToCS.get(pathStr);
+if (cs == null) {
+LOG.debug("Fetch Content Summary for " + pathStr);
+FileSystem fs=p.getFileSystem(conf);
+cs=fs.getContentSummary(p);
+inputToCS.put(pathStr,cs);
+}
+if (isThereSampling) {
+double samplePercentage=100;
+if (pathToTopPercentage.containsKey(pathStr) && !nonSampledInputs.contains(re)) {
+samplePercentage=pathToTopPercentage.get(pathStr);
+}
+size+=(long)(cs.getLength() * samplePercentage / 100D);
+estimatedNumSplits+=samplePercentage / 100;
+if (estimatedNumSplits > maxSplits) {
+break;
+}
+}
+ else {
+size+=cs.getLength();
+fileCount+=cs.getFileCount();
+directoryCount+=cs.getDirectoryCount();
+}
+if (LOG.isDebugEnabled()) {
+LOG.debug("Length for file: " + p.toString() + " = "+ cs.getLength());
+}
+}
+if (size > maxSize) {
+break;
+}
+}
+return new InputInfo(size,fileCount,directoryCount,estimatedNumSplits);
+}

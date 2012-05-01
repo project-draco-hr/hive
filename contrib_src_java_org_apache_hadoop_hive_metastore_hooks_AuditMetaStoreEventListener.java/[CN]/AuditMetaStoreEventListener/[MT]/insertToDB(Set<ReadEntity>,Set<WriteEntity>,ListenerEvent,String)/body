@@ -1,0 +1,25 @@
+{
+  HiveConf conf=event.getHandler().getHiveConf();
+  if (conf.getVar(HiveConf.ConfVars.HIVEQUERYID) == null || conf.getVar(HiveConf.ConfVars.HIVEQUERYID).isEmpty()) {
+    try {
+      ArrayList<Object> sqlParams=new ArrayList<Object>();
+      sqlParams.add(command);
+      sqlParams.add(StringEscapeUtils.escapeJava(ReplicationHook.entitiesToString(inputs)));
+      sqlParams.add(ReplicationHook.entitiesToString(outputs));
+      sqlParams.add(COMMAND_TYPE);
+      String sql="insert into snc1_command_log " + " set command = ?, inputs = ?, outputs = ?, command_type = ?";
+      String ipAddress=HMSHandler.getIpAddress();
+      if (ipAddress != null) {
+        if (ipAddress.startsWith("/")) {
+          ipAddress=ipAddress.replaceFirst("/","");
+        }
+        sql+=", user_info = ?";
+        sqlParams.add(ipAddress);
+      }
+      HookUtils.runInsert(conf,urlFactory,sql,sqlParams,HookUtils.getSqlNumRetry(conf));
+    }
+ catch (    Exception e) {
+      throw new MetaException(e.getMessage());
+    }
+  }
+}
