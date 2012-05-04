@@ -1,0 +1,88 @@
+{
+  boolean success=false, madeDir=false;
+  Path partLocation=null;
+  try {
+    try {
+      for (      MetaStorePreEventListener listener : preListeners) {
+        listener.onEvent(new PreAddPartitionEvent(part,this));
+      }
+    }
+ catch (    NoSuchObjectException e) {
+      throw new MetaException(e.getMessage());
+    }
+catch (    InvalidOperationException e) {
+      throw new MetaException(e.getMessage());
+    }
+    Partition old_part=null;
+    try {
+      old_part=ms.getPartition(part.getDbName(),part.getTableName(),part.getValues());
+    }
+ catch (    NoSuchObjectException e) {
+      old_part=null;
+    }
+    if (old_part != null) {
+      throw new AlreadyExistsException("Partition already exists:" + part);
+    }
+    Table tbl=ms.getTable(part.getDbName(),part.getTableName());
+    if (tbl == null) {
+      throw new InvalidObjectException("Unable to add partition because table or database do not exist");
+    }
+    String partLocationStr=null;
+    if (part.getSd() != null) {
+      partLocationStr=part.getSd().getLocation();
+    }
+    if (partLocationStr == null || partLocationStr.isEmpty()) {
+      if (tbl.getSd().getLocation() != null) {
+        partLocation=new Path(tbl.getSd().getLocation(),Warehouse.makePartName(tbl.getPartitionKeys(),part.getValues()));
+      }
+    }
+ else {
+      if (tbl.getSd().getLocation() == null) {
+        throw new MetaException("Cannot specify location for a view partition");
+      }
+      partLocation=wh.getDnsPath(new Path(partLocationStr));
+    }
+    if (partLocation != null) {
+      part.getSd().setLocation(partLocation.toString());
+      if (!wh.isDir(partLocation)) {
+        if (!wh.mkdirs(partLocation)) {
+          throw new MetaException(partLocation + " is not a directory or unable to create one");
+        }
+        madeDir=true;
+      }
+    }
+    long time=System.currentTimeMillis() / 1000;
+    part.setCreateTime((int)time);
+    if (part.getParameters() == null || part.getParameters().get(Constants.DDL_TIME) == null) {
+      part.putToParameters(Constants.DDL_TIME,Long.toString(time));
+    }
+    Map<String,String> tblParams=tbl.getParameters();
+    String inheritProps=hiveConf.getVar(ConfVars.METASTORE_PART_INHERIT_TBL_PROPS).trim();
+    Set<String> inheritKeys=new HashSet<String>(Arrays.asList(inheritProps.split(",")));
+    if (inheritKeys.contains("*")) {
+      inheritKeys=tblParams.keySet();
+    }
+    for (    String key : inheritKeys) {
+      String paramVal=tblParams.get(key);
+      if (null != paramVal) {
+        part.putToParameters(key,paramVal);
+      }
+    }
+    success=ms.addPartition(part);
+  }
+  finally {
+    if (!success) {
+      if (madeDir) {
+        wh.deleteDir(partLocation,true);
+      }
+    }
+    for (    MetaStoreEventListener listener : listeners) {
+      AddPartitionEvent addPartitionEvent=new AddPartitionEvent(part,success,this);
+      addPartitionEvent.setEnvironmentContext(envContext);
+      listener.onAddPartition(addPartitionEvent);
+    }
+  }
+  Map<Partition,Boolean> returnVal=new HashMap<Partition,Boolean>();
+  returnVal.put(part,madeDir);
+  return returnVal.entrySet().iterator().next();
+}

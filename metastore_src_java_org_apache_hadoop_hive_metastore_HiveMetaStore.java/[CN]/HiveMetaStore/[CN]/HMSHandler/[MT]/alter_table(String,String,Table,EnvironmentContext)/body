@@ -1,0 +1,31 @@
+{
+  startFunction("alter_table",": db=" + dbname + " tbl="+ name+ " newtbl="+ newTable.getTableName());
+  if (newTable.getParameters() == null || newTable.getParameters().get(Constants.DDL_TIME) == null) {
+    newTable.putToParameters(Constants.DDL_TIME,Long.toString(System.currentTimeMillis() / 1000));
+  }
+  boolean success=false;
+  try {
+    Table oldt=get_table(dbname,name);
+    try {
+      for (      MetaStorePreEventListener listener : preListeners) {
+        listener.onEvent(new PreAlterTableEvent(oldt,newTable,this));
+      }
+    }
+ catch (    NoSuchObjectException e) {
+      throw new MetaException(e.getMessage());
+    }
+    alterHandler.alterTable(getMS(),wh,dbname,name,newTable);
+    success=true;
+    for (    MetaStoreEventListener listener : listeners) {
+      AlterTableEvent alterTableEvent=new AlterTableEvent(oldt,newTable,success,this);
+      alterTableEvent.setEnvironmentContext(envContext);
+      listener.onAlterTable(alterTableEvent);
+    }
+  }
+ catch (  NoSuchObjectException e) {
+    throw new InvalidOperationException(e.getMessage());
+  }
+ finally {
+    endFunction("alter_table",success);
+  }
+}

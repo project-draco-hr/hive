@@ -8,13 +8,35 @@
       sqlParams.add(ReplicationHook.entitiesToString(outputs));
       sqlParams.add(COMMAND_TYPE);
       String sql="insert into snc1_command_log " + " set command = ?, inputs = ?, outputs = ?, command_type = ?";
-      String ipAddress=HMSHandler.getIpAddress();
-      if (ipAddress != null) {
-        if (ipAddress.startsWith("/")) {
-          ipAddress=ipAddress.replaceFirst("/","");
+      String user_info=null;
+      String query_src=null;
+      String ENV_CONTEXT_USER_INFO="user_info";
+      String ENV_CONTEXT_QUERY_SRC="query_src";
+      if (event.getEnvironmentContext() != null && event.getEnvironmentContext().getProperties() != null && !event.getEnvironmentContext().getProperties().isEmpty()) {
+        Map<String,String> envProperties=event.getEnvironmentContext().getProperties();
+        if (envProperties.get(ENV_CONTEXT_USER_INFO) != null) {
+          user_info=envProperties.get(ENV_CONTEXT_USER_INFO);
         }
+        if (envProperties.get(ENV_CONTEXT_QUERY_SRC) != null) {
+          query_src=envProperties.get(ENV_CONTEXT_QUERY_SRC);
+        }
+      }
+      if (user_info == null) {
+        String ipAddress=HMSHandler.getIpAddress();
+        if (ipAddress != null) {
+          if (ipAddress.startsWith("/")) {
+            ipAddress=ipAddress.replaceFirst("/","");
+          }
+          user_info=ipAddress;
+        }
+      }
+      if (user_info != null) {
         sql+=", user_info = ?";
-        sqlParams.add(ipAddress);
+        sqlParams.add(user_info);
+      }
+      if (query_src != null) {
+        sql+=", query_src = ?";
+        sqlParams.add(StringEscapeUtils.escapeJava(query_src));
       }
       HookUtils.runInsert(conf,urlFactory,sql,sqlParams,HookUtils.getSqlNumRetry(conf));
     }
