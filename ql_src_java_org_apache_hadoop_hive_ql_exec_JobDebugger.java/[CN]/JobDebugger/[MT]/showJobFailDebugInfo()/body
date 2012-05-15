@@ -1,6 +1,6 @@
 {
   console.printError("Error during job, obtaining debugging information...");
-  TaskLogGrabber tlg=new TaskLogGrabber();
+  TaskInfoGrabber tlg=new TaskInfoGrabber();
   Thread t=new Thread(tlg);
   try {
     t.start();
@@ -15,18 +15,19 @@
   if (failures.keySet().size() == 0) {
     return;
   }
-  int maxFailures=0;
-  for (  Integer failCount : failures.values()) {
-    if (maxFailures < failCount.intValue()) {
-      maxFailures=failCount.intValue();
-    }
+  computeMaxFailures();
+  String jtUrl=null;
+  try {
+    jtUrl=JobTrackerURLResolver.getURL(conf);
   }
-  String jtUrl=JobTrackerURLResolver.getURL(conf);
+ catch (  Exception e) {
+    console.printError("Unable to retrieve URL for Hadoop Task logs. " + e.getMessage());
+  }
   for (  String task : failures.keySet()) {
     if (failures.get(task).intValue() == maxFailures) {
       TaskInfo ti=taskIdToInfo.get(task);
       String jobId=ti.getJobId();
-      String taskUrl=jtUrl + "/taskdetails.jsp?jobid=" + jobId+ "&tipid="+ task.toString();
+      String taskUrl=(jtUrl == null) ? "Unavailable" : jtUrl + "/taskdetails.jsp?jobid=" + jobId+ "&tipid="+ task.toString();
       TaskLogProcessor tlp=new TaskLogProcessor(conf);
       for (      String logUrl : ti.getLogUrls()) {
         tlp.addTaskAttemptLogUrl(logUrl);
@@ -51,6 +52,11 @@
           sb.append("Solution:\n  " + e.getSolution() + "\n");
         }
         sb.append("-----\n");
+        sb.append("Diagnostic Messages for this Task:\n");
+        String[] diagMesgs=ti.getDiagnosticMesgs();
+        for (        String mesg : diagMesgs) {
+          sb.append(mesg + "\n");
+        }
         console.printError(sb.toString());
       }
       break;
