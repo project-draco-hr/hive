@@ -1,9 +1,9 @@
 {
   String tblName=getUnescapedName((ASTNode)ast.getChild(0));
   List<PartitionSpec> partSpecs=getFullPartitionSpecs(ast);
-  DropTableDesc dropTblDesc=new DropTableDesc(tblName,partSpecs,expectView);
+  Table tab=null;
   try {
-    Table tab=db.getTable(db.getCurrentDatabase(),tblName,false);
+    tab=db.getTable(db.getCurrentDatabase(),tblName,false);
     if (tab != null) {
       inputs.add(new ReadEntity(tab));
     }
@@ -11,10 +11,26 @@
  catch (  HiveException e) {
     throw new SemanticException(ErrorMsg.INVALID_TABLE.getMsg(tblName));
   }
+  boolean stringPartitionColumns=true;
+  List<FieldSchema> partCols=tab.getPartCols();
+  for (  FieldSchema partCol : partCols) {
+    if (!partCol.getType().toLowerCase().equals("string")) {
+      stringPartitionColumns=false;
+      break;
+    }
+  }
+  if (!stringPartitionColumns) {
+    for (    PartitionSpec partSpec : partSpecs) {
+      if (partSpec.isNonEqualityOperator()) {
+        throw new SemanticException(ErrorMsg.DROP_PARTITION_NON_STRING_PARTCOLS_NONEQUALITY.getMsg());
+      }
+    }
+  }
   if (partSpecs != null) {
     boolean ifExists=(ast.getFirstChildWithType(TOK_IFEXISTS) != null);
     boolean throwException=!ifExists && !HiveConf.getBoolVar(conf,ConfVars.DROPIGNORESNONEXISTENT);
-    addTableDropPartsOutputs(tblName,partSpecs,throwException);
+    addTableDropPartsOutputs(tblName,partSpecs,throwException,stringPartitionColumns);
   }
+  DropTableDesc dropTblDesc=new DropTableDesc(tblName,partSpecs,expectView,stringPartitionColumns);
   rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),dropTblDesc),conf));
 }
