@@ -1,0 +1,42 @@
+{
+  String tableName=getUnescapedName((ASTNode)ast.getChild(0));
+  boolean ifExists=(ast.getFirstChildWithType(TOK_IFEXISTS) != null);
+  boolean throwException=!ifExists && !HiveConf.getBoolVar(conf,ConfVars.DROPIGNORESNONEXISTENT);
+  Table tab=null;
+  try {
+    tab=db.getTable(tableName,throwException);
+  }
+ catch (  HiveException e) {
+    throw new SemanticException(ErrorMsg.INVALID_TABLE.getMsg(tableName));
+  }
+  if (tab != null) {
+    inputs.add(new ReadEntity(tab));
+    outputs.add(new WriteEntity(tab));
+    if (tab.isView()) {
+      if (!expectView) {
+        if (ifExists) {
+          return;
+        }
+        throw new SemanticException(ErrorMsg.DROP_COMMAND_FOR_VIEWS.getMsg());
+      }
+    }
+ else     if (tab.isLinkTable()) {
+      if (!expectLink) {
+        if (ifExists) {
+          return;
+        }
+        throw new SemanticException(ErrorMsg.DROP_COMMAND_FOR_TABLELINKS.getMsg());
+      }
+    }
+ else {
+      if (expectView || expectLink) {
+        if (ifExists) {
+          return;
+        }
+        throw new SemanticException(ErrorMsg.DROP_COMMAND_FOR_TABLES.getMsg());
+      }
+    }
+  }
+  DropTableDesc dropTblDesc=new DropTableDesc(tableName,expectView,expectLink,ifExists,true);
+  rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),dropTblDesc),conf));
+}

@@ -1,0 +1,36 @@
+{
+  String dbName=unescapeIdentifier(ast.getChild(0).getText());
+  String tableName=unescapeIdentifier(ast.getChild(1).getText());
+  boolean isStatic=false;
+  Map<String,String> linkProps=null;
+  int numCh=ast.getChildCount();
+  for (int num=2; num < numCh; num++) {
+    ASTNode child=(ASTNode)ast.getChild(num);
+switch (child.getToken().getType()) {
+case HiveParser.KW_STATIC:
+      isStatic=true;
+    break;
+case HiveParser.TOK_TABLEPROPERTIES:
+  linkProps=DDLSemanticAnalyzer.getProps((ASTNode)child.getChild(0));
+break;
+}
+}
+if (dbName.equals(db.getCurrentDatabase())) {
+throw new SemanticException(ErrorMsg.TABLELINK_TO_OWN_DB.getMsg());
+}
+Table targetTable=null;
+try {
+targetTable=db.getTable(dbName,tableName);
+}
+ catch (HiveException e) {
+throw new SemanticException(ErrorMsg.INVALID_TABLE.getMsg(tableName + "@" + dbName));
+}
+TableType targetType=targetTable.getTableType();
+if (targetType != TableType.MANAGED_TABLE) {
+throw new SemanticException(ErrorMsg.TABLELINK_TO_UNMANAGED_TABLE.getMsg());
+}
+inputs.add(new ReadEntity(targetTable));
+CreateTableLinkDesc ctlDesc=new CreateTableLinkDesc(tableName,dbName,isStatic,linkProps);
+SessionState.get().setCommandType(HiveOperation.CREATETABLELINK);
+rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),ctlDesc),conf));
+}
