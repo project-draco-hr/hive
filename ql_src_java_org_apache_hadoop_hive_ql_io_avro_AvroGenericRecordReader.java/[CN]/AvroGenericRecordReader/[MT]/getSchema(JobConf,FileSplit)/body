@@ -1,0 +1,26 @@
+{
+  FileSystem fs=split.getPath().getFileSystem(job);
+  if (AvroSerdeUtils.insideMRJob(job)) {
+    MapredWork mapRedWork=Utilities.getMapRedWork(job);
+    for (    Map.Entry<String,PartitionDesc> pathsAndParts : mapRedWork.getPathToPartitionInfo().entrySet()) {
+      String partitionPath=pathsAndParts.getKey();
+      if (pathIsInPartition(split.getPath().makeQualified(fs),partitionPath)) {
+        if (LOG.isInfoEnabled()) {
+          LOG.info("Matching partition " + partitionPath + " with input split "+ split);
+        }
+        Properties props=pathsAndParts.getValue().getProperties();
+        if (props.containsKey(AvroSerdeUtils.SCHEMA_LITERAL) || props.containsKey(AvroSerdeUtils.SCHEMA_URL)) {
+          return AvroSerdeUtils.determineSchemaOrThrowException(props);
+        }
+ else         return null;
+      }
+    }
+    if (LOG.isInfoEnabled())     LOG.info("Unable to match filesplit " + split + " with a partition.");
+  }
+  String s=job.get(AvroSerdeUtils.AVRO_SERDE_SCHEMA);
+  if (s != null) {
+    LOG.info("Found the avro schema in the job: " + s);
+    return Schema.parse(s);
+  }
+  return null;
+}

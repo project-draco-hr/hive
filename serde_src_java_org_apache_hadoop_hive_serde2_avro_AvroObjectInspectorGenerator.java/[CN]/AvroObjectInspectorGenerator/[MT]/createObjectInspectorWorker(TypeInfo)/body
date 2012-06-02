@@ -1,0 +1,38 @@
+{
+  if (!supportedCategories(ti))   throw new AvroSerdeException("Don't yet support this type: " + ti);
+  ObjectInspector result;
+switch (ti.getCategory()) {
+case PRIMITIVE:
+    PrimitiveTypeInfo pti=(PrimitiveTypeInfo)ti;
+  result=PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(pti.getPrimitiveCategory());
+break;
+case STRUCT:
+StructTypeInfo sti=(StructTypeInfo)ti;
+ArrayList<ObjectInspector> ois=new ArrayList<ObjectInspector>(sti.getAllStructFieldTypeInfos().size());
+for (TypeInfo typeInfo : sti.getAllStructFieldTypeInfos()) {
+ois.add(createObjectInspectorWorker(typeInfo));
+}
+result=ObjectInspectorFactory.getStandardStructObjectInspector(sti.getAllStructFieldNames(),ois);
+break;
+case MAP:
+MapTypeInfo mti=(MapTypeInfo)ti;
+result=ObjectInspectorFactory.getStandardMapObjectInspector(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveObjectInspector.PrimitiveCategory.STRING),createObjectInspectorWorker(mti.getMapValueTypeInfo()));
+break;
+case LIST:
+ListTypeInfo ati=(ListTypeInfo)ti;
+result=ObjectInspectorFactory.getStandardListObjectInspector(createObjectInspectorWorker(ati.getListElementTypeInfo()));
+break;
+case UNION:
+UnionTypeInfo uti=(UnionTypeInfo)ti;
+List<TypeInfo> allUnionObjectTypeInfos=uti.getAllUnionObjectTypeInfos();
+List<ObjectInspector> unionObjectInspectors=new ArrayList<ObjectInspector>(allUnionObjectTypeInfos.size());
+for (TypeInfo typeInfo : allUnionObjectTypeInfos) {
+unionObjectInspectors.add(createObjectInspectorWorker(typeInfo));
+}
+result=ObjectInspectorFactory.getStandardUnionObjectInspector(unionObjectInspectors);
+break;
+default :
+throw new AvroSerdeException("No Hive categories matched: " + ti);
+}
+return result;
+}

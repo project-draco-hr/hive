@@ -1,0 +1,33 @@
+{
+  Schema s=Schema.parse(TestAvroObjectInspectorGenerator.RECORD_SCHEMA);
+  GenericData.Record record=new GenericData.Record(s);
+  GenericData.Record innerRecord=new GenericData.Record(s.getField("aRecord").schema());
+  innerRecord.put("int1",42);
+  innerRecord.put("boolean1",true);
+  innerRecord.put("long1",42432234234l);
+  record.put("aRecord",innerRecord);
+  assertTrue(GENERIC_DATA.validate(s,record));
+  AvroGenericRecordWritable garw=Utils.serializeAndDeserializeRecord(record);
+  AvroObjectInspectorGenerator aoig=new AvroObjectInspectorGenerator(s);
+  AvroDeserializer de=new AvroDeserializer();
+  ArrayList<Object> row=(ArrayList<Object>)de.deserialize(aoig.getColumnNames(),aoig.getColumnTypes(),garw,s);
+  assertEquals(1,row.size());
+  Object theRecordObject=row.get(0);
+  System.out.println("theRecordObject = " + theRecordObject.getClass().getCanonicalName());
+  StandardStructObjectInspector oi=(StandardStructObjectInspector)aoig.getObjectInspector();
+  List<? extends StructField> allStructFieldRefs=oi.getAllStructFieldRefs();
+  assertEquals(1,allStructFieldRefs.size());
+  StructField fieldRefForaRecord=allStructFieldRefs.get(0);
+  assertEquals("arecord",fieldRefForaRecord.getFieldName());
+  Object innerRecord2=oi.getStructFieldData(row,fieldRefForaRecord);
+  StandardStructObjectInspector innerRecord2OI=(StandardStructObjectInspector)fieldRefForaRecord.getFieldObjectInspector();
+  List<? extends StructField> allStructFieldRefs1=innerRecord2OI.getAllStructFieldRefs();
+  assertEquals(3,allStructFieldRefs1.size());
+  assertEquals("int1",allStructFieldRefs1.get(0).getFieldName());
+  assertEquals("boolean1",allStructFieldRefs1.get(1).getFieldName());
+  assertEquals("long1",allStructFieldRefs1.get(2).getFieldName());
+  innerRecord2OI.getStructFieldsDataAsList(innerRecord2);
+  assertEquals(42,innerRecord2OI.getStructFieldData(innerRecord2,allStructFieldRefs1.get(0)));
+  assertEquals(true,innerRecord2OI.getStructFieldData(innerRecord2,allStructFieldRefs1.get(1)));
+  assertEquals(42432234234l,innerRecord2OI.getStructFieldData(innerRecord2,allStructFieldRefs1.get(2)));
+}
