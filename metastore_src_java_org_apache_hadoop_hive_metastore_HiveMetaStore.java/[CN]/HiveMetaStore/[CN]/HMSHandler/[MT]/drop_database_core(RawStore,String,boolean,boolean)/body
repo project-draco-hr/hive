@@ -1,6 +1,8 @@
 {
   boolean success=false;
   Database db=null;
+  List<Path> tablePaths=new ArrayList<Path>();
+  List<Path> partitionPaths=new ArrayList<Path>();
   try {
     ms.openTransaction();
     db=ms.getDatabase(name);
@@ -15,6 +17,40 @@
     if (!wh.isWritable(path)) {
       throw new MetaException("Database not dropped since " + path + " is not writable by "+ hiveConf.getUser());
     }
+    Path databasePath=wh.getDnsPath(wh.getDatabasePath(db));
+    int tableBatchSize=HiveConf.getIntVar(hiveConf,ConfVars.METASTORE_BATCH_RETRIEVE_MAX);
+    int startIndex=0;
+    int endIndex=-1;
+    while (endIndex < allTables.size() - 1) {
+      startIndex=endIndex + 1;
+      endIndex=endIndex + tableBatchSize;
+      if (endIndex >= allTables.size()) {
+        endIndex=allTables.size() - 1;
+      }
+      List<Table> tables=null;
+      try {
+        tables=ms.getTableObjectsByName(name,allTables.subList(startIndex,endIndex));
+      }
+ catch (      UnknownDBException e) {
+        throw new MetaException(e.getMessage());
+      }
+      if (tables != null && !tables.isEmpty()) {
+        for (        Table table : tables) {
+          Path tablePath=null;
+          if (table.getSd().getLocation() != null && !isExternal(table)) {
+            tablePath=wh.getDnsPath(new Path(table.getSd().getLocation()));
+            if (!wh.isWritable(tablePath.getParent())) {
+              throw new MetaException("Database metadata not deleted since table: " + table.getTableName() + " has a parent location "+ tablePath.getParent()+ " which is not writable by "+ hiveConf.getUser());
+            }
+            if (!isSubdirectory(databasePath,tablePath)) {
+              tablePaths.add(tablePath);
+            }
+          }
+          partitionPaths=dropPartitionsAndGetLocations(ms,name,table.getTableName(),tablePath,table.getPartitionKeys(),deleteData && !isExternal(table));
+          drop_table(name,table.getTableName(),false);
+        }
+      }
+    }
     if (ms.dropDatabase(name)) {
       success=ms.commitTransaction();
     }
@@ -24,7 +60,16 @@
       ms.rollbackTransaction();
     }
  else     if (deleteData) {
-      wh.deleteDir(new Path(db.getLocationUri()),true);
+      deletePartitionData(partitionPaths);
+      for (      Path tablePath : tablePaths) {
+        deleteTableData(tablePath);
+      }
+      try {
+        wh.deleteDir(new Path(db.getLocationUri()),true);
+      }
+ catch (      Exception e) {
+        LOG.error("Failed to delete database directory: " + db.getLocationUri() + " "+ e.getMessage());
+      }
     }
     for (    MetaStoreEventListener listener : listeners) {
       listener.onDropDatabase(new DropDatabaseEvent(db,success,this));

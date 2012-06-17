@@ -1,0 +1,27 @@
+{
+  int partitionBatchSize=HiveConf.getIntVar(hiveConf,ConfVars.METASTORE_BATCH_RETRIEVE_MAX);
+  Path tableDnsPath=null;
+  if (tablePath != null) {
+    tableDnsPath=wh.getDnsPath(tablePath);
+  }
+  List<Path> partPaths=new ArrayList<Path>();
+  while (true) {
+    List<Partition> partsToDelete=ms.getPartitions(dbName,tableName,partitionBatchSize);
+    if (partsToDelete == null || partsToDelete.isEmpty()) {
+      break;
+    }
+    for (    Partition part : partsToDelete) {
+      if (checkLocation && part.getSd() != null && part.getSd().getLocation() != null) {
+        Path partPath=wh.getDnsPath(new Path(part.getSd().getLocation()));
+        if (tableDnsPath == null || (partPath != null && !isSubdirectory(tableDnsPath,partPath))) {
+          if (!wh.isWritable(partPath.getParent())) {
+            throw new MetaException("Table metadata not deleted since the partition " + Warehouse.makePartName(partitionKeys,part.getValues()) + " has parent location "+ partPath.getParent()+ " which is not writable "+ "by "+ hiveConf.getUser());
+          }
+          partPaths.add(partPath);
+        }
+      }
+      ms.dropPartition(dbName,tableName,part.getValues());
+    }
+  }
+  return partPaths;
+}

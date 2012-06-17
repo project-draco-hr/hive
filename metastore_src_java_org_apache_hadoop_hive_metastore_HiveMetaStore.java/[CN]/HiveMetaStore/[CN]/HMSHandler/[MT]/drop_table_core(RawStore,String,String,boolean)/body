@@ -2,6 +2,7 @@
   boolean success=false;
   boolean isExternal=false;
   Path tblPath=null;
+  List<Path> partPaths=null;
   Table tbl=null;
   isExternal=false;
   boolean isIndexTable=false;
@@ -47,6 +48,7 @@
         throw new MetaException("Table metadata not deleted since " + tblPath.getParent() + " is not writable by "+ hiveConf.getUser());
       }
     }
+    partPaths=dropPartitionsAndGetLocations(ms,dbname,name,tblPath,tbl.getPartitionKeys(),deleteData && !isExternal);
     if (!ms.dropTable(dbname,name)) {
       throw new MetaException("Unable to drop table");
     }
@@ -56,8 +58,9 @@
     if (!success) {
       ms.rollbackTransaction();
     }
- else     if (deleteData && (tblPath != null) && !isExternal) {
-      wh.deleteDir(tblPath,true);
+ else     if (deleteData && !isExternal) {
+      deletePartitionData(partPaths);
+      deleteTableData(tblPath);
     }
     for (    MetaStoreEventListener listener : listeners) {
       listener.onDropTable(new DropTableEvent(tbl,success,this));
