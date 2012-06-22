@@ -1,16 +1,20 @@
 {
-  StringBuffer tarCommand=new StringBuffer();
-  tarCommand.append("cd " + parentDir + " ; ");
-  tarCommand.append(" tar -zcvf ");
-  tarCommand.append(" " + outputFile);
-  for (int i=0; i < inputFiles.length; i++) {
-    tarCommand.append(" " + inputFiles[i]);
+  TarArchiveOutputStream tOut=null;
+  try {
+    tOut=new TarArchiveOutputStream(new GzipCompressorOutputStream(new BufferedOutputStream(new FileOutputStream(new File(parentDir,outputFile)))));
+    for (int i=0; i < inputFiles.length; i++) {
+      File f=new File(inputFiles[i]);
+      TarArchiveEntry tarEntry=new TarArchiveEntry(f,f.getName());
+      tOut.setLongFileMode(TarArchiveOutputStream.LONGFILE_GNU);
+      tOut.putArchiveEntry(tarEntry);
+      IOUtils.copy(new FileInputStream(f),tOut);
+      tOut.closeArchiveEntry();
+    }
   }
-  String[] shellCmd={"bash","-c",tarCommand.toString()};
-  ShellCommandExecutor shexec=new ShellCommandExecutor(shellCmd);
-  shexec.execute();
-  int exitcode=shexec.getExitCode();
-  if (exitcode != 0) {
-    throw new IOException("Error tarring file " + outputFile + ". Tar process exited with exit code "+ exitcode);
+  finally {
+    if (tOut != null) {
+      tOut.finish();
+      tOut.close();
+    }
   }
 }
