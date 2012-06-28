@@ -1,0 +1,30 @@
+{
+  HiveConf tempConf=new HiveConf();
+  Path hConfFilePath=new Path(ctx.getLocalTmpFileURI(),JOBCONF_FILENAME);
+  OutputStream out=null;
+  Properties deltaP=hconf.getChangedProperties();
+  boolean hadoopLocalMode=hconf.getVar(HiveConf.ConfVars.HADOOPJT).equals("local");
+  String hadoopSysDir="mapred.system.dir";
+  String hadoopWorkDir="mapred.local.dir";
+  for (  Object one : deltaP.keySet()) {
+    String oneProp=(String)one;
+    if (hadoopLocalMode && (oneProp.equals(hadoopSysDir) || oneProp.equals(hadoopWorkDir))) {
+      continue;
+    }
+    tempConf.set(oneProp,deltaP.getProperty(oneProp));
+  }
+  if (hadoopLocalMode) {
+    tempConf.set(hadoopSysDir,hconf.get(hadoopSysDir) + "/" + Utilities.randGen.nextInt());
+    tempConf.set(hadoopWorkDir,hconf.get(hadoopWorkDir) + "/" + Utilities.randGen.nextInt());
+  }
+  try {
+    out=FileSystem.getLocal(hconf).create(hConfFilePath);
+    tempConf.writeXml(out);
+  }
+  finally {
+    if (out != null) {
+      out.close();
+    }
+  }
+  return " -jobconffile " + hConfFilePath.toString();
+}
