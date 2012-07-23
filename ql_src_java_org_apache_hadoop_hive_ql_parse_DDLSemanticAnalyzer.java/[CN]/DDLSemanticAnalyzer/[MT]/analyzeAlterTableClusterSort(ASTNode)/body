@@ -1,15 +1,14 @@
 {
   String tableName=getUnescapedName((ASTNode)ast.getChild(0));
+  Table tab=null;
   try {
-    Table tab=db.getTable(db.getCurrentDatabase(),tableName,false);
-    if (tab != null) {
-      inputs.add(new ReadEntity(tab));
-      outputs.add(new WriteEntity(tab));
-    }
+    tab=db.getTable(db.getCurrentDatabase(),tableName,true);
   }
  catch (  HiveException e) {
     throw new SemanticException(ErrorMsg.INVALID_TABLE.getMsg(tableName));
   }
+  inputs.add(new ReadEntity(tab));
+  outputs.add(new WriteEntity(tab));
   if (ast.getChildCount() == 1) {
     AlterTableDesc alterTblDesc=new AlterTableDesc(tableName,-1,new ArrayList<String>(),new ArrayList<Order>());
     rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),alterTblDesc),conf));
@@ -28,6 +27,17 @@
     }
     if (numBuckets <= 0) {
       throw new SemanticException(ErrorMsg.INVALID_BUCKET_NUMBER.getMsg());
+    }
+    if (tab.isPartitioned()) {
+      try {
+        List<String> partitionNames=db.getPartitionNames(tableName,(short)1);
+        if ((partitionNames != null) && (!partitionNames.isEmpty())) {
+          throw new SemanticException(ErrorMsg.NUM_BUCKETS_CHANGE_NOT_ALLOWED.getMsg());
+        }
+      }
+ catch (      HiveException e) {
+        throw new SemanticException(e.getMessage());
+      }
     }
     AlterTableDesc alterTblDesc=new AlterTableDesc(tableName,numBuckets,bucketCols,sortCols);
     rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),alterTblDesc),conf));
