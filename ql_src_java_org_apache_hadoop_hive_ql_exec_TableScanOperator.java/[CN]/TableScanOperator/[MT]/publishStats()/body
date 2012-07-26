@@ -1,7 +1,11 @@
 {
+  boolean isStatsReliable=conf.isStatsReliable();
   StatsPublisher statsPublisher=Utilities.getStatsPublisher(jc);
   if (!statsPublisher.connect(jc)) {
     LOG.info("StatsPublishing error: cannot connect to database.");
+    if (isStatsReliable) {
+      throw new HiveException(ErrorMsg.STATSPUBLISHER_CONNECTION_ERROR.getErrorCodedMsg());
+    }
     return;
   }
   String key;
@@ -18,8 +22,16 @@
     for (    String statType : stats.get(pspecs).getStoredStats()) {
       statsToPublish.put(statType,Long.toString(stats.get(pspecs).getStat(statType)));
     }
-    statsPublisher.publishStat(key,statsToPublish);
+    if (!statsPublisher.publishStat(key,statsToPublish)) {
+      if (isStatsReliable) {
+        throw new HiveException(ErrorMsg.STATSPUBLISHER_PUBLISHING_ERROR.getErrorCodedMsg());
+      }
+    }
     LOG.info("publishing : " + key + " : "+ statsToPublish.toString());
   }
-  statsPublisher.closeConnection();
+  if (!statsPublisher.closeConnection()) {
+    if (isStatsReliable) {
+      throw new HiveException(ErrorMsg.STATSPUBLISHER_CLOSING_ERROR.getErrorCodedMsg());
+    }
+  }
 }
