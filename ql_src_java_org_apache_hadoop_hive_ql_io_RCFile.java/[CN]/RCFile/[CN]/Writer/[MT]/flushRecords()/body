@@ -1,56 +1,60 @@
 {
   key.numberRows=bufferedRecords;
-  value.keyBuffer=key;
+  Compressor compressor=null;
+  NonSyncDataOutputBuffer valueBuffer=null;
+  CompressionOutputStream deflateFilter=null;
+  DataOutputStream deflateOut=null;
+  boolean isCompressed=isCompressed();
   int valueLength=0;
+  if (isCompressed) {
+    ReflectionUtils.setConf(codec,this.conf);
+    compressor=CodecPool.getCompressor(codec);
+    valueBuffer=new NonSyncDataOutputBuffer();
+    deflateFilter=codec.createOutputStream(valueBuffer,compressor);
+    deflateOut=new DataOutputStream(deflateFilter);
+  }
   for (int columnIndex=0; columnIndex < columnNumber; columnIndex++) {
     ColumnBuffer currentBuf=columnBuffers[columnIndex];
     currentBuf.flushGroup();
     NonSyncDataOutputBuffer columnValue=currentBuf.columnValBuffer;
-    if (isCompressed()) {
-      compressionBuffer[columnIndex].reset();
-      deflateFilter[columnIndex].resetState();
-      deflateOut[columnIndex].write(columnValue.getData(),0,columnValue.getLength());
-      deflateOut[columnIndex].flush();
-      deflateFilter[columnIndex].finish();
-      int colLen=compressionBuffer[columnIndex].getLength();
-      key.setColumnLenInfo(colLen,currentBuf.valLenBuffer,columnValuePlainLength[columnIndex],columnIndex);
-      value.setColumnValueBuffer(compressionBuffer[columnIndex],columnIndex);
-      valueLength+=colLen;
-      plainTotalColumnLength[columnIndex]+=columnValuePlainLength[columnIndex];
-      comprTotalColumnLength[columnIndex]+=colLen;
+    int colLen;
+    int plainLen=columnValuePlainLength[columnIndex];
+    if (isCompressed) {
+      if (deflateFilter instanceof SchemaAwareCompressionOutputStream) {
+        ((SchemaAwareCompressionOutputStream)deflateFilter).setColumnIndex(columnIndex);
+      }
+      deflateFilter.resetState();
+      deflateOut.write(columnValue.getData(),0,columnValue.getLength());
+      deflateOut.flush();
+      deflateFilter.finish();
+      colLen=valueBuffer.getLength() - valueLength;
     }
  else {
-      int colLen=columnValuePlainLength[columnIndex];
-      key.setColumnLenInfo(colLen,currentBuf.valLenBuffer,colLen,columnIndex);
-      value.setColumnValueBuffer(columnValue,columnIndex);
-      valueLength+=colLen;
-      plainTotalColumnLength[columnIndex]+=colLen;
-      comprTotalColumnLength[columnIndex]+=colLen;
+      colLen=columnValuePlainLength[columnIndex];
     }
+    valueLength+=colLen;
+    key.setColumnLenInfo(colLen,currentBuf.valLenBuffer,plainLen,columnIndex);
+    plainTotalColumnLength[columnIndex]+=plainLen;
+    comprTotalColumnLength[columnIndex]+=colLen;
     columnValuePlainLength[columnIndex]=0;
   }
   int keyLength=key.getSize();
   if (keyLength < 0) {
     throw new IOException("negative length keys not allowed: " + key);
   }
-  checkAndWriteSync();
-  out.writeInt(keyLength + valueLength);
-  out.writeInt(keyLength);
-  if (!isCompressed()) {
-    out.writeInt(keyLength);
-    key.write(out);
+  if (compressor != null) {
+    CodecPool.returnCompressor(compressor);
+  }
+  writeKey(key,keyLength + valueLength,keyLength);
+  if (isCompressed) {
+    out.write(valueBuffer.getData(),0,valueBuffer.getLength());
   }
  else {
-    keyCompressionBuffer.reset();
-    keyDeflateFilter.resetState();
-    key.write(keyDeflateOut);
-    keyDeflateOut.flush();
-    keyDeflateFilter.finish();
-    int compressedKeyLen=keyCompressionBuffer.getLength();
-    out.writeInt(compressedKeyLen);
-    out.write(keyCompressionBuffer.getData(),0,compressedKeyLen);
+    for (int columnIndex=0; columnIndex < columnNumber; ++columnIndex) {
+      NonSyncDataOutputBuffer buf=columnBuffers[columnIndex].columnValBuffer;
+      out.write(buf.getData(),0,buf.getLength());
+    }
   }
-  value.write(out);
   clearColumnBuffers();
   bufferedRecords=0;
   columnBufferSize=0;
