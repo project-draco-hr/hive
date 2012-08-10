@@ -73,28 +73,38 @@ catch (  URISyntaxException e) {
     }
   }
   LoadTableDesc loadTableWork=new LoadTableDesc(fromURI.toString(),loadTmpPath,Utilities.getTableDesc(ts.tableHandle),partSpec,isOverWrite);
+  Task<? extends Serializable> childTask=TaskFactory.get(new MoveWork(getInputs(),getOutputs(),loadTableWork,null,true),conf);
   if (rTask != null) {
-    rTask.addDependentTask(TaskFactory.get(new MoveWork(getInputs(),getOutputs(),loadTableWork,null,true),conf));
+    rTask.addDependentTask(childTask);
   }
  else {
-    rTask=TaskFactory.get(new MoveWork(getInputs(),getOutputs(),loadTableWork,null,true),conf);
+    rTask=childTask;
   }
   rootTasks.add(rTask);
+  Task<? extends Serializable> statTask=null;
+  if (conf.getBoolVar(HiveConf.ConfVars.HIVESTATSAUTOGATHER)) {
+    StatsWork statDesc=new StatsWork(loadTableWork);
+    statDesc.setNoStatsAggregator(true);
+    statDesc.setClearAggregatorStats(true);
+    statDesc.setStatsReliable(conf.getBoolVar(HiveConf.ConfVars.HIVE_STATS_RELIABLE));
+    statTask=TaskFactory.get(statDesc,conf);
+  }
   if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVEINDEXAUTOUPDATE)) {
     IndexUpdater indexUpdater=new IndexUpdater(loadTableWork,getInputs(),conf);
     try {
       List<Task<? extends Serializable>> indexUpdateTasks=indexUpdater.generateUpdateTasks();
       for (      Task<? extends Serializable> updateTask : indexUpdateTasks) {
-        if (rTask.getChildren() == null || rTask.getChildren().size() == 0) {
-          rTask.addDependentTask(updateTask);
-        }
- else {
-          ((Task<? extends Serializable>)rTask.getChildren().get(0)).addDependentTask(updateTask);
+        childTask.addDependentTask(updateTask);
+        if (statTask != null) {
+          updateTask.addDependentTask(statTask);
         }
       }
     }
  catch (    HiveException e) {
       console.printInfo("WARNING: could not auto-update stale indexes, indexes are not out of sync");
     }
+  }
+ else   if (statTask != null) {
+    childTask.addDependentTask(statTask);
   }
 }
