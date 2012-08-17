@@ -1,6 +1,9 @@
 {
   try {
     while (true) {
+      if (context != null) {
+        context.resetRow();
+      }
       if (currRecReader == null) {
         currRecReader=getRecordReader();
         if (currRecReader == null) {
@@ -9,14 +12,27 @@
       }
       boolean ret=currRecReader.next(key,value);
       if (ret) {
-        if (this.currPart == null) {
-          Object obj=serde.deserialize(value);
-          return new InspectableObject(obj,serde.getObjectInspector());
+        if (operator != null && context != null && context.inputFileChanged()) {
+          try {
+            operator.cleanUpInputFileChanged();
+          }
+ catch (          HiveException e) {
+            throw new IOException(e);
+          }
         }
- else {
-          rowWithPart[0]=serde.deserialize(value);
-          return new InspectableObject(rowWithPart,rowObjectInspector);
+        if (hasVC) {
+          vcValues=MapOperator.populateVirtualColumnValues(context,vcCols,vcValues,serde);
+          row[isPartitioned ? 2 : 1]=vcValues;
         }
+        row[0]=serde.deserialize(value);
+        if (hasVC || isPartitioned) {
+          inspectable.o=row;
+          inspectable.oi=rowObjectInspector;
+          return inspectable;
+        }
+        inspectable.o=row[0];
+        inspectable.oi=serde.getObjectInspector();
+        return inspectable;
       }
  else {
         currRecReader.close();

@@ -1,42 +1,24 @@
 {
+  sink.reset(res);
   try {
-    int numRows=0;
-    int rowsRet=maxRows;
-    if (work.getLeastNumRows() > 0) {
-      if (totalRows == work.getLeastNumRows()) {
-        return false;
-      }
-      for (int i=0; i < work.getLeastNumRows(); i++) {
-        InspectableObject io=ftOp.getNextRow();
-        if (io == null) {
-          throw new CommandNeedRetryException();
-        }
-        res.add(((Text)mSerde.serialize(io.o,io.oi)).toString());
-        numRows++;
-      }
-      totalRows=work.getLeastNumRows();
-      return true;
-    }
-    if ((work.getLimit() >= 0) && ((work.getLimit() - totalRows) < rowsRet)) {
-      rowsRet=work.getLimit() - totalRows;
+    int rowsRet=work.getLeastNumRows();
+    if (rowsRet <= 0) {
+      rowsRet=work.getLimit() >= 0 ? Math.min(work.getLimit() - totalRows,maxRows) : maxRows;
     }
     if (rowsRet <= 0) {
-      ftOp.clearFetchContext();
+      fetch.clearFetchContext();
       return false;
     }
-    while (numRows < rowsRet) {
-      InspectableObject io=ftOp.getNextRow();
-      if (io == null) {
-        if (numRows == 0) {
-          return false;
+    boolean fetched=false;
+    while (sink.getNumRows() < rowsRet) {
+      if (!fetch.pushRow()) {
+        if (work.getLeastNumRows() > 0) {
+          throw new CommandNeedRetryException();
         }
-        totalRows+=numRows;
-        return true;
+        return fetched;
       }
-      res.add(((Text)mSerde.serialize(io.o,io.oi)).toString());
-      numRows++;
+      fetched=true;
     }
-    totalRows+=numRows;
     return true;
   }
  catch (  CommandNeedRetryException e) {
@@ -47,5 +29,8 @@ catch (  IOException e) {
   }
 catch (  Exception e) {
     throw new IOException(e);
+  }
+ finally {
+    totalRows+=sink.getNumRows();
   }
 }
