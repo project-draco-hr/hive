@@ -1,0 +1,23 @@
+{
+  super.process(nd,stack,ctx,nodeOutputs);
+  LateralViewForwardOperator op=(LateralViewForwardOperator)nd;
+  ColumnPrunerProcCtx cppCtx=(ColumnPrunerProcCtx)ctx;
+  Operator<?> select=op.getChildOperators().get(LateralViewJoinOperator.SELECT_TAG);
+  List<String> cols=cppCtx.getPrunedColList(select);
+  RowResolver rr=cppCtx.getOpToParseCtxMap().get(op).getRowResolver();
+  if (rr.getColumnInfos().size() != cols.size()) {
+    ArrayList<ExprNodeDesc> colList=new ArrayList<ExprNodeDesc>();
+    ArrayList<String> outputColNames=new ArrayList<String>();
+    for (    String col : cols) {
+      String[] tabcol=rr.reverseLookup(col);
+      ColumnInfo colInfo=rr.get(tabcol[0],tabcol[1]);
+      ExprNodeColumnDesc colExpr=new ExprNodeColumnDesc(colInfo.getType(),colInfo.getInternalName(),colInfo.getTabAlias(),colInfo.getIsVirtualCol());
+      colList.add(colExpr);
+      outputColNames.add(col);
+    }
+    ((SelectDesc)select.getConf()).setSelStarNoCompute(false);
+    ((SelectDesc)select.getConf()).setColList(colList);
+    ((SelectDesc)select.getConf()).setOutputColumnNames(outputColNames);
+  }
+  return null;
+}

@@ -1,17 +1,25 @@
 {
   SelectOperator op=(SelectOperator)nd;
   ColumnPrunerProcCtx cppCtx=(ColumnPrunerProcCtx)ctx;
-  List<String> cols=new ArrayList<String>();
+  LateralViewJoinOperator lvJoin=null;
   if (op.getChildOperators() != null) {
     for (    Operator<? extends Serializable> child : op.getChildOperators()) {
       if ((child instanceof FileSinkOperator) || (child instanceof ScriptOperator) || (child instanceof UDTFOperator)|| (child instanceof LimitOperator)|| (child instanceof UnionOperator)) {
         cppCtx.getPrunedColLists().put(op,cppCtx.getColsFromSelectExpr(op));
         return null;
       }
+      if (op.getConf().isSelStarNoCompute() && child instanceof LateralViewJoinOperator) {
+        lvJoin=(LateralViewJoinOperator)child;
+      }
     }
   }
-  cols=cppCtx.genColLists(op);
+  List<String> cols=cppCtx.genColLists(op);
   SelectDesc conf=op.getConf();
+  if (lvJoin != null) {
+    RowResolver rr=cppCtx.getOpToParseCtxMap().get(op).getRowResolver();
+    cppCtx.getPrunedColLists().put(op,cppCtx.getSelectColsFromLVJoin(rr,cols));
+    return null;
+  }
   cppCtx.getPrunedColLists().put(op,cppCtx.getSelectColsFromChildren(op,cols));
   if (conf.isSelStarNoCompute()) {
     return null;
