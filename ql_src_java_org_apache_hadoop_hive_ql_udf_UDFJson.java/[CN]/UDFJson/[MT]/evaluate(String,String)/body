@@ -2,27 +2,43 @@
   if (jsonString == null || jsonString == "" || pathString == null || pathString == "") {
     return null;
   }
-  try {
-    String[] pathExpr=pathExprCache.get(pathString);
-    if (pathExpr == null) {
-      pathExpr=pathString.split("\\.",-1);
-      pathExprCache.put(pathString,pathExpr);
-    }
-    if (!pathExpr[0].equalsIgnoreCase("$")) {
-      return null;
-    }
-    Object extractObject=extractObjectCache.get(jsonString);
-    if (extractObject == null) {
-      extractObject=new JSONObject(jsonString);
-      extractObjectCache.put(jsonString,extractObject);
-    }
-    for (int i=1; i < pathExpr.length; i++) {
-      extractObject=extract(extractObject,pathExpr[i]);
-    }
-    result.set(extractObject.toString());
-    return result;
+  String[] pathExpr=pathExprCache.get(pathString);
+  if (pathExpr == null) {
+    pathExpr=pathString.split("\\.",-1);
+    pathExprCache.put(pathString,pathExpr);
   }
- catch (  Exception e) {
+  if (!pathExpr[0].equalsIgnoreCase("$")) {
     return null;
   }
+  Object extractObject=extractObjectCache.get(jsonString);
+  if (extractObject == null) {
+    try {
+      extractObject=MAPPER.readValue(jsonString,MAP_TYPE);
+    }
+ catch (    Exception e) {
+      return null;
+    }
+    extractObjectCache.put(jsonString,extractObject);
+  }
+  for (int i=1; i < pathExpr.length; i++) {
+    if (extractObject == null) {
+      return null;
+    }
+    extractObject=extract(extractObject,pathExpr[i]);
+  }
+  if (extractObject instanceof Map || extractObject instanceof List) {
+    try {
+      result.set(MAPPER.writeValueAsString(extractObject));
+    }
+ catch (    Exception e) {
+      return null;
+    }
+  }
+ else   if (extractObject != null) {
+    result.set(extractObject.toString());
+  }
+ else {
+    return null;
+  }
+  return result;
 }

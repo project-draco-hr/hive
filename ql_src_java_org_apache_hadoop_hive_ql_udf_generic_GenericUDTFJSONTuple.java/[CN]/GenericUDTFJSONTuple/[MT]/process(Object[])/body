@@ -15,34 +15,42 @@
     return;
   }
   try {
-    JSONObject jsonObj=jsonObjectCache.get(jsonStr);
+    Object jsonObj=jsonObjectCache.get(jsonStr);
     if (jsonObj == null) {
-      jsonObj=new JSONObject(jsonStr);
+      try {
+        jsonObj=MAPPER.readValue(jsonStr,MAP_TYPE);
+      }
+ catch (      Exception e) {
+        reportInvalidJson(jsonStr);
+        forward(nullCols);
+        return;
+      }
       jsonObjectCache.put(jsonStr,jsonObj);
     }
+    if (!(jsonObj instanceof Map)) {
+      reportInvalidJson(jsonStr);
+      forward(nullCols);
+      return;
+    }
     for (int i=0; i < numCols; ++i) {
-      if (jsonObj.isNull(paths[i])) {
-        retCols[i]=null;
+      if (retCols[i] == null) {
+        retCols[i]=cols[i];
+      }
+      Object extractObject=((Map<String,Object>)jsonObj).get(paths[i]);
+      if (extractObject instanceof Map || extractObject instanceof List) {
+        retCols[i].set(MAPPER.writeValueAsString(extractObject));
+      }
+ else       if (extractObject != null) {
+        retCols[i].set(extractObject.toString());
       }
  else {
-        if (retCols[i] == null) {
-          retCols[i]=cols[i];
-        }
-        retCols[i].set(jsonObj.getString(paths[i]));
+        retCols[i]=null;
       }
     }
     forward(retCols);
     return;
   }
- catch (  JSONException e) {
-    if (!seenErrors) {
-      LOG.error("The input is not a valid JSON string: " + jsonStr + ". Skipping such error messages in the future.");
-      seenErrors=true;
-    }
-    forward(nullCols);
-    return;
-  }
-catch (  Throwable e) {
+ catch (  Throwable e) {
     LOG.error("JSON parsing/evaluation exception" + e);
     forward(nullCols);
   }
