@@ -1,0 +1,78 @@
+{
+  HiveConf hiveConf=new HiveConf(HiveMetaTool.class);
+  HiveMetaTool metaTool=new HiveMetaTool();
+  metaTool.init();
+  CommandLineParser parser=new GnuParser();
+  CommandLine line=null;
+  try {
+    try {
+      line=parser.parse(metaTool.cmdLineOptions,args);
+    }
+ catch (    ParseException e) {
+      System.err.println("HiveMetaTool:Parsing failed.  Reason: " + e.getLocalizedMessage());
+      HelpFormatter formatter=new HelpFormatter();
+      formatter.printHelp("metatool",metaTool.cmdLineOptions);
+      System.exit(1);
+    }
+    if (line.hasOption("help")) {
+      HelpFormatter formatter=new HelpFormatter();
+      formatter.printHelp("metatool",metaTool.cmdLineOptions);
+    }
+ else     if (line.hasOption("listFSRoot")) {
+      metaTool.initObjectStore(hiveConf);
+      metaTool.listFSRoot();
+    }
+ else     if (line.hasOption("executeJDOQL")) {
+      String query=line.getOptionValue("executeJDOQL");
+      metaTool.initObjectStore(hiveConf);
+      if (query.toLowerCase().trim().startsWith("select")) {
+        metaTool.executeJDOQLSelect(query);
+      }
+ else       if (query.toLowerCase().trim().startsWith("update")) {
+        metaTool.executeJDOQLUpdate(query);
+      }
+ else {
+        System.err.println("HiveMetaTool:Unsupported statement type");
+      }
+    }
+ else     if (line.hasOption("updateLocation")) {
+      String[] loc=line.getOptionValues("updateLocation");
+      boolean dryRun=false;
+      if (loc.length != 2 && loc.length != 3) {
+        System.err.println("HiveMetaTool:updateLocation takes in 2 required and 1 " + "optional arguements but " + "was passed " + loc.length + " arguements");
+      }
+      Path newPath=new Path(loc[0]);
+      Path oldPath=new Path(loc[1]);
+      URI oldURI=oldPath.toUri();
+      URI newURI=newPath.toUri();
+      if (line.hasOption("dryRun")) {
+        dryRun=true;
+      }
+      if (oldURI.getHost() == null || newURI.getHost() == null) {
+        System.err.println("HiveMetaTool:A valid host is required in both old-loc and new-loc");
+      }
+ else       if (oldURI.getPort() > 0 && newURI.getPort() < 0) {
+        System.err.println("HiveMetaTool:old-loc has a valid port, new-loc should " + "also contain a valid port");
+      }
+ else       if (oldURI.getScheme() == null || newURI.getScheme() == null) {
+        System.err.println("HiveMetaTool:A valid scheme is required in both old-loc and new-loc");
+      }
+ else {
+        metaTool.initObjectStore(hiveConf);
+        metaTool.updateFSRootLocation(oldURI,newURI,dryRun);
+      }
+    }
+ else {
+      System.err.print("HiveMetaTool:Invalid option:" + line.getOptions());
+      for (      String s : line.getArgs()) {
+        System.err.print(s + " ");
+      }
+      System.err.println();
+      HelpFormatter formatter=new HelpFormatter();
+      formatter.printHelp("metatool",metaTool.cmdLineOptions);
+    }
+  }
+  finally {
+    metaTool.shutdownObjectStore();
+  }
+}
