@@ -4,34 +4,20 @@
   }
   localWorkInited=true;
   this.localWork=localWork;
-  fetchOperators=new HashMap<String,FetchOperator>();
-  Map<FetchOperator,JobConf> fetchOpJobConfMap=new HashMap<FetchOperator,JobConf>();
-  for (  Map.Entry<String,FetchWork> entry : localWork.getAliasToFetchWork().entrySet()) {
-    JobConf jobClone=new JobConf(hconf);
-    Operator<? extends OperatorDesc> tableScan=localWork.getAliasToWork().get(entry.getKey());
-    if (tableScan instanceof TableScanOperator) {
-      ArrayList<Integer> list=((TableScanOperator)tableScan).getNeededColumnIDs();
-      if (list != null) {
-        ColumnProjectionUtils.appendReadColumnIDs(jobClone,list);
-      }
-    }
- else {
-      ColumnProjectionUtils.setFullyReadColumns(jobClone);
-    }
-    FetchOperator fetchOp=new FetchOperator(entry.getValue(),jobClone);
-    fetchOpJobConfMap.put(fetchOp,jobClone);
-    fetchOperators.put(entry.getKey(),fetchOp);
-    l4j.info("fetchoperator for " + entry.getKey() + " created");
-  }
-  for (  Map.Entry<String,FetchOperator> entry : fetchOperators.entrySet()) {
-    Operator<? extends OperatorDesc> forwardOp=localWork.getAliasToWork().get(entry.getKey());
-    forwardOp.setExecContext(this.getExecContext());
-    FetchOperator fetchOp=entry.getValue();
-    JobConf jobConf=fetchOpJobConfMap.get(fetchOp);
-    if (jobConf == null) {
-      jobConf=this.getExecContext().getJc();
-    }
-    forwardOp.initialize(jobConf,new ObjectInspector[]{fetchOp.getOutputObjectInspector()});
-    l4j.info("fetchoperator for " + entry.getKey() + " initialized");
+  aliasToMergeQueue=new HashMap<String,MergeQueue>();
+  Map<String,FetchWork> aliasToFetchWork=localWork.getAliasToFetchWork();
+  Map<String,Operator<? extends OperatorDesc>> aliasToWork=localWork.getAliasToWork();
+  for (  Map.Entry<String,FetchWork> entry : aliasToFetchWork.entrySet()) {
+    String alias=entry.getKey();
+    FetchWork fetchWork=entry.getValue();
+    Operator<? extends OperatorDesc> forwardOp=aliasToWork.get(alias);
+    forwardOp.setExecContext(getExecContext());
+    JobConf jobClone=cloneJobConf(hconf,forwardOp);
+    FetchOperator fetchOp=new FetchOperator(fetchWork,jobClone);
+    forwardOp.initialize(jobClone,new ObjectInspector[]{fetchOp.getOutputObjectInspector()});
+    fetchOp.clearFetchContext();
+    MergeQueue mergeQueue=new MergeQueue(alias,fetchWork,jobClone);
+    aliasToMergeQueue.put(alias,mergeQueue);
+    l4j.info("fetch operators for " + alias + " initialized");
   }
 }
