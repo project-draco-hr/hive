@@ -21,8 +21,9 @@
   }
   Socket socket=((TSocket)(saslTrans.getUnderlyingTransport())).getSocket();
   remoteAddress.set(socket.getInetAddress());
+  UserGroupInformation clientUgi=null;
   try {
-    UserGroupInformation clientUgi=UserGroupInformation.createProxyUser(endUser,UserGroupInformation.getLoginUser());
+    clientUgi=UserGroupInformation.createProxyUser(endUser,UserGroupInformation.getLoginUser());
     return clientUgi.doAs(new PrivilegedExceptionAction<Boolean>(){
       public Boolean run(){
         try {
@@ -46,5 +47,15 @@ catch (  InterruptedException ie) {
   }
 catch (  IOException ioe) {
     throw new RuntimeException(ioe);
+  }
+ finally {
+    if (clientUgi != null) {
+      try {
+        FileSystem.closeAllForUGI(clientUgi);
+      }
+ catch (      IOException exception) {
+        LOG.error("Could not clean up file-system handles for UGI: " + clientUgi,exception);
+      }
+    }
   }
 }
