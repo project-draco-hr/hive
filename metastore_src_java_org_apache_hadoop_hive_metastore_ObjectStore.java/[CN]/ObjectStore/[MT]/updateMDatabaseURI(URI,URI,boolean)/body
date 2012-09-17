@@ -1,0 +1,44 @@
+{
+  boolean committed=false;
+  Map<String,String> updateLocations=new HashMap<String,String>();
+  List<String> badRecords=new ArrayList<String>();
+  UpdateMDatabaseURIRetVal retVal=null;
+  try {
+    openTransaction();
+    Query query=pm.newQuery(MDatabase.class);
+    List<MDatabase> mDBs=(List<MDatabase>)query.execute();
+    pm.retrieveAll(mDBs);
+    for (    MDatabase mDB : mDBs) {
+      URI locationURI=null;
+      String location=mDB.getLocationUri();
+      try {
+        locationURI=new URI(location);
+      }
+ catch (      URISyntaxException e) {
+        badRecords.add(location);
+      }
+      if (locationURI == null) {
+        badRecords.add(location);
+      }
+ else {
+        if (shouldUpdateURI(locationURI,oldLoc)) {
+          String dbLoc=mDB.getLocationUri().replaceAll(oldLoc.toString(),newLoc.toString());
+          updateLocations.put(locationURI.toString(),dbLoc);
+          if (!dryRun) {
+            mDB.setLocationUri(dbLoc);
+          }
+        }
+      }
+    }
+    committed=commitTransaction();
+    if (committed) {
+      retVal=new UpdateMDatabaseURIRetVal(badRecords,updateLocations);
+    }
+    return retVal;
+  }
+  finally {
+    if (!committed) {
+      rollbackTransaction();
+    }
+  }
+}
