@@ -1,0 +1,64 @@
+{
+  Map<List<ExprNodeDesc>,List<List<String>>> skewDataReturn=new HashMap<List<ExprNodeDesc>,List<List<String>>>();
+  Map<List<ExprNodeDescEqualityWrapper>,List<List<String>>> skewData=new HashMap<List<ExprNodeDescEqualityWrapper>,List<List<String>>>();
+  for (  Operator<? extends OperatorDesc> reduceSinkOp : op.getParentOperators()) {
+    ReduceSinkDesc rsDesc=((ReduceSinkOperator)reduceSinkOp).getConf();
+    if (rsDesc.getKeyCols() != null) {
+      Table table=null;
+      List<String> skewedColumns=null;
+      List<List<String>> skewedValueList=null;
+      List<ExprNodeDescEqualityWrapper> joinKeysSkewedCols=new ArrayList<ExprNodeDescEqualityWrapper>();
+      List<Integer> positionSkewedKeys=new ArrayList<Integer>();
+      for (      ExprNodeDesc keyColDesc : rsDesc.getKeyCols()) {
+        ExprNodeColumnDesc keyCol=null;
+        if (keyColDesc instanceof ExprNodeColumnDesc) {
+          keyCol=(ExprNodeColumnDesc)keyColDesc;
+          if (table == null) {
+            table=getTable(parseContext,reduceSinkOp,tableScanOpsForJoin);
+            skewedColumns=table == null ? null : table.getSkewedColNames();
+            if ((skewedColumns == null) || (skewedColumns.isEmpty())) {
+              continue;
+            }
+            skewedValueList=table == null ? null : table.getSkewedColValues();
+          }
+          int pos=skewedColumns.indexOf(keyCol.getColumn());
+          if ((pos >= 0) && (!positionSkewedKeys.contains(pos))) {
+            positionSkewedKeys.add(pos);
+            ExprNodeColumnDesc keyColClone=(ExprNodeColumnDesc)keyCol.clone();
+            keyColClone.setTabAlias(null);
+            joinKeysSkewedCols.add(new ExprNodeDescEqualityWrapper(keyColClone));
+          }
+        }
+      }
+      if ((skewedColumns != null) && (!skewedColumns.isEmpty())) {
+        if (!joinKeysSkewedCols.isEmpty()) {
+          List<List<String>> skewedJoinValues;
+          if (skewedColumns.size() == positionSkewedKeys.size()) {
+            skewedJoinValues=skewedValueList;
+          }
+ else {
+            skewedJoinValues=getSkewedJoinValues(skewedValueList,positionSkewedKeys);
+          }
+          List<List<String>> oldSkewedJoinValues=skewData.get(joinKeysSkewedCols);
+          if (oldSkewedJoinValues == null) {
+            oldSkewedJoinValues=new ArrayList<List<String>>();
+          }
+          for (          List<String> skewValue : skewedJoinValues) {
+            if (!oldSkewedJoinValues.contains(skewValue)) {
+              oldSkewedJoinValues.add(skewValue);
+            }
+          }
+          skewData.put(joinKeysSkewedCols,oldSkewedJoinValues);
+        }
+      }
+    }
+  }
+  for (  Map.Entry<List<ExprNodeDescEqualityWrapper>,List<List<String>>> mapEntry : skewData.entrySet()) {
+    List<ExprNodeDesc> skewedKeyJoinCols=new ArrayList<ExprNodeDesc>();
+    for (    ExprNodeDescEqualityWrapper key : mapEntry.getKey()) {
+      skewedKeyJoinCols.add(key.getExprNodeDesc());
+    }
+    skewDataReturn.put(skewedKeyJoinCols,mapEntry.getValue());
+  }
+  return skewDataReturn;
+}
