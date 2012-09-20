@@ -1,5 +1,4 @@
 {
-  HiveConf hiveConf=new HiveConf(HiveMetaTool.class);
   HiveMetaTool metaTool=new HiveMetaTool();
   metaTool.init();
   CommandLineParser parser=new GnuParser();
@@ -10,21 +9,41 @@
     }
  catch (    ParseException e) {
       System.err.println("HiveMetaTool:Parsing failed.  Reason: " + e.getLocalizedMessage());
-      HelpFormatter formatter=new HelpFormatter();
-      formatter.printHelp("metatool",metaTool.cmdLineOptions);
-      System.exit(1);
+      printAndExit(metaTool);
     }
     if (line.hasOption("help")) {
       HelpFormatter formatter=new HelpFormatter();
       formatter.printHelp("metatool",metaTool.cmdLineOptions);
     }
  else     if (line.hasOption("listFSRoot")) {
-      metaTool.initObjectStore(hiveConf);
+      if (line.hasOption("dryRun")) {
+        System.err.println("HiveMetaTool: dryRun is not valid with listFSRoot");
+        printAndExit(metaTool);
+      }
+ else       if (line.hasOption("serdePropKey")) {
+        System.err.println("HiveMetaTool: serdePropKey is not valid with listFSRoot");
+        printAndExit(metaTool);
+      }
+ else       if (line.hasOption("tablePropKey")) {
+        System.err.println("HiveMetaTool: tablePropKey is not valid with listFSRoot");
+        printAndExit(metaTool);
+      }
       metaTool.listFSRoot();
     }
  else     if (line.hasOption("executeJDOQL")) {
       String query=line.getOptionValue("executeJDOQL");
-      metaTool.initObjectStore(hiveConf);
+      if (line.hasOption("dryRun")) {
+        System.err.println("HiveMetaTool: dryRun is not valid with executeJDOQL");
+        printAndExit(metaTool);
+      }
+ else       if (line.hasOption("serdePropKey")) {
+        System.err.println("HiveMetaTool: serdePropKey is not valid with executeJDOQL");
+        printAndExit(metaTool);
+      }
+ else       if (line.hasOption("tablePropKey")) {
+        System.err.println("HiveMetaTool: tablePropKey is not valid with executeJDOQL");
+        printAndExit(metaTool);
+      }
       if (query.toLowerCase().trim().startsWith("select")) {
         metaTool.executeJDOQLSelect(query);
       }
@@ -33,20 +52,30 @@
       }
  else {
         System.err.println("HiveMetaTool:Unsupported statement type");
+        printAndExit(metaTool);
       }
     }
  else     if (line.hasOption("updateLocation")) {
       String[] loc=line.getOptionValues("updateLocation");
-      boolean dryRun=false;
+      boolean isDryRun=false;
+      String serdepropKey=null;
+      String tablePropKey=null;
       if (loc.length != 2 && loc.length != 3) {
-        System.err.println("HiveMetaTool:updateLocation takes in 2 required and 1 " + "optional arguements but " + "was passed " + loc.length + " arguements");
+        System.err.println("HiveMetaTool:updateLocation takes in 2 required and 1 " + "optional arguments but " + "was passed " + loc.length + " arguments");
+        printAndExit(metaTool);
       }
       Path newPath=new Path(loc[0]);
       Path oldPath=new Path(loc[1]);
       URI oldURI=oldPath.toUri();
       URI newURI=newPath.toUri();
       if (line.hasOption("dryRun")) {
-        dryRun=true;
+        isDryRun=true;
+      }
+      if (line.hasOption("serdePropKey")) {
+        serdepropKey=line.getOptionValue("serdePropKey");
+      }
+      if (line.hasOption("tablePropKey")) {
+        tablePropKey=line.getOptionValue("tablePropKey");
       }
       if (oldURI.getHost() == null || newURI.getHost() == null) {
         System.err.println("HiveMetaTool:A valid host is required in both old-loc and new-loc");
@@ -58,18 +87,28 @@
         System.err.println("HiveMetaTool:A valid scheme is required in both old-loc and new-loc");
       }
  else {
-        metaTool.initObjectStore(hiveConf);
-        metaTool.updateFSRootLocation(oldURI,newURI,dryRun);
+        metaTool.updateFSRootLocation(oldURI,newURI,serdepropKey,tablePropKey,isDryRun);
       }
     }
  else {
-      System.err.print("HiveMetaTool:Invalid option:" + line.getOptions());
-      for (      String s : line.getArgs()) {
-        System.err.print(s + " ");
+      if (line.hasOption("dryRun")) {
+        System.err.println("HiveMetaTool: dryRun is not a valid standalone option");
       }
-      System.err.println();
-      HelpFormatter formatter=new HelpFormatter();
-      formatter.printHelp("metatool",metaTool.cmdLineOptions);
+ else       if (line.hasOption("serdePropKey")) {
+        System.err.println("HiveMetaTool: serdePropKey is not a valid standalone option");
+      }
+ else       if (line.hasOption("tablePropKey")) {
+        System.err.println("HiveMetaTool: tablePropKey is not a valid standalone option");
+        printAndExit(metaTool);
+      }
+ else {
+        System.err.print("HiveMetaTool:Parsing failed.  Reason: Invalid arguments: ");
+        for (        String s : line.getArgs()) {
+          System.err.print(s + " ");
+        }
+        System.err.println();
+      }
+      printAndExit(metaTool);
     }
   }
   finally {

@@ -1,0 +1,49 @@
+{
+  boolean committed=false;
+  Map<String,String> updateLocations=new HashMap<String,String>();
+  List<String> badRecords=new ArrayList<String>();
+  UpdateMStorageDescriptorTblPropURIRetVal retVal=null;
+  try {
+    openTransaction();
+    Query query=pm.newQuery(MStorageDescriptor.class);
+    List<MStorageDescriptor> mSDSs=(List<MStorageDescriptor>)query.execute();
+    pm.retrieveAll(mSDSs);
+    for (    MStorageDescriptor mSDS : mSDSs) {
+      URI tablePropLocationURI=null;
+      if (mSDS.getParameters().containsKey(tblPropKey)) {
+        String tablePropLocation=mSDS.getParameters().get(tblPropKey);
+        try {
+          tablePropLocationURI=new URI(tablePropLocation);
+        }
+ catch (        URISyntaxException e) {
+          badRecords.add(tablePropLocation);
+        }
+catch (        NullPointerException e) {
+          badRecords.add(tablePropLocation);
+        }
+        if (tablePropLocationURI == null) {
+          badRecords.add(tablePropLocation);
+        }
+ else {
+          if (shouldUpdateURI(tablePropLocationURI,oldLoc)) {
+            String tblPropLoc=mSDS.getParameters().get(tblPropKey).replaceAll(oldLoc.toString(),newLoc.toString());
+            updateLocations.put(tablePropLocationURI.toString(),tblPropLoc);
+            if (!isDryRun) {
+              mSDS.getParameters().put(tblPropKey,tblPropLoc);
+            }
+          }
+        }
+      }
+    }
+    committed=commitTransaction();
+    if (committed) {
+      retVal=new UpdateMStorageDescriptorTblPropURIRetVal(badRecords,updateLocations);
+    }
+    return retVal;
+  }
+  finally {
+    if (!committed) {
+      rollbackTransaction();
+    }
+  }
+}
