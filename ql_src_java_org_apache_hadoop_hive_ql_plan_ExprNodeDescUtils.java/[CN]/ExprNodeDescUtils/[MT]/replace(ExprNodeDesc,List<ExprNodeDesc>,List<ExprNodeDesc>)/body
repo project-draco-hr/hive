@@ -1,0 +1,27 @@
+{
+  int index=indexOf(origin,sources);
+  if (index >= 0) {
+    return targets.get(index);
+  }
+  if (origin instanceof ExprNodeColumnDesc || origin instanceof ExprNodeFieldDesc) {
+    return null;
+  }
+  if (origin instanceof ExprNodeGenericFuncDesc) {
+    ExprNodeGenericFuncDesc func=(ExprNodeGenericFuncDesc)origin;
+    if (!FunctionRegistry.isDeterministic(func.getGenericUDF()) || FunctionRegistry.isStateful(func.getGenericUDF())) {
+      return null;
+    }
+    List<ExprNodeDesc> children=new ArrayList<ExprNodeDesc>();
+    for (int i=0; i < origin.getChildren().size(); i++) {
+      ExprNodeDesc child=replace(origin.getChildren().get(i),sources,targets);
+      if (child == null) {
+        return null;
+      }
+      children.add(child);
+    }
+    ExprNodeGenericFuncDesc clone=(ExprNodeGenericFuncDesc)func.clone();
+    clone.setChildExprs(children);
+    return clone;
+  }
+  return origin;
+}
