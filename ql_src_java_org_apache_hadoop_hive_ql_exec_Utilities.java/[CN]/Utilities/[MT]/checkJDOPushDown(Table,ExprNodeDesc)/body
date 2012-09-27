@@ -1,7 +1,10 @@
 {
   if (expr instanceof ExprNodeConstantDesc) {
     Object value=((ExprNodeConstantDesc)expr).getValue();
-    return (value instanceof String);
+    if (value instanceof String) {
+      return null;
+    }
+    return "Constant " + value + " is not string type";
   }
  else   if (expr instanceof ExprNodeColumnDesc) {
     TypeInfo type=expr.getTypeInfo();
@@ -9,28 +12,32 @@
       String colName=((ExprNodeColumnDesc)expr).getColumn();
       for (      FieldSchema fs : tab.getPartCols()) {
         if (fs.getName().equals(colName)) {
-          return fs.getType().equals(Constants.STRING_TYPE_NAME);
+          if (fs.getType().equals(Constants.STRING_TYPE_NAME)) {
+            return null;
+          }
+          return "Partition column " + fs.getName() + " is not string type";
         }
       }
       assert(false);
     }
  else {
-      return false;
+      return "Column " + expr.getExprString() + " is not string type";
     }
   }
  else   if (expr instanceof ExprNodeGenericFuncDesc) {
     ExprNodeGenericFuncDesc funcDesc=(ExprNodeGenericFuncDesc)expr;
     GenericUDF func=funcDesc.getGenericUDF();
     if (!supportedJDOFuncs(func)) {
-      return false;
+      return "Expression " + expr.getExprString() + " cannot be evaluated";
     }
     List<ExprNodeDesc> children=funcDesc.getChildExprs();
     for (    ExprNodeDesc child : children) {
-      if (!checkJDOPushDown(tab,child)) {
-        return false;
+      String message=checkJDOPushDown(tab,child);
+      if (message != null) {
+        return message;
       }
     }
-    return true;
+    return null;
   }
-  return false;
+  return "Expression " + expr.getExprString() + " cannot be evaluated";
 }

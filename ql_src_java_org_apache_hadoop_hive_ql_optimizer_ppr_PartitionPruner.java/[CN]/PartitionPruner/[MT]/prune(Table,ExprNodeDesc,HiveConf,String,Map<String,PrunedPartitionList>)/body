@@ -33,18 +33,22 @@
         if (compactExpr == null) {
           unkn_parts.addAll(Hive.get().getPartitions(tab));
         }
- else         if (Utilities.checkJDOPushDown(tab,compactExpr)) {
-          String filter=compactExpr.getExprString();
-          String oldFilter=prunerExpr.getExprString();
-          if (filter.equals(oldFilter)) {
-            pruneByPushDown(tab,true_parts,filter);
+ else {
+          String message=Utilities.checkJDOPushDown(tab,compactExpr);
+          if (message == null) {
+            String filter=compactExpr.getExprString();
+            String oldFilter=prunerExpr.getExprString();
+            if (filter.equals(oldFilter)) {
+              pruneByPushDown(tab,true_parts,filter);
+            }
+ else {
+              pruneByPushDown(tab,unkn_parts,filter);
+            }
           }
  else {
-            pruneByPushDown(tab,unkn_parts,filter);
+            LOG.info(ErrorMsg.INVALID_JDO_FILTER_EXPRESSION.getMsg("by condition '" + message + "'"));
+            pruneBySequentialScan(tab,true_parts,unkn_parts,denied_parts,prunerExpr,rowObjectInspector);
           }
-        }
- else {
-          pruneBySequentialScan(tab,true_parts,unkn_parts,denied_parts,prunerExpr,rowObjectInspector);
         }
       }
       LOG.debug("tabname = " + tab.getTableName() + " is partitioned");
