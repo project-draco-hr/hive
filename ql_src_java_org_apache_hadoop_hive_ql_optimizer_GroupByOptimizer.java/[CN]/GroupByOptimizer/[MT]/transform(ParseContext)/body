@@ -1,8 +1,13 @@
 {
   Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
-  GroupByOptProcCtx groupByOptimizeCtx=new GroupByOptProcCtx();
-  opRules.put(new RuleRegExp("R1",GroupByOperator.getOperatorName() + "%" + ReduceSinkOperator.getOperatorName()+ "%"+ GroupByOperator.getOperatorName()+ "%"),getMapAggreSortedGroupbyProc(pctx));
-  Dispatcher disp=new DefaultRuleDispatcher(getDefaultProc(),opRules,groupByOptimizeCtx);
+  HiveConf conf=pctx.getConf();
+  if (!HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVEGROUPBYSKEW)) {
+    opRules.put(new RuleRegExp("R1",GroupByOperator.getOperatorName() + "%" + ReduceSinkOperator.getOperatorName()+ "%"+ GroupByOperator.getOperatorName()+ "%"),getMapSortedGroupbyProc(pctx));
+  }
+ else {
+    opRules.put(new RuleRegExp("R2",GroupByOperator.getOperatorName() + "%" + ReduceSinkOperator.getOperatorName()+ "%"+ GroupByOperator.getOperatorName()+ "%"+ ReduceSinkOperator.getOperatorName()+ "%"+ GroupByOperator.getOperatorName()+ "%"),getMapSortedGroupbySkewProc(pctx));
+  }
+  Dispatcher disp=new DefaultRuleDispatcher(getDefaultProc(),opRules,new GroupByOptimizerContext(conf));
   GraphWalker ogw=new DefaultGraphWalker(disp);
   ArrayList<Node> topNodes=new ArrayList<Node>();
   topNodes.addAll(pctx.getTopOps().values());
