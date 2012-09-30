@@ -9,20 +9,23 @@
   List<String> outputValueColumnNames=new ArrayList<String>();
   List<ASTNode> grpByExprs=getGroupByForClause(parseInfo,dest);
   ArrayList<ExprNodeDesc> reduceKeys=getReduceKeysForReduceSink(grpByExprs,dest,reduceSinkInputRowResolver,reduceSinkOutputRowResolver,outputKeyColumnNames,colExprMap);
-  List<List<Integer>> distinctColIndices=getDistinctColIndicesForReduceSink(parseInfo,dest,reduceKeys,reduceSinkInputRowResolver,reduceSinkOutputRowResolver,outputKeyColumnNames);
+  List<List<Integer>> distinctColIndices=getDistinctColIndicesForReduceSink(parseInfo,dest,reduceKeys,reduceSinkInputRowResolver,reduceSinkOutputRowResolver,outputKeyColumnNames,colExprMap);
   ArrayList<ExprNodeDesc> reduceValues=new ArrayList<ExprNodeDesc>();
   for (  String destination : dests) {
-    getReduceValuesForReduceSinkNoMapAgg(parseInfo,destination,reduceSinkInputRowResolver,reduceSinkOutputRowResolver,outputValueColumnNames,reduceValues);
+    getReduceValuesForReduceSinkNoMapAgg(parseInfo,destination,reduceSinkInputRowResolver,reduceSinkOutputRowResolver,outputValueColumnNames,reduceValues,colExprMap);
     ASTNode whereClause=parseInfo.getWhrForClause(destination);
     if (whereClause != null) {
       List<ASTNode> columnExprs=getColumnExprsFromASTNode(whereClause,reduceSinkInputRowResolver);
       for (int i=0; i < columnExprs.size(); i++) {
         ASTNode parameter=columnExprs.get(i);
         if (reduceSinkOutputRowResolver.getExpression(parameter) == null) {
-          reduceValues.add(genExprNodeDesc(parameter,reduceSinkInputRowResolver));
+          ExprNodeDesc expr=genExprNodeDesc(parameter,reduceSinkInputRowResolver);
+          reduceValues.add(expr);
           outputValueColumnNames.add(getColumnInternalName(reduceValues.size() - 1));
           String field=Utilities.ReduceField.VALUE.toString() + "." + getColumnInternalName(reduceValues.size() - 1);
-          reduceSinkOutputRowResolver.putExpression(parameter,new ColumnInfo(field,reduceValues.get(reduceValues.size() - 1).getTypeInfo(),null,false));
+          ColumnInfo colInfo=new ColumnInfo(field,reduceValues.get(reduceValues.size() - 1).getTypeInfo(),null,false);
+          reduceSinkOutputRowResolver.putExpression(parameter,colInfo);
+          colExprMap.put(colInfo.getInternalName(),expr);
         }
       }
     }

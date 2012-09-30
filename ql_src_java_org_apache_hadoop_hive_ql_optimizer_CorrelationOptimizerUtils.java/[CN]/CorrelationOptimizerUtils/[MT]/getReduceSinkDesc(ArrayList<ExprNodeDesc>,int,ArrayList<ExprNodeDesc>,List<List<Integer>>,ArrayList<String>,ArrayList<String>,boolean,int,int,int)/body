@@ -1,0 +1,37 @@
+{
+  ArrayList<ExprNodeDesc> partitionCols=null;
+  if (numPartitionFields >= keyCols.size()) {
+    partitionCols=keyCols;
+  }
+ else   if (numPartitionFields >= 0) {
+    partitionCols=new ArrayList<ExprNodeDesc>(numPartitionFields);
+    for (int i=0; i < numPartitionFields; i++) {
+      partitionCols.add(keyCols.get(i));
+    }
+  }
+ else {
+    partitionCols=new ArrayList<ExprNodeDesc>(1);
+    partitionCols.add(TypeCheckProcFactory.DefaultExprProcessor.getFuncExprNodeDesc("rand"));
+  }
+  StringBuilder order=new StringBuilder();
+  for (int i=0; i < keyCols.size(); i++) {
+    order.append("+");
+  }
+  TableDesc keyTable=null;
+  TableDesc valueTable=null;
+  ArrayList<String> outputKeyCols=new ArrayList<String>();
+  ArrayList<String> outputValCols=new ArrayList<String>();
+  if (includeKey) {
+    keyTable=PlanUtils.getReduceKeyTableDesc(PlanUtils.getFieldSchemasFromColumnListWithLength(keyCols,distinctColIndices,outputKeyColumnNames,numKeys,""),order.toString());
+    outputKeyCols.addAll(outputKeyColumnNames);
+  }
+ else {
+    keyTable=PlanUtils.getReduceKeyTableDesc(PlanUtils.getFieldSchemasFromColumnList(keyCols,"reducesinkkey"),order.toString());
+    for (int i=0; i < keyCols.size(); i++) {
+      outputKeyCols.add("reducesinkkey" + i);
+    }
+  }
+  valueTable=PlanUtils.getReduceValueTableDesc(PlanUtils.getFieldSchemasFromColumnList(valueCols,outputValueColumnNames,0,""));
+  outputValCols.addAll(outputValueColumnNames);
+  return new ReduceSinkDesc(keyCols,numKeys,valueCols,outputKeyCols,distinctColIndices,outputValCols,tag,partitionCols,numReducers,keyTable,valueTable,true);
+}

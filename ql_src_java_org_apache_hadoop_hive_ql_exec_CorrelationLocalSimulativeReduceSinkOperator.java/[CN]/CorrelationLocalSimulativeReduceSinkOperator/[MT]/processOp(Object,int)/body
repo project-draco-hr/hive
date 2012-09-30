@@ -1,0 +1,66 @@
+{
+  try {
+    for (int i=0; i < valueEval.length; i++) {
+      cachedValues[i]=valueEval[i].evaluate(row);
+    }
+    value=valueSerializer.serialize(cachedValues,valueObjectInspector);
+    valueObject=inputValueDeserializer.deserialize(value);
+    Object[] distributionKeys=new Object[numDistributionKeys];
+    for (int i=0; i < numDistributionKeys; i++) {
+      distributionKeys[i]=keyEval[i].evaluate(row);
+    }
+    if (numDistinctExprs > 0) {
+      for (int i=0; i < numDistinctExprs; i++) {
+        System.arraycopy(distributionKeys,0,cachedKeys[i],0,numDistributionKeys);
+        Object[] distinctParameters=new Object[distinctColIndices.get(i).size()];
+        for (int j=0; j < distinctParameters.length; j++) {
+          distinctParameters[j]=keyEval[distinctColIndices.get(i).get(j)].evaluate(row);
+        }
+        cachedKeys[i][numDistributionKeys]=new StandardUnion((byte)i,distinctParameters);
+      }
+    }
+ else {
+      System.arraycopy(distributionKeys,0,cachedKeys[0],0,numDistributionKeys);
+    }
+    for (int i=0; i < cachedKeys.length; i++) {
+      if (keyIsText) {
+        Text key=(Text)keySerializer.serialize(cachedKeys[i],keyObjectInspector);
+        keyWritable.set(key.getBytes(),0,key.getLength());
+      }
+ else {
+        BytesWritable key=(BytesWritable)keySerializer.serialize(cachedKeys[i],keyObjectInspector);
+        keyWritable.set(key.getBytes(),0,key.getLength());
+      }
+      if (!keyWritable.equals(groupKey)) {
+        try {
+          keyObject=inputKeyDeserializer.deserialize(keyWritable);
+        }
+ catch (        Exception e) {
+          throw new HiveException("Hive Runtime Error: Unable to deserialize reduce input key from " + Utilities.formatBinaryString(keyWritable.get(),0,keyWritable.getSize()) + " with properties "+ keyTableDesc.getProperties(),e);
+        }
+        if (groupKey == null) {
+          groupKey=new BytesWritable();
+        }
+ else {
+          if (!keyWritable.equals(childOperatorsArray[0].getBytesWritableGroupKey())) {
+            childOperatorsArray[0].endGroup();
+          }
+        }
+        groupKey.set(keyWritable.get(),0,keyWritable.getSize());
+        if (!groupKey.equals(childOperatorsArray[0].getBytesWritableGroupKey())) {
+          childOperatorsArray[0].startGroup();
+          childOperatorsArray[0].setGroupKeyObject(keyObject);
+          childOperatorsArray[0].setBytesWritableGroupKey(groupKey);
+        }
+      }
+      forwardedRow.clear();
+      forwardedRow.add(keyObject);
+      forwardedRow.add(valueObject);
+      forwardedRow.add(tagWritable);
+      forward(forwardedRow,outputObjInspector);
+    }
+  }
+ catch (  SerDeException e) {
+    throw new HiveException(e);
+  }
+}

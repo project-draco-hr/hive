@@ -1,0 +1,98 @@
+{
+  if (isPhase1) {
+    pGraphContext=pctx;
+    opParseCtx=pctx.getOpParseCtx();
+    CorrelationNodePhase1ProcCtx phase1ProcCtx=new CorrelationNodePhase1ProcCtx();
+    Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
+    Dispatcher disp=new DefaultRuleDispatcher(getPhase1DefaultProc(),opRules,phase1ProcCtx);
+    GraphWalker ogw=new DefaultGraphWalker(disp);
+    List<Node> topNodes=new ArrayList<Node>();
+    topNodes.addAll(pGraphContext.getTopOps().values());
+    ogw.startWalking(topNodes,null);
+    isPhase1=false;
+    abort=phase1ProcCtx.fileSinkOperatorCount > 1;
+  }
+ else {
+    pGraphContext=pctx;
+    if (abort) {
+      LOG.info("Abort. Reasons are ...");
+      LOG.info("-- Currently, a query with multiple FileSinkOperators are not supported.");
+      return pGraphContext;
+    }
+    opParseCtx=pctx.getOpParseCtx();
+    groupbyNonMapSide2MapSide=pctx.getGroupbyNonMapSide2MapSide();
+    groupbyMapSide2NonMapSide=pctx.getGroupbyMapSide2NonMapSide();
+    QB qb=pGraphContext.getQB();
+    abort=!initializeAliastoTabNameMapping(qb);
+    if (abort) {
+      LOG.info("Abort. Reasons are ...");
+      LOG.info("-- This query or its sub-queries has a null qb.");
+      return pGraphContext;
+    }
+    if (pGraphContext.getConf().getBoolVar(HiveConf.ConfVars.HIVEMAPSIDEAGGREGATE)) {
+      for (      Entry<GroupByOperator,ReduceSinkOperator> entry : groupbyMapSide2NonMapSide.entrySet()) {
+        GroupByOperator mapSidePatternStart=entry.getKey();
+        GroupByOperator mapSidePatternEnd=(GroupByOperator)mapSidePatternStart.getChildOperators().get(0).getChildOperators().get(0);
+        ReduceSinkOperator nonMapSidePatternStart=entry.getValue();
+        GroupByOperator nonMapSidePatternEnd=(GroupByOperator)nonMapSidePatternStart.getChildOperators().get(0);
+        List<Operator<? extends OperatorDesc>> parents=mapSidePatternStart.getParentOperators();
+        List<Operator<? extends OperatorDesc>> children=mapSidePatternEnd.getChildOperators();
+        nonMapSidePatternStart.setParentOperators(parents);
+        nonMapSidePatternEnd.setChildOperators(children);
+        for (        Operator<? extends OperatorDesc> parent : parents) {
+          parent.replaceChild(mapSidePatternStart,nonMapSidePatternStart);
+        }
+        for (        Operator<? extends OperatorDesc> child : children) {
+          child.replaceParent(mapSidePatternEnd,nonMapSidePatternEnd);
+        }
+        addOperatorInfo(nonMapSidePatternStart);
+        addOperatorInfo(nonMapSidePatternEnd);
+      }
+    }
+    CorrelationNodeProcCtx correlationCtx=new CorrelationNodeProcCtx();
+    Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
+    opRules.put(new RuleRegExp("R1",ReduceSinkOperator.getOperatorName() + "%"),new CorrelationNodeProc());
+    Dispatcher disp=new DefaultRuleDispatcher(getDefaultProc(),opRules,correlationCtx);
+    GraphWalker ogw=new DefaultGraphWalker(disp);
+    List<Node> topNodes=new ArrayList<Node>();
+    topNodes.addAll(pGraphContext.getTopOps().values());
+    ogw.startWalking(topNodes,null);
+    abort=correlationCtx.isAbort();
+    int correlationsAppliedCount=0;
+    if (abort) {
+      LOG.info("Abort. Reasons are ...");
+      for (      String reason : correlationCtx.getAbortReasons()) {
+        LOG.info("-- " + reason);
+      }
+    }
+ else {
+      LOG.info("Begain query plan transformation based on intra-query correlations. " + correlationCtx.getCorrelations().size() + " correlation(s) to be applied");
+      for (      IntraQueryCorrelation correlation : correlationCtx.getCorrelations()) {
+        boolean ret=CorrelationOptimizerUtils.applyCorrelation(correlation,pGraphContext,originalOpColumnExprMap,originalOpRowResolver,groupbyNonMapSide2MapSide,originalOpParseCtx);
+        if (ret) {
+          correlationsAppliedCount++;
+        }
+      }
+    }
+    if (correlationsAppliedCount == 0 && pGraphContext.getConf().getBoolVar(HiveConf.ConfVars.HIVEMAPSIDEAGGREGATE)) {
+      for (      Entry<ReduceSinkOperator,GroupByOperator> entry : groupbyNonMapSide2MapSide.entrySet()) {
+        GroupByOperator mapSidePatternStart=entry.getValue();
+        GroupByOperator mapSidePatternEnd=(GroupByOperator)mapSidePatternStart.getChildOperators().get(0).getChildOperators().get(0);
+        ReduceSinkOperator nonMapSidePatternStart=entry.getKey();
+        GroupByOperator nonMapSidePatternEnd=(GroupByOperator)nonMapSidePatternStart.getChildOperators().get(0);
+        List<Operator<? extends OperatorDesc>> parents=nonMapSidePatternStart.getParentOperators();
+        List<Operator<? extends OperatorDesc>> children=nonMapSidePatternEnd.getChildOperators();
+        mapSidePatternStart.setParentOperators(parents);
+        mapSidePatternEnd.setChildOperators(children);
+        for (        Operator<? extends OperatorDesc> parent : parents) {
+          parent.replaceChild(nonMapSidePatternStart,mapSidePatternStart);
+        }
+        for (        Operator<? extends OperatorDesc> child : children) {
+          child.replaceParent(nonMapSidePatternEnd,mapSidePatternEnd);
+        }
+      }
+    }
+    LOG.info("Finish query plan transformation based on intra-query correlations. " + correlationsAppliedCount + " correlation(s) actually be applied");
+  }
+  return pGraphContext;
+}

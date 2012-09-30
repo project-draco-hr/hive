@@ -1,0 +1,70 @@
+{
+  CorrelationNodeProcCtx correlationCtx=(CorrelationNodeProcCtx)ctx;
+  ReduceSinkOperator op=(ReduceSinkOperator)nd;
+  if (correlationCtx.isWalked(op)) {
+    return null;
+  }
+  LOG.info("Walk to operator " + ((Operator)nd).getIdentifier() + " "+ ((Operator)nd).getName());
+  addOperatorInfo((Operator<? extends OperatorDesc>)nd);
+  if (op.getConf().getKeyCols().size() == 0 || (!op.getChildOperators().get(0).getName().equals(CommonJoinOperator.getOperatorName()) && !op.getChildOperators().get(0).getName().equals(GroupByOperator.getOperatorName()))) {
+    correlationCtx.addWalked(op);
+    return null;
+  }
+  IntraQueryCorrelation correlation=new IntraQueryCorrelation();
+  List<ReduceSinkOperator> peerReduceSinkOperators=CorrelationOptimizerUtils.findPeerReduceSinkOperators(op);
+  List<ReduceSinkOperator> bottomReduceSinkOperators=new ArrayList<ReduceSinkOperator>();
+  for (  ReduceSinkOperator rsop : peerReduceSinkOperators) {
+    Set<ReduceSinkOperator> thisBottomReduceSinkOperators=exploitJFC(rsop,correlationCtx,correlation);
+    if (thisBottomReduceSinkOperators.size() == 0) {
+      thisBottomReduceSinkOperators.add(rsop);
+    }
+ else {
+      boolean isClear=false;
+      for (      ReduceSinkOperator bottomRsop : thisBottomReduceSinkOperators) {
+        TableScanOperator tsop=findTableScanOPerator(bottomRsop);
+        if (tsop == null) {
+          isClear=true;
+        }
+ else {
+          if (!correlation.getTop2TSops().containsKey(rsop)) {
+            correlation.getTop2TSops().put(rsop,new ArrayList<TableScanOperator>());
+          }
+          correlation.getTop2TSops().get(rsop).add(tsop);
+          if (!correlation.getBottom2TSops().containsKey(bottomRsop)) {
+            correlation.getBottom2TSops().put(bottomRsop,new ArrayList<TableScanOperator>());
+          }
+          correlation.getBottom2TSops().get(bottomRsop).add(tsop);
+        }
+      }
+      if (isClear) {
+        thisBottomReduceSinkOperators.clear();
+        thisBottomReduceSinkOperators.add(rsop);
+      }
+    }
+    bottomReduceSinkOperators.addAll(thisBottomReduceSinkOperators);
+  }
+  if (!peerReduceSinkOperators.containsAll(bottomReduceSinkOperators)) {
+    LOG.info("has job flow correlation");
+    correlation.setJobFlowCorrelation(true);
+    correlation.setJFCCorrelation(peerReduceSinkOperators,bottomReduceSinkOperators);
+    annotateOpPlan(correlation);
+  }
+  if (correlation.hasJobFlowCorrelation()) {
+    boolean hasICandTC=findICandTC(correlation);
+    LOG.info("has input correlation and transit correlation? " + hasICandTC);
+    correlation.setInputCorrelation(hasICandTC);
+    correlation.setTransitCorrelation(hasICandTC);
+    boolean hasSelfJoin=hasSelfJoin(correlation);
+    LOG.info("has self-join? " + hasSelfJoin);
+    correlation.setInvolveSelfJoin(hasSelfJoin);
+    if (!hasSelfJoin) {
+      LOG.info("correlation detected");
+      correlationCtx.addCorrelation(correlation);
+    }
+ else {
+      LOG.info("correlation discarded. The current optimizer cannot optimize it");
+    }
+  }
+  correlationCtx.addWalkedAll(peerReduceSinkOperators);
+  return null;
+}
