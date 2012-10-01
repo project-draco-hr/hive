@@ -8,24 +8,21 @@
   List<String> outputValueColumnNames=new ArrayList<String>();
   List<ASTNode> grpByExprs=getGroupByForClause(parseInfo,dest);
   ArrayList<ExprNodeDesc> reduceKeys=getReduceKeysForReduceSink(grpByExprs,dest,reduceSinkInputRowResolver,reduceSinkOutputRowResolver,outputKeyColumnNames,colExprMap);
-  List<List<Integer>> distinctColIndices=getDistinctColIndicesForReduceSink(parseInfo,dest,reduceKeys,reduceSinkInputRowResolver,reduceSinkOutputRowResolver,outputKeyColumnNames,colExprMap);
+  List<List<Integer>> distinctColIndices=getDistinctColIndicesForReduceSink(parseInfo,dest,reduceKeys,reduceSinkInputRowResolver,reduceSinkOutputRowResolver,outputKeyColumnNames);
   ArrayList<ExprNodeDesc> reduceValues=new ArrayList<ExprNodeDesc>();
   HashMap<String,ASTNode> aggregationTrees=parseInfo.getAggregationExprsForClause(dest);
   if (!mapAggrDone) {
-    getReduceValuesForReduceSinkNoMapAgg(parseInfo,dest,reduceSinkInputRowResolver,reduceSinkOutputRowResolver,outputValueColumnNames,reduceValues,colExprMap);
+    getReduceValuesForReduceSinkNoMapAgg(parseInfo,dest,reduceSinkInputRowResolver,reduceSinkOutputRowResolver,outputValueColumnNames,reduceValues);
   }
  else {
     int inputField=reduceKeys.size();
     for (    Map.Entry<String,ASTNode> entry : aggregationTrees.entrySet()) {
       TypeInfo type=reduceSinkInputRowResolver.getColumnInfos().get(inputField).getType();
-      ExprNodeDesc expr=new ExprNodeColumnDesc(type,getColumnInternalName(inputField),"",false);
-      reduceValues.add(expr);
+      reduceValues.add(new ExprNodeColumnDesc(type,getColumnInternalName(inputField),"",false));
       inputField++;
       outputValueColumnNames.add(getColumnInternalName(reduceValues.size() - 1));
       String field=Utilities.ReduceField.VALUE.toString() + "." + getColumnInternalName(reduceValues.size() - 1);
-      ColumnInfo colInfo=new ColumnInfo(field,type,null,false);
-      reduceSinkOutputRowResolver.putExpression(entry.getValue(),colInfo);
-      colExprMap.put(colInfo.getInternalName(),expr);
+      reduceSinkOutputRowResolver.putExpression(entry.getValue(),new ColumnInfo(field,type,null,false));
     }
   }
   ReduceSinkOperator rsOp=(ReduceSinkOperator)putOpInsertMap(OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(reduceKeys,grpByExprs.size(),reduceValues,distinctColIndices,outputKeyColumnNames,outputValueColumnNames,true,-1,numPartitionFields,numReducers),new RowSchema(reduceSinkOutputRowResolver.getColumnInfos()),inputOperatorInfo),reduceSinkOutputRowResolver);
