@@ -1,12 +1,14 @@
 {
   Object ret=null;
   boolean gotNewConnectUrl=false;
-  boolean reloadConf=HiveConf.getBoolVar(hiveConf,HiveConf.ConfVars.METASTOREFORCERELOADCONF);
+  boolean reloadConf=HiveConf.getBoolVar(hiveConf,HiveConf.ConfVars.HMSHANDLERFORCERELOADCONF);
+  int retryInterval=HiveConf.getIntVar(hiveConf,HiveConf.ConfVars.HMSHANDLERINTERVAL);
+  int retryLimit=HiveConf.getIntVar(hiveConf,HiveConf.ConfVars.HMSHANDLERATTEMPTS);
   if (reloadConf) {
     MetaStoreInit.updateConnectionURL(hiveConf,getConf(),null,metaStoreInitData);
   }
   int retryCount=0;
-  Exception caughtException=null;
+  Throwable caughtException=null;
   while (true) {
     try {
       if (reloadConf || gotNewConnectUrl) {
@@ -19,11 +21,21 @@
       caughtException=e;
     }
 catch (    UndeclaredThrowableException e) {
-      throw e.getCause();
+      if (e.getCause() != null) {
+        if (e.getCause() instanceof javax.jdo.JDOException) {
+          caughtException=e.getCause();
+        }
+ else {
+          throw e.getCause();
+        }
+      }
+ else {
+        throw e;
+      }
     }
 catch (    InvocationTargetException e) {
       if (e.getCause() instanceof javax.jdo.JDOException) {
-        caughtException=e;
+        caughtException=e.getCause();
       }
  else {
         throw e.getCause();
@@ -34,7 +46,7 @@ catch (    InvocationTargetException e) {
     }
     assert(retryInterval >= 0);
     retryCount++;
-    LOG.error(String.format("JDO datastore error. Retrying metastore command " + "after %d ms (attempt %d of %d)",retryInterval,retryCount,retryLimit));
+    LOG.error(String.format("JDO datastore error. Retrying HMSHandler " + "after %d ms (attempt %d of %d)",retryInterval,retryCount,retryLimit));
     Thread.sleep(retryInterval);
     String lastUrl=MetaStoreInit.getConnectionURL(getConf());
     gotNewConnectUrl=MetaStoreInit.updateConnectionURL(hiveConf,getConf(),lastUrl,metaStoreInitData);
