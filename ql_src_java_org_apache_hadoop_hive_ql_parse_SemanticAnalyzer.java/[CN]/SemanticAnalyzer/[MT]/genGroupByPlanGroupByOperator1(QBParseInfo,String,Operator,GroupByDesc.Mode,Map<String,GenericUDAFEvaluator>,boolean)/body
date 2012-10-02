@@ -21,11 +21,13 @@
   }
   HashMap<String,ASTNode> aggregationTrees=parseInfo.getAggregationExprsForClause(dest);
   String lastKeyColName=null;
+  List<ExprNodeDesc> reduceValues=null;
   if (reduceSinkOperatorInfo.getConf() instanceof ReduceSinkDesc) {
     List<String> inputKeyCols=((ReduceSinkDesc)reduceSinkOperatorInfo.getConf()).getOutputKeyColumnNames();
     if (inputKeyCols.size() > 0) {
       lastKeyColName=inputKeyCols.get(inputKeyCols.size() - 1);
     }
+    reduceValues=((ReduceSinkDesc)reduceSinkOperatorInfo.getConf()).getValueCols();
   }
   int numDistinctUDFs=0;
   for (  Map.Entry<String,ASTNode> entry : aggregationTrees.entrySet()) {
@@ -46,7 +48,12 @@
         if (isDistinct && lastKeyColName != null) {
           paraExpression=Utilities.ReduceField.KEY.name() + "." + lastKeyColName+ ":"+ numDistinctUDFs+ "."+ getColumnInternalName(i - 1);
         }
-        aggParameters.add(new ExprNodeColumnDesc(paraExprInfo.getType(),paraExpression,paraExprInfo.getTabAlias(),paraExprInfo.getIsVirtualCol()));
+        ExprNodeDesc expr=new ExprNodeColumnDesc(paraExprInfo.getType(),paraExpression,paraExprInfo.getTabAlias(),paraExprInfo.getIsVirtualCol());
+        ExprNodeDesc reduceValue=isConstantParameterInAggregationParameters(paraExprInfo.getInternalName(),reduceValues);
+        if (reduceValue != null) {
+          expr=reduceValue;
+        }
+        aggParameters.add(expr);
       }
     }
  else {
