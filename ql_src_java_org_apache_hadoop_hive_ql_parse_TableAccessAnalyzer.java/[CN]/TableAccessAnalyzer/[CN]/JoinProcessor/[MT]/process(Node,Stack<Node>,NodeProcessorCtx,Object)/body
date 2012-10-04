@@ -1,0 +1,31 @@
+{
+  JoinOperator op=(JoinOperator)nd;
+  TableAccessCtx tableAccessCtx=(TableAccessCtx)procCtx;
+  Map<String,List<String>> tableToKeysMap=new HashMap<String,List<String>>();
+  List<Operator<? extends OperatorDesc>> parentOps=op.getParentOperators();
+  QBJoinTree joinTree=pGraphContext.getJoinContext().get(op);
+  assert(parentOps.size() == joinTree.getBaseSrc().length);
+  int pos=0;
+  for (  String src : joinTree.getBaseSrc()) {
+    if (src != null) {
+      assert(parentOps.get(pos) instanceof ReduceSinkOperator);
+      ReduceSinkOperator reduceSinkOp=(ReduceSinkOperator)parentOps.get(pos);
+      List<String> keyColNames=TableAccessAnalyzer.getKeyColNames(reduceSinkOp.getConf().getKeyCols());
+      if (keyColNames == null) {
+        return null;
+      }
+      TableScanOperator tso=TableAccessAnalyzer.genRootTableScan(reduceSinkOp.getParentOperators().get(0),keyColNames);
+      if (tso == null) {
+        return null;
+      }
+      Table tbl=pGraphContext.getTopToTable().get(tso);
+      tableToKeysMap.put(tbl.getCompleteName(),keyColNames);
+    }
+ else {
+      return null;
+    }
+    pos++;
+  }
+  tableAccessCtx.addOperatorTableAccess(op,tableToKeysMap);
+  return null;
+}
