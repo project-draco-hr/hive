@@ -1,0 +1,27 @@
+{
+  List<ExprNodeDesc> columns=new ArrayList<ExprNodeDesc>();
+  boolean needsCast=false;
+  for (  Map.Entry<String,ColumnInfo> unionEntry : unionoutRR.getFieldMap(unionalias).entrySet()) {
+    String field=unionEntry.getKey();
+    ColumnInfo lInfo=origInputFieldMap.get(field);
+    ExprNodeDesc column=new ExprNodeColumnDesc(lInfo.getType(),lInfo.getInternalName(),lInfo.getTabAlias(),lInfo.getIsVirtualCol(),lInfo.isSkewedCol());
+    ;
+    if (!lInfo.getType().equals(unionEntry.getValue().getType())) {
+      needsCast=true;
+      column=TypeCheckProcFactory.DefaultExprProcessor.getFuncExprNodeDesc(unionEntry.getValue().getType().getTypeName(),column);
+    }
+    columns.add(column);
+  }
+  if (!needsCast) {
+    return origInputOp;
+  }
+  RowResolver rowResolver=new RowResolver();
+  List<String> colName=new ArrayList<String>();
+  for (int i=0; i < columns.size(); i++) {
+    String name=getColumnInternalName(i);
+    rowResolver.put(origInputAlias,name,new ColumnInfo(name,columns.get(i).getTypeInfo(),"",false));
+    colName.add(name);
+  }
+  Operator<SelectDesc> newInputOp=OperatorFactory.getAndMakeChild(new SelectDesc(columns,colName),new RowSchema(rowResolver.getColumnInfos()),origInputOp);
+  return putOpInsertMap(newInputOp,rowResolver);
+}
