@@ -1,13 +1,19 @@
 {
   QBParseInfo parseInfo=qb.getParseInfo();
+  ObjectPair<List<ASTNode>,List<Integer>> grpByExprsGroupingSets=getGroupByGroupingSetsForClause(parseInfo,dest);
+  List<ASTNode> grpByExprs=grpByExprsGroupingSets.getFirst();
+  List<Integer> groupingSets=grpByExprsGroupingSets.getSecond();
+  boolean groupingSetsPresent=!groupingSets.isEmpty();
+  if (groupingSetsPresent) {
+    checkExpressionsForGroupingSet(grpByExprs,parseInfo.getDistinctFuncExprsForClause(dest),parseInfo.getAggregationExprsForClause(dest),opParseCtx.get(inputOperatorInfo).getRowResolver());
+  }
   Map<String,GenericUDAFEvaluator> genericUDAFEvaluators=new LinkedHashMap<String,GenericUDAFEvaluator>();
-  GroupByOperator groupByOperatorInfo=(GroupByOperator)genGroupByPlanMapGroupByOperator(qb,dest,inputOperatorInfo,GroupByDesc.Mode.HASH,genericUDAFEvaluators);
+  GroupByOperator groupByOperatorInfo=(GroupByOperator)genGroupByPlanMapGroupByOperator(qb,dest,grpByExprs,inputOperatorInfo,GroupByDesc.Mode.HASH,genericUDAFEvaluators,groupingSets,groupingSetsPresent);
   groupOpToInputTables.put(groupByOperatorInfo,opParseCtx.get(inputOperatorInfo).getRowResolver().getTableNames());
   int numReducers=-1;
-  List<ASTNode> grpByExprs=getGroupByForClause(parseInfo,dest);
   if (grpByExprs.isEmpty()) {
     numReducers=1;
   }
-  Operator reduceSinkOperatorInfo=genGroupByPlanReduceSinkOperator(qb,dest,groupByOperatorInfo,grpByExprs.size(),numReducers,true);
-  return genGroupByPlanGroupByOperator1(parseInfo,dest,reduceSinkOperatorInfo,GroupByDesc.Mode.MERGEPARTIAL,genericUDAFEvaluators,false);
+  Operator reduceSinkOperatorInfo=genGroupByPlanReduceSinkOperator(qb,dest,groupByOperatorInfo,grpByExprs,grpByExprs.size(),true,numReducers,true,groupingSetsPresent);
+  return genGroupByPlanGroupByOperator1(parseInfo,dest,reduceSinkOperatorInfo,GroupByDesc.Mode.MERGEPARTIAL,genericUDAFEvaluators,false,groupingSetsPresent);
 }

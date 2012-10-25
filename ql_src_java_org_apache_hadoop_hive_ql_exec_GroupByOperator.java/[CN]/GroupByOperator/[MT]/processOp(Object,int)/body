@@ -18,17 +18,26 @@
   try {
     countAfterReport++;
     newKeys.getNewKey(row,rowInspector);
-    if (hashAggr) {
-      newKeys.setHashKey();
-      processHashAggr(row,rowInspector,newKeys);
+    if (groupingSetsPresent) {
+      Object[] newKeysArray=newKeys.getKeyArray();
+      Object[] cloneNewKeysArray=new Object[newKeysArray.length];
+      for (int keyPos=0; keyPos < groupingSetsPosition; keyPos++) {
+        cloneNewKeysArray[keyPos]=newKeysArray[keyPos];
+      }
+      for (int groupingSetPos=0; groupingSetPos < groupingSets.size(); groupingSetPos++) {
+        for (int keyPos=0; keyPos < groupingSetsPosition; keyPos++) {
+          newKeysArray[keyPos]=null;
+        }
+        FastBitSet bitset=groupingSetsBitSet.get(groupingSetPos);
+        for (int keyPos=bitset.nextSetBit(0); keyPos >= 0; keyPos=bitset.nextSetBit(keyPos + 1)) {
+          newKeysArray[keyPos]=cloneNewKeysArray[keyPos];
+        }
+        newKeysArray[groupingSetsPosition]=newKeysGroupingSets.get(groupingSetPos);
+        processKey(row,rowInspector);
+      }
     }
  else {
-      processAggr(row,rowInspector,newKeys);
-    }
-    firstRowInGroup=false;
-    if (countAfterReport != 0 && (countAfterReport % heartbeatInterval) == 0 && (reporter != null)) {
-      reporter.progress();
-      countAfterReport=0;
+      processKey(row,rowInspector);
     }
   }
  catch (  HiveException e) {

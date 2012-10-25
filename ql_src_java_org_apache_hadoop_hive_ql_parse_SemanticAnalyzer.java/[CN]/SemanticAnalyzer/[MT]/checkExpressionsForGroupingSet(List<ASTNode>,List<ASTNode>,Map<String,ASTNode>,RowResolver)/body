@@ -1,0 +1,32 @@
+{
+  Set<String> colNamesGroupByExprs=new HashSet<String>();
+  Set<String> colNamesGroupByDistinctExprs=new HashSet<String>();
+  Set<String> colNamesAggregateParameters=new HashSet<String>();
+  for (  ASTNode grpByExpr : grpByExprs) {
+    extractColumns(colNamesGroupByExprs,genExprNodeDesc(grpByExpr,inputRowResolver));
+  }
+  if (!distinctGrpByExprs.isEmpty()) {
+    for (    ASTNode value : distinctGrpByExprs) {
+      for (int i=1; i < value.getChildCount(); i++) {
+        ASTNode parameter=(ASTNode)value.getChild(i);
+        ExprNodeDesc distExprNode=genExprNodeDesc(parameter,inputRowResolver);
+        extractColumns(colNamesGroupByDistinctExprs,distExprNode);
+      }
+      if (hasCommonElement(colNamesGroupByExprs,colNamesGroupByDistinctExprs)) {
+        throw new SemanticException(ErrorMsg.HIVE_GROUPING_SETS_AGGR_EXPRESSION_INVALID.getMsg());
+      }
+    }
+  }
+  for (  Map.Entry<String,ASTNode> entry : aggregationTrees.entrySet()) {
+    ASTNode value=entry.getValue();
+    ArrayList<ExprNodeDesc> aggParameters=new ArrayList<ExprNodeDesc>();
+    for (int i=1; i < value.getChildCount(); i++) {
+      ASTNode paraExpr=(ASTNode)value.getChild(i);
+      ExprNodeDesc paraExprNode=genExprNodeDesc(paraExpr,inputRowResolver);
+      extractColumns(colNamesAggregateParameters,paraExprNode);
+    }
+    if (hasCommonElement(colNamesGroupByExprs,colNamesAggregateParameters)) {
+      throw new SemanticException(ErrorMsg.HIVE_GROUPING_SETS_AGGR_EXPRESSION_INVALID.getMsg());
+    }
+  }
+}

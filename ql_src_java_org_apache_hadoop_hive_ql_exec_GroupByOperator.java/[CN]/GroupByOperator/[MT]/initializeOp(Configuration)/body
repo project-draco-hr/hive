@@ -4,14 +4,27 @@
   numRowsHashTbl=0;
   heartbeatInterval=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVESENDHEARTBEAT);
   countAfterReport=0;
+  groupingSetsPresent=conf.isGroupingSetsPresent();
+  groupingSets=conf.getListGroupingSets();
+  groupingSetsPosition=conf.getGroupingSetPosition();
   ObjectInspector rowInspector=inputObjInspectors[0];
-  keyFields=new ExprNodeEvaluator[conf.getKeys().size()];
-  keyObjectInspectors=new ObjectInspector[conf.getKeys().size()];
-  currentKeyObjectInspectors=new ObjectInspector[conf.getKeys().size()];
-  for (int i=0; i < keyFields.length; i++) {
+  int numKeys=conf.getKeys().size();
+  keyFields=new ExprNodeEvaluator[numKeys];
+  keyObjectInspectors=new ObjectInspector[numKeys];
+  currentKeyObjectInspectors=new ObjectInspector[numKeys];
+  for (int i=0; i < numKeys; i++) {
     keyFields[i]=ExprNodeEvaluatorFactory.get(conf.getKeys().get(i));
     keyObjectInspectors[i]=keyFields[i].initialize(rowInspector);
     currentKeyObjectInspectors[i]=ObjectInspectorUtils.getStandardObjectInspector(keyObjectInspectors[i],ObjectInspectorCopyOption.WRITABLE);
+  }
+  if (groupingSetsPresent) {
+    newKeysGroupingSets=new ArrayList<Object>();
+    groupingSetsBitSet=new ArrayList<FastBitSet>();
+    for (    Integer groupingSet : groupingSets) {
+      ExprNodeEvaluator groupingSetValueEvaluator=ExprNodeEvaluatorFactory.get(new ExprNodeConstantDesc(String.valueOf(groupingSet)));
+      newKeysGroupingSets.add(groupingSetValueEvaluator.evaluate(null));
+      groupingSetsBitSet.add(groupingSet2BitSet(groupingSet));
+    }
   }
   List<? extends StructField> sfs=((StandardStructObjectInspector)rowInspector).getAllStructFieldRefs();
   if (sfs.size() > 0) {
@@ -107,7 +120,7 @@
     objectInspectors.add(roi);
   }
   aggregationsParametersLastInvoke=new Object[conf.getAggregators().size()][];
-  if (conf.getMode() != GroupByDesc.Mode.HASH || conf.getBucketGroup()) {
+  if ((conf.getMode() != GroupByDesc.Mode.HASH || conf.getBucketGroup()) && (!groupingSetsPresent)) {
     aggregations=newAggregations();
     hashAggr=false;
   }
@@ -136,7 +149,7 @@
   newKeyObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(keyNames,Arrays.asList(keyObjectInspectors));
   currentKeyObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(keyNames,Arrays.asList(currentKeyObjectInspectors));
   outputObjInspector=ObjectInspectorFactory.getStandardStructObjectInspector(fieldNames,objectInspectors);
-  keyWrapperFactory=new KeyWrapperFactory(keyFields,keyObjectInspectors,currentKeyObjectInspectors);
+  KeyWrapperFactory keyWrapperFactory=new KeyWrapperFactory(keyFields,keyObjectInspectors,currentKeyObjectInspectors);
   newKeys=keyWrapperFactory.getKeyWrapper();
   firstRow=true;
   if (hashAggr) {
