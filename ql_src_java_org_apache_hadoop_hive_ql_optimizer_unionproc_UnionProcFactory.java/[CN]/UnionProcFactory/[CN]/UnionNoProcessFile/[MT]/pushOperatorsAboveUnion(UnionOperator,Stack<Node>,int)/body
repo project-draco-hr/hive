@@ -1,0 +1,39 @@
+{
+  try {
+    List<Operator<? extends OperatorDesc>> parents=union.getParentOperators();
+    int numParents=parents.size();
+    for (    Operator<? extends OperatorDesc> parent : parents) {
+      parent.setChildOperators(null);
+    }
+    for (; pos < stack.size() - 1; pos++) {
+      Operator<? extends OperatorDesc> originalOp=(Operator<? extends OperatorDesc>)stack.get(pos);
+      for (int p=0; p < numParents; p++) {
+        OperatorDesc cloneDesc=(OperatorDesc)originalOp.getConf().clone();
+        Operator<? extends OperatorDesc> cloneOp=OperatorFactory.getAndMakeChild(cloneDesc,originalOp.getSchema(),parents.get(p));
+        parents.set(p,cloneOp);
+      }
+    }
+    FileSinkOperator fileSinkOp=(FileSinkOperator)stack.get(pos);
+    String parentDirName=fileSinkOp.getConf().getDirName();
+    List<FileSinkDesc> fileDescLists=new ArrayList<FileSinkDesc>();
+    for (    Operator<? extends OperatorDesc> parent : parents) {
+      FileSinkDesc fileSinkDesc=(FileSinkDesc)fileSinkOp.getConf().clone();
+      String dirName=parentDirName + Path.SEPARATOR + parent.getIdentifier();
+      fileSinkDesc.setDirName(dirName);
+      fileSinkDesc.setLinkedFileSink(true);
+      fileSinkDesc.setParentDir(parentDirName);
+      parent.setChildOperators(null);
+      Operator<? extends OperatorDesc> tmpFileSinkOp=OperatorFactory.getAndMakeChild(fileSinkDesc,parent.getSchema(),parent);
+      tmpFileSinkOp.setChildOperators(null);
+      fileDescLists.add(fileSinkDesc);
+    }
+    for (    FileSinkDesc fileDesc : fileDescLists) {
+      fileDesc.setLinkedFileSinkDesc(fileDescLists);
+    }
+    union.setChildOperators(null);
+    union.setParentOperators(null);
+  }
+ catch (  Exception e) {
+    throw new SemanticException(e.getMessage());
+  }
+}

@@ -6,6 +6,12 @@
   FileSinkOperator fsOp=(FileSinkOperator)nd;
   boolean isInsertTable=fsOp.getConf().getTableInfo().getTableName() != null && parseCtx.getQB().getParseInfo().isInsertToTable();
   HiveConf hconf=parseCtx.getConf();
+  Map<FileSinkDesc,Task<? extends Serializable>> fileSinkDescs=ctx.getLinkedFileDescTasks();
+  if (fileSinkDescs != null) {
+    Task<? extends Serializable> childTask=fileSinkDescs.get(fsOp.getConf());
+    processLinkedFileDesc(ctx,childTask);
+    return null;
+  }
   if ((ctx.getMvTask() != null) && (!ctx.getMvTask().isEmpty())) {
     List<Task<MoveWork>> mvTasks=ctx.getMvTask();
     if ((ctx.getSeenFileSinkOps() == null) || (!ctx.getSeenFileSinkOps().contains(nd))) {
@@ -14,11 +20,18 @@
         addStatsTask(fsOp,mvTask,currTask,parseCtx.getConf());
       }
       if ((mvTask != null) && !mvTask.isLocal()) {
-        MapredWork currWork=(MapredWork)currTask.getWork();
-        boolean mergeMapOnly=hconf.getBoolVar(HiveConf.ConfVars.HIVEMERGEMAPFILES) && currWork.getReducer() == null;
-        boolean mergeMapRed=hconf.getBoolVar(HiveConf.ConfVars.HIVEMERGEMAPREDFILES) && currWork.getReducer() != null;
-        if (mergeMapOnly || mergeMapRed) {
-          chDir=true;
+        if (fsOp.getConf().isLinkedFileSink()) {
+          if (hconf.getBoolVar(HiveConf.ConfVars.HIVEMERGEMAPFILES) || hconf.getBoolVar(HiveConf.ConfVars.HIVEMERGEMAPREDFILES)) {
+            chDir=true;
+          }
+        }
+ else {
+          MapredWork currWork=(MapredWork)currTask.getWork();
+          boolean mergeMapOnly=hconf.getBoolVar(HiveConf.ConfVars.HIVEMERGEMAPFILES) && currWork.getReducer() == null;
+          boolean mergeMapRed=hconf.getBoolVar(HiveConf.ConfVars.HIVEMERGEMAPREDFILES) && currWork.getReducer() != null;
+          if (mergeMapOnly || mergeMapRed) {
+            chDir=true;
+          }
         }
       }
     }
@@ -26,6 +39,19 @@
   String finalName=processFS(nd,stack,opProcCtx,chDir);
   if (chDir && (finalName != null)) {
     createMergeJob((FileSinkOperator)nd,ctx,finalName);
+  }
+  FileSinkDesc fileSinkDesc=fsOp.getConf();
+  if (fileSinkDesc.isLinkedFileSink()) {
+    Map<FileSinkDesc,Task<? extends Serializable>> linkedFileDescTasks=ctx.getLinkedFileDescTasks();
+    if (linkedFileDescTasks == null) {
+      linkedFileDescTasks=new HashMap<FileSinkDesc,Task<? extends Serializable>>();
+      ctx.setLinkedFileDescTasks(linkedFileDescTasks);
+    }
+    if ((currTask.getChildTasks() != null) && (currTask.getChildTasks().size() == 1)) {
+      for (      FileSinkDesc fileDesc : fileSinkDesc.getLinkedFileSinkDesc()) {
+        linkedFileDescTasks.put(fileDesc,currTask.getChildTasks().get(0));
+      }
+    }
   }
   return null;
 }
