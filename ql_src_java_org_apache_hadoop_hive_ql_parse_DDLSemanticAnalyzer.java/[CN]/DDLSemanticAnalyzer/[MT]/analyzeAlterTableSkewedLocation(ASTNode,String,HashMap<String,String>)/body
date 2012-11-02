@@ -1,0 +1,57 @@
+{
+  HiveConf hiveConf=SessionState.get().getConf();
+  if (!(hiveConf.getBoolVar(HiveConf.ConfVars.HIVE_INTERNAL_DDL_LIST_BUCKETING_ENABLE))) {
+    throw new SemanticException(ErrorMsg.HIVE_INTERNAL_DDL_LIST_BUCKETING_DISABLED.getMsg());
+  }
+  Map<List<String>,String> locations=new HashMap<List<String>,String>();
+  ArrayList<Node> locNodes=ast.getChildren();
+  if (null == locNodes) {
+    throw new SemanticException(ErrorMsg.ALTER_TBL_SKEWED_LOC_NO_LOC.getMsg());
+  }
+ else {
+    for (    Node locNode : locNodes) {
+      ASTNode locAstNode=(ASTNode)locNode;
+      ArrayList<Node> locListNodes=locAstNode.getChildren();
+      if (null == locListNodes) {
+        throw new SemanticException(ErrorMsg.ALTER_TBL_SKEWED_LOC_NO_LOC.getMsg());
+      }
+ else {
+        for (        Node locListNode : locListNodes) {
+          ASTNode locListAstNode=(ASTNode)locListNode;
+          ArrayList<Node> locMapNodes=locListAstNode.getChildren();
+          if (null == locMapNodes) {
+            throw new SemanticException(ErrorMsg.ALTER_TBL_SKEWED_LOC_NO_LOC.getMsg());
+          }
+ else {
+            for (            Node locMapNode : locMapNodes) {
+              ASTNode locMapAstNode=(ASTNode)locMapNode;
+              ArrayList<Node> locMapAstNodeMaps=locMapAstNode.getChildren();
+              if ((null == locMapAstNodeMaps) || (locMapAstNodeMaps.size() != 2)) {
+                throw new SemanticException(ErrorMsg.ALTER_TBL_SKEWED_LOC_NO_MAP.getMsg());
+              }
+ else {
+                List<String> keyList=new LinkedList<String>();
+                ASTNode node=(ASTNode)locMapAstNodeMaps.get(0);
+                if (node.getToken().getType() == HiveParser.TOK_TABCOLVALUES) {
+                  keyList=getSkewedValuesFromASTNode(node);
+                }
+ else                 if (isConstant(node)) {
+                  keyList.add(PlanUtils.stripQuotes(node.getText()));
+                }
+ else {
+                  throw new SemanticException(ErrorMsg.SKEWED_TABLE_NO_COLUMN_VALUE.getMsg());
+                }
+                String newLocation=PlanUtils.stripQuotes(unescapeSQLString(((ASTNode)locMapAstNodeMaps.get(1)).getText()));
+                validateSkewedLocationString(newLocation);
+                locations.put(keyList,newLocation);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  AlterTableDesc alterTblDesc=new AlterTableDesc(tableName,locations,partSpec);
+  addInputsOutputsAlterTable(tableName,partSpec);
+  rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),alterTblDesc),conf));
+}

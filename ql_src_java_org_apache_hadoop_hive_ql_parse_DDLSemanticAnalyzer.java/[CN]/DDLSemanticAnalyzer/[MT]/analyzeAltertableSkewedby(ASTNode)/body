@@ -1,0 +1,71 @@
+{
+  HiveConf hiveConf=SessionState.get().getConf();
+  if (!(hiveConf.getBoolVar(HiveConf.ConfVars.HIVE_INTERNAL_DDL_LIST_BUCKETING_ENABLE))) {
+    throw new SemanticException(ErrorMsg.HIVE_INTERNAL_DDL_LIST_BUCKETING_DISABLED.getMsg());
+  }
+  String tableName=getUnescapedName((ASTNode)ast.getChild(0));
+  Table tab=null;
+  try {
+    tab=db.getTable(db.getCurrentDatabase(),tableName,true);
+  }
+ catch (  HiveException e) {
+    throw new SemanticException(ErrorMsg.INVALID_TABLE.getMsg(tableName));
+  }
+  inputs.add(new ReadEntity(tab));
+  outputs.add(new WriteEntity(tab));
+  validateAlterTableType(tab,AlterTableTypes.ADDSKEWEDBY);
+  if (ast.getChildCount() == 1) {
+    AlterTableDesc alterTblDesc=new AlterTableDesc(tableName,true,new ArrayList<String>(),new ArrayList<List<String>>());
+    rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),alterTblDesc),conf));
+  }
+ else {
+    List<String> skewedColNames=new ArrayList<String>();
+    List<List<String>> skewedValues=new ArrayList<List<String>>();
+    ASTNode skewedNode=(ASTNode)ast.getChild(1);
+    skewedColNames=analyzeAlterTableSkewedColNames(skewedColNames,skewedNode);
+    Tree vNode=skewedNode.getChild(1);
+    if (vNode == null) {
+      throw new SemanticException(ErrorMsg.SKEWED_TABLE_NO_COLUMN_VALUE.getMsg());
+    }
+ else {
+      ASTNode vAstNode=(ASTNode)vNode;
+switch (vAstNode.getToken().getType()) {
+case HiveParser.TOK_TABCOLVALUE:
+        for (        String str : getColumnValues(vAstNode)) {
+          List<String> sList=new ArrayList<String>(Arrays.asList(str));
+          skewedValues.add(sList);
+        }
+      break;
+case HiveParser.TOK_TABCOLVALUE_PAIR:
+    List<Node> vLNodes=vAstNode.getChildren();
+  for (  Node node : vLNodes) {
+    if (((ASTNode)node).getToken().getType() != HiveParser.TOK_TABCOLVALUES) {
+      throw new SemanticException(ErrorMsg.SKEWED_TABLE_NO_COLUMN_VALUE.getMsg());
+    }
+ else {
+      Tree leafVNode=((ASTNode)node).getChild(0);
+      if (leafVNode == null) {
+        throw new SemanticException(ErrorMsg.SKEWED_TABLE_NO_COLUMN_VALUE.getMsg());
+      }
+ else {
+        ASTNode lVAstNode=(ASTNode)leafVNode;
+        if (lVAstNode.getToken().getType() != HiveParser.TOK_TABCOLVALUE) {
+          throw new SemanticException(ErrorMsg.SKEWED_TABLE_NO_COLUMN_VALUE.getMsg());
+        }
+ else {
+          skewedValues.add(new ArrayList<String>(getColumnValues(lVAstNode)));
+        }
+      }
+    }
+  }
+break;
+default :
+break;
+}
+}
+AlterTableDesc alterTblDesc=new AlterTableDesc(tableName,false,skewedColNames,skewedValues);
+alterTblDesc.setTable(tab);
+alterTblDesc.validate();
+rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),alterTblDesc),conf));
+}
+}
