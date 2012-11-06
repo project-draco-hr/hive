@@ -1,14 +1,17 @@
 {
   ASTNode tableTypeExpr=(ASTNode)ast.getChild(0);
-  String tableName=getFullyQualifiedName((ASTNode)tableTypeExpr.getChild(0));
-  HashMap<String,String> partSpec=null;
-  if (tableTypeExpr.getChildCount() == 2) {
-    ASTNode partspec=(ASTNode)tableTypeExpr.getChild(1);
-    partSpec=getPartSpec(partspec);
+  String qualifiedName=QualifiedNameUtil.getFullyQualifiedName((ASTNode)tableTypeExpr.getChild(0));
+  String tableName=QualifiedNameUtil.getTableName(db,(ASTNode)(tableTypeExpr.getChild(0)));
+  String dbName=QualifiedNameUtil.getDBName(db,(ASTNode)(tableTypeExpr.getChild(0)));
+  Map<String,String> partSpec=QualifiedNameUtil.getPartitionSpec(db,tableTypeExpr,tableName);
+  String colPath=QualifiedNameUtil.getColPath(db,tableTypeExpr,(ASTNode)tableTypeExpr.getChild(0),qualifiedName,partSpec);
+  if (dbName != null) {
+    validateDatabase(dbName);
   }
-  String actualTableName=tableName.substring(0,tableName.indexOf('.') == -1 ? tableName.length() : tableName.indexOf('.'));
-  validateTable(actualTableName,partSpec);
-  DescTableDesc descTblDesc=new DescTableDesc(ctx.getResFile(),tableName,partSpec);
+  if (partSpec != null) {
+    validateTable(tableName,partSpec);
+  }
+  DescTableDesc descTblDesc=new DescTableDesc(ctx.getResFile(),tableName,partSpec,colPath);
   if (ast.getChildCount() == 2) {
     int descOptions=ast.getChild(1).getType();
     descTblDesc.setFormatted(descOptions == HiveParser.KW_FORMATTED);
