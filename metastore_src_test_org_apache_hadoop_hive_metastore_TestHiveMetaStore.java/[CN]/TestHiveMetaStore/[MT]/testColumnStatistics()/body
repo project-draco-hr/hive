@@ -1,0 +1,128 @@
+{
+  String dbName="columnstatstestdb";
+  String tblName="tbl";
+  String typeName="Person";
+  String tblOwner="testowner";
+  int lastAccessed=6796;
+  try {
+    cleanUp(dbName,tblName,typeName);
+    Database db=new Database();
+    db.setName(dbName);
+    client.createDatabase(db);
+    createTableForTestFilter(dbName,tblName,tblOwner,lastAccessed,true);
+    String[] colName=new String[]{"income","name"};
+    double lowValue=50000.21;
+    double highValue=1200000.4525;
+    long numNulls=3;
+    long numDVs=22;
+    double avgColLen=50.30;
+    long maxColLen=102;
+    String[] colType=new String[]{"double","string"};
+    boolean isTblLevel=true;
+    String partName=null;
+    List<ColumnStatisticsObj> statsObjs=new ArrayList<ColumnStatisticsObj>();
+    ColumnStatisticsDesc statsDesc=new ColumnStatisticsDesc();
+    statsDesc.setDbName(dbName);
+    statsDesc.setTableName(tblName);
+    statsDesc.setIsTblLevel(isTblLevel);
+    statsDesc.setPartName(partName);
+    ColumnStatisticsObj statsObj=new ColumnStatisticsObj();
+    statsObj.setColName(colName[0]);
+    statsObj.setColType(colType[0]);
+    ColumnStatisticsData statsData=new ColumnStatisticsData();
+    DoubleColumnStatsData numericStats=new DoubleColumnStatsData();
+    statsData.setDoubleStats(numericStats);
+    statsData.getDoubleStats().setHighValue(highValue);
+    statsData.getDoubleStats().setLowValue(lowValue);
+    statsData.getDoubleStats().setNumDVs(numDVs);
+    statsData.getDoubleStats().setNumNulls(numNulls);
+    statsObj.setStatsData(statsData);
+    statsObjs.add(statsObj);
+    statsObj=new ColumnStatisticsObj();
+    statsObj.setColName(colName[1]);
+    statsObj.setColType(colType[1]);
+    statsData=new ColumnStatisticsData();
+    StringColumnStatsData stringStats=new StringColumnStatsData();
+    statsData.setStringStats(stringStats);
+    statsData.getStringStats().setAvgColLen(avgColLen);
+    statsData.getStringStats().setMaxColLen(maxColLen);
+    statsData.getStringStats().setNumDVs(numDVs);
+    statsData.getStringStats().setNumNulls(numNulls);
+    statsObj.setStatsData(statsData);
+    statsObjs.add(statsObj);
+    ColumnStatistics colStats=new ColumnStatistics();
+    colStats.setStatsDesc(statsDesc);
+    colStats.setStatsObj(statsObjs);
+    client.updateTableColumnStatistics(colStats);
+    ColumnStatistics colStats2=client.getTableColumnStatistics(dbName,tblName,colName[0]);
+    assertNotNull(colStats2);
+    assertEquals(colStats2.getStatsDesc().getDbName(),dbName);
+    assertEquals(colStats2.getStatsDesc().getTableName(),tblName);
+    assertEquals(colStats2.getStatsObj().get(0).getColName(),colName[0]);
+    assertEquals(colStats2.getStatsObj().get(0).getStatsData().getDoubleStats().getLowValue(),lowValue);
+    assertEquals(colStats2.getStatsObj().get(0).getStatsData().getDoubleStats().getHighValue(),highValue);
+    assertEquals(colStats2.getStatsObj().get(0).getStatsData().getDoubleStats().getNumNulls(),numNulls);
+    assertEquals(colStats2.getStatsObj().get(0).getStatsData().getDoubleStats().getNumDVs(),numDVs);
+    assertEquals(colStats2.getStatsDesc().isIsTblLevel(),isTblLevel);
+    boolean status=client.deleteTableColumnStatistics(dbName,tblName,null);
+    assertTrue(status);
+    try {
+      colStats2=client.getTableColumnStatistics(dbName,tblName,colName[1]);
+      assertTrue(true);
+    }
+ catch (    NoSuchObjectException e) {
+      System.out.println("Statistics for column=" + colName[1] + " not found");
+    }
+    colStats.setStatsDesc(statsDesc);
+    colStats.setStatsObj(statsObjs);
+    client.updateTableColumnStatistics(colStats);
+    colStats2=client.getTableColumnStatistics(dbName,tblName,colName[0]);
+    cleanUp(dbName,tblName,typeName);
+    List<List<String>> values=new ArrayList<List<String>>();
+    values.add(makeVals("2008-07-01 14:13:12","14"));
+    values.add(makeVals("2008-07-01 14:13:12","15"));
+    values.add(makeVals("2008-07-02 14:13:12","15"));
+    values.add(makeVals("2008-07-03 14:13:12","151"));
+    createMultiPartitionTableSchema(dbName,tblName,typeName,values);
+    List<String> partitions=client.listPartitionNames(dbName,tblName,(short)-1);
+    partName=partitions.get(0);
+    isTblLevel=false;
+    statsDesc=new ColumnStatisticsDesc();
+    statsDesc.setDbName(dbName);
+    statsDesc.setTableName(tblName);
+    statsDesc.setPartName(partName);
+    statsDesc.setIsTblLevel(isTblLevel);
+    colStats=new ColumnStatistics();
+    colStats.setStatsDesc(statsDesc);
+    colStats.setStatsObj(statsObjs);
+    client.updatePartitionColumnStatistics(colStats);
+    colStats2=client.getPartitionColumnStatistics(dbName,tblName,partName,colName[1]);
+    assertNotNull(colStats2);
+    assertEquals(colStats2.getStatsDesc().getDbName(),dbName);
+    assertEquals(colStats2.getStatsDesc().getTableName(),tblName);
+    assertEquals(colStats.getStatsDesc().getPartName(),partName);
+    assertEquals(colStats2.getStatsObj().get(0).getColName(),colName[1]);
+    assertEquals(colStats2.getStatsObj().get(0).getStatsData().getStringStats().getMaxColLen(),maxColLen);
+    assertEquals(colStats2.getStatsObj().get(0).getStatsData().getStringStats().getAvgColLen(),avgColLen);
+    assertEquals(colStats2.getStatsObj().get(0).getStatsData().getStringStats().getNumNulls(),numNulls);
+    assertEquals(colStats2.getStatsObj().get(0).getStatsData().getStringStats().getNumDVs(),numDVs);
+    assertEquals(colStats2.getStatsDesc().isIsTblLevel(),isTblLevel);
+    client.deletePartitionColumnStatistics(dbName,tblName,partName,colName[1]);
+    colStats2=client.getPartitionColumnStatistics(dbName,tblName,partName,colName[0]);
+    try {
+      colStats2=client.getPartitionColumnStatistics(dbName,tblName,partName,colName[1]);
+      assertTrue(true);
+    }
+ catch (    NoSuchObjectException e) {
+      System.out.println("Statistics for column=" + colName[1] + " not found");
+    }
+  }
+ catch (  Exception e) {
+    System.err.println(StringUtils.stringifyException(e));
+    System.err.println("testColumnStatistics() failed.");
+    throw e;
+  }
+ finally {
+    cleanUp(dbName,tblName,typeName);
+  }
+}

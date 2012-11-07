@@ -1,0 +1,30 @@
+{
+  super(conf);
+  if (shouldRewrite(tree)) {
+    tableName=new String(getTableName(tree));
+    colNames=getColumnName(tree);
+    int numCols=getNumColumns(tree);
+    originalTree=tree;
+    boolean isPartitionStats=isPartitionLevelStats(tree);
+    PartitionList partList=null;
+    if (isPartitionStats) {
+      isTableLevel=false;
+      partList=getPartKeyValuePairsFromAST(tree);
+      validatePartitionClause(tableName,partList);
+      partName=constructPartitionName(tableName,partList);
+      colType=getPartitionColumnType(tableName,partName,colNames,numCols);
+    }
+ else {
+      isTableLevel=true;
+      colType=getTableColumnType(tableName,colNames,numCols);
+    }
+    int numBitVectors=getNumBitVectorsForNDVEstimation(conf);
+    rewrittenQuery=genRewrittenQuery(colNames,numBitVectors,partList,isPartitionStats);
+    rewrittenTree=genRewrittenTree(rewrittenQuery);
+  }
+ else {
+    originalTree=rewrittenTree=tree;
+    rewrittenQuery=null;
+    isRewritten=false;
+  }
+}
