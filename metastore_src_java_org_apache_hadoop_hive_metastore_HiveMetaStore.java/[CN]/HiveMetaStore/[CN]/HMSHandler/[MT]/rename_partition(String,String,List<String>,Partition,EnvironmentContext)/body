@@ -7,6 +7,7 @@
     }
   }
   Partition oldPart=null;
+  Exception ex=null;
   try {
     firePreEvent(new PreAlterPartitionEvent(db_name,tbl_name,part_vals,new_part,this));
     oldPart=alterHandler.alterPartition(getMS(),wh,db_name,tbl_name,part_vals,new_part);
@@ -17,13 +18,32 @@
     }
   }
  catch (  InvalidObjectException e) {
+    ex=e;
     throw new InvalidOperationException(e.getMessage());
   }
 catch (  AlreadyExistsException e) {
+    ex=e;
     throw new InvalidOperationException(e.getMessage());
   }
+catch (  Exception e) {
+    ex=e;
+    if (e instanceof MetaException) {
+      throw (MetaException)e;
+    }
+ else     if (e instanceof InvalidOperationException) {
+      throw (InvalidOperationException)e;
+    }
+ else     if (e instanceof TException) {
+      throw (TException)e;
+    }
+ else {
+      MetaException me=new MetaException(e.toString());
+      me.initCause(e);
+      throw me;
+    }
+  }
  finally {
-    endFunction("alter_partition",oldPart != null);
+    endFunction("alter_partition",oldPart != null,ex);
   }
   return;
 }
