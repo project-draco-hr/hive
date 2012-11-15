@@ -1,0 +1,31 @@
+{
+  Map<String,Integer> exprPos=new HashMap<String,Integer>();
+  for (int i=0; i < groupByExpr.size(); ++i) {
+    ASTNode node=groupByExpr.get(i);
+    exprPos.put(node.toStringTree(),i);
+  }
+  ASTNode root=parseInfo.getGroupByForClause(dest);
+  List<Integer> result=new ArrayList<Integer>(root == null ? 0 : root.getChildCount());
+  if (root != null) {
+    for (int i=0; i < root.getChildCount(); ++i) {
+      ASTNode child=(ASTNode)root.getChild(i);
+      if (child.getType() != HiveParser.TOK_GROUPING_SETS_EXPRESSION) {
+        continue;
+      }
+      int bitmap=0;
+      for (int j=0; j < child.getChildCount(); ++j) {
+        String treeAsString=child.getChild(j).toStringTree();
+        Integer pos=exprPos.get(treeAsString);
+        if (pos == null) {
+          throw new SemanticException(generateErrorMessage((ASTNode)child.getChild(j),ErrorMsg.HIVE_GROUPING_SETS_EXPR_NOT_IN_GROUPBY.getErrorCodedMsg()));
+        }
+        bitmap=setBit(bitmap,pos);
+      }
+      result.add(bitmap);
+    }
+  }
+  if (checkForNoAggr(result)) {
+    throw new SemanticException(ErrorMsg.HIVE_GROUPING_SETS_AGGR_NOFUNC.getMsg());
+  }
+  return result;
+}
