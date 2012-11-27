@@ -1,0 +1,34 @@
+{
+  JobConf jc;
+  if (hconf instanceof JobConf) {
+    jc=new JobConf(hconf);
+  }
+ else {
+    jc=new JobConf(hconf,ExecDriver.class);
+  }
+  HiveOutputFormat<?,?> hiveOutputFormat=null;
+  Class<? extends Writable> outputClass=null;
+  boolean isCompressed=conf.getCompressed();
+  TableDesc tableInfo=conf.getTableInfo();
+  try {
+    Serializer serializer=(Serializer)tableInfo.getDeserializerClass().newInstance();
+    serializer.initialize(null,tableInfo.getProperties());
+    outputClass=serializer.getSerializedClass();
+    hiveOutputFormat=conf.getTableInfo().getOutputFileFormatClass().newInstance();
+  }
+ catch (  SerDeException e) {
+    throw new HiveException(e);
+  }
+catch (  InstantiationException e) {
+    throw new HiveException(e);
+  }
+catch (  IllegalAccessException e) {
+    throw new HiveException(e);
+  }
+  for (  String p : paths) {
+    Path path=new Path(p);
+    RecordWriter writer=HiveFileFormatUtils.getRecordWriter(jc,hiveOutputFormat,outputClass,isCompressed,tableInfo.getProperties(),path,reporter);
+    writer.close(false);
+    LOG.info("created empty bucket for enforcing bucketing at " + path);
+  }
+}
