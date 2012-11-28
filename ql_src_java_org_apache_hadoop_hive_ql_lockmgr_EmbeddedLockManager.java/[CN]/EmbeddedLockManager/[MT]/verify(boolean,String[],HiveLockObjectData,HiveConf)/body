@@ -1,0 +1,36 @@
+{
+  if (!verify) {
+    return new HiveLockObject(names,data);
+  }
+  String database=names[0];
+  String table=names[1];
+  try {
+    Hive db=Hive.get(conf);
+    Table tab=db.getTable(database,table,false);
+    if (tab == null) {
+      return null;
+    }
+    if (names.length == 2) {
+      return new HiveLockObject(tab,data);
+    }
+    Map<String,String> partSpec=new HashMap<String,String>();
+    for (int indx=2; indx < names.length; indx++) {
+      String[] partVals=names[indx].split("=");
+      partSpec.put(partVals[0],partVals[1]);
+    }
+    Partition partn;
+    try {
+      partn=db.getPartition(tab,partSpec,false);
+    }
+ catch (    HiveException e) {
+      partn=null;
+    }
+    if (partn == null) {
+      return new HiveLockObject(new DummyPartition(tab,null,partSpec),data);
+    }
+    return new HiveLockObject(partn,data);
+  }
+ catch (  Exception e) {
+    throw new LockException(e);
+  }
+}
