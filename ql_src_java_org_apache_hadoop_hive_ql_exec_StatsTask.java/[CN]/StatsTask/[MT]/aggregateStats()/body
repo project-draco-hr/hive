@@ -27,6 +27,7 @@
     }
     List<Partition> partitions=getPartitionsList();
     boolean atomic=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_STATS_ATOMIC);
+    int maxPrefixLength=HiveConf.getIntVar(conf,HiveConf.ConfVars.HIVE_STATS_KEY_PREFIX_MAX_LENGTH);
     if (partitions == null) {
       if (!tableStatsExist && atomic) {
         return 0;
@@ -41,8 +42,9 @@
       }
       tblStats.setStat(StatsSetupConst.TOTAL_SIZE,tableSize);
       if (statsAggregator != null) {
-        updateStats(collectableStats,tblStats,statsAggregator,parameters,work.getAggKey(),atomic);
-        statsAggregator.cleanUp(work.getAggKey());
+        String aggKey=Utilities.getHashedStatsPrefix(work.getAggKey(),maxPrefixLength);
+        updateStats(collectableStats,tblStats,statsAggregator,parameters,aggKey,atomic);
+        statsAggregator.cleanUp(aggKey);
       }
  else       if (work.isClearAggregatorStats()) {
         for (        String statType : collectableStats) {
@@ -66,7 +68,7 @@
           currentValues.put(statType,val);
         }
         PartitionStatistics newPartStats=new PartitionStatistics();
-        String partitionID=work.getAggKey() + Warehouse.makePartPath(partn.getSpec());
+        String partitionID=Utilities.getHashedStatsPrefix(work.getAggKey() + Warehouse.makePartPath(partn.getSpec()),maxPrefixLength);
         LOG.info("Stats aggregator : " + partitionID);
         if (statsAggregator != null) {
           updateStats(collectableStats,newPartStats,statsAggregator,parameters,partitionID,atomic);
