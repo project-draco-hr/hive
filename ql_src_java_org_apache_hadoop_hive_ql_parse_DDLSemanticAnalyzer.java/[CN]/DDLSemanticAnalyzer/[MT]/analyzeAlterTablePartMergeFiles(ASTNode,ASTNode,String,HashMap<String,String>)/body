@@ -4,6 +4,7 @@
   Path oldTblPartLoc=null;
   Path newTblPartLoc=null;
   Table tblObj=null;
+  ListBucketingCtx lbCtx=null;
   try {
     tblObj=db.getTable(tableName);
     List<String> bucketCols=null;
@@ -32,6 +33,7 @@
         Path partPath=part.getPartitionPath();
         newTblPartLoc=new Path(tabPath.toUri().getScheme(),tabPath.toUri().getAuthority(),partPath.toUri().getPath());
         oldTblPartLoc=partPath;
+        lbCtx=constructListBucketingCtx(part.getSkewedColNames(),part.getSkewedColValues(),part.getSkewedColValueLocationMaps(),part.isStoredAsSubDirectories(),conf);
       }
     }
  else {
@@ -39,6 +41,7 @@
       bucketCols=tblObj.getBucketCols();
       oldTblPartLoc=tblObj.getPath();
       newTblPartLoc=tblObj.getPath();
+      lbCtx=constructListBucketingCtx(tblObj.getSkewedColNames(),tblObj.getSkewedColValues(),tblObj.getSkewedColValueLocationMaps(),tblObj.isStoredAsSubDirectories(),conf);
     }
     if (!inputFormatClass.equals(RCFileInputFormat.class)) {
       throw new SemanticException("Only RCFileFormat is supportted right now.");
@@ -51,6 +54,7 @@
     }
     inputDir.add(oldTblPartLoc.toString());
     mergeDesc.setInputDir(inputDir);
+    mergeDesc.setLbCtx(lbCtx);
     addInputsOutputsAlterTable(tableName,partSpec);
     DDLWork ddlWork=new DDLWork(getInputs(),getOutputs(),mergeDesc);
     ddlWork.setNeedLock(true);
@@ -59,6 +63,7 @@
     String queryTmpdir=ctx.getExternalTmpFileURI(newTblPartLoc.toUri());
     mergeDesc.setOutputDir(queryTmpdir);
     LoadTableDesc ltd=new LoadTableDesc(queryTmpdir,queryTmpdir,tblDesc,partSpec == null ? new HashMap<String,String>() : partSpec);
+    ltd.setLbCtx(lbCtx);
     Task<MoveWork> moveTsk=TaskFactory.get(new MoveWork(null,null,ltd,null,false),conf);
     mergeTask.addDependentTask(moveTsk);
     if (conf.getBoolVar(HiveConf.ConfVars.HIVESTATSAUTOGATHER)) {

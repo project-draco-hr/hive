@@ -13,6 +13,7 @@
   DynamicPartitionCtx dpCtx=null;
   LoadTableDesc ltd=null;
   boolean holdDDLTime=checkHoldDDLTime(qb);
+  ListBucketingCtx lbCtx=null;
 switch (dest_type.intValue()) {
 case QBMetaData.DEST_TABLE:
 {
@@ -68,9 +69,11 @@ case QBMetaData.DEST_TABLE:
       idToTableNameMap.put(String.valueOf(destTableId),dest_tab.getTableName());
       currentTableId=destTableId;
       destTableId++;
+      lbCtx=constructListBucketingCtx(dest_tab.getSkewedColNames(),dest_tab.getSkewedColValues(),dest_tab.getSkewedColValueLocationMaps(),dest_tab.isStoredAsSubDirectories(),conf);
       if (!isNonNativeTable) {
         ltd=new LoadTableDesc(queryTmpdir,ctx.getExternalTmpFileURI(dest_path.toUri()),table_desc,dpCtx);
         ltd.setReplace(!qb.getParseInfo().isInsertIntoTable(dest_tab.getDbName(),dest_tab.getTableName()));
+        ltd.setLbCtx(lbCtx);
         if (holdDDLTime) {
           LOG.info("this query will not update transient_lastDdlTime!");
           ltd.setHoldDDLTime(true);
@@ -114,8 +117,10 @@ case QBMetaData.DEST_PARTITION:
     idToTableNameMap.put(String.valueOf(destTableId),dest_tab.getTableName());
     currentTableId=destTableId;
     destTableId++;
+    lbCtx=constructListBucketingCtx(dest_part.getSkewedColNames(),dest_part.getSkewedColValues(),dest_part.getSkewedColValueLocationMaps(),dest_part.isStoredAsSubDirectories(),conf);
     ltd=new LoadTableDesc(queryTmpdir,ctx.getExternalTmpFileURI(dest_path.toUri()),table_desc,dest_part.getSpec());
     ltd.setReplace(!qb.getParseInfo().isInsertIntoTable(dest_tab.getDbName(),dest_tab.getTableName()));
+    ltd.setLbCtx(lbCtx);
     if (holdDDLTime) {
       try {
         Partition part=db.getPartition(dest_tab,dest_part.getSpec(),false);
@@ -237,6 +242,11 @@ throw new SemanticException(e.getMessage(),e);
 }
 RowSchema fsRS=new RowSchema(vecCol);
 FileSinkDesc fileSinkDesc=new FileSinkDesc(queryTmpdir,table_desc,conf.getBoolVar(HiveConf.ConfVars.COMPRESSRESULT),currentTableId,rsCtx.isMultiFileSpray(),rsCtx.getNumFiles(),rsCtx.getTotalFiles(),rsCtx.getPartnCols(),dpCtx);
+if (lbCtx != null) {
+lbCtx.processRowSkewedIndex(fsRS);
+lbCtx.calculateSkewedValueSubDirList();
+}
+fileSinkDesc.setLbCtx(lbCtx);
 fileSinkDesc.setStatsAggPrefix(fileSinkDesc.getDirName());
 if (dest_part != null) {
 try {

@@ -1,2 +1,48 @@
 {
+  ConditionalResolverMergeFilesCtx ctx=(ConditionalResolverMergeFilesCtx)objCtx;
+  String dirName=ctx.getDir();
+  List<Task<? extends Serializable>> resTsks=new ArrayList<Task<? extends Serializable>>();
+  long trgtSize=conf.getLongVar(HiveConf.ConfVars.HIVEMERGEMAPFILESSIZE);
+  long avgConditionSize=conf.getLongVar(HiveConf.ConfVars.HIVEMERGEMAPFILESAVGSIZE);
+  trgtSize=Math.max(trgtSize,avgConditionSize);
+  Task<? extends Serializable> mvTask=ctx.getListTasks().get(0);
+  Task<? extends Serializable> mrTask=ctx.getListTasks().get(1);
+  Task<? extends Serializable> mrAndMvTask=ctx.getListTasks().get(2);
+  try {
+    Path dirPath=new Path(dirName);
+    FileSystem inpFs=dirPath.getFileSystem(conf);
+    DynamicPartitionCtx dpCtx=ctx.getDPCtx();
+    if (inpFs.exists(dirPath)) {
+      MapredWork work=(MapredWork)mrTask.getWork();
+      int lbLevel=(ctx.getLbCtx() == null) ? 0 : ctx.getLbCtx().calculateListBucketingLevel();
+      if (dpCtx != null && dpCtx.getNumDPCols() > 0) {
+        int numDPCols=dpCtx.getNumDPCols();
+        int dpLbLevel=numDPCols + lbLevel;
+        generateActualTasks(conf,resTsks,trgtSize,avgConditionSize,mvTask,mrTask,mrAndMvTask,dirPath,inpFs,ctx,work,dpLbLevel);
+      }
+ else {
+        if (lbLevel == 0) {
+          long totalSz=getMergeSize(inpFs,dirPath,avgConditionSize);
+          if (totalSz >= 0) {
+            setupMapRedWork(conf,work,trgtSize,totalSz);
+            resTsks.add(mrTask);
+          }
+ else {
+            resTsks.add(mvTask);
+          }
+        }
+ else {
+          generateActualTasks(conf,resTsks,trgtSize,avgConditionSize,mvTask,mrTask,mrAndMvTask,dirPath,inpFs,ctx,work,lbLevel);
+        }
+      }
+    }
+ else {
+      resTsks.add(mvTask);
+    }
+  }
+ catch (  IOException e) {
+    e.printStackTrace();
+  }
+  assert(resTsks.size() == 1);
+  return resTsks;
 }
