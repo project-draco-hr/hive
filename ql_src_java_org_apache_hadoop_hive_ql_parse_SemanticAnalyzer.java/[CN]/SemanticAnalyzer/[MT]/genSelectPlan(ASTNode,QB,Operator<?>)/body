@@ -5,7 +5,6 @@
   ArrayList<ExprNodeDesc> col_list=new ArrayList<ExprNodeDesc>();
   RowResolver out_rwsch=new RowResolver();
   ASTNode trfm=null;
-  String alias=qb.getParseInfo().getAlias();
   Integer pos=Integer.valueOf(0);
   RowResolver inputRR=opParseCtx.get(input).getRowResolver();
   boolean selectStar=false;
@@ -110,23 +109,24 @@ if (hasAsClause) {
 unparseTranslator.addIdentifierTranslation((ASTNode)child.getChild(1));
 }
 }
+boolean subQuery=qb.getParseInfo().getIsSubQ();
 if (expr.getType() == HiveParser.TOK_ALLCOLREF) {
-pos=genColListRegex(".*",expr.getChildCount() == 0 ? null : getUnescapedName((ASTNode)expr.getChild(0)).toLowerCase(),expr,col_list,inputRR,pos,out_rwsch,qb.getAliases());
+pos=genColListRegex(".*",expr.getChildCount() == 0 ? null : getUnescapedName((ASTNode)expr.getChild(0)).toLowerCase(),expr,col_list,inputRR,pos,out_rwsch,qb.getAliases(),subQuery);
 selectStar=true;
 }
  else if (expr.getType() == HiveParser.TOK_TABLE_OR_COL && !hasAsClause && !inputRR.getIsExprResolver() && isRegex(unescapeIdentifier(expr.getChild(0).getText()))) {
-pos=genColListRegex(unescapeIdentifier(expr.getChild(0).getText()),null,expr,col_list,inputRR,pos,out_rwsch,qb.getAliases());
+pos=genColListRegex(unescapeIdentifier(expr.getChild(0).getText()),null,expr,col_list,inputRR,pos,out_rwsch,qb.getAliases(),subQuery);
 }
  else if (expr.getType() == HiveParser.DOT && expr.getChild(0).getType() == HiveParser.TOK_TABLE_OR_COL && inputRR.hasTableAlias(unescapeIdentifier(expr.getChild(0).getChild(0).getText().toLowerCase())) && !hasAsClause && !inputRR.getIsExprResolver() && isRegex(unescapeIdentifier(expr.getChild(1).getText()))) {
-pos=genColListRegex(unescapeIdentifier(expr.getChild(1).getText()),unescapeIdentifier(expr.getChild(0).getChild(0).getText().toLowerCase()),expr,col_list,inputRR,pos,out_rwsch,qb.getAliases());
+pos=genColListRegex(unescapeIdentifier(expr.getChild(1).getText()),unescapeIdentifier(expr.getChild(0).getChild(0).getText().toLowerCase()),expr,col_list,inputRR,pos,out_rwsch,qb.getAliases(),subQuery);
 }
  else {
 TypeCheckCtx tcCtx=new TypeCheckCtx(inputRR);
 tcCtx.setAllowStatefulFunctions(true);
 ExprNodeDesc exp=genExprNodeDesc(expr,inputRR,tcCtx);
 col_list.add(exp);
-if (!StringUtils.isEmpty(alias) && (out_rwsch.get(null,colAlias) != null)) {
-throw new SemanticException(ErrorMsg.AMBIGUOUS_COLUMN.getMsg(colAlias));
+if (subQuery) {
+out_rwsch.checkColumn(tabAlias,colAlias);
 }
 ColumnInfo colInfo=new ColumnInfo(getColumnInternalName(pos),exp.getWritableObjectInspector(),tabAlias,false);
 colInfo.setSkewedCol((exp instanceof ExprNodeColumnDesc) ? ((ExprNodeColumnDesc)exp).isSkewedCol() : false);
