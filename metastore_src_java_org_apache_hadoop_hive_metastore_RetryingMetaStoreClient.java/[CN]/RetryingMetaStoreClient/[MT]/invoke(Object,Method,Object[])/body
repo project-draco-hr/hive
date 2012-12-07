@@ -1,0 +1,33 @@
+{
+  Object ret=null;
+  int retriesMade=0;
+  TException caughtException=null;
+  while (true) {
+    try {
+      ret=method.invoke(base,args);
+      break;
+    }
+ catch (    UndeclaredThrowableException e) {
+      throw e.getCause();
+    }
+catch (    InvocationTargetException e) {
+      if ((e.getCause() instanceof TApplicationException) || (e.getCause() instanceof TProtocolException) || (e.getCause() instanceof TTransportException)) {
+        caughtException=(TException)e.getCause();
+      }
+ else       if ((e.getCause() instanceof MetaException) && e.getCause().getMessage().matches("JDO[a-zA-Z]*Exception")) {
+        caughtException=(MetaException)e.getCause();
+      }
+ else {
+        throw e.getCause();
+      }
+    }
+    if (retriesMade >= retryLimit) {
+      throw caughtException;
+    }
+    retriesMade++;
+    LOG.warn("MetaStoreClient lost connection. Attempting to reconnect.",caughtException.getCause());
+    Thread.sleep(retryDelaySeconds * 1000);
+    base.reconnect();
+  }
+  return ret;
+}
