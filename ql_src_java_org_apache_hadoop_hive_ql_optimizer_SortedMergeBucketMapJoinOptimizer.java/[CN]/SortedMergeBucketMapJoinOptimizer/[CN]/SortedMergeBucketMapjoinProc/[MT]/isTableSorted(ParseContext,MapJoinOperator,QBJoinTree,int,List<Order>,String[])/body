@@ -1,0 +1,58 @@
+{
+  String alias=aliases[pos];
+  Map<TableScanOperator,Table> topToTable=this.pGraphContext.getTopToTable();
+  Operator<? extends OperatorDesc> topOp=joinTree.getAliasToOpInfo().get(alias);
+  if (topOp == null) {
+    return false;
+  }
+  List<String> joinCols=toColumns(op.getConf().getKeys().get((byte)pos));
+  if (joinCols == null || joinCols.isEmpty()) {
+    return false;
+  }
+  TableScanOperator tso=TableAccessAnalyzer.genRootTableScan(topOp,joinCols);
+  if (tso == null) {
+    return false;
+  }
+  if (pGraphContext.getTopOps().containsValue(tso)) {
+    for (    Map.Entry<String,Operator<? extends OperatorDesc>> topOpEntry : this.pGraphContext.getTopOps().entrySet()) {
+      if (topOpEntry.getValue() == tso) {
+        alias=topOpEntry.getKey();
+        aliases[pos]=alias;
+        break;
+      }
+    }
+  }
+ else {
+    return false;
+  }
+  Table tbl=topToTable.get(tso);
+  if (tbl.isPartitioned()) {
+    PrunedPartitionList prunedParts=null;
+    try {
+      prunedParts=pGraphContext.getOpToPartList().get(tso);
+      if (prunedParts == null) {
+        prunedParts=PartitionPruner.prune(tbl,pGraphContext.getOpToPartPruner().get(tso),pGraphContext.getConf(),alias,pGraphContext.getPrunedPartitions());
+        pGraphContext.getOpToPartList().put(tso,prunedParts);
+      }
+    }
+ catch (    HiveException e) {
+      LOG.error(org.apache.hadoop.util.StringUtils.stringifyException(e));
+      throw new SemanticException(e.getMessage(),e);
+    }
+    List<Partition> partitions=prunedParts.getNotDeniedPartns();
+    if ((pos == 0) && (partitions != null) && (!partitions.isEmpty())) {
+      Partition firstPartition=partitions.get(0);
+      sortColumnsFirstTable.addAll(firstPartition.getSortCols());
+    }
+    for (    Partition partition : prunedParts.getNotDeniedPartns()) {
+      if (!checkSortColsAndJoinCols(partition.getSortCols(),joinCols,sortColumnsFirstTable)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (pos == 0) {
+    sortColumnsFirstTable.addAll(tbl.getSortCols());
+  }
+  return checkSortColsAndJoinCols(tbl.getSortCols(),joinCols,sortColumnsFirstTable);
+}

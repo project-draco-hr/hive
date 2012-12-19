@@ -12,13 +12,30 @@
     this.pGraphContext.getListMapJoinOpsNoReducer().remove(indexInListMapJoinNoReducer);
     this.pGraphContext.getListMapJoinOpsNoReducer().add(indexInListMapJoinNoReducer,smbJop);
   }
+  Map<String,DummyStoreOperator> aliasToSink=new HashMap<String,DummyStoreOperator>();
   List<? extends Operator> parentOperators=mapJoinOp.getParentOperators();
   for (int i=0; i < parentOperators.size(); i++) {
     Operator par=parentOperators.get(i);
     int index=par.getChildOperators().indexOf(mapJoinOp);
     par.getChildOperators().remove(index);
-    par.getChildOperators().add(index,smbJop);
+    if (i == smbJoinDesc.getPosBigTable()) {
+      par.getChildOperators().add(index,smbJop);
+    }
+ else {
+      DummyStoreOperator dummyStoreOp=new DummyStoreOperator();
+      par.getChildOperators().add(index,dummyStoreOp);
+      List<Operator<? extends OperatorDesc>> childrenOps=new ArrayList<Operator<? extends OperatorDesc>>();
+      childrenOps.add(smbJop);
+      dummyStoreOp.setChildOperators(childrenOps);
+      List<Operator<? extends OperatorDesc>> parentOps=new ArrayList<Operator<? extends OperatorDesc>>();
+      parentOps.add(par);
+      dummyStoreOp.setParentOperators(parentOps);
+      aliasToSink.put(srcs[i],dummyStoreOp);
+      smbJop.getParentOperators().remove(i);
+      smbJop.getParentOperators().add(i,dummyStoreOp);
+    }
   }
+  smbJoinDesc.setAliasToSink(aliasToSink);
   List<? extends Operator> childOps=mapJoinOp.getChildOperators();
   for (int i=0; i < childOps.size(); i++) {
     Operator child=childOps.get(i);
