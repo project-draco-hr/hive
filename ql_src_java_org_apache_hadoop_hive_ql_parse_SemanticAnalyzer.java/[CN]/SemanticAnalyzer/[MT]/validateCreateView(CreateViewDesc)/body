@@ -1,0 +1,27 @@
+{
+  try {
+    Table oldView=db.getTable(createVwDesc.getViewName(),false);
+    if (createVwDesc.getIsAlterViewAs() && oldView == null) {
+      String viewNotExistErrorMsg="The following view does not exist: " + createVwDesc.getViewName();
+      throw new SemanticException(ErrorMsg.ALTER_VIEW_AS_SELECT_NOT_EXIST.getMsg(viewNotExistErrorMsg));
+    }
+    if (createVwDesc.getOrReplace() && oldView != null) {
+      if (!oldView.getTableType().equals(TableType.VIRTUAL_VIEW)) {
+        String tableNotViewErrorMsg="The following is an existing table, not a view: " + createVwDesc.getViewName();
+        throw new SemanticException(ErrorMsg.EXISTING_TABLE_IS_NOT_VIEW.getMsg(tableNotViewErrorMsg));
+      }
+      String partitionViewErrorMsg="The following view has partition, it could not be replaced: " + createVwDesc.getViewName();
+      try {
+        if ((createVwDesc.getPartCols() == null || createVwDesc.getPartCols().isEmpty() || !createVwDesc.getPartCols().equals(oldView.getPartCols())) && !oldView.getPartCols().isEmpty() && !db.getPartitions(oldView).isEmpty()) {
+          throw new SemanticException(ErrorMsg.REPLACE_VIEW_WITH_PARTITION.getMsg(partitionViewErrorMsg));
+        }
+      }
+ catch (      HiveException e) {
+        throw new SemanticException(ErrorMsg.REPLACE_VIEW_WITH_PARTITION.getMsg(partitionViewErrorMsg));
+      }
+    }
+  }
+ catch (  HiveException e) {
+    throw new SemanticException(e.getMessage());
+  }
+}
