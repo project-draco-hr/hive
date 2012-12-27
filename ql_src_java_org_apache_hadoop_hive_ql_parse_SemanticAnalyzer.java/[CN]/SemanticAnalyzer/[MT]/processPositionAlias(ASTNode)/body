@@ -1,0 +1,74 @@
+{
+  if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_GROUPBY_ORDERBY_POSITION_ALIAS) == false) {
+    return;
+  }
+  if (ast.getChildCount() == 0) {
+    return;
+  }
+  boolean isAllCol;
+  ASTNode selectNode=null;
+  ASTNode groupbyNode=null;
+  ASTNode orderbyNode=null;
+  int child_count=ast.getChildCount();
+  for (int child_pos=0; child_pos < child_count; ++child_pos) {
+    ASTNode node=(ASTNode)ast.getChild(child_pos);
+    int type=node.getToken().getType();
+    if (type == HiveParser.TOK_SELECT) {
+      selectNode=node;
+    }
+ else     if (type == HiveParser.TOK_GROUPBY) {
+      groupbyNode=node;
+    }
+ else     if (type == HiveParser.TOK_ORDERBY) {
+      orderbyNode=node;
+    }
+  }
+  if (selectNode != null) {
+    int selectExpCnt=selectNode.getChildCount();
+    if (groupbyNode != null) {
+      for (int child_pos=0; child_pos < groupbyNode.getChildCount(); ++child_pos) {
+        ASTNode node=(ASTNode)groupbyNode.getChild(child_pos);
+        if (node.getToken().getType() == HiveParser.Number) {
+          int pos=Integer.parseInt(node.getText());
+          if (pos > 0 && pos <= selectExpCnt) {
+            groupbyNode.setChild(child_pos,(BaseTree)selectNode.getChild(pos - 1).getChild(0));
+          }
+ else {
+            throw new SemanticException(ErrorMsg.INVALID_POSITION_ALIAS_IN_GROUPBY.getMsg("Position alias: " + pos + " does not exist\n"+ "The Select List is indexed from 1 to "+ selectExpCnt));
+          }
+        }
+      }
+    }
+    if (orderbyNode != null) {
+      isAllCol=false;
+      for (int child_pos=0; child_pos < selectNode.getChildCount(); ++child_pos) {
+        ASTNode node=(ASTNode)selectNode.getChild(child_pos).getChild(0);
+        if (node.getToken().getType() == HiveParser.TOK_ALLCOLREF) {
+          isAllCol=true;
+        }
+      }
+      for (int child_pos=0; child_pos < orderbyNode.getChildCount(); ++child_pos) {
+        ASTNode colNode=(ASTNode)orderbyNode.getChild(child_pos);
+        ASTNode node=(ASTNode)colNode.getChild(0);
+        if (node.getToken().getType() == HiveParser.Number) {
+          if (!isAllCol) {
+            int pos=Integer.parseInt(node.getText());
+            if (pos > 0 && pos <= selectExpCnt) {
+              colNode.setChild(0,(BaseTree)selectNode.getChild(pos - 1).getChild(0));
+            }
+ else {
+              throw new SemanticException(ErrorMsg.INVALID_POSITION_ALIAS_IN_ORDERBY.getMsg("Position alias: " + pos + " does not exist\n"+ "The Select List is indexed from 1 to "+ selectExpCnt));
+            }
+          }
+ else {
+            throw new SemanticException(ErrorMsg.NO_SUPPORTED_ORDERBY_ALLCOLREF_POS.getMsg());
+          }
+        }
+      }
+    }
+  }
+  for (int child_pos=0; child_pos < child_count; ++child_pos) {
+    processPositionAlias((ASTNode)ast.getChild(child_pos));
+  }
+  return;
+}
