@@ -19,8 +19,15 @@
     groupByOutputRowResolver.putExpression(grpbyExpr,new ColumnInfo(field,exprInfo.getType(),"",false));
     colExprMap.put(field,groupByKeys.get(groupByKeys.size() - 1));
   }
+  int groupingSetsPosition=0;
   if (groupingSetsPresent) {
-    addGroupingSetKey(groupByKeys,groupByInputRowResolver,groupByOutputRowResolver,outputColumnNames,colExprMap);
+    if (!groupingSetsNeedAdditionalMRJob) {
+      addGroupingSetKey(groupByKeys,groupByInputRowResolver,groupByOutputRowResolver,outputColumnNames,colExprMap);
+    }
+ else {
+      groupingSetsPosition=groupByKeys.size();
+      createNewGroupingKey(groupByKeys,outputColumnNames,groupByOutputRowResolver,colExprMap);
+    }
   }
   HashMap<String,ASTNode> aggregationTrees=parseInfo.getAggregationExprsForClause(dest);
   String lastKeyColName=null;
@@ -91,7 +98,7 @@
   }
   float groupByMemoryUsage=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVEMAPAGGRHASHMEMORY);
   float memoryThreshold=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVEMAPAGGRMEMORYTHRESHOLD);
-  Operator op=putOpInsertMap(OperatorFactory.getAndMakeChild(new GroupByDesc(mode,outputColumnNames,groupByKeys,aggregations,distPartAgg,groupByMemoryUsage,memoryThreshold,null,false,0),new RowSchema(groupByOutputRowResolver.getColumnInfos()),reduceSinkOperatorInfo),groupByOutputRowResolver);
+  Operator op=putOpInsertMap(OperatorFactory.getAndMakeChild(new GroupByDesc(mode,outputColumnNames,groupByKeys,aggregations,distPartAgg,groupByMemoryUsage,memoryThreshold,groupingSets,groupingSetsPresent && groupingSetsNeedAdditionalMRJob,groupingSetsPosition),new RowSchema(groupByOutputRowResolver.getColumnInfos()),reduceSinkOperatorInfo),groupByOutputRowResolver);
   op.setColumnExprMap(colExprMap);
   return op;
 }
