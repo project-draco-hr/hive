@@ -24,6 +24,7 @@
     Class inputFormatClass=part.getInputFileFormatClass();
     String inputFormatClassName=inputFormatClass.getName();
     InputFormat inputFormat=getInputFormatFromCache(inputFormatClass,job);
+    String deserializerClassName=part.getDeserializerClass() == null ? null : part.getDeserializerClass().getName();
     if (this.mrwork != null && !this.mrwork.getHadoopSupportsSplittable()) {
       FileSystem inpFs=path.getFileSystem(job);
       if (inputFormat instanceof TextInputFormat) {
@@ -55,10 +56,20 @@
     Path filterPath=path;
     CombineFilter f=null;
     List<Operator<? extends OperatorDesc>> opList=null;
-    boolean done=false;
     if (!mrwork.isMapperCannotSpanPartns()) {
       opList=HiveFileFormatUtils.doGetWorksFromPath(pathToAliases,aliasToWork,filterPath);
-      f=poolMap.get(new CombinePathInputFormat(opList,inputFormatClassName));
+      CombinePathInputFormat combinePathInputFormat=new CombinePathInputFormat(opList,inputFormatClassName,deserializerClassName);
+      f=poolMap.get(combinePathInputFormat);
+      if (f == null) {
+        f=new CombineFilter(filterPath);
+        LOG.info("CombineHiveInputSplit creating pool for " + path + "; using filter path "+ filterPath);
+        combine.createPool(job,f);
+        poolMap.put(combinePathInputFormat,f);
+      }
+ else {
+        LOG.info("CombineHiveInputSplit: pool is already created for " + path + "; using filter path "+ filterPath);
+        f.addPath(filterPath);
+      }
     }
  else {
       if (!path.getFileSystem(job).getFileStatus(path).isDir()) {
@@ -68,21 +79,6 @@
       }
  else {
         inpDirs.add(path);
-      }
-      done=true;
-    }
-    if (!done) {
-      if (f == null) {
-        f=new CombineFilter(filterPath);
-        LOG.info("CombineHiveInputSplit creating pool for " + path + "; using filter path "+ filterPath);
-        combine.createPool(job,f);
-        if (!mrwork.isMapperCannotSpanPartns()) {
-          poolMap.put(new CombinePathInputFormat(opList,inputFormatClassName),f);
-        }
-      }
- else {
-        LOG.info("CombineHiveInputSplit: pool is already created for " + path + "; using filter path "+ filterPath);
-        f.addPath(filterPath);
       }
     }
   }
