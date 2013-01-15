@@ -4,6 +4,8 @@
   int recordCount=0;
   long startT=System.currentTimeMillis();
   boolean verbose=false;
+  boolean columnSizes=false;
+  boolean pretty=false;
   if (args.length < 1 || args.length > 3) {
     printUsage(null);
   }
@@ -18,6 +20,13 @@
     }
  else     if (arg.equals("--verbose")) {
       verbose=true;
+    }
+ else     if (arg.equals("--column-sizes")) {
+      columnSizes=true;
+    }
+ else     if (arg.equals("--column-sizes-pretty")) {
+      columnSizes=true;
+      pretty=true;
     }
  else     if (fileName == null) {
       fileName=new Path(arg);
@@ -40,6 +49,35 @@
   }
   FileSplit split=new FileSplit(fileName,start,length,new JobConf(conf));
   RCFileRecordReader recordReader=new RCFileRecordReader(conf,split);
+  if (columnSizes) {
+    int[] compressedColumnSizes=null;
+    int[] uncompressedColumnSizes=null;
+    while (recordReader.nextBlock()) {
+      KeyBuffer keyBuffer=recordReader.getKeyBuffer();
+      if (uncompressedColumnSizes == null) {
+        uncompressedColumnSizes=new int[keyBuffer.getColumnNumber()];
+      }
+      if (compressedColumnSizes == null) {
+        compressedColumnSizes=new int[keyBuffer.getColumnNumber()];
+      }
+      for (int i=0; i < keyBuffer.getColumnNumber(); i++) {
+        uncompressedColumnSizes[i]+=keyBuffer.getEachColumnUncompressedValueLen()[i];
+        compressedColumnSizes[i]+=keyBuffer.getEachColumnValueLen()[i];
+      }
+    }
+    if (uncompressedColumnSizes != null && compressedColumnSizes != null) {
+      for (int i=0; i < uncompressedColumnSizes.length; i++) {
+        if (pretty) {
+          System.out.println("Column " + i + ": Uncompressed size: "+ uncompressedColumnSizes[i]+ " Compressed size: "+ compressedColumnSizes[i]);
+        }
+ else {
+          System.out.print(i + TAB + uncompressedColumnSizes[i]+ TAB+ compressedColumnSizes[i]+ NEWLINE);
+        }
+      }
+    }
+    System.out.flush();
+    return 0;
+  }
   LongWritable key=new LongWritable();
   BytesRefArrayWritable value=new BytesRefArrayWritable();
   StringBuilder buf=new StringBuilder(STRING_BUFFER_SIZE);
