@@ -40,7 +40,42 @@
     throw new NoMatchingMethodException(udfClass,argumentsPassed,mlist);
   }
   if (udfMethods.size() > 1) {
-    throw new AmbiguousMethodException(udfClass,argumentsPassed,mlist);
+    int lowestNumericType=Integer.MAX_VALUE;
+    boolean multiple=true;
+    Method candidate=null;
+    List<TypeInfo> referenceArguments=null;
+    for (    Method m : udfMethods) {
+      int maxNumericType=0;
+      List<TypeInfo> argumentsAccepted=TypeInfoUtils.getParameterTypeInfos(m,argumentsPassed.size());
+      if (referenceArguments == null) {
+        referenceArguments=argumentsAccepted;
+      }
+      Iterator<TypeInfo> referenceIterator=referenceArguments.iterator();
+      for (      TypeInfo accepted : argumentsAccepted) {
+        TypeInfo reference=referenceIterator.next();
+        if (numericTypes.containsKey(accepted)) {
+          int typeValue=numericTypes.get(accepted);
+          maxNumericType=typeValue > maxNumericType ? typeValue : maxNumericType;
+        }
+ else         if (!accepted.equals(reference)) {
+          throw new AmbiguousMethodException(udfClass,argumentsPassed,mlist);
+        }
+      }
+      if (lowestNumericType > maxNumericType) {
+        multiple=false;
+        lowestNumericType=maxNumericType;
+        candidate=m;
+      }
+ else       if (maxNumericType == lowestNumericType) {
+        multiple=true;
+      }
+    }
+    if (!multiple) {
+      return candidate;
+    }
+ else {
+      throw new AmbiguousMethodException(udfClass,argumentsPassed,mlist);
+    }
   }
   return udfMethods.get(0);
 }

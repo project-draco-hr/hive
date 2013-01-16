@@ -165,6 +165,47 @@ bytes[i]=buffer.read(invert);
 }
 t.setBinarySortable(bytes,0);
 return t;
+case DECIMAL:
+{
+BigDecimalWritable bdw=(reuse == null ? new BigDecimalWritable() : (BigDecimalWritable)reuse);
+int b=buffer.read(invert) - 1;
+assert(b == 1 || b == -1 || b == 0);
+boolean positive=b != -1;
+int factor=buffer.read(invert) ^ 0x80;
+for (int i=0; i < 3; i++) {
+factor=(factor << 8) + (buffer.read(invert) & 0xff);
+}
+if (!positive) {
+factor=-factor;
+}
+int start=buffer.tell();
+int length=0;
+do {
+b=buffer.read(positive ? invert : !invert);
+assert(b != 1);
+if (b == 0) {
+break;
+}
+length++;
+}
+ while (true);
+if (decimalBuffer == null || decimalBuffer.length < length) {
+decimalBuffer=new byte[length];
+}
+buffer.seek(start);
+for (int i=0; i < length; ++i) {
+decimalBuffer[i]=buffer.read(positive ? invert : !invert);
+}
+buffer.read(positive ? invert : !invert);
+String digits=new String(decimalBuffer,0,length,decimalCharSet);
+BigInteger bi=new BigInteger(digits);
+BigDecimal bd=new BigDecimal(bi).scaleByPowerOfTen(factor - length);
+if (!positive) {
+bd=bd.negate();
+}
+bdw.set(bd);
+return bdw;
+}
 default :
 {
 throw new RuntimeException("Unrecognized type: " + ptype.getPrimitiveCategory());

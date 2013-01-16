@@ -120,6 +120,24 @@ buffer.write(data[i],invert);
 }
 return;
 }
+case DECIMAL:
+{
+BigDecimalObjectInspector boi=(BigDecimalObjectInspector)poi;
+BigDecimal dec=boi.getPrimitiveJavaObject(o).stripTrailingZeros();
+int sign=dec.compareTo(BigDecimal.ZERO);
+dec=dec.abs();
+int factor=dec.precision() - dec.scale();
+factor=sign == 1 ? factor : -factor;
+dec.scaleByPowerOfTen(Math.abs(dec.scale()));
+String digits=dec.unscaledValue().toString();
+buffer.write((byte)(sign + 1),invert);
+buffer.write((byte)((factor >> 24) ^ 0x80),invert);
+buffer.write((byte)(factor >> 16),invert);
+buffer.write((byte)(factor >> 8),invert);
+buffer.write((byte)factor,invert);
+serializeBytes(buffer,digits.getBytes(decimalCharSet),digits.length(),sign == -1 ? !invert : invert);
+return;
+}
 default :
 {
 throw new RuntimeException("Unrecognized type: " + poi.getPrimitiveCategory());
