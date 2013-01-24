@@ -5,16 +5,16 @@
       return null;
     }
     job.set("mapred.input.dir",org.apache.hadoop.util.StringUtils.escapeString(currPath.toString()));
-    PartitionDesc tmp;
+    PartitionDesc partDesc;
     if (currTbl == null) {
-      tmp=currPart;
+      partDesc=currPart;
     }
  else {
-      tmp=new PartitionDesc(currTbl,null);
+      partDesc=new PartitionDesc(currTbl,null);
     }
-    Class<? extends InputFormat> formatter=tmp.getInputFileFormatClass();
+    Class<? extends InputFormat> formatter=partDesc.getInputFileFormatClass();
     inputFormat=getInputFormatFromCache(formatter,job);
-    Utilities.copyTableJobPropertiesToConf(tmp.getTableDesc(),job);
+    Utilities.copyTableJobPropertiesToConf(partDesc.getTableDesc(),job);
     InputSplit[] splits=inputFormat.getSplits(job,1);
     FetchInputFormatSplit[] inputSplits=new FetchInputFormatSplit[splits.length];
     for (int i=0; i < splits.length; i++) {
@@ -25,14 +25,23 @@
     }
     this.inputSplits=inputSplits;
     splitNum=0;
-    serde=tmp.getDeserializerClass().newInstance();
-    serde.initialize(job,tmp.getProperties());
+    serde=partDesc.getDeserializerClass().newInstance();
+    serde.initialize(job,partDesc.getProperties());
+    if (currTbl != null) {
+      tblSerde=serde;
+    }
+ else {
+      tblSerde=currPart.getTableDesc().getDeserializerClass().newInstance();
+      tblSerde.initialize(job,currPart.getTableDesc().getProperties());
+    }
+    ObjectInspector outputOI=ObjectInspectorConverters.getConvertedOI(serde.getObjectInspector(),tblSerde.getObjectInspector());
+    partTblObjectInspectorConverter=ObjectInspectorConverters.getConverter(serde.getObjectInspector(),outputOI);
     if (LOG.isDebugEnabled()) {
       LOG.debug("Creating fetchTask with deserializer typeinfo: " + serde.getObjectInspector().getTypeName());
-      LOG.debug("deserializer properties: " + tmp.getProperties());
+      LOG.debug("deserializer properties: " + partDesc.getProperties());
     }
     if (currPart != null) {
-      setPrtnDesc(currPart);
+      getRowInspectorFromPartition(currPart,outputOI);
     }
   }
   if (splitNum >= inputSplits.length) {

@@ -1,13 +1,19 @@
 {
   try {
     if (work.isNotPartitioned()) {
-      return setTableDesc(work.getTblDesc());
+      return getRowInspectorFromTable(work.getTblDesc());
     }
     List<PartitionDesc> listParts=work.getPartDesc();
     if (listParts == null || listParts.isEmpty()) {
-      return setPrtnDesc(work.getTblDesc());
+      return getRowInspectorFromPartitionedTable(work.getTblDesc());
     }
-    return setPrtnDesc(listParts.get(0));
+    PartitionDesc partition=listParts.get(0);
+    Deserializer tblSerde=partition.getTableDesc().getDeserializerClass().newInstance();
+    tblSerde.initialize(job,partition.getTableDesc().getProperties());
+    Deserializer partSerde=partition.getDeserializerClass().newInstance();
+    partSerde.initialize(job,partition.getProperties());
+    ObjectInspector partitionOI=ObjectInspectorConverters.getConvertedOI(partSerde.getObjectInspector(),tblSerde.getObjectInspector());
+    return getRowInspectorFromPartition(partition,partitionOI);
   }
  catch (  Exception e) {
     throw new HiveException("Failed with exception " + e.getMessage() + org.apache.hadoop.util.StringUtils.stringifyException(e));
