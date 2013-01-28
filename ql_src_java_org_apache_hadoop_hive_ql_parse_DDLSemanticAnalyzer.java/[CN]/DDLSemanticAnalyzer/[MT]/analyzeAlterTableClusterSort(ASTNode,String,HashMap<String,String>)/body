@@ -1,0 +1,32 @@
+{
+  addInputsOutputsAlterTable(tableName,partSpec);
+  AlterTableDesc alterTblDesc;
+switch (ast.getChild(0).getType()) {
+case HiveParser.TOK_NOT_CLUSTERED:
+    alterTblDesc=new AlterTableDesc(tableName,-1,new ArrayList<String>(),new ArrayList<Order>(),partSpec);
+  rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),alterTblDesc),conf));
+break;
+case HiveParser.TOK_NOT_SORTED:
+alterTblDesc=new AlterTableDesc(tableName,true,partSpec);
+rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),alterTblDesc),conf));
+break;
+case HiveParser.TOK_TABLEBUCKETS:
+ASTNode buckets=(ASTNode)ast.getChild(0);
+List<String> bucketCols=getColumnNames((ASTNode)buckets.getChild(0));
+List<Order> sortCols=new ArrayList<Order>();
+int numBuckets=-1;
+if (buckets.getChildCount() == 2) {
+numBuckets=(Integer.valueOf(buckets.getChild(1).getText())).intValue();
+}
+ else {
+sortCols=getColumnNamesOrder((ASTNode)buckets.getChild(1));
+numBuckets=(Integer.valueOf(buckets.getChild(2).getText())).intValue();
+}
+if (numBuckets <= 0) {
+throw new SemanticException(ErrorMsg.INVALID_BUCKET_NUMBER.getMsg());
+}
+alterTblDesc=new AlterTableDesc(tableName,numBuckets,bucketCols,sortCols,partSpec);
+rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),alterTblDesc),conf));
+break;
+}
+}
