@@ -8,7 +8,8 @@
   List<Serializable> listWorks=new ArrayList<Serializable>();
   List<Task<? extends Serializable>> listTasks=new ArrayList<Task<? extends Serializable>>();
   HashMap<String,Task<? extends Serializable>> aliasToTask=new HashMap<String,Task<? extends Serializable>>();
-  HashMap<String,ArrayList<String>> pathToAliases=currTask.getWork().getPathToAliases();
+  HashMap<String,ArrayList<String>> pathToAliases=currWork.getPathToAliases();
+  Map<String,Operator<? extends OperatorDesc>> aliasToWork=currWork.getAliasToWork();
   ParseContext parseCtx=physicalContext.getParseContext();
   QBJoinTree joinTree=parseCtx.getJoinContext().get(joinOp);
   JoinDesc joinDesc=joinOp.getConf();
@@ -39,20 +40,63 @@
     if (bigTableCandidates == null) {
       return null;
     }
+    Configuration conf=context.getConf();
+    boolean convertJoinMapJoin=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASK);
+    int bigTablePosition=-1;
+    if (convertJoinMapJoin) {
+      long mapJoinSize=HiveConf.getLongVar(conf,HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASKTHRESHOLD);
+      boolean bigTableFound=false;
+      long largestTableSize=0;
+      long sumTableSizes=0;
+      for (      String alias : aliasToWork.keySet()) {
+        Long size=aliasToSize.get(alias);
+        if ((size == null) || (size > mapJoinSize)) {
+          sumTableSizes+=largestTableSize;
+          if (bigTableFound || (sumTableSizes > mapJoinSize)) {
+            convertJoinMapJoin=false;
+            break;
+          }
+          bigTableFound=true;
+          bigTablePosition=getPosition(currWork,joinOp,alias);
+          largestTableSize=mapJoinSize + 1;
+        }
+ else {
+          if (size > largestTableSize) {
+            sumTableSizes+=largestTableSize;
+            largestTableSize=size;
+            bigTablePosition=getPosition(currWork,joinOp,alias);
+          }
+ else {
+            sumTableSizes+=size;
+          }
+          if (sumTableSizes > mapJoinSize) {
+            convertJoinMapJoin=false;
+            break;
+          }
+        }
+      }
+    }
+    String bigTableAlias=null;
     currWork.setOpParseCtxMap(parseCtx.getOpParseCtx());
     currWork.setJoinTree(joinTree);
     String xml=currWork.toXML();
-    String bigTableAlias=null;
-    long ThresholdOfSmallTblSizeSum=HiveConf.getLongVar(context.getConf(),HiveConf.ConfVars.HIVESMALLTABLESFILESIZE);
+    if (convertJoinMapJoin) {
+      MapRedTask newTask=convertTaskToMapJoinTask(xml,bigTablePosition).getFirst();
+      newTask.setTaskTag(Task.MAPJOIN_ONLY_NOBACKUP);
+      replaceTask(currTask,newTask,physicalContext);
+      if ((newTask.getChildTasks() != null) && (newTask.getChildTasks().size() == 1) && (newTask.getChildTasks().get(0).getTaskTag() == Task.MAPJOIN_ONLY_NOBACKUP)) {
+        mergeMapJoinTaskWithChildMapJoinTask(newTask);
+      }
+      return newTask;
+    }
+    long ThresholdOfSmallTblSizeSum=HiveConf.getLongVar(conf,HiveConf.ConfVars.HIVESMALLTABLESFILESIZE);
     for (int i=0; i < numAliases; i++) {
       if (!bigTableCandidates.contains(i)) {
         continue;
       }
-      InputStream in=new ByteArrayInputStream(xml.getBytes("UTF-8"));
-      MapredWork newWork=Utilities.deserializeMapRedWork(in,physicalContext.getConf());
-      MapRedTask newTask=(MapRedTask)TaskFactory.get(newWork,physicalContext.getParseContext().getConf());
-      JoinOperator newJoinOp=getJoinOp(newTask);
-      bigTableAlias=MapJoinProcessor.genMapJoinOpAndLocalWork(newWork,newJoinOp,i);
+      ObjectPair<MapRedTask,String> newTaskAlias=convertTaskToMapJoinTask(xml,i);
+      MapRedTask newTask=newTaskAlias.getFirst();
+      bigTableAlias=newTaskAlias.getSecond();
       Long aliasKnownSize=aliasToSize.get(bigTableAlias);
       if (aliasKnownSize != null && aliasKnownSize.longValue() > 0) {
         long smallTblTotalKnownSize=aliasTotalKnownInputSize - aliasKnownSize.longValue();
@@ -60,7 +104,7 @@
           continue;
         }
       }
-      listWorks.add(newWork);
+      listWorks.add(newTask.getWork());
       listTasks.add(newTask);
       newTask.setTaskTag(Task.CONVERTED_MAPJOIN);
       newTask.setBackupTask(currTask);

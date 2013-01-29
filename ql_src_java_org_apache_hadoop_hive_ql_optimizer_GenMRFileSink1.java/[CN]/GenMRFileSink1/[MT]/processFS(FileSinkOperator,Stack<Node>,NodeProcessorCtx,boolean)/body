@@ -1,0 +1,78 @@
+{
+  GenMRProcContext ctx=(GenMRProcContext)opProcCtx;
+  List<FileSinkOperator> seenFSOps=ctx.getSeenFileSinkOps();
+  if (seenFSOps == null) {
+    seenFSOps=new ArrayList<FileSinkOperator>();
+  }
+  if (!seenFSOps.contains(fsOp)) {
+    seenFSOps.add(fsOp);
+  }
+  ctx.setSeenFileSinkOps(seenFSOps);
+  Task<? extends Serializable> currTask=ctx.getCurrTask();
+  String dest=null;
+  if (chDir) {
+    dest=fsOp.getConf().getFinalDirName();
+    ParseContext parseCtx=ctx.getParseCtx();
+    Context baseCtx=parseCtx.getContext();
+    String tmpDir=baseCtx.getExternalTmpFileURI((new Path(dest)).toUri());
+    FileSinkDesc fileSinkDesc=fsOp.getConf();
+    if (fileSinkDesc.isLinkedFileSink()) {
+      for (      FileSinkDesc fsConf : fileSinkDesc.getLinkedFileSinkDesc()) {
+        String fileName=Utilities.getFileNameFromDirName(fsConf.getDirName());
+        fsConf.setParentDir(tmpDir);
+        fsConf.setDirName(tmpDir + Path.SEPARATOR + fileName);
+      }
+    }
+ else {
+      fileSinkDesc.setDirName(tmpDir);
+    }
+  }
+  Task<MoveWork> mvTask=null;
+  if (!chDir) {
+    mvTask=findMoveTask(ctx.getMvTask(),fsOp);
+  }
+  Operator<? extends OperatorDesc> currTopOp=ctx.getCurrTopOp();
+  String currAliasId=ctx.getCurrAliasId();
+  HashMap<Operator<? extends OperatorDesc>,Task<? extends Serializable>> opTaskMap=ctx.getOpTaskMap();
+  List<Operator<? extends OperatorDesc>> seenOps=ctx.getSeenOps();
+  List<Task<? extends Serializable>> rootTasks=ctx.getRootTasks();
+  if (mvTask != null) {
+    addDependentMoveTasks(ctx,mvTask,currTask);
+  }
+  if (currTopOp != null) {
+    Task<? extends Serializable> mapTask=opTaskMap.get(null);
+    if (mapTask == null) {
+      if (!seenOps.contains(currTopOp)) {
+        seenOps.add(currTopOp);
+        GenMapRedUtils.setTaskPlan(currAliasId,currTopOp,(MapredWork)currTask.getWork(),false,ctx);
+      }
+      opTaskMap.put(null,currTask);
+      if (!rootTasks.contains(currTask)) {
+        rootTasks.add(currTask);
+      }
+    }
+ else {
+      if (!seenOps.contains(currTopOp)) {
+        seenOps.add(currTopOp);
+        GenMapRedUtils.setTaskPlan(currAliasId,currTopOp,(MapredWork)mapTask.getWork(),false,ctx);
+      }
+ else {
+        UnionOperator currUnionOp=ctx.getCurrUnionOp();
+        if (currUnionOp != null) {
+          opTaskMap.put(null,currTask);
+          ctx.setCurrTopOp(null);
+          GenMapRedUtils.initUnionPlan(ctx,currUnionOp,currTask,false);
+          return dest;
+        }
+      }
+    }
+    return dest;
+  }
+  UnionOperator currUnionOp=ctx.getCurrUnionOp();
+  if (currUnionOp != null) {
+    opTaskMap.put(null,currTask);
+    GenMapRedUtils.initUnionPlan(ctx,currUnionOp,currTask,false);
+    return dest;
+  }
+  return dest;
+}
