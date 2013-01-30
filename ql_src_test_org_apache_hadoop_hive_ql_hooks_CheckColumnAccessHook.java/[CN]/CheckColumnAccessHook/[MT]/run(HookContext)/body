@@ -1,0 +1,30 @@
+{
+  Log.info("Running CheckColumnAccessHook");
+  HiveConf conf=hookContext.getConf();
+  if (conf.getBoolVar(HiveConf.ConfVars.HIVE_STATS_COLLECT_SCANCOLS) == false) {
+    return;
+  }
+  QueryPlan plan=hookContext.getQueryPlan();
+  if (plan == null) {
+    return;
+  }
+  ColumnAccessInfo columnAccessInfo=hookContext.getQueryPlan().getColumnAccessInfo();
+  if (columnAccessInfo == null) {
+    return;
+  }
+  LogHelper console=SessionState.getConsole();
+  Map<String,Set<String>> tableToColumnAccessMap=columnAccessInfo.getTableToColumnAccessMap();
+  Map<String,String> outputOrderedMap=new HashMap<String,String>();
+  for (  Map.Entry<String,Set<String>> tableAccess : tableToColumnAccessMap.entrySet()) {
+    StringBuilder perTableInfo=new StringBuilder();
+    perTableInfo.append("Table:").append(tableAccess.getKey()).append("\n");
+    String[] columns=new String[tableAccess.getValue().size()];
+    tableAccess.getValue().toArray(columns);
+    Arrays.sort(columns);
+    perTableInfo.append("Columns:").append(StringUtils.join(columns,',')).append("\n");
+    outputOrderedMap.put(tableAccess.getKey(),perTableInfo.toString());
+  }
+  for (  String perOperatorInfo : outputOrderedMap.values()) {
+    console.printError(perOperatorInfo);
+  }
+}
