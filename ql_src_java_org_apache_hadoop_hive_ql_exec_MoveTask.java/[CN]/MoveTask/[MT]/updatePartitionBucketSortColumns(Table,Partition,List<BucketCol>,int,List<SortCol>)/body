@@ -1,0 +1,46 @@
+{
+  boolean updateBucketCols=false;
+  if (bucketCols != null) {
+    FileSystem fileSys=partn.getPartitionPath().getFileSystem(conf);
+    FileStatus[] fileStatus=Utilities.getFileStatusRecurse(partn.getPartitionPath(),1,fileSys);
+    if (fileStatus.length == numBuckets) {
+      List<String> newBucketCols=new ArrayList<String>();
+      updateBucketCols=true;
+      for (      BucketCol bucketCol : bucketCols) {
+        if (bucketCol.getIndexes().get(0) < partn.getCols().size()) {
+          newBucketCols.add(partn.getCols().get(bucketCol.getIndexes().get(0)).getName());
+        }
+ else {
+          updateBucketCols=false;
+          break;
+        }
+      }
+      if (updateBucketCols) {
+        partn.getBucketCols().clear();
+        partn.getBucketCols().addAll(newBucketCols);
+        partn.getTPartition().getSd().setNumBuckets(numBuckets);
+      }
+    }
+  }
+  boolean updateSortCols=false;
+  if (sortCols != null) {
+    List<Order> newSortCols=new ArrayList<Order>();
+    updateSortCols=true;
+    for (    SortCol sortCol : sortCols) {
+      if (sortCol.getIndexes().get(0) < partn.getCols().size()) {
+        newSortCols.add(new Order(partn.getCols().get(sortCol.getIndexes().get(0)).getName(),sortCol.getSortOrder() == '+' ? BaseSemanticAnalyzer.HIVE_COLUMN_ORDER_ASC : BaseSemanticAnalyzer.HIVE_COLUMN_ORDER_DESC));
+      }
+ else {
+        updateSortCols=false;
+        break;
+      }
+    }
+    if (updateSortCols) {
+      partn.getSortCols().clear();
+      partn.getSortCols().addAll(newSortCols);
+    }
+  }
+  if (updateBucketCols || updateSortCols) {
+    db.alterPartition(table.getDbName(),table.getTableName(),partn);
+  }
+}

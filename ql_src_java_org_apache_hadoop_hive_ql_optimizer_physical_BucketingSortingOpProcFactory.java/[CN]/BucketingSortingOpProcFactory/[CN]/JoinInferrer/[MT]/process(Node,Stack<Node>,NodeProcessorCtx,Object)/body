@@ -1,0 +1,51 @@
+{
+  BucketingSortingCtx bctx=(BucketingSortingCtx)procCtx;
+  JoinOperator jop=(JoinOperator)nd;
+  List<ColumnInfo> colInfos=jop.getSchema().getSignature();
+  Byte[] order=jop.getConf().getTagOrder();
+  BucketCol[] newBucketCols=null;
+  SortCol[] newSortCols=null;
+  for (int i=0; i < jop.getParentOperators().size(); i++) {
+    Operator<? extends OperatorDesc> parent=jop.getParentOperators().get(i);
+    assert(parent instanceof ReduceSinkOperator);
+    ReduceSinkOperator rop=(ReduceSinkOperator)jop.getParentOperators().get(i);
+    String sortOrder=rop.getConf().getOrder();
+    List<BucketCol> bucketCols=new ArrayList<BucketCol>();
+    List<SortCol> sortCols=new ArrayList<SortCol>();
+    for (int keyIndex=0; keyIndex < rop.getConf().getKeyCols().size(); keyIndex++) {
+      for (int valueIndex=0; valueIndex < rop.getConf().getValueCols().size(); valueIndex++) {
+        if (new ExprNodeDescEqualityWrapper(rop.getConf().getValueCols().get(valueIndex)).equals(new ExprNodeDescEqualityWrapper(rop.getConf().getKeyCols().get(keyIndex)))) {
+          String colName=rop.getSchema().getSignature().get(valueIndex).getInternalName();
+          bucketCols.add(new BucketCol(colName,keyIndex));
+          sortCols.add(new SortCol(colName,keyIndex,sortOrder.charAt(keyIndex)));
+          break;
+        }
+      }
+    }
+    if (bucketCols.isEmpty()) {
+      assert(sortCols.isEmpty());
+      continue;
+    }
+    if (newBucketCols == null) {
+      assert(newSortCols == null);
+      newBucketCols=new BucketCol[rop.getConf().getKeyCols().size()];
+      newSortCols=new SortCol[rop.getConf().getKeyCols().size()];
+    }
+ else {
+      assert(newSortCols != null);
+    }
+    byte tag=(byte)rop.getConf().getTag();
+    List<ExprNodeDesc> exprs=jop.getConf().getExprs().get(tag);
+    int colInfosOffset=0;
+    int orderValue=order[tag];
+    for (byte orderIndex=0; orderIndex < order.length; orderIndex++) {
+      if (order[orderIndex] < orderValue) {
+        colInfosOffset+=jop.getConf().getExprs().get(orderIndex).size();
+      }
+    }
+    findBucketingSortingColumns(exprs,colInfos,bucketCols,sortCols,newBucketCols,newSortCols,colInfosOffset);
+  }
+  setBucketingColsIfComplete(bctx,jop,newBucketCols);
+  setSortingColsIfComplete(bctx,jop,newSortCols);
+  return null;
+}

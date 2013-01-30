@@ -1,0 +1,31 @@
+{
+  for (  ExecDriver mapRedTask : mapRedTasks) {
+    if (!mapRedTask.getWork().isFinalMapRed()) {
+      continue;
+    }
+    Operator<? extends OperatorDesc> reducer=mapRedTask.getWork().getReducer();
+    if (reducer == null) {
+      continue;
+    }
+    BucketingSortingCtx bCtx=new BucketingSortingCtx();
+    Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
+    opRules.put(new RuleRegExp("R1",SelectOperator.getOperatorName() + "%"),BucketingSortingOpProcFactory.getSelProc());
+    opRules.put(new RuleExactMatch("R2",GroupByOperator.getOperatorName() + "%"),BucketingSortingOpProcFactory.getGroupByProc());
+    opRules.put(new RuleExactMatch("R3",JoinOperator.getOperatorName() + "%"),BucketingSortingOpProcFactory.getJoinProc());
+    opRules.put(new RuleRegExp("R5",FileSinkOperator.getOperatorName() + "%"),BucketingSortingOpProcFactory.getFileSinkProc());
+    opRules.put(new RuleExactMatch("R6",ExtractOperator.getOperatorName() + "%"),BucketingSortingOpProcFactory.getExtractProc());
+    opRules.put(new RuleRegExp("R7",FilterOperator.getOperatorName() + "%"),BucketingSortingOpProcFactory.getFilterProc());
+    opRules.put(new RuleRegExp("R8",LimitOperator.getOperatorName() + "%"),BucketingSortingOpProcFactory.getLimitProc());
+    opRules.put(new RuleRegExp("R9",LateralViewForwardOperator.getOperatorName() + "%"),BucketingSortingOpProcFactory.getLateralViewForwardProc());
+    opRules.put(new RuleRegExp("R10",LateralViewJoinOperator.getOperatorName() + "%"),BucketingSortingOpProcFactory.getLateralViewJoinProc());
+    opRules.put(new RuleRegExp("R11",".+" + ForwardOperator.getOperatorName() + "%"),BucketingSortingOpProcFactory.getForwardProc());
+    opRules.put(new RuleExactMatch("R12",ForwardOperator.getOperatorName() + "%" + GroupByOperator.getOperatorName()+ "%"),BucketingSortingOpProcFactory.getMultiGroupByProc());
+    Dispatcher disp=new DefaultRuleDispatcher(BucketingSortingOpProcFactory.getDefaultProc(),opRules,bCtx);
+    GraphWalker ogw=new PreOrderWalker(disp);
+    ArrayList<Node> topNodes=new ArrayList<Node>();
+    topNodes.add(reducer);
+    ogw.startWalking(topNodes,null);
+    mapRedTask.getWork().getBucketedColsByDirectory().putAll(bCtx.getBucketedColsByDirectory());
+    mapRedTask.getWork().getSortedColsByDirectory().putAll(bCtx.getSortedColsByDirectory());
+  }
+}
