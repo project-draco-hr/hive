@@ -1,10 +1,10 @@
 {
-  ParseContext parseCtx=ctx.getParseCtx();
+  HiveConf conf=ctx.getParseCtx().getConf();
   FileSinkDesc fsInputDesc=fsInput.getConf();
   RowSchema inputRS=fsInput.getSchema();
   Operator<? extends OperatorDesc> tsMerge=OperatorFactory.get(TableScanDesc.class,inputRS);
   TableDesc ts=(TableDesc)fsInputDesc.getTableInfo().clone();
-  FileSinkDesc fsOutputDesc=new FileSinkDesc(finalName,ts,parseCtx.getConf().getBoolVar(HiveConf.ConfVars.COMPRESSRESULT));
+  FileSinkDesc fsOutputDesc=new FileSinkDesc(finalName,ts,conf.getBoolVar(ConfVars.COMPRESSRESULT));
   FileSinkOperator fsOutput=(FileSinkOperator)OperatorFactory.getAndMakeChild(fsOutputDesc,inputRS,tsMerge);
   DynamicPartitionCtx dpCtx=fsInputDesc.getDynPartCtx();
   if (dpCtx != null && dpCtx.getNumDPCols() > 0) {
@@ -28,11 +28,10 @@
  else {
     fsInputDesc.getTableInfo().getProperties().remove(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS);
   }
-  MapRedTask currTask=(MapRedTask)ctx.getCurrTask();
   MoveWork dummyMv=new MoveWork(null,null,null,new LoadFileDesc(fsInputDesc.getFinalDirName(),finalName,true,null,null),false);
   MapredWork cplan;
-  if (parseCtx.getConf().getBoolVar(HiveConf.ConfVars.HIVEMERGERCFILEBLOCKLEVEL) && fsInputDesc.getTableInfo().getInputFileFormatClass().equals(RCFileInputFormat.class)) {
-    String inputFormatClass=parseCtx.getConf().getVar(HiveConf.ConfVars.HIVEMERGEINPUTFORMATBLOCKLEVEL);
+  if (conf.getBoolVar(ConfVars.HIVEMERGERCFILEBLOCKLEVEL) && fsInputDesc.getTableInfo().getInputFileFormatClass().equals(RCFileInputFormat.class)) {
+    String inputFormatClass=conf.getVar(ConfVars.HIVEMERGEINPUTFORMATBLOCKLEVEL);
     try {
       Class c=(Class<? extends InputFormat>)Class.forName(inputFormatClass);
       LOG.info("RCFile format- Using block level merge");
@@ -44,10 +43,10 @@
     }
   }
  else {
-    cplan=createMergeTask(ctx.getConf(),tsMerge,fsInputDesc);
+    cplan=createMRWorkForMergingFiles(conf,tsMerge,fsInputDesc);
   }
   cplan.setInputformat("org.apache.hadoop.hive.ql.io.CombineHiveInputFormat");
-  ConditionalTask cndTsk=createCondTask(ctx.getConf(),ctx.getCurrTask(),dummyMv,cplan,fsInputDesc.getFinalDirName());
+  ConditionalTask cndTsk=createCondTask(conf,ctx.getCurrTask(),dummyMv,cplan,fsInputDesc.getFinalDirName());
   ConditionalResolverMergeFilesCtx mrCtx=(ConditionalResolverMergeFilesCtx)cndTsk.getResolverCtx();
   mrCtx.setDPCtx(fsInputDesc.getDynPartCtx());
   mrCtx.setLbCtx(fsInputDesc.getLbCtx());
