@@ -1,0 +1,24 @@
+{
+  int waitWindow=rawProfileConnInfo.getWaitWindow();
+  int maxRetries=rawProfileConnInfo.getMaxRetries();
+  String queryId=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEQUERYID);
+  String profilerStatsTable=rawProfileConnInfo.getTableName();
+  String getProfileStats="SELECT * FROM " + profilerStatsTable + " WHERE queryId = ? ";
+  Utilities.SQLCommand<ResultSet> execQuery=new Utilities.SQLCommand<ResultSet>(){
+    @Override public ResultSet run(    PreparedStatement stmt) throws SQLException {
+      return stmt.executeQuery();
+    }
+  }
+;
+  try {
+    PreparedStatement getProfileStatsStmt=Utilities.prepareWithRetry(rawProfileConnInfo.getConnection(),getProfileStats,waitWindow,maxRetries);
+    getProfileStatsStmt.setString(1,queryId);
+    ResultSet result=Utilities.executeWithRetry(execQuery,getProfileStatsStmt,waitWindow,maxRetries);
+    populateAggregateStats(result);
+    getProfileStatsStmt.close();
+    rawProfileConnInfo.getConnection().close();
+  }
+ catch (  Exception e) {
+    LOG.error("executing error: ",e);
+  }
+}
