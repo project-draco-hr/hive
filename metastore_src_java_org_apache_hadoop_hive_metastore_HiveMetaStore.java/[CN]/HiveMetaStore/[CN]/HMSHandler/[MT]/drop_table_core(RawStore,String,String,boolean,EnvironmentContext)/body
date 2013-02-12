@@ -1,0 +1,64 @@
+{
+  boolean success=false;
+  boolean isExternal=false;
+  Path tblPath=null;
+  List<Path> partPaths=null;
+  Table tbl=null;
+  isExternal=false;
+  boolean isIndexTable=false;
+  try {
+    ms.openTransaction();
+    tbl=get_table(dbname,name);
+    if (tbl == null) {
+      throw new NoSuchObjectException(name + " doesn't exist");
+    }
+    if (tbl.getSd() == null) {
+      throw new MetaException("Table metadata is corrupted");
+    }
+    firePreEvent(new PreDropTableEvent(tbl,this));
+    isIndexTable=isIndexTable(tbl);
+    if (isIndexTable) {
+      throw new RuntimeException("The table " + name + " is an index table. Please do drop index instead.");
+    }
+    if (!isIndexTable) {
+      try {
+        List<Index> indexes=ms.getIndexes(dbname,name,Short.MAX_VALUE);
+        while (indexes != null && indexes.size() > 0) {
+          for (          Index idx : indexes) {
+            this.drop_index_by_name(dbname,name,idx.getIndexName(),true);
+          }
+          indexes=ms.getIndexes(dbname,name,Short.MAX_VALUE);
+        }
+      }
+ catch (      TException e) {
+        throw new MetaException(e.getMessage());
+      }
+    }
+    isExternal=isExternal(tbl);
+    if (tbl.getSd().getLocation() != null) {
+      tblPath=new Path(tbl.getSd().getLocation());
+      if (!wh.isWritable(tblPath.getParent())) {
+        throw new MetaException("Table metadata not deleted since " + tblPath.getParent() + " is not writable by "+ hiveConf.getUser());
+      }
+    }
+    partPaths=dropPartitionsAndGetLocations(ms,dbname,name,tblPath,tbl.getPartitionKeys(),deleteData && !isExternal);
+    if (!ms.dropTable(dbname,name)) {
+      throw new MetaException("Unable to drop table");
+    }
+    success=ms.commitTransaction();
+  }
+  finally {
+    if (!success) {
+      ms.rollbackTransaction();
+    }
+ else     if (deleteData && !isExternal) {
+      deletePartitionData(partPaths);
+      deleteTableData(tblPath);
+    }
+    for (    MetaStoreEventListener listener : listeners) {
+      DropTableEvent dropTableEvent=new DropTableEvent(tbl,success,this);
+      dropTableEvent.setEnvironmentContext(envContext);
+      listener.onDropTable(dropTableEvent);
+    }
+  }
+}

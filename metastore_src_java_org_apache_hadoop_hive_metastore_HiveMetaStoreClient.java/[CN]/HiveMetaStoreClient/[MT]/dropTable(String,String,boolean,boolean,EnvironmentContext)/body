@@ -1,0 +1,37 @@
+{
+  Table tbl;
+  try {
+    tbl=getTable(dbname,name);
+  }
+ catch (  NoSuchObjectException e) {
+    if (!ignoreUnknownTab) {
+      throw e;
+    }
+    return;
+  }
+  if (isIndexTable(tbl)) {
+    throw new UnsupportedOperationException("Cannot drop index tables");
+  }
+  HiveMetaHook hook=getHook(tbl);
+  if (hook != null) {
+    hook.preDropTable(tbl);
+  }
+  boolean success=false;
+  try {
+    client.drop_table_with_environment_context(dbname,name,deleteData,envContext);
+    if (hook != null) {
+      hook.commitDropTable(tbl,deleteData);
+    }
+    success=true;
+  }
+ catch (  NoSuchObjectException e) {
+    if (!ignoreUnknownTab) {
+      throw e;
+    }
+  }
+ finally {
+    if (!success && (hook != null)) {
+      hook.rollbackDropTable(tbl);
+    }
+  }
+}
