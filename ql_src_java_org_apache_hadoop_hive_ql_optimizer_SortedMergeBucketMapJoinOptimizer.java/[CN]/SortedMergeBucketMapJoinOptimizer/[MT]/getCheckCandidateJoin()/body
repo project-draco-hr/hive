@@ -1,0 +1,22 @@
+{
+  return new NodeProcessor(){
+    @Override public Object process(    Node nd,    Stack<Node> stack,    NodeProcessorCtx procCtx,    Object... nodeOutputs) throws SemanticException {
+      SortBucketJoinProcCtx smbJoinContext=(SortBucketJoinProcCtx)procCtx;
+      JoinOperator joinOperator=(JoinOperator)nd;
+      int size=stack.size();
+      if (!(stack.get(size - 1) instanceof JoinOperator) || !(stack.get(size - 2) instanceof ReduceSinkOperator)) {
+        smbJoinContext.getRejectedJoinOps().add(joinOperator);
+        return null;
+      }
+      for (int pos=size - 3; pos >= 0; pos--) {
+        Operator<? extends OperatorDesc> op=(Operator<? extends OperatorDesc>)stack.get(pos);
+        if (!op.supportAutomaticSortMergeJoin()) {
+          smbJoinContext.getRejectedJoinOps().add(joinOperator);
+          return null;
+        }
+      }
+      return null;
+    }
+  }
+;
+}

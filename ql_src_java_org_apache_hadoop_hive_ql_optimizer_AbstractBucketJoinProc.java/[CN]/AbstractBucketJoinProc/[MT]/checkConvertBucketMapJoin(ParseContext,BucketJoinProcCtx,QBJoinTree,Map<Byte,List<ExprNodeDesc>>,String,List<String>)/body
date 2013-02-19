@@ -1,0 +1,130 @@
+{
+  LinkedHashMap<String,List<Integer>> aliasToPartitionBucketNumberMapping=new LinkedHashMap<String,List<Integer>>();
+  LinkedHashMap<String,List<List<String>>> aliasToPartitionBucketFileNamesMapping=new LinkedHashMap<String,List<List<String>>>();
+  HashMap<String,Operator<? extends OperatorDesc>> topOps=pGraphContext.getTopOps();
+  Map<TableScanOperator,Table> topToTable=pGraphContext.getTopToTable();
+  LinkedHashMap<Partition,List<String>> bigTblPartsToBucketFileNames=new LinkedHashMap<Partition,List<String>>();
+  LinkedHashMap<Partition,Integer> bigTblPartsToBucketNumber=new LinkedHashMap<Partition,Integer>();
+  Integer[] orders=null;
+  boolean bigTablePartitioned=true;
+  for (int index=0; index < joinAliases.size(); index++) {
+    String alias=joinAliases.get(index);
+    Operator<? extends OperatorDesc> topOp=joinCtx.getAliasToOpInfo().get(alias);
+    if (topOp == null) {
+      return false;
+    }
+    List<String> keys=toColumns(keysMap.get((byte)index));
+    if (keys == null || keys.isEmpty()) {
+      return false;
+    }
+    int oldKeySize=keys.size();
+    TableScanOperator tso=TableAccessAnalyzer.genRootTableScan(topOp,keys);
+    if (tso == null) {
+      return false;
+    }
+    if (topOps.containsValue(tso)) {
+      for (      Map.Entry<String,Operator<? extends OperatorDesc>> topOpEntry : topOps.entrySet()) {
+        if (topOpEntry.getValue() == tso) {
+          String newAlias=topOpEntry.getKey();
+          joinAliases.set(index,newAlias);
+          if (baseBigAlias.equals(alias)) {
+            baseBigAlias=newAlias;
+          }
+          alias=newAlias;
+          break;
+        }
+      }
+    }
+ else {
+      return false;
+    }
+    if (keys.size() != oldKeySize) {
+      return false;
+    }
+    if (orders == null) {
+      orders=new Integer[keys.size()];
+    }
+    Table tbl=topToTable.get(tso);
+    if (tbl.isPartitioned()) {
+      PrunedPartitionList prunedParts;
+      try {
+        prunedParts=pGraphContext.getOpToPartList().get(tso);
+        if (prunedParts == null) {
+          prunedParts=PartitionPruner.prune(tbl,pGraphContext.getOpToPartPruner().get(tso),pGraphContext.getConf(),alias,pGraphContext.getPrunedPartitions());
+          pGraphContext.getOpToPartList().put(tso,prunedParts);
+        }
+      }
+ catch (      HiveException e) {
+        LOG.error(org.apache.hadoop.util.StringUtils.stringifyException(e));
+        throw new SemanticException(e.getMessage(),e);
+      }
+      List<Partition> partitions=prunedParts.getNotDeniedPartns();
+      if (partitions.isEmpty()) {
+        if (!alias.equals(baseBigAlias)) {
+          aliasToPartitionBucketNumberMapping.put(alias,Arrays.<Integer>asList());
+          aliasToPartitionBucketFileNamesMapping.put(alias,new ArrayList<List<String>>());
+        }
+      }
+ else {
+        List<Integer> buckets=new ArrayList<Integer>();
+        List<List<String>> files=new ArrayList<List<String>>();
+        for (        Partition p : partitions) {
+          if (!checkBucketColumns(p.getBucketCols(),keys,orders)) {
+            return false;
+          }
+          List<String> fileNames=getOnePartitionBucketFileNames(p.getDataLocation(),pGraphContext);
+          int bucketCount=p.getBucketCount();
+          if (fileNames.size() != bucketCount) {
+            String msg="The number of buckets for table " + tbl.getTableName() + " partition "+ p.getName()+ " is "+ p.getBucketCount()+ ", whereas the number of files is "+ fileNames.size();
+            throw new SemanticException(ErrorMsg.BUCKETED_TABLE_METADATA_INCORRECT.getMsg(msg));
+          }
+          if (alias.equals(baseBigAlias)) {
+            bigTblPartsToBucketFileNames.put(p,fileNames);
+            bigTblPartsToBucketNumber.put(p,bucketCount);
+          }
+ else {
+            files.add(fileNames);
+            buckets.add(bucketCount);
+          }
+        }
+        if (!alias.equals(baseBigAlias)) {
+          aliasToPartitionBucketNumberMapping.put(alias,buckets);
+          aliasToPartitionBucketFileNamesMapping.put(alias,files);
+        }
+      }
+    }
+ else {
+      if (!checkBucketColumns(tbl.getBucketCols(),keys,orders)) {
+        return false;
+      }
+      List<String> fileNames=getOnePartitionBucketFileNames(tbl.getDataLocation(),pGraphContext);
+      Integer num=new Integer(tbl.getNumBuckets());
+      if (fileNames.size() != num) {
+        String msg="The number of buckets for table " + tbl.getTableName() + " is "+ tbl.getNumBuckets()+ ", whereas the number of files is "+ fileNames.size();
+        throw new SemanticException(ErrorMsg.BUCKETED_TABLE_METADATA_INCORRECT.getMsg(msg));
+      }
+      if (alias.equals(baseBigAlias)) {
+        bigTblPartsToBucketFileNames.put(null,fileNames);
+        bigTblPartsToBucketNumber.put(null,tbl.getNumBuckets());
+        bigTablePartitioned=false;
+      }
+ else {
+        aliasToPartitionBucketNumberMapping.put(alias,Arrays.asList(num));
+        aliasToPartitionBucketFileNamesMapping.put(alias,Arrays.asList(fileNames));
+      }
+    }
+  }
+  for (  Integer bucketNumber : bigTblPartsToBucketNumber.values()) {
+    if (!checkBucketNumberAgainstBigTable(aliasToPartitionBucketNumberMapping,bucketNumber)) {
+      return false;
+    }
+  }
+  context.setAliasToPartitionBucketNumberMapping(aliasToPartitionBucketNumberMapping);
+  context.setAliasToPartitionBucketFileNamesMapping(aliasToPartitionBucketFileNamesMapping);
+  context.setBigTblPartsToBucketFileNames(bigTblPartsToBucketFileNames);
+  context.setBigTblPartsToBucketNumber(bigTblPartsToBucketNumber);
+  context.setJoinAliases(joinAliases);
+  context.setBaseBigAlias(baseBigAlias);
+  context.setBigTablePartitioned(bigTablePartitioned);
+  return true;
+}

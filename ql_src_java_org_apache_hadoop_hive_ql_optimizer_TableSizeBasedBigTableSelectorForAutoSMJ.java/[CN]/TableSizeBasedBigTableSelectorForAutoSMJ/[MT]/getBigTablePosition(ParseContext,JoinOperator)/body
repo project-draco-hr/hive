@@ -1,0 +1,32 @@
+{
+  int bigTablePos=0;
+  long maxSize=0;
+  HiveConf conf=parseCtx.getConf();
+  try {
+    List<TableScanOperator> topOps=new ArrayList<TableScanOperator>();
+    getListTopOps(joinOp,topOps);
+    int currentPos=0;
+    for (    TableScanOperator topOp : topOps) {
+      Table table=parseCtx.getTopToTable().get(topOp);
+      long currentSize=0;
+      if (!table.isPartitioned()) {
+        currentSize=getSize(conf,table);
+      }
+ else {
+        PrunedPartitionList partsList=PartitionPruner.prune(parseCtx.getTopToTable().get(topOp),parseCtx.getOpToPartPruner().get(topOp),parseCtx.getConf(),null,parseCtx.getPrunedPartitions());
+        for (        Partition part : partsList.getNotDeniedPartns()) {
+          currentSize+=getSize(conf,part);
+        }
+      }
+      if (currentSize > maxSize) {
+        maxSize=currentSize;
+        bigTablePos=currentPos;
+      }
+      currentPos++;
+    }
+  }
+ catch (  HiveException e) {
+    throw new SemanticException(e.getMessage());
+  }
+  return bigTablePos;
+}

@@ -1,0 +1,35 @@
+{
+  if (context.getRejectedJoinOps().contains(joinOp)) {
+    return false;
+  }
+  QBJoinTree joinCtx=pGraphContext.getJoinContext().get(joinOp);
+  if (joinCtx == null) {
+    return false;
+  }
+  Class<? extends BigTableSelectorForAutoSMJ> bigTableMatcherClass=null;
+  try {
+    bigTableMatcherClass=(Class<? extends BigTableSelectorForAutoSMJ>)(Class.forName(HiveConf.getVar(pGraphContext.getConf(),HiveConf.ConfVars.HIVE_AUTO_SORTMERGE_JOIN_BIGTABLE_SELECTOR)));
+  }
+ catch (  ClassNotFoundException e) {
+    throw new SemanticException(e.getMessage());
+  }
+  BigTableSelectorForAutoSMJ bigTableMatcher=(BigTableSelectorForAutoSMJ)ReflectionUtils.newInstance(bigTableMatcherClass,null);
+  int bigTablePosition=bigTableMatcher.getBigTablePosition(pGraphContext,joinOp);
+  context.setBigTablePosition(bigTablePosition);
+  String joinAlias=bigTablePosition == 0 ? joinCtx.getLeftAlias() : joinCtx.getRightAliases()[bigTablePosition - 1];
+  joinAlias=QB.getAppendedAliasFromId(joinCtx.getId(),joinAlias);
+  Map<Byte,List<ExprNodeDesc>> keyExprMap=new HashMap<Byte,List<ExprNodeDesc>>();
+  List<Operator<? extends OperatorDesc>> parentOps=joinOp.getParentOperators();
+  for (  Operator<? extends OperatorDesc> parentOp : parentOps) {
+    ReduceSinkDesc rsconf=((ReduceSinkOperator)parentOp).getConf();
+    Byte tag=(byte)rsconf.getTag();
+    List<ExprNodeDesc> keys=rsconf.getKeyCols();
+    keyExprMap.put(tag,keys);
+  }
+  context.setKeyExprMap(keyExprMap);
+  String[] srcs=joinCtx.getBaseSrc();
+  for (int srcPos=0; srcPos < srcs.length; srcPos++) {
+    srcs[srcPos]=QB.getAppendedAliasFromId(joinCtx.getId(),srcs[srcPos]);
+  }
+  return checkConvertBucketMapJoin(pGraphContext,context,joinCtx,keyExprMap,joinAlias,Arrays.asList(srcs));
+}
