@@ -1,0 +1,30 @@
+{
+  String tblName=getUnescapedName((ASTNode)ast.getChild(0));
+  Table tab=null;
+  try {
+    tab=db.getTable(db.getCurrentDatabase(),tblName,true);
+    inputs.add(new ReadEntity(tab));
+  }
+ catch (  HiveException e) {
+    throw new SemanticException(ErrorMsg.INVALID_TABLE.getMsg(tblName));
+  }
+  validateAlterTableType(tab,AlterTableTypes.ALTERPARTITION,false);
+  ASTNode colAst=(ASTNode)ast.getChild(1);
+  assert(colAst.getChildCount() == 2);
+  FieldSchema newCol=new FieldSchema();
+  String name=colAst.getChild(0).getText().toLowerCase();
+  newCol.setName(unescapeIdentifier(name));
+  ASTNode typeChild=(ASTNode)(colAst.getChild(1));
+  newCol.setType(getTypeStringFromAST(typeChild));
+  boolean fFoundColumn=false;
+  for (  FieldSchema col : tab.getTTable().getPartitionKeys()) {
+    if (col.getName().compareTo(newCol.getName()) == 0) {
+      fFoundColumn=true;
+    }
+  }
+  if (!fFoundColumn) {
+    throw new SemanticException(ErrorMsg.INVALID_COLUMN.getMsg(newCol.getName()));
+  }
+  AlterTableAlterPartDesc alterTblAlterPartDesc=new AlterTableAlterPartDesc(db.getCurrentDatabase(),tblName,newCol);
+  rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),alterTblAlterPartDesc),conf));
+}
