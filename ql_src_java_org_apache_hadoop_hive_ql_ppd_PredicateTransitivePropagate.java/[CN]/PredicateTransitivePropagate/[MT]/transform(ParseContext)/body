@@ -1,26 +1,27 @@
 {
   pGraphContext=pctx;
   Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
-  opRules.put(new RuleRegExp("R1","(" + FilterOperator.getOperatorName() + "%"+ ReduceSinkOperator.getOperatorName()+ "%"+ JoinOperator.getOperatorName()+ "%)|"+ "("+ FilterOperator.getOperatorName()+ "%"+ ReduceSinkOperator.getOperatorName()+ "%"+ MapJoinOperator.getOperatorName()+ "%)"),new JoinTransitive());
+  opRules.put(new RuleRegExp("R1","(" + FilterOperator.getOperatorName() + "%"+ ReduceSinkOperator.getOperatorName()+ "%"+ JoinOperator.getOperatorName()+ "%)"),new JoinTransitive());
   TransitiveContext context=new TransitiveContext();
   Dispatcher disp=new DefaultRuleDispatcher(null,opRules,context);
   GraphWalker ogw=new PreOrderWalker(disp);
   List<Node> topNodes=new ArrayList<Node>();
   topNodes.addAll(pGraphContext.getTopOps().values());
   ogw.startWalking(topNodes,null);
-  Map<ReduceSinkOperator,ExprNodeDesc> newFilters=context.getNewfilters();
-  for (  Map.Entry<ReduceSinkOperator,ExprNodeDesc> entry : newFilters.entrySet()) {
+  Map<ReduceSinkOperator,List<ExprNodeDesc>> newFilters=context.getNewfilters();
+  for (  Map.Entry<ReduceSinkOperator,List<ExprNodeDesc>> entry : newFilters.entrySet()) {
     ReduceSinkOperator reducer=entry.getKey();
     Operator<?> parent=reducer.getParentOperators().get(0);
-    ExprNodeDesc expr=entry.getValue();
+    List<ExprNodeDesc> exprs=entry.getValue();
     if (parent instanceof FilterOperator) {
-      ExprNodeDesc prev=((FilterOperator)parent).getConf().getPredicate();
-      ExprNodeDesc merged=ExprNodeDescUtils.mergePredicates(prev,expr);
+      exprs=ExprNodeDescUtils.split(((FilterOperator)parent).getConf().getPredicate(),exprs);
+      ExprNodeDesc merged=ExprNodeDescUtils.mergePredicates(exprs);
       ((FilterOperator)parent).getConf().setPredicate(merged);
     }
  else {
+      ExprNodeDesc merged=ExprNodeDescUtils.mergePredicates(exprs);
       RowResolver parentRR=pGraphContext.getOpParseCtx().get(parent).getRowResolver();
-      Operator<FilterDesc> newFilter=createFilter(reducer,parent,parentRR,expr);
+      Operator<FilterDesc> newFilter=createFilter(reducer,parent,parentRR,merged);
       pGraphContext.getOpParseCtx().put(newFilter,new OpParseContext(parentRR));
     }
   }

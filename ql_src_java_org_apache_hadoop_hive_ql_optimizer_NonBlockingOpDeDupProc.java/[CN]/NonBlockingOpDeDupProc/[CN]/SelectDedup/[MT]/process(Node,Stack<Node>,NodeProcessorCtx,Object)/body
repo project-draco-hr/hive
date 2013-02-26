@@ -1,0 +1,27 @@
+{
+  SelectOperator cSEL=(SelectOperator)nd;
+  SelectOperator pSEL=(SelectOperator)stack.get(stack.size() - 2);
+  if (pSEL.getNumChild() > 1) {
+    return null;
+  }
+  if (pSEL.getConf().isSelStarNoCompute()) {
+    return null;
+  }
+  if (!cSEL.getConf().isSelStarNoCompute()) {
+    Operator<?> terminal=ExprNodeDescUtils.getSingleParent(pSEL,null);
+    Set<String> funcOutputs=getFunctionOutputs(pSEL.getConf().getOutputColumnNames(),pSEL.getConf().getColList());
+    List<ExprNodeDesc> sources=cSEL.getConf().getColList();
+    if (!funcOutputs.isEmpty() && !checkReferences(sources,funcOutputs)) {
+      return null;
+    }
+    pSEL.getConf().setColList(ExprNodeDescUtils.backtrack(sources,pSEL,terminal));
+    pSEL.getConf().setOutputColumnNames(cSEL.getConf().getOutputColumnNames());
+    pSEL.setSchema(cSEL.getSchema());
+  }
+  pSEL.getConf().setSelectStar(cSEL.getConf().isSelectStar());
+  pSEL.removeChildAndAdoptItsChildren(cSEL);
+  cSEL.setParentOperators(null);
+  cSEL.setChildOperators(null);
+  cSEL=null;
+  return null;
+}
