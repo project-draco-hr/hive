@@ -10,40 +10,41 @@
   totalSz=0;
   noOuterJoin=conf.isNoOuterJoin();
   filterMap=conf.getFilterMap();
-  joinKeys=new HashMap<Byte,List<ExprNodeEvaluator>>();
+  int tagLen=conf.getTagLength();
+  joinKeys=new List[tagLen];
   JoinUtil.populateJoinKeyValue(joinKeys,conf.getKeys(),posBigTableAlias);
-  joinKeysObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinKeys,inputObjInspectors,posBigTableAlias);
-  joinKeysStandardObjectInspectors=JoinUtil.getStandardObjectInspectors(joinKeysObjectInspectors,posBigTableAlias);
-  joinValues=new HashMap<Byte,List<ExprNodeEvaluator>>();
+  joinKeysObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinKeys,inputObjInspectors,posBigTableAlias,tagLen);
+  joinKeysStandardObjectInspectors=JoinUtil.getStandardObjectInspectors(joinKeysObjectInspectors,posBigTableAlias,tagLen);
+  joinValues=new List[tagLen];
   JoinUtil.populateJoinKeyValue(joinValues,conf.getExprs(),posBigTableAlias);
-  joinValuesObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinValues,inputObjInspectors,posBigTableAlias);
-  joinValuesStandardObjectInspectors=JoinUtil.getStandardObjectInspectors(joinValuesObjectInspectors,posBigTableAlias);
-  joinFilters=new HashMap<Byte,List<ExprNodeEvaluator>>();
+  joinValuesObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinValues,inputObjInspectors,posBigTableAlias,tagLen);
+  joinValuesStandardObjectInspectors=JoinUtil.getStandardObjectInspectors(joinValuesObjectInspectors,posBigTableAlias,tagLen);
+  joinFilters=new List[tagLen];
   JoinUtil.populateJoinKeyValue(joinFilters,conf.getFilters(),posBigTableAlias);
-  joinFilterObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinFilters,inputObjInspectors,posBigTableAlias);
+  joinFilterObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinFilters,inputObjInspectors,posBigTableAlias,tagLen);
   if (noOuterJoin) {
     rowContainerStandardObjectInspectors=joinValuesStandardObjectInspectors;
   }
  else {
-    Map<Byte,List<ObjectInspector>> rowContainerObjectInspectors=new HashMap<Byte,List<ObjectInspector>>();
+    List<ObjectInspector>[] rowContainerObjectInspectors=new List[tagLen];
     for (    Byte alias : order) {
       if (alias == posBigTableAlias) {
         continue;
       }
-      List<ObjectInspector> rcOIs=joinValuesObjectInspectors.get(alias);
+      List<ObjectInspector> rcOIs=joinValuesObjectInspectors[alias];
       if (filterMap != null && filterMap[alias] != null) {
         rcOIs=new ArrayList<ObjectInspector>(rcOIs);
         rcOIs.add(PrimitiveObjectInspectorFactory.writableByteObjectInspector);
       }
-      rowContainerObjectInspectors.put(alias,rcOIs);
+      rowContainerObjectInspectors[alias]=rcOIs;
     }
-    rowContainerStandardObjectInspectors=getStandardObjectInspectors(rowContainerObjectInspectors);
+    rowContainerStandardObjectInspectors=getStandardObjectInspectors(rowContainerObjectInspectors,tagLen);
   }
   metadataValueTag=new int[numAliases];
   for (int pos=0; pos < numAliases; pos++) {
     metadataValueTag[pos]=-1;
   }
-  mapJoinTables=new HashMap<Byte,HashMapWrapper<AbstractMapJoinKey,MapJoinObjectValue>>();
+  mapJoinTables=new HashMapWrapper[tagLen];
   int hashTableThreshold=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVEHASHTABLETHRESHOLD);
   float hashTableLoadFactor=HiveConf.getFloatVar(hconf,HiveConf.ConfVars.HIVEHASHTABLELOADFACTOR);
   float hashTableMaxMemoryUsage=this.getConf().getHashtableMemoryUsage();
@@ -56,6 +57,6 @@
       continue;
     }
     HashMapWrapper<AbstractMapJoinKey,MapJoinObjectValue> hashTable=new HashMapWrapper<AbstractMapJoinKey,MapJoinObjectValue>(hashTableThreshold,hashTableLoadFactor,hashTableMaxMemoryUsage);
-    mapJoinTables.put(pos,hashTable);
+    mapJoinTables[pos]=hashTable;
   }
 }

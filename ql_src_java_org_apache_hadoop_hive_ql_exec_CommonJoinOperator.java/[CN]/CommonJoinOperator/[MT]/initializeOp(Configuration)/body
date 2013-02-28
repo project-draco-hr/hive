@@ -4,33 +4,34 @@
   heartbeatInterval=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVESENDHEARTBEAT);
   countAfterReport=0;
   totalSz=0;
-  storage=new HashMap<Byte,AbstractRowContainer<ArrayList<Object>>>();
+  int tagLen=conf.getTagLength();
+  storage=new AbstractRowContainer[tagLen];
   numAliases=conf.getExprs().size();
-  joinValues=new HashMap<Byte,List<ExprNodeEvaluator>>();
-  joinFilters=new HashMap<Byte,List<ExprNodeEvaluator>>();
+  joinValues=new List[tagLen];
+  joinFilters=new List[tagLen];
   order=conf.getTagOrder();
   condn=conf.getConds();
   nullsafes=conf.getNullSafes();
   noOuterJoin=conf.isNoOuterJoin();
   totalSz=JoinUtil.populateJoinKeyValue(joinValues,conf.getExprs(),order,NOTSKIPBIGTABLE);
-  joinFilters=new HashMap<Byte,List<ExprNodeEvaluator>>();
+  joinFilters=new List[tagLen];
   JoinUtil.populateJoinKeyValue(joinFilters,conf.getFilters(),order,NOTSKIPBIGTABLE);
-  joinValuesObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinValues,inputObjInspectors,NOTSKIPBIGTABLE);
-  joinFilterObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinFilters,inputObjInspectors,NOTSKIPBIGTABLE);
-  joinValuesStandardObjectInspectors=JoinUtil.getStandardObjectInspectors(joinValuesObjectInspectors,NOTSKIPBIGTABLE);
+  joinValuesObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinValues,inputObjInspectors,NOTSKIPBIGTABLE,tagLen);
+  joinFilterObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinFilters,inputObjInspectors,NOTSKIPBIGTABLE,tagLen);
+  joinValuesStandardObjectInspectors=JoinUtil.getStandardObjectInspectors(joinValuesObjectInspectors,NOTSKIPBIGTABLE,tagLen);
   filterMap=conf.getFilterMap();
   if (noOuterJoin) {
     rowContainerStandardObjectInspectors=joinValuesStandardObjectInspectors;
   }
  else {
-    Map<Byte,List<ObjectInspector>> rowContainerObjectInspectors=new HashMap<Byte,List<ObjectInspector>>();
+    List<ObjectInspector>[] rowContainerObjectInspectors=new List[tagLen];
     for (    Byte alias : order) {
       ArrayList<ObjectInspector> rcOIs=new ArrayList<ObjectInspector>();
-      rcOIs.addAll(joinValuesObjectInspectors.get(alias));
+      rcOIs.addAll(joinValuesObjectInspectors[alias]);
       rcOIs.add(PrimitiveObjectInspectorFactory.writableByteObjectInspector);
-      rowContainerObjectInspectors.put(alias,rcOIs);
+      rowContainerObjectInspectors[alias]=rcOIs;
     }
-    rowContainerStandardObjectInspectors=JoinUtil.getStandardObjectInspectors(rowContainerObjectInspectors,NOTSKIPBIGTABLE);
+    rowContainerStandardObjectInspectors=JoinUtil.getStandardObjectInspectors(rowContainerObjectInspectors,NOTSKIPBIGTABLE,tagLen);
   }
   dummyObj=new Object[numAliases];
   dummyObjVectors=new RowContainer[numAliases];
@@ -47,11 +48,11 @@
       nr.add(new ByteWritable());
     }
     dummyObj[pos]=nr;
-    RowContainer<ArrayList<Object>> values=JoinUtil.getRowContainer(hconf,rowContainerStandardObjectInspectors.get((byte)pos),alias,1,spillTableDesc,conf,!hasFilter(pos),reporter);
+    RowContainer<ArrayList<Object>> values=JoinUtil.getRowContainer(hconf,rowContainerStandardObjectInspectors[pos],alias,1,spillTableDesc,conf,!hasFilter(pos),reporter);
     values.add((ArrayList<Object>)dummyObj[pos]);
     dummyObjVectors[pos]=values;
-    RowContainer rc=JoinUtil.getRowContainer(hconf,rowContainerStandardObjectInspectors.get((byte)pos),alias,joinCacheSize,spillTableDesc,conf,!hasFilter(pos),reporter);
-    storage.put(pos,rc);
+    RowContainer rc=JoinUtil.getRowContainer(hconf,rowContainerStandardObjectInspectors[pos],alias,joinCacheSize,spillTableDesc,conf,!hasFilter(pos),reporter);
+    storage[pos]=rc;
     pos++;
   }
   forwardCache=new Object[totalSz];
@@ -61,5 +62,5 @@
       hasLeftSemiJoin=true;
     }
   }
-  LOG.info("JOIN " + ((StructObjectInspector)outputObjInspector).getTypeName() + " totalsz = "+ totalSz);
+  LOG.info("JOIN " + outputObjInspector.getTypeName() + " totalsz = "+ totalSz);
 }
