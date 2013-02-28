@@ -6,6 +6,7 @@
   boolean verbose=false;
   boolean columnSizes=false;
   boolean pretty=false;
+  boolean fileSizes=false;
   if (args.length < 1 || args.length > 3) {
     printUsage(null);
   }
@@ -28,6 +29,9 @@
       columnSizes=true;
       pretty=true;
     }
+ else     if (arg.equals("--file-sizes")) {
+      fileSizes=true;
+    }
  else     if (fileName == null) {
       fileName=new Path(arg);
     }
@@ -49,9 +53,12 @@
   }
   FileSplit split=new FileSplit(fileName,start,length,new JobConf(conf));
   RCFileRecordReader recordReader=new RCFileRecordReader(conf,split);
-  if (columnSizes) {
+  if (columnSizes || fileSizes) {
     long[] compressedColumnSizes=null;
     long[] uncompressedColumnSizes=null;
+    long rowNo=0;
+    long uncompressedFileSize=0;
+    long compressedFileSize=0;
     while (recordReader.nextBlock()) {
       KeyBuffer keyBuffer=recordReader.getKeyBuffer();
       if (uncompressedColumnSizes == null) {
@@ -64,8 +71,9 @@
         uncompressedColumnSizes[i]+=keyBuffer.getEachColumnUncompressedValueLen()[i];
         compressedColumnSizes[i]+=keyBuffer.getEachColumnValueLen()[i];
       }
+      rowNo+=keyBuffer.getNumberRows();
     }
-    if (uncompressedColumnSizes != null && compressedColumnSizes != null) {
+    if (columnSizes && uncompressedColumnSizes != null && compressedColumnSizes != null) {
       for (int i=0; i < uncompressedColumnSizes.length; i++) {
         if (pretty) {
           System.out.println("Column " + i + ": Uncompressed size: "+ uncompressedColumnSizes[i]+ " Compressed size: "+ compressedColumnSizes[i]);
@@ -74,6 +82,15 @@
           System.out.print(i + TAB + uncompressedColumnSizes[i]+ TAB+ compressedColumnSizes[i]+ NEWLINE);
         }
       }
+    }
+    if (fileSizes) {
+      if (uncompressedColumnSizes != null && compressedColumnSizes != null) {
+        for (int i=0; i < uncompressedColumnSizes.length; i++) {
+          uncompressedFileSize+=uncompressedColumnSizes[i];
+          compressedFileSize+=compressedColumnSizes[i];
+        }
+      }
+      System.out.print("File size (uncompressed): " + uncompressedFileSize + ". File size (compressed): "+ compressedFileSize+ ". Number of rows: "+ rowNo+ "."+ NEWLINE);
     }
     System.out.flush();
     return 0;
