@@ -1,0 +1,32 @@
+{
+  tcCtx.setUnparseTranslator(unparseTranslator);
+  Map<ASTNode,ExprNodeDesc> nodeOutputs=TypeCheckProcFactory.genExprNode(expr,tcCtx);
+  ExprNodeDesc desc=(ExprNodeDesc)nodeOutputs.get(expr);
+  if (desc == null) {
+    String errMsg=tcCtx.getError();
+    if (errMsg == null) {
+      errMsg="Error in parsing ";
+    }
+    throw new SemanticException(errMsg);
+  }
+  if (!unparseTranslator.isEnabled()) {
+    return nodeOutputs;
+  }
+  for (  Map.Entry<ASTNode,ExprNodeDesc> entry : nodeOutputs.entrySet()) {
+    if (!(entry.getValue() instanceof ExprNodeColumnDesc)) {
+      continue;
+    }
+    ASTNode node=entry.getKey();
+    ExprNodeColumnDesc columnDesc=(ExprNodeColumnDesc)entry.getValue();
+    if ((columnDesc.getTabAlias() == null) || (columnDesc.getTabAlias().length() == 0)) {
+      continue;
+    }
+    String[] tmp=input.reverseLookup(columnDesc.getColumn());
+    StringBuilder replacementText=new StringBuilder();
+    replacementText.append(HiveUtils.unparseIdentifier(tmp[0]));
+    replacementText.append(".");
+    replacementText.append(HiveUtils.unparseIdentifier(tmp[1]));
+    unparseTranslator.addTranslation(node,replacementText.toString());
+  }
+  return nodeOutputs;
+}
