@@ -1,0 +1,62 @@
+{
+  if (current.position() == (codec == null ? 0 : HEADER_SIZE)) {
+    return;
+  }
+  flip();
+  if (codec == null) {
+    receiver.output(current);
+    getNewInputBuffer();
+  }
+ else {
+    if (compressed == null) {
+      compressed=getNewOutputBuffer();
+    }
+ else     if (overflow == null) {
+      overflow=getNewOutputBuffer();
+    }
+    int sizePosn=compressed.position();
+    compressed.position(compressed.position() + HEADER_SIZE);
+    if (codec.compress(current,compressed,overflow)) {
+      uncompressedBytes=0;
+      current.position(HEADER_SIZE);
+      current.limit(current.capacity());
+      int totalBytes=compressed.position() - sizePosn - HEADER_SIZE;
+      if (overflow != null) {
+        totalBytes+=overflow.position();
+      }
+      compressedBytes+=totalBytes + HEADER_SIZE;
+      writeHeader(compressed,sizePosn,totalBytes,false);
+      if (compressed.remaining() < HEADER_SIZE) {
+        compressed.flip();
+        receiver.output(compressed);
+        compressed=overflow;
+        overflow=null;
+      }
+    }
+ else {
+      compressedBytes+=uncompressedBytes + HEADER_SIZE;
+      uncompressedBytes=0;
+      if (sizePosn != 0) {
+        compressed.position(sizePosn);
+        compressed.flip();
+        receiver.output(compressed);
+        compressed=null;
+        if (overflow != null) {
+          overflow.clear();
+          compressed=overflow;
+          overflow=null;
+        }
+      }
+ else {
+        compressed.clear();
+        if (overflow != null) {
+          overflow.clear();
+        }
+      }
+      current.position(0);
+      writeHeader(current,0,current.limit() - HEADER_SIZE,true);
+      receiver.output(current);
+      getNewInputBuffer();
+    }
+  }
+}

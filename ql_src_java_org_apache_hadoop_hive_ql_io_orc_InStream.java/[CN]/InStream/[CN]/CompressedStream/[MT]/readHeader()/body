@@ -1,0 +1,31 @@
+{
+  if (limit - offset > OutStream.HEADER_SIZE) {
+    int chunkLength=((0xff & array[offset + 2]) << 15) | ((0xff & array[offset + 1]) << 7) | ((0xff & array[offset]) >> 1);
+    if (chunkLength > bufferSize) {
+      throw new IllegalArgumentException("Buffer size too small. size = " + bufferSize + " needed = "+ chunkLength);
+    }
+    boolean isOriginal=(array[offset] & 0x01) == 1;
+    offset+=OutStream.HEADER_SIZE;
+    if (isOriginal) {
+      isUncompressedOriginal=true;
+      uncompressed=ByteBuffer.wrap(array,offset,chunkLength);
+    }
+ else {
+      if (isUncompressedOriginal) {
+        uncompressed=ByteBuffer.allocate(bufferSize);
+        isUncompressedOriginal=false;
+      }
+ else       if (uncompressed == null) {
+        uncompressed=ByteBuffer.allocate(bufferSize);
+      }
+ else {
+        uncompressed.clear();
+      }
+      codec.decompress(ByteBuffer.wrap(array,offset,chunkLength),uncompressed);
+    }
+    offset+=chunkLength;
+  }
+ else {
+    throw new IllegalStateException("Can't read header");
+  }
+}

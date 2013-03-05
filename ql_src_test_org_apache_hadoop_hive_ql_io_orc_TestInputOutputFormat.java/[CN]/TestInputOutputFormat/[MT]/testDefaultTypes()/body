@@ -1,0 +1,46 @@
+{
+  JobConf job=new JobConf(conf);
+  Properties properties=new Properties();
+  StructObjectInspector inspector;
+synchronized (TestOrcFile.class) {
+    inspector=(StructObjectInspector)ObjectInspectorFactory.getReflectionObjectInspector(StringRow.class,ObjectInspectorFactory.ObjectInspectorOptions.JAVA);
+  }
+  SerDe serde=new OrcSerde();
+  HiveOutputFormat<?,?> outFormat=new OrcOutputFormat();
+  FileSinkOperator.RecordWriter writer=outFormat.getHiveRecordWriter(conf,testFilePath,StringRow.class,true,properties,Reporter.NULL);
+  writer.write(serde.serialize(new StringRow("owen"),inspector));
+  writer.write(serde.serialize(new StringRow("beth"),inspector));
+  writer.write(serde.serialize(new StringRow("laurel"),inspector));
+  writer.write(serde.serialize(new StringRow("hazen"),inspector));
+  writer.write(serde.serialize(new StringRow("colin"),inspector));
+  writer.write(serde.serialize(new StringRow("miles"),inspector));
+  writer.close(true);
+  serde=new OrcSerde();
+  properties.setProperty("columns","str,str2");
+  serde.initialize(conf,properties);
+  inspector=(StructObjectInspector)serde.getObjectInspector();
+  assertEquals("struct<str:string,str2:string>",inspector.getTypeName());
+  InputFormat<?,?> in=new OrcInputFormat();
+  FileInputFormat.setInputPaths(conf,testFilePath.toString());
+  InputSplit[] splits=in.getSplits(conf,1);
+  assertEquals(1,splits.length);
+  org.apache.hadoop.mapred.RecordReader reader=in.getRecordReader(splits[0],conf,Reporter.NULL);
+  Object key=reader.createKey();
+  Writable value=(Writable)reader.createValue();
+  List<? extends StructField> fields=inspector.getAllStructFieldRefs();
+  StringObjectInspector strInspector=(StringObjectInspector)fields.get(0).getFieldObjectInspector();
+  assertEquals(true,reader.next(key,value));
+  assertEquals("owen",strInspector.getPrimitiveJavaObject(inspector.getStructFieldData(value,fields.get(0))));
+  assertEquals(true,reader.next(key,value));
+  assertEquals("beth",strInspector.getPrimitiveJavaObject(inspector.getStructFieldData(value,fields.get(0))));
+  assertEquals(true,reader.next(key,value));
+  assertEquals("laurel",strInspector.getPrimitiveJavaObject(inspector.getStructFieldData(value,fields.get(0))));
+  assertEquals(true,reader.next(key,value));
+  assertEquals("hazen",strInspector.getPrimitiveJavaObject(inspector.getStructFieldData(value,fields.get(0))));
+  assertEquals(true,reader.next(key,value));
+  assertEquals("colin",strInspector.getPrimitiveJavaObject(inspector.getStructFieldData(value,fields.get(0))));
+  assertEquals(true,reader.next(key,value));
+  assertEquals("miles",strInspector.getPrimitiveJavaObject(inspector.getStructFieldData(value,fields.get(0))));
+  assertEquals(false,reader.next(key,value));
+  reader.close();
+}

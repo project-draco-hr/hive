@@ -1,0 +1,35 @@
+{
+  ensureWriter();
+  if (buildIndex && rowsInIndex != 0) {
+    createRowIndexEntry();
+  }
+  if (rowsInStripe != 0) {
+    int requiredIndexEntries=rowIndexStride == 0 ? 0 : (int)((rowsInStripe + rowIndexStride - 1) / rowIndexStride);
+    OrcProto.StripeFooter.Builder builder=OrcProto.StripeFooter.newBuilder();
+    treeWriter.writeStripe(builder,requiredIndexEntries);
+    long start=rawWriter.getPos();
+    long section=start;
+    long indexEnd=start;
+    for (    Map.Entry<StreamName,BufferedStream> pair : streams.entrySet()) {
+      BufferedStream stream=pair.getValue();
+      stream.flush();
+      stream.spillTo(rawWriter);
+      stream.clear();
+      long end=rawWriter.getPos();
+      StreamName name=pair.getKey();
+      builder.addStreams(OrcProto.Stream.newBuilder().setColumn(name.getColumn()).setKind(name.getKind()).setLength(end - section));
+      section=end;
+      if (StreamName.Area.INDEX == name.getArea()) {
+        indexEnd=end;
+      }
+    }
+    builder.build().writeTo(protobufWriter);
+    protobufWriter.flush();
+    writer.flush();
+    long end=rawWriter.getPos();
+    OrcProto.StripeInformation dirEntry=OrcProto.StripeInformation.newBuilder().setOffset(start).setIndexLength(indexEnd - start).setDataLength(section - indexEnd).setNumberOfRows(rowsInStripe).setFooterLength(end - section).build();
+    stripes.add(dirEntry);
+    rowCount+=rowsInStripe;
+    rowsInStripe=0;
+  }
+}

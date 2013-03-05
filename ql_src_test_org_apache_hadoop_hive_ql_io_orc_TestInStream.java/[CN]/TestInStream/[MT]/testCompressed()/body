@@ -1,0 +1,28 @@
+{
+  OutputCollector collect=new OutputCollector();
+  CompressionCodec codec=new ZlibCodec();
+  OutStream out=new OutStream("test",300,codec,collect);
+  PositionCollector[] positions=new PositionCollector[1024];
+  for (int i=0; i < 1024; ++i) {
+    positions[i]=new PositionCollector();
+    out.getPosition(positions[i]);
+    out.write(i);
+  }
+  out.flush();
+  assertEquals("test",out.toString());
+  assertEquals(961,collect.buffer.size());
+  ByteBuffer inBuf=ByteBuffer.allocate(collect.buffer.size());
+  collect.buffer.setByteBuffer(inBuf,0,collect.buffer.size());
+  inBuf.flip();
+  InStream in=InStream.create("test",inBuf,codec,300);
+  assertEquals("compressed stream test base: 0 offset: 0 limit: 961",in.toString());
+  for (int i=0; i < 1024; ++i) {
+    int x=in.read();
+    assertEquals(i & 0xff,x);
+  }
+  assertEquals(0,in.available());
+  for (int i=1023; i >= 0; --i) {
+    in.seek(positions[i]);
+    assertEquals(i & 0xff,in.read());
+  }
+}

@@ -1,0 +1,28 @@
+{
+  OutputCollector collect=new OutputCollector();
+  OutStream out=new OutStream("test",100,null,collect);
+  PositionCollector[] positions=new PositionCollector[1024];
+  for (int i=0; i < 1024; ++i) {
+    positions[i]=new PositionCollector();
+    out.getPosition(positions[i]);
+    out.write(i);
+  }
+  out.flush();
+  assertEquals(1024,collect.buffer.size());
+  for (int i=0; i < 1024; ++i) {
+    assertEquals((byte)i,collect.buffer.get(i));
+  }
+  ByteBuffer inBuf=ByteBuffer.allocate(collect.buffer.size());
+  collect.buffer.setByteBuffer(inBuf,0,collect.buffer.size());
+  inBuf.flip();
+  InStream in=InStream.create("test",inBuf,null,100);
+  assertEquals("uncompressed stream test base: 0 offset: 0 limit: 1024",in.toString());
+  for (int i=0; i < 1024; ++i) {
+    int x=in.read();
+    assertEquals(i & 0xff,x);
+  }
+  for (int i=1023; i >= 0; --i) {
+    in.seek(positions[i]);
+    assertEquals(i & 0xff,in.read());
+  }
+}

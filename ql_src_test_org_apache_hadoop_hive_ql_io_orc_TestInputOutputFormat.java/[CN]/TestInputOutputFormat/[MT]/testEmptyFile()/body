@@ -1,0 +1,24 @@
+{
+  JobConf job=new JobConf(conf);
+  Properties properties=new Properties();
+  HiveOutputFormat<?,?> outFormat=new OrcOutputFormat();
+  FileSinkOperator.RecordWriter writer=outFormat.getHiveRecordWriter(conf,testFilePath,MyRow.class,true,properties,Reporter.NULL);
+  writer.close(true);
+  properties.setProperty("columns","x,y");
+  properties.setProperty("columns.types","int:int");
+  SerDe serde=new OrcSerde();
+  serde.initialize(conf,properties);
+  InputFormat<?,?> in=new OrcInputFormat();
+  FileInputFormat.setInputPaths(conf,testFilePath.toString());
+  InputSplit[] splits=in.getSplits(conf,1);
+  assertEquals(1,splits.length);
+  conf.set("hive.io.file.readcolumn.ids","0,1");
+  org.apache.hadoop.mapred.RecordReader reader=in.getRecordReader(splits[0],conf,Reporter.NULL);
+  Object key=reader.createKey();
+  Object value=reader.createValue();
+  assertEquals(0.0,reader.getProgress(),0.00001);
+  assertEquals(0,reader.getPos());
+  assertEquals(false,reader.next(key,value));
+  reader.close();
+  assertEquals(null,serde.getSerDeStats());
+}

@@ -1,0 +1,56 @@
+{
+  ObjectInspector inspector;
+synchronized (TestOrcFile.class) {
+    inspector=ObjectInspectorFactory.getReflectionObjectInspector(BigRow.class,ObjectInspectorFactory.ObjectInspectorOptions.JAVA);
+  }
+  Writer writer=OrcFile.createWriter(fs,testFilePath,inspector,200000,CompressionKind.ZLIB,65536,1000);
+  Random rand=new Random(42);
+  final int COUNT=32768;
+  long[] intValues=new long[COUNT];
+  double[] doubleValues=new double[COUNT];
+  String[] stringValues=new String[COUNT];
+  BytesWritable[] byteValues=new BytesWritable[COUNT];
+  String[] words=new String[128];
+  for (int i=0; i < words.length; ++i) {
+    words[i]=Integer.toHexString(rand.nextInt());
+  }
+  for (int i=0; i < COUNT / 2; ++i) {
+    intValues[2 * i]=rand.nextLong();
+    intValues[2 * i + 1]=intValues[2 * i];
+    stringValues[2 * i]=words[rand.nextInt(words.length)];
+    stringValues[2 * i + 1]=stringValues[2 * i];
+  }
+  for (int i=0; i < COUNT; ++i) {
+    doubleValues[i]=rand.nextDouble();
+    byte[] buf=new byte[20];
+    rand.nextBytes(buf);
+    byteValues[i]=new BytesWritable(buf);
+  }
+  for (int i=0; i < COUNT; ++i) {
+    writer.addRow(createRandomRow(intValues,doubleValues,stringValues,byteValues,words,i));
+  }
+  writer.close();
+  writer=null;
+  Reader reader=OrcFile.createReader(fs,testFilePath);
+  assertEquals(COUNT,reader.getNumberOfRows());
+  RecordReader rows=reader.rows(null);
+  OrcStruct row=null;
+  for (int i=COUNT - 1; i >= 0; --i) {
+    rows.seekToRow(i);
+    row=(OrcStruct)rows.next(row);
+    BigRow expected=createRandomRow(intValues,doubleValues,stringValues,byteValues,words,i);
+    assertEquals(expected.boolean1.booleanValue(),((BooleanWritable)row.getFieldValue(0)).get());
+    assertEquals(expected.byte1.byteValue(),((ByteWritable)row.getFieldValue(1)).get());
+    assertEquals(expected.short1.shortValue(),((ShortWritable)row.getFieldValue(2)).get());
+    assertEquals(expected.int1.intValue(),((IntWritable)row.getFieldValue(3)).get());
+    assertEquals(expected.long1.longValue(),((LongWritable)row.getFieldValue(4)).get());
+    assertEquals(expected.float1.floatValue(),((FloatWritable)row.getFieldValue(5)).get(),0.0001);
+    assertEquals(expected.double1.doubleValue(),((DoubleWritable)row.getFieldValue(6)).get(),0.0001);
+    assertEquals(expected.bytes1,row.getFieldValue(7));
+    assertEquals(expected.string1,row.getFieldValue(8));
+    List<InnerStruct> expectedList=expected.middle.list;
+    List<OrcStruct> actualList=(List)((OrcStruct)row.getFieldValue(9)).getFieldValue(0);
+    compareList(expectedList,actualList);
+    compareList(expected.list,(List)row.getFieldValue(10));
+  }
+}
