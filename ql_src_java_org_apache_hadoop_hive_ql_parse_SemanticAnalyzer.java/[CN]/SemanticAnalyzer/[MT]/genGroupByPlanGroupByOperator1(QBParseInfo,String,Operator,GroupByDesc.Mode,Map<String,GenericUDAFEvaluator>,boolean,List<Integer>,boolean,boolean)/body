@@ -40,11 +40,13 @@
     reduceValues=((ReduceSinkDesc)reduceSinkOperatorInfo.getConf()).getValueCols();
   }
   int numDistinctUDFs=0;
+  boolean containsDistinctAggr=false;
   for (  Map.Entry<String,ASTNode> entry : aggregationTrees.entrySet()) {
     ASTNode value=entry.getValue();
     String aggName=unescapeIdentifier(value.getChild(0).getText());
     ArrayList<ExprNodeDesc> aggParameters=new ArrayList<ExprNodeDesc>();
     boolean isDistinct=(value.getType() == HiveParser.TOK_FUNCTIONDI);
+    containsDistinctAggr=containsDistinctAggr || isDistinct;
     boolean partialAggDone=!(distPartAgg || isDistinct);
     if (!partialAggDone) {
       for (int i=1; i < value.getChildCount(); i++) {
@@ -98,7 +100,7 @@
   }
   float groupByMemoryUsage=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVEMAPAGGRHASHMEMORY);
   float memoryThreshold=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVEMAPAGGRMEMORYTHRESHOLD);
-  Operator op=putOpInsertMap(OperatorFactory.getAndMakeChild(new GroupByDesc(mode,outputColumnNames,groupByKeys,aggregations,distPartAgg,groupByMemoryUsage,memoryThreshold,groupingSets,groupingSetsPresent && groupingSetsNeedAdditionalMRJob,groupingSetsPosition),new RowSchema(groupByOutputRowResolver.getColumnInfos()),reduceSinkOperatorInfo),groupByOutputRowResolver);
+  Operator op=putOpInsertMap(OperatorFactory.getAndMakeChild(new GroupByDesc(mode,outputColumnNames,groupByKeys,aggregations,distPartAgg,groupByMemoryUsage,memoryThreshold,groupingSets,groupingSetsPresent && groupingSetsNeedAdditionalMRJob,groupingSetsPosition,containsDistinctAggr),new RowSchema(groupByOutputRowResolver.getColumnInfos()),reduceSinkOperatorInfo),groupByOutputRowResolver);
   op.setColumnExprMap(colExprMap);
   return op;
 }

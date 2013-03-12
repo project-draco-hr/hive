@@ -38,6 +38,7 @@
   }
   HashMap<String,ASTNode> aggregationTrees=parseInfo.getAggregationExprsForClause(dest);
   assert(aggregationTrees != null);
+  boolean containsDistinctAggr=false;
   for (  Map.Entry<String,ASTNode> entry : aggregationTrees.entrySet()) {
     ASTNode value=entry.getValue();
     String aggName=unescapeIdentifier(value.getChild(0).getText());
@@ -49,6 +50,7 @@
       aggParameters.add(paraExprNode);
     }
     boolean isDistinct=value.getType() == HiveParser.TOK_FUNCTIONDI;
+    containsDistinctAggr=containsDistinctAggr || isDistinct;
     boolean isAllColumns=value.getType() == HiveParser.TOK_FUNCTIONSTAR;
     Mode amode=groupByDescModeToUDAFMode(mode,isDistinct);
     GenericUDAFEvaluator genericUDAFEvaluator=getGenericUDAFEvaluator(aggName,aggParameters,value,isDistinct,isAllColumns);
@@ -64,7 +66,7 @@
   }
   float groupByMemoryUsage=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVEMAPAGGRHASHMEMORY);
   float memoryThreshold=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVEMAPAGGRMEMORYTHRESHOLD);
-  Operator op=putOpInsertMap(OperatorFactory.getAndMakeChild(new GroupByDesc(mode,outputColumnNames,groupByKeys,aggregations,false,groupByMemoryUsage,memoryThreshold,groupingSetKeys,groupingSetsPresent,groupingSetsPosition),new RowSchema(groupByOutputRowResolver.getColumnInfos()),inputOperatorInfo),groupByOutputRowResolver);
+  Operator op=putOpInsertMap(OperatorFactory.getAndMakeChild(new GroupByDesc(mode,outputColumnNames,groupByKeys,aggregations,false,groupByMemoryUsage,memoryThreshold,groupingSetKeys,groupingSetsPresent,groupingSetsPosition,containsDistinctAggr),new RowSchema(groupByOutputRowResolver.getColumnInfos()),inputOperatorInfo),groupByOutputRowResolver);
   op.setColumnExprMap(colExprMap);
   return op;
 }
