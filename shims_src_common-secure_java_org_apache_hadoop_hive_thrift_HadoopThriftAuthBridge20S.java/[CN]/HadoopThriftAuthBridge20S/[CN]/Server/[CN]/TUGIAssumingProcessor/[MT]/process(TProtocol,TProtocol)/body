@@ -23,18 +23,25 @@
   remoteAddress.set(socket.getInetAddress());
   UserGroupInformation clientUgi=null;
   try {
-    clientUgi=UserGroupInformation.createProxyUser(endUser,UserGroupInformation.getLoginUser());
-    return clientUgi.doAs(new PrivilegedExceptionAction<Boolean>(){
-      public Boolean run(){
-        try {
-          return wrapped.process(inProt,outProt);
-        }
- catch (        TException te) {
-          throw new RuntimeException(te);
+    if (useProxy) {
+      clientUgi=UserGroupInformation.createProxyUser(endUser,UserGroupInformation.getLoginUser());
+      remoteUser.set(clientUgi.getShortUserName());
+      return clientUgi.doAs(new PrivilegedExceptionAction<Boolean>(){
+        public Boolean run(){
+          try {
+            return wrapped.process(inProt,outProt);
+          }
+ catch (          TException te) {
+            throw new RuntimeException(te);
+          }
         }
       }
-    }
 );
+    }
+ else {
+      remoteUser.set(endUser);
+      return wrapped.process(inProt,outProt);
+    }
   }
  catch (  RuntimeException rte) {
     if (rte.getCause() instanceof TException) {

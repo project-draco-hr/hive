@@ -1,0 +1,58 @@
+{
+  JdbcConnectionParams connParams=new JdbcConnectionParams();
+  if (!uri.startsWith(URL_PREFIX)) {
+    throw new IllegalArgumentException("Bad URL format");
+  }
+  if (uri.equalsIgnoreCase(URL_PREFIX)) {
+    connParams.setEmbeddedMode(true);
+    return connParams;
+  }
+  URI jdbcURI=URI.create(uri.substring(URI_JDBC_PREFIX.length()));
+  connParams.setHost(jdbcURI.getHost());
+  if (connParams.getHost() == null) {
+    connParams.setEmbeddedMode(true);
+  }
+ else {
+    int port=jdbcURI.getPort();
+    if (port == -1) {
+      port=Integer.valueOf(DEFAULT_PORT);
+    }
+    connParams.setPort(port);
+  }
+  Pattern pattern=Pattern.compile("([^;]*)=([^;]*)[;]?");
+  String sessVars=jdbcURI.getPath();
+  if ((sessVars == null) || sessVars.isEmpty()) {
+    connParams.setDbName(DEFAULT_DATABASE);
+  }
+ else {
+    sessVars=sessVars.substring(1);
+    if (!sessVars.contains(";")) {
+      connParams.setDbName(sessVars);
+    }
+ else {
+      connParams.setDbName(sessVars.substring(0,sessVars.indexOf(';')));
+      sessVars=sessVars.substring(sessVars.indexOf(';') + 1);
+      if (sessVars != null) {
+        Matcher sessMatcher=pattern.matcher(sessVars);
+        while (sessMatcher.find()) {
+          connParams.getSessionVars().put(sessMatcher.group(1),sessMatcher.group(2));
+        }
+      }
+    }
+  }
+  String confStr=jdbcURI.getQuery();
+  if (confStr != null) {
+    Matcher confMatcher=pattern.matcher(confStr);
+    while (confMatcher.find()) {
+      connParams.getHiveConfs().put(confMatcher.group(1),confMatcher.group(2));
+    }
+  }
+  String varStr=jdbcURI.getFragment();
+  if (varStr != null) {
+    Matcher varMatcher=pattern.matcher(varStr);
+    while (varMatcher.find()) {
+      connParams.getHiveVars().put(varMatcher.group(1),varMatcher.group(2));
+    }
+  }
+  return connParams;
+}

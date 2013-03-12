@@ -26,21 +26,22 @@
   }
   List<File> qFiles=new ArrayList<File>();
   HashMap<String,String> qFilesMap=new HashMap<String,String>();
+  File hiveRootDir=null;
+  File queryDir=null;
   File outDir=null;
   File resultsDir=null;
   File logDir=null;
   try {
-    File inpDir=null;
     if (queryDirectory != null) {
-      inpDir=new File(queryDirectory);
+      queryDir=new File(queryDirectory);
     }
     if (queryFile != null && !queryFile.equals("")) {
       for (      String qFile : queryFile.split(",")) {
         if (includeOnly != null && !includeOnly.contains(qFile)) {
           continue;
         }
-        if (null != inpDir) {
-          qFiles.add(new File(inpDir,qFile));
+        if (null != queryDir) {
+          qFiles.add(new File(queryDir,qFile));
         }
  else {
           qFiles.add(new File(qFile));
@@ -48,23 +49,27 @@
       }
     }
  else     if (queryFileRegex != null && !queryFileRegex.equals("")) {
-      qFiles.addAll(Arrays.asList(inpDir.listFiles(new QFileRegexFilter(queryFileRegex,includeOnly))));
+      qFiles.addAll(Arrays.asList(queryDir.listFiles(new QFileRegexFilter(queryFileRegex,includeOnly))));
     }
  else     if (runDisabled != null && runDisabled.equals("true")) {
-      qFiles.addAll(Arrays.asList(inpDir.listFiles(new DisabledQFileFilter(includeOnly))));
+      qFiles.addAll(Arrays.asList(queryDir.listFiles(new DisabledQFileFilter(includeOnly))));
     }
  else {
-      qFiles.addAll(Arrays.asList(inpDir.listFiles(new QFileFilter(includeOnly))));
+      qFiles.addAll(Arrays.asList(queryDir.listFiles(new QFileFilter(includeOnly))));
     }
     if (excludeQueryFile != null && !excludeQueryFile.equals("")) {
       for (      String qFile : excludeQueryFile.split(",")) {
-        if (null != inpDir) {
-          qFiles.remove(new File(inpDir,qFile));
+        if (null != queryDir) {
+          qFiles.remove(new File(queryDir,qFile));
         }
  else {
           qFiles.remove(new File(qFile));
         }
       }
+    }
+    hiveRootDir=new File(hiveRootDirectory);
+    if (!hiveRootDir.exists()) {
+      throw new BuildException("Hive Root Directory " + hiveRootDir.getCanonicalPath() + " does not exist");
     }
     Collections.sort(qFiles);
     for (    File qFile : qFiles) {
@@ -108,6 +113,8 @@
     }
     VelocityContext ctx=new VelocityContext();
     ctx.put("className",className);
+    ctx.put("hiveRootDir",getEscapedCanonicalPath(hiveRootDir));
+    ctx.put("queryDir",getEscapedCanonicalPath(queryDir));
     ctx.put("qfiles",qFiles);
     ctx.put("qfilesMap",qFilesMap);
     ctx.put("resultsDir",getEscapedCanonicalPath(resultsDir));

@@ -1,0 +1,33 @@
+{
+  setState(OperationState.RUNNING);
+  try {
+    IMetaStoreClient metastoreClient=getParentSession().getMetaStoreClient();
+    String schemaPattern=convertSchemaPattern(schemaName);
+    String tablePattern=convertIdentifierPattern(tableName,true);
+    Pattern columnPattern=null;
+    if (columnName != null) {
+      columnPattern=Pattern.compile(convertIdentifierPattern(columnName,false));
+    }
+    List<String> dbNames=metastoreClient.getDatabases(schemaPattern);
+    Collections.sort(dbNames);
+    for (    String dbName : dbNames) {
+      List<String> tableNames=metastoreClient.getTables(dbName,tablePattern);
+      Collections.sort(tableNames);
+      for (      Table table : metastoreClient.getTableObjectsByName(dbName,tableNames)) {
+        TableSchema schema=new TableSchema(metastoreClient.getSchema(dbName,table.getTableName()));
+        for (        ColumnDescriptor column : schema.getColumnDescriptors()) {
+          if (columnPattern != null && !columnPattern.matcher(column.getName()).matches()) {
+            continue;
+          }
+          Object[] rowData=new Object[]{null,table.getDbName(),table.getTableName(),column.getName(),column.getType().toJavaSQLType(),column.getTypeName(),column.getType().getColumnSize(),null,column.getType().getDecimalDigits(),column.getType().getNumPrecRadix(),DatabaseMetaData.columnNullable,column.getComment(),null,null,null,null,column.getOrdinalPosition(),"YES",null,null,null,null,"NO"};
+          rowSet.addRow(RESULT_SET_SCHEMA,rowData);
+        }
+      }
+    }
+    setState(OperationState.FINISHED);
+  }
+ catch (  Exception e) {
+    setState(OperationState.ERROR);
+    throw new HiveSQLException(e);
+  }
+}
