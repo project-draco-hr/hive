@@ -46,25 +46,27 @@
     if (convertJoinMapJoin) {
       long mapJoinSize=HiveConf.getLongVar(conf,HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASKTHRESHOLD);
       boolean bigTableFound=false;
-      long largestTableSize=0;
+      long largestBigTableCandidateSize=0;
       long sumTableSizes=0;
       for (      String alias : aliasToWork.keySet()) {
+        int tablePosition=getPosition(currWork,joinOp,alias);
+        boolean bigTableCandidate=bigTableCandidates.contains(tablePosition);
         Long size=aliasToSize.get(alias);
         if ((size == null) || (size > mapJoinSize)) {
-          sumTableSizes+=largestTableSize;
-          if (bigTableFound || (sumTableSizes > mapJoinSize)) {
+          sumTableSizes+=largestBigTableCandidateSize;
+          if (bigTableFound || (sumTableSizes > mapJoinSize) || !bigTableCandidate) {
             convertJoinMapJoin=false;
             break;
           }
           bigTableFound=true;
-          bigTablePosition=getPosition(currWork,joinOp,alias);
-          largestTableSize=mapJoinSize + 1;
+          bigTablePosition=tablePosition;
+          largestBigTableCandidateSize=mapJoinSize + 1;
         }
  else {
-          if (size > largestTableSize) {
-            sumTableSizes+=largestTableSize;
-            largestTableSize=size;
-            bigTablePosition=getPosition(currWork,joinOp,alias);
+          if (bigTableCandidate && size > largestBigTableCandidateSize) {
+            bigTablePosition=tablePosition;
+            sumTableSizes+=largestBigTableCandidateSize;
+            largestBigTableCandidateSize=size;
           }
  else {
             sumTableSizes+=size;
