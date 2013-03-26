@@ -1,11 +1,11 @@
 {
-  LinkedHashMap<String,List<Integer>> aliasToPartitionBucketNumberMapping=new LinkedHashMap<String,List<Integer>>();
-  LinkedHashMap<String,List<List<String>>> aliasToPartitionBucketFileNamesMapping=new LinkedHashMap<String,List<List<String>>>();
+  LinkedHashMap<String,List<Integer>> tblAliasToNumberOfBucketsInEachPartition=new LinkedHashMap<String,List<Integer>>();
+  LinkedHashMap<String,List<List<String>>> tblAliasToBucketedFilePathsInEachPartition=new LinkedHashMap<String,List<List<String>>>();
   HashMap<String,Operator<? extends OperatorDesc>> topOps=pGraphContext.getTopOps();
   Map<TableScanOperator,Table> topToTable=pGraphContext.getTopToTable();
   LinkedHashMap<Partition,List<String>> bigTblPartsToBucketFileNames=new LinkedHashMap<Partition,List<String>>();
   LinkedHashMap<Partition,Integer> bigTblPartsToBucketNumber=new LinkedHashMap<Partition,Integer>();
-  Integer[] orders=null;
+  Integer[] joinKeyOrder=null;
   boolean bigTablePartitioned=true;
   for (int index=0; index < joinAliases.size(); index++) {
     String alias=joinAliases.get(index);
@@ -41,8 +41,8 @@
     if (keys.size() != oldKeySize) {
       return false;
     }
-    if (orders == null) {
-      orders=new Integer[keys.size()];
+    if (joinKeyOrder == null) {
+      joinKeyOrder=new Integer[keys.size()];
     }
     Table tbl=topToTable.get(tso);
     if (tbl.isPartitioned()) {
@@ -61,18 +61,18 @@
       List<Partition> partitions=prunedParts.getNotDeniedPartns();
       if (partitions.isEmpty()) {
         if (!alias.equals(baseBigAlias)) {
-          aliasToPartitionBucketNumberMapping.put(alias,Arrays.<Integer>asList());
-          aliasToPartitionBucketFileNamesMapping.put(alias,new ArrayList<List<String>>());
+          tblAliasToNumberOfBucketsInEachPartition.put(alias,Arrays.<Integer>asList());
+          tblAliasToBucketedFilePathsInEachPartition.put(alias,new ArrayList<List<String>>());
         }
       }
  else {
         List<Integer> buckets=new ArrayList<Integer>();
         List<List<String>> files=new ArrayList<List<String>>();
         for (        Partition p : partitions) {
-          if (!checkBucketColumns(p.getBucketCols(),keys,orders)) {
+          if (!checkBucketColumns(p.getBucketCols(),keys,joinKeyOrder)) {
             return false;
           }
-          List<String> fileNames=getOnePartitionBucketFileNames(p.getDataLocation(),pGraphContext);
+          List<String> fileNames=getBucketFilePathsOfPartition(p.getDataLocation(),pGraphContext);
           int bucketCount=p.getBucketCount();
           if (fileNames.size() != bucketCount) {
             String msg="The number of buckets for table " + tbl.getTableName() + " partition "+ p.getName()+ " is "+ p.getBucketCount()+ ", whereas the number of files is "+ fileNames.size();
@@ -88,16 +88,16 @@
           }
         }
         if (!alias.equals(baseBigAlias)) {
-          aliasToPartitionBucketNumberMapping.put(alias,buckets);
-          aliasToPartitionBucketFileNamesMapping.put(alias,files);
+          tblAliasToNumberOfBucketsInEachPartition.put(alias,buckets);
+          tblAliasToBucketedFilePathsInEachPartition.put(alias,files);
         }
       }
     }
  else {
-      if (!checkBucketColumns(tbl.getBucketCols(),keys,orders)) {
+      if (!checkBucketColumns(tbl.getBucketCols(),keys,joinKeyOrder)) {
         return false;
       }
-      List<String> fileNames=getOnePartitionBucketFileNames(tbl.getDataLocation(),pGraphContext);
+      List<String> fileNames=getBucketFilePathsOfPartition(tbl.getDataLocation(),pGraphContext);
       Integer num=new Integer(tbl.getNumBuckets());
       if (fileNames.size() != num) {
         String msg="The number of buckets for table " + tbl.getTableName() + " is "+ tbl.getNumBuckets()+ ", whereas the number of files is "+ fileNames.size();
@@ -109,18 +109,18 @@
         bigTablePartitioned=false;
       }
  else {
-        aliasToPartitionBucketNumberMapping.put(alias,Arrays.asList(num));
-        aliasToPartitionBucketFileNamesMapping.put(alias,Arrays.asList(fileNames));
+        tblAliasToNumberOfBucketsInEachPartition.put(alias,Arrays.asList(num));
+        tblAliasToBucketedFilePathsInEachPartition.put(alias,Arrays.asList(fileNames));
       }
     }
   }
-  for (  Integer bucketNumber : bigTblPartsToBucketNumber.values()) {
-    if (!checkBucketNumberAgainstBigTable(aliasToPartitionBucketNumberMapping,bucketNumber)) {
+  for (  Integer numBucketsInPartitionOfBigTable : bigTblPartsToBucketNumber.values()) {
+    if (!checkNumberOfBucketsAgainstBigTable(tblAliasToNumberOfBucketsInEachPartition,numBucketsInPartitionOfBigTable)) {
       return false;
     }
   }
-  context.setAliasToPartitionBucketNumberMapping(aliasToPartitionBucketNumberMapping);
-  context.setAliasToPartitionBucketFileNamesMapping(aliasToPartitionBucketFileNamesMapping);
+  context.setTblAliasToNumberOfBucketsInEachPartition(tblAliasToNumberOfBucketsInEachPartition);
+  context.setTblAliasToBucketedFilePathsInEachPartition(tblAliasToBucketedFilePathsInEachPartition);
   context.setBigTblPartsToBucketFileNames(bigTblPartsToBucketFileNames);
   context.setBigTblPartsToBucketNumber(bigTblPartsToBucketNumber);
   context.setJoinAliases(joinAliases);
