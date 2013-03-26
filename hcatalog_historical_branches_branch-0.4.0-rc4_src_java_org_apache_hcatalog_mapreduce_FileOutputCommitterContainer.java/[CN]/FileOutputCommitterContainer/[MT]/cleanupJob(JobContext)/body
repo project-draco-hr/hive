@@ -1,0 +1,116 @@
+{
+  if (dynamicPartitioningUsed) {
+    discoverPartitions(context);
+  }
+  OutputJobInfo jobInfo=HCatOutputFormat.getJobInfo(context);
+  Configuration conf=context.getConfiguration();
+  Table table=jobInfo.getTableInfo().getTable();
+  Path tblPath=new Path(table.getSd().getLocation());
+  FileSystem fs=tblPath.getFileSystem(conf);
+  if (table.getPartitionKeys().size() == 0) {
+    if (getBaseOutputCommitter() != null && !dynamicPartitioningUsed) {
+      resetMapRedOutputDirFromJobInfo(context.getConfiguration());
+      getBaseOutputCommitter().cleanupJob(HCatMapRedUtil.createJobContext(context));
+    }
+ else     if (dynamicPartitioningUsed) {
+      for (      JobContext currContext : contextDiscoveredByPath.values()) {
+        try {
+          JobConf jobConf=new JobConf(currContext.getConfiguration());
+          jobConf.getOutputCommitter().cleanupJob(currContext);
+        }
+ catch (        Exception e) {
+          throw new IOException(e);
+        }
+      }
+    }
+    Path src=new Path(jobInfo.getLocation());
+    moveTaskOutputs(fs,src,src,tblPath,false);
+    fs.delete(src,true);
+    return;
+  }
+  HiveMetaStoreClient client=null;
+  HCatTableInfo tableInfo=jobInfo.getTableInfo();
+  List<Partition> partitionsAdded=new ArrayList<Partition>();
+  try {
+    HiveConf hiveConf=HCatUtil.getHiveConf(conf);
+    client=HCatUtil.createHiveClient(hiveConf);
+    StorerInfo storer=InternalUtil.extractStorerInfo(table.getSd(),table.getParameters());
+    updateTableSchema(client,table,jobInfo.getOutputSchema());
+    FileStatus tblStat=fs.getFileStatus(tblPath);
+    String grpName=tblStat.getGroup();
+    FsPermission perms=tblStat.getPermission();
+    List<Partition> partitionsToAdd=new ArrayList<Partition>();
+    if (!dynamicPartitioningUsed) {
+      partitionsToAdd.add(constructPartition(context,tblPath.toString(),jobInfo.getPartitionValues(),jobInfo.getOutputSchema(),getStorerParameterMap(storer),table,fs,grpName,perms));
+    }
+ else {
+      for (      Entry<String,Map<String,String>> entry : partitionsDiscoveredByPath.entrySet()) {
+        partitionsToAdd.add(constructPartition(context,getPartitionRootLocation(entry.getKey(),entry.getValue().size()),entry.getValue(),jobInfo.getOutputSchema(),getStorerParameterMap(storer),table,fs,grpName,perms));
+      }
+    }
+    if (dynamicPartitioningUsed && harProcessor.isEnabled() && (!partitionsToAdd.isEmpty())) {
+      Path src=new Path(ptnRootLocation);
+      moveTaskOutputs(fs,src,src,tblPath,true);
+      moveTaskOutputs(fs,src,src,tblPath,false);
+      fs.delete(src,true);
+      try {
+        client.add_partitions(partitionsToAdd);
+        partitionsAdded=partitionsToAdd;
+      }
+ catch (      Exception e) {
+        for (        Partition p : partitionsToAdd) {
+          Path ptnPath=new Path(harProcessor.getParentFSPath(new Path(p.getSd().getLocation())));
+          if (fs.exists(ptnPath)) {
+            fs.delete(ptnPath,true);
+          }
+        }
+        throw e;
+      }
+    }
+ else {
+      client.add_partitions(partitionsToAdd);
+      partitionsAdded=partitionsToAdd;
+      if (dynamicPartitioningUsed && (partitionsAdded.size() > 0)) {
+        Path src=new Path(ptnRootLocation);
+        moveTaskOutputs(fs,src,src,tblPath,false);
+        fs.delete(src,true);
+      }
+    }
+    if (getBaseOutputCommitter() != null && !dynamicPartitioningUsed) {
+      getBaseOutputCommitter().cleanupJob(HCatMapRedUtil.createJobContext(context));
+    }
+    String tokenStrForm=client.getTokenStrForm();
+    if (tokenStrForm != null && context.getConfiguration().get(HCatConstants.HCAT_KEY_TOKEN_SIGNATURE) != null) {
+      client.cancelDelegationToken(tokenStrForm);
+    }
+    if (harProcessor.isEnabled()) {
+      String jcTokenStrForm=context.getConfiguration().get(HCatConstants.HCAT_KEY_JOBCLIENT_TOKEN_STRFORM);
+      String jcTokenSignature=context.getConfiguration().get(HCatConstants.HCAT_KEY_JOBCLIENT_TOKEN_SIGNATURE);
+      if (jcTokenStrForm != null && jcTokenSignature != null) {
+        HCatUtil.cancelJobTrackerDelegationToken(tokenStrForm,jcTokenSignature);
+      }
+    }
+  }
+ catch (  Exception e) {
+    if (partitionsAdded.size() > 0) {
+      try {
+        for (        Partition p : partitionsAdded) {
+          client.dropPartition(tableInfo.getDatabaseName(),tableInfo.getTableName(),p.getValues());
+        }
+      }
+ catch (      Exception te) {
+        throw new HCatException(ErrorType.ERROR_PUBLISHING_PARTITION,e);
+      }
+    }
+    if (e instanceof HCatException) {
+      throw (HCatException)e;
+    }
+ else {
+      throw new HCatException(ErrorType.ERROR_PUBLISHING_PARTITION,e);
+    }
+  }
+ finally {
+    if (client != null) {
+    }
+  }
+}

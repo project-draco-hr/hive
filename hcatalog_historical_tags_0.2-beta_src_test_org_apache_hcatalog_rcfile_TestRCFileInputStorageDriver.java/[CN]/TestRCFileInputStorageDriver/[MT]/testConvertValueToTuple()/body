@@ -1,0 +1,24 @@
+{
+  BytesRefArrayWritable[] bytesArr=initTestEnvironment();
+  HCatSchema schema=buildHiveSchema();
+  RCFileInputDriver sd=new RCFileInputDriver();
+  JobContext jc=new JobContext(conf,new JobID());
+  sd.setInputPath(jc,file.toString());
+  InputFormat<?,?> iF=sd.getInputFormat(null);
+  InputSplit split=iF.getSplits(jc).get(0);
+  sd.setOriginalSchema(jc,schema);
+  sd.setOutputSchema(jc,schema);
+  sd.initialize(jc,getProps());
+  TaskAttemptContext tac=new TaskAttemptContext(conf,new TaskAttemptID());
+  RecordReader<?,?> rr=iF.createRecordReader(split,tac);
+  rr.initialize(split,tac);
+  HCatRecord[] tuples=getExpectedRecords();
+  for (int j=0; j < 2; j++) {
+    Assert.assertTrue(rr.nextKeyValue());
+    BytesRefArrayWritable w=(BytesRefArrayWritable)rr.getCurrentValue();
+    Assert.assertEquals(bytesArr[j],w);
+    HCatRecord t=sd.convertToHCatRecord(null,w);
+    Assert.assertEquals(8,t.size());
+    Assert.assertEquals(t,tuples[j]);
+  }
+}

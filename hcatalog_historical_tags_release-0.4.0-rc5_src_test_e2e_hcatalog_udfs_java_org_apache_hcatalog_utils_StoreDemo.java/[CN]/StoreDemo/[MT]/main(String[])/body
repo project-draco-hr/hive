@@ -1,0 +1,40 @@
+{
+  Configuration conf=new Configuration();
+  args=new GenericOptionsParser(conf,args).getRemainingArgs();
+  String[] otherArgs=new String[1];
+  int j=0;
+  for (int i=0; i < args.length; i++) {
+    if (args[i].equals("-libjars")) {
+      conf.set("tmpjars",args[i + 1]);
+      i=i + 1;
+    }
+ else {
+      otherArgs[j++]=args[i];
+    }
+  }
+  if (otherArgs.length != 1) {
+    usage();
+  }
+  String serverUri=otherArgs[0];
+  String tableName=NUMBERS_TABLE_NAME;
+  String dbName="default";
+  Map<String,String> outputPartitionKvps=new HashMap<String,String>();
+  String outputTableName=NUMBERS_PARTITIONED_TABLE_NAME;
+  outputPartitionKvps.put("datestamp","20100102");
+  String principalID=System.getProperty(HCatConstants.HCAT_METASTORE_PRINCIPAL);
+  if (principalID != null)   conf.set(HCatConstants.HCAT_METASTORE_PRINCIPAL,principalID);
+  Job job=new Job(conf,"storedemo");
+  HCatInputFormat.setInput(job,InputJobInfo.create(dbName,tableName,null));
+  HCatOutputFormat.setOutput(job,OutputJobInfo.create(dbName,outputTableName,outputPartitionKvps));
+  HCatSchema s=HCatInputFormat.getTableSchema(job);
+  System.err.println("INFO: output schema explicitly set for writing:" + s);
+  HCatOutputFormat.setSchema(job,s);
+  job.setInputFormatClass(HCatInputFormat.class);
+  job.setOutputFormatClass(HCatOutputFormat.class);
+  job.setJarByClass(StoreDemo.class);
+  job.setMapperClass(SumMapper.class);
+  job.setOutputKeyClass(IntWritable.class);
+  job.setNumReduceTasks(0);
+  job.setOutputValueClass(DefaultHCatRecord.class);
+  System.exit(job.waitForCompletion(true) ? 0 : 1);
+}

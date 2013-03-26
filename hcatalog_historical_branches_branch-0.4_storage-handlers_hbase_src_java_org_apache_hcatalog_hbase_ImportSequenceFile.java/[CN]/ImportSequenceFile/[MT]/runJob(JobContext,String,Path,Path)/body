@@ -1,0 +1,38 @@
+{
+  Configuration parentConf=parentContext.getConfiguration();
+  Configuration conf=new Configuration();
+  for (  Map.Entry<String,String> el : parentConf) {
+    if (el.getKey().startsWith("hbase."))     conf.set(el.getKey(),el.getValue());
+    if (el.getKey().startsWith("mapred.cache.archives"))     conf.set(el.getKey(),el.getValue());
+  }
+  conf.set("mapred.job.classpath.archives",parentConf.get("mapred.job.classpath.archives",""));
+  conf.set("mapreduce.job.cache.archives.visibilities",parentConf.get("mapreduce.job.cache.archives.visibilities",""));
+  if (parentConf.getBoolean("hadoop.security.authorization",false)) {
+    FsPermission.setUMask(conf,FsPermission.valueOf("----------"));
+  }
+  conf.set(HBaseConstants.PROPERTY_OUTPUT_TABLE_NAME_KEY,tableName);
+  conf.setBoolean(JobContext.JOB_CANCEL_DELEGATION_TOKEN,false);
+  boolean localMode="local".equals(conf.get("mapred.job.tracker"));
+  boolean success=false;
+  try {
+    FileSystem fs=FileSystem.get(parentConf);
+    Path workDir=new Path(new Job(parentConf).getWorkingDirectory(),IMPORTER_WORK_DIR);
+    if (!fs.mkdirs(workDir))     throw new IOException("Importer work directory already exists: " + workDir);
+    Job job=createSubmittableJob(conf,tableName,InputDir,scratchDir,localMode);
+    job.setWorkingDirectory(workDir);
+    job.getCredentials().addAll(parentContext.getCredentials());
+    success=job.waitForCompletion(true);
+    fs.delete(workDir,true);
+    if (localMode && success)     new ImporterOutputFormat().getOutputCommitter(org.apache.hadoop.mapred.HCatMapRedUtil.createTaskAttemptContext(conf,new TaskAttemptID())).commitJob(job);
+  }
+ catch (  InterruptedException e) {
+    LOG.error("ImportSequenceFile Failed",e);
+  }
+catch (  ClassNotFoundException e) {
+    LOG.error("ImportSequenceFile Failed",e);
+  }
+catch (  IOException e) {
+    LOG.error("ImportSequenceFile Failed",e);
+  }
+  return success;
+}

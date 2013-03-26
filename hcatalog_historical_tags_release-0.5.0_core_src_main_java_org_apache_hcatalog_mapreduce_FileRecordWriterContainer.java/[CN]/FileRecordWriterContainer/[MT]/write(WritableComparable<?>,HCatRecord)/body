@@ -1,0 +1,61 @@
+{
+  org.apache.hadoop.mapred.RecordWriter localWriter;
+  ObjectInspector localObjectInspector;
+  SerDe localSerDe;
+  OutputJobInfo localJobInfo=null;
+  if (dynamicPartitioningUsed) {
+    List<String> dynamicPartValues=new ArrayList<String>();
+    for (    Integer colToAppend : dynamicPartCols) {
+      dynamicPartValues.add(value.get(colToAppend).toString());
+    }
+    String dynKey=dynamicPartValues.toString();
+    if (!baseDynamicWriters.containsKey(dynKey)) {
+      if ((maxDynamicPartitions != -1) && (baseDynamicWriters.size() > maxDynamicPartitions)) {
+        throw new HCatException(ErrorType.ERROR_TOO_MANY_DYNAMIC_PTNS,"Number of dynamic partitions being created " + "exceeds configured max allowable partitions[" + maxDynamicPartitions + "], increase parameter ["+ HiveConf.ConfVars.DYNAMICPARTITIONMAXPARTS.varname+ "] if needed.");
+      }
+      org.apache.hadoop.mapred.TaskAttemptContext currTaskContext=HCatMapRedUtil.createTaskAttemptContext(context);
+      configureDynamicStorageHandler(currTaskContext,dynamicPartValues);
+      localJobInfo=HCatBaseOutputFormat.getJobInfo(currTaskContext);
+      SerDe currSerDe=ReflectionUtils.newInstance(storageHandler.getSerDeClass(),currTaskContext.getJobConf());
+      try {
+        InternalUtil.initializeOutputSerDe(currSerDe,currTaskContext.getConfiguration(),localJobInfo);
+      }
+ catch (      SerDeException e) {
+        throw new IOException("Failed to initialize SerDe",e);
+      }
+      org.apache.hadoop.mapred.OutputFormat baseOF=ReflectionUtils.newInstance(storageHandler.getOutputFormatClass(),currTaskContext.getJobConf());
+      org.apache.hadoop.mapred.OutputCommitter baseOutputCommitter=currTaskContext.getJobConf().getOutputCommitter();
+      org.apache.hadoop.mapred.JobContext currJobContext=HCatMapRedUtil.createJobContext(currTaskContext);
+      baseOutputCommitter.setupJob(currJobContext);
+      currTaskContext=HCatMapRedUtil.createTaskAttemptContext(currJobContext.getJobConf(),currTaskContext.getTaskAttemptID(),currTaskContext.getProgressible());
+      currTaskContext.getConfiguration().set("mapred.work.output.dir",new FileOutputCommitter(new Path(localJobInfo.getLocation()),currTaskContext).getWorkPath().toString());
+      baseOutputCommitter.setupTask(currTaskContext);
+      org.apache.hadoop.mapred.RecordWriter baseRecordWriter=baseOF.getRecordWriter(null,currTaskContext.getJobConf(),FileOutputFormat.getUniqueFile(currTaskContext,"part",""),InternalUtil.createReporter(currTaskContext));
+      baseDynamicWriters.put(dynKey,baseRecordWriter);
+      baseDynamicSerDe.put(dynKey,currSerDe);
+      baseDynamicCommitters.put(dynKey,baseOutputCommitter);
+      dynamicContexts.put(dynKey,currTaskContext);
+      dynamicObjectInspectors.put(dynKey,InternalUtil.createStructObjectInspector(jobInfo.getOutputSchema()));
+      dynamicOutputJobInfo.put(dynKey,HCatOutputFormat.getJobInfo(dynamicContexts.get(dynKey)));
+    }
+    localJobInfo=dynamicOutputJobInfo.get(dynKey);
+    localWriter=baseDynamicWriters.get(dynKey);
+    localSerDe=baseDynamicSerDe.get(dynKey);
+    localObjectInspector=dynamicObjectInspectors.get(dynKey);
+  }
+ else {
+    localJobInfo=jobInfo;
+    localWriter=getBaseRecordWriter();
+    localSerDe=serDe;
+    localObjectInspector=objectInspector;
+  }
+  for (  Integer colToDel : partColsToDel) {
+    value.remove(colToDel);
+  }
+  try {
+    localWriter.write(NullWritable.get(),localSerDe.serialize(value.getAll(),localObjectInspector));
+  }
+ catch (  SerDeException e) {
+    throw new IOException("Failed to serialize object",e);
+  }
+}

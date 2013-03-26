@@ -1,0 +1,38 @@
+{
+  HiveMetaStoreClient client=null;
+  try {
+    if (job != null) {
+      client=createHiveMetaClient(job.getConfiguration());
+    }
+ else {
+      hiveConf=new HiveConf(HCatInputFormat.class);
+      client=new HiveMetaStoreClient(hiveConf,null);
+    }
+    Table table=client.getTable(inputJobInfo.getDatabaseName(),inputJobInfo.getTableName());
+    List<PartInfo> partInfoList=new ArrayList<PartInfo>();
+    inputJobInfo.setTableInfo(HCatTableInfo.valueOf(table));
+    if (table.getPartitionKeys().size() != 0) {
+      List<Partition> parts=client.listPartitionsByFilter(inputJobInfo.getDatabaseName(),inputJobInfo.getTableName(),inputJobInfo.getFilter(),(short)-1);
+      int maxPart=hiveConf.getInt("hcat.metastore.maxpartitions",100000);
+      if (parts != null && parts.size() > maxPart) {
+        throw new HCatException(ErrorType.ERROR_EXCEED_MAXPART,"total number of partitions is " + parts.size());
+      }
+      for (      Partition ptn : parts) {
+        PartInfo partInfo=extractPartInfo(ptn.getSd(),ptn.getParameters(),job.getConfiguration(),inputJobInfo);
+        partInfo.setPartitionValues(createPtnKeyValueMap(table,ptn));
+        partInfoList.add(partInfo);
+      }
+    }
+ else {
+      PartInfo partInfo=extractPartInfo(table.getSd(),table.getParameters(),job.getConfiguration(),inputJobInfo);
+      partInfo.setPartitionValues(new HashMap<String,String>());
+      partInfoList.add(partInfo);
+    }
+    inputJobInfo.setPartitions(partInfoList);
+    return HCatUtil.serialize(inputJobInfo);
+  }
+  finally {
+    if (client != null) {
+    }
+  }
+}

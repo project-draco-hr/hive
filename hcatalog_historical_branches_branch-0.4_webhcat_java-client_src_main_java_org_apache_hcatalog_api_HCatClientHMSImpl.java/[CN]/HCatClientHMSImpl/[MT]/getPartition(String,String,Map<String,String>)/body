@@ -1,0 +1,33 @@
+{
+  HCatPartition partition=null;
+  try {
+    List<HCatFieldSchema> partitionColumns=getTable(checkDB(dbName),tableName).getPartCols();
+    if (partitionColumns.size() != partitionSpec.size()) {
+      throw new HCatException("Partition-spec doesn't have the right number of partition keys.");
+    }
+    ArrayList<String> ptnValues=new ArrayList<String>();
+    for (    HCatFieldSchema partitionColumn : partitionColumns) {
+      String partKey=partitionColumn.getName();
+      if (partitionSpec.containsKey(partKey)) {
+        ptnValues.add(partitionSpec.get(partKey));
+      }
+ else {
+        throw new HCatException("Invalid partition-key specified: " + partKey);
+      }
+    }
+    Partition hivePartition=hmsClient.getPartition(checkDB(dbName),tableName,ptnValues);
+    if (hivePartition != null) {
+      partition=new HCatPartition(hivePartition);
+    }
+  }
+ catch (  MetaException e) {
+    throw new HCatException("MetaException while retrieving partition.",e);
+  }
+catch (  TException e) {
+    throw new ConnectionFailureException("TException while retrieving partition.",e);
+  }
+catch (  NoSuchObjectException e) {
+    throw new ObjectNotFoundException("NoSuchObjectException while retrieving partition.",e);
+  }
+  return partition;
+}

@@ -1,0 +1,42 @@
+{
+  String fsLoc=hcatConf.get("fs.default.name");
+  Path tblPath=new Path(fsLoc,"/tmp/test_pig/data");
+  String anyExistingFileInCurDir="ivy.xml";
+  tblPath.getFileSystem(hcatConf).copyFromLocalFile(new Path(anyExistingFileInCurDir),tblPath);
+  hcatDriver.run("drop table junit_pigstorage");
+  CommandProcessorResponse resp;
+  String createTable="create table junit_pigstorage (a string) partitioned by (b string) stored as RCFILE";
+  resp=hcatDriver.run(createTable);
+  assertEquals(0,resp.getResponseCode());
+  assertNull(resp.getErrorMessage());
+  resp=hcatDriver.run("alter table junit_pigstorage add partition (b='2010-10-10') location '" + new Path(fsLoc,"/tmp/test_pig") + "'");
+  assertEquals(0,resp.getResponseCode());
+  assertNull(resp.getErrorMessage());
+  resp=hcatDriver.run("alter table junit_pigstorage partition (b='2010-10-10') set fileformat inputformat '" + RCFileInputFormat.class.getName() + "' outputformat '"+ RCFileOutputFormat.class.getName()+ "' inputdriver '"+ PigStorageInputDriver.class.getName()+ "' outputdriver 'non-existent'");
+  assertEquals(0,resp.getResponseCode());
+  assertNull(resp.getErrorMessage());
+  resp=hcatDriver.run("desc extended junit_pigstorage partition (b='2010-10-10')");
+  assertEquals(0,resp.getResponseCode());
+  assertNull(resp.getErrorMessage());
+  PigServer server=new PigServer(ExecType.LOCAL,hcatConf.getAllProperties());
+  UDFContext.getUDFContext().setClientSystemProps();
+  server.registerQuery(" a = load 'junit_pigstorage' using " + HCatLoader.class.getName() + ";");
+  Iterator<Tuple> itr=server.openIterator("a");
+  DataInputStream stream=new DataInputStream(new BufferedInputStream(new FileInputStream(new File(anyExistingFileInCurDir))));
+  while (itr.hasNext()) {
+    Tuple t=itr.next();
+    assertEquals(2,t.size());
+    if (t.get(0) != null) {
+      assertTrue(t.get(0) instanceof String);
+      assertEquals(stream.readLine(),t.get(0));
+    }
+ else {
+      assertTrue(stream.readLine().isEmpty());
+    }
+    assertTrue(t.get(1) instanceof String);
+    assertEquals("2010-10-10",t.get(1));
+  }
+  assertEquals(0,stream.available());
+  stream.close();
+  hcatDriver.run("drop table junit_pigstorage");
+}

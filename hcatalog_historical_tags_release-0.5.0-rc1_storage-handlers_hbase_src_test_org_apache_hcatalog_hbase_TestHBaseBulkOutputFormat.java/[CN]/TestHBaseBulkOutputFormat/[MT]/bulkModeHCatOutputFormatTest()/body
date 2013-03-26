@@ -1,0 +1,65 @@
+{
+  String testName="bulkModeHCatOutputFormatTest";
+  Path methodTestDir=new Path(getTestDir(),testName);
+  LOG.info("starting: " + testName);
+  String databaseName=testName.toLowerCase();
+  String dbDir=new Path(methodTestDir,"DB_" + testName).toString();
+  String tableName=newTableName(testName).toLowerCase();
+  String familyName="my_family";
+  byte[] familyNameBytes=Bytes.toBytes(familyName);
+  Configuration conf=new Configuration(allConf);
+  conf.set(HCatConstants.HCAT_KEY_HIVE_CONF,HCatUtil.serialize(allConf.getAllProperties()));
+  String dbquery="CREATE DATABASE IF NOT EXISTS " + databaseName + " LOCATION '"+ dbDir+ "'";
+  String tableQuery="CREATE TABLE " + databaseName + "."+ tableName+ "(key int, english string, spanish string) STORED BY "+ "'org.apache.hcatalog.hbase.HBaseHCatStorageHandler'"+ "TBLPROPERTIES ('"+ HBaseConstants.PROPERTY_BULK_OUTPUT_MODE_KEY+ "'='true',"+ "'hbase.columns.mapping'=':key,"+ familyName+ ":english,"+ familyName+ ":spanish')";
+  assertEquals(0,hcatDriver.run(dbquery).getResponseCode());
+  assertEquals(0,hcatDriver.run(tableQuery).getResponseCode());
+  String data[]={"1,english:ONE,spanish:UNO","2,english:TWO,spanish:DOS","3,english:THREE,spanish:TRES"};
+  Path inputPath=new Path(methodTestDir,"mr_input");
+  getFileSystem().mkdirs(inputPath);
+  for (int i=0; i < data.length; i++) {
+    FSDataOutputStream os=getFileSystem().create(new Path(inputPath,"inputFile" + i + ".txt"));
+    os.write(Bytes.toBytes(data[i] + "\n"));
+    os.close();
+  }
+  Job job=new Job(conf,testName);
+  job.setWorkingDirectory(new Path(methodTestDir,"mr_work"));
+  job.setJarByClass(this.getClass());
+  job.setMapperClass(MapHCatWrite.class);
+  job.setInputFormatClass(TextInputFormat.class);
+  TextInputFormat.setInputPaths(job,inputPath);
+  job.setOutputFormatClass(HCatOutputFormat.class);
+  OutputJobInfo outputJobInfo=OutputJobInfo.create(databaseName,tableName,null);
+  HCatOutputFormat.setOutput(job,outputJobInfo);
+  job.setMapOutputKeyClass(BytesWritable.class);
+  job.setMapOutputValueClass(HCatRecord.class);
+  job.setOutputKeyClass(BytesWritable.class);
+  job.setOutputValueClass(HCatRecord.class);
+  job.setNumReduceTasks(0);
+  assertTrue(job.waitForCompletion(true));
+  RevisionManager rm=HBaseRevisionManagerUtil.getOpenedRevisionManager(conf);
+  try {
+    TableSnapshot snapshot=rm.createSnapshot(databaseName + "." + tableName);
+    for (    String el : snapshot.getColumnFamilies()) {
+      assertEquals(1,snapshot.getRevision(el));
+    }
+  }
+  finally {
+    rm.close();
+  }
+  HTable table=new HTable(conf,databaseName + "." + tableName);
+  Scan scan=new Scan();
+  scan.addFamily(familyNameBytes);
+  ResultScanner scanner=table.getScanner(scan);
+  int index=0;
+  for (  Result result : scanner) {
+    String vals[]=data[index].toString().split(",");
+    for (int i=1; i < vals.length; i++) {
+      String pair[]=vals[i].split(":");
+      assertTrue(result.containsColumn(familyNameBytes,Bytes.toBytes(pair[0])));
+      assertEquals(pair[1],Bytes.toString(result.getValue(familyNameBytes,Bytes.toBytes(pair[0]))));
+      assertEquals(1l,result.getColumn(familyNameBytes,Bytes.toBytes(pair[0])).get(0).getTimestamp());
+    }
+    index++;
+  }
+  assertEquals(data.length,index);
+}

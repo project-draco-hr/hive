@@ -1,0 +1,24 @@
+{
+  this.timeout=timeout;
+  RemovalListener<HiveClientCacheKey,CacheableHiveMetaStoreClient> removalListener=new RemovalListener<HiveClientCacheKey,CacheableHiveMetaStoreClient>(){
+    public void onRemoval(    RemovalNotification<HiveClientCacheKey,CacheableHiveMetaStoreClient> notification){
+      CacheableHiveMetaStoreClient hiveMetaStoreClient=notification.getValue();
+      if (hiveMetaStoreClient != null) {
+synchronized (CACHE_TEARDOWN_LOCK) {
+          hiveMetaStoreClient.setExpiredFromCache();
+          hiveMetaStoreClient.tearDownIfUnused();
+        }
+      }
+    }
+  }
+;
+  hiveCache=CacheBuilder.newBuilder().expireAfterWrite(timeout,TimeUnit.SECONDS).removalListener(removalListener).build();
+  Thread cleanupHiveClientShutdownThread=new Thread(){
+    @Override public void run(){
+      LOG.info("Cleaning up hive client cache in ShutDown hook");
+      closeAllClientsQuietly();
+    }
+  }
+;
+  Runtime.getRuntime().addShutdownHook(cleanupHiveClientShutdownThread);
+}

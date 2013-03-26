@@ -1,0 +1,37 @@
+{
+  driver.run("drop table junit_unparted");
+  String createTable="create table junit_unparted(a int, b float, c double, d bigint, e string, f binary) stored as RCFILE";
+  int retCode=driver.run(createTable).getResponseCode();
+  if (retCode != 0) {
+    throw new IOException("Failed to create table.");
+  }
+  int LOOP_SIZE=3;
+  String[] input=new String[LOOP_SIZE * LOOP_SIZE];
+  for (int i=0; i < LOOP_SIZE * LOOP_SIZE; i++) {
+    input[i]=i + "\t" + i * 2.1f + "\t" + i * 1.1d + "\t" + i * 2L + "\t" + "lets hcat" + "\tbinary-data";
+  }
+  HcatTestUtils.createTestDataFile(INPUT_FILE_NAME,input);
+  PigServer server=new PigServer(ExecType.LOCAL);
+  server.setBatchOn();
+  server.registerQuery("A = load '" + INPUT_FILE_NAME + "' as (a:int, b:float, c:double, d:long, e:chararray, f:bytearray);");
+  server.registerQuery("store A into 'default.junit_unparted' using " + HCatStorer.class.getName() + "('','a:int, b:float, c:double, d:long, e:chararray,f:bytearray');");
+  server.executeBatch();
+  driver.run("select * from junit_unparted");
+  ArrayList<String> res=new ArrayList<String>();
+  driver.getResults(res);
+  Iterator<String> itr=res.iterator();
+  for (int i=0; i < LOOP_SIZE * LOOP_SIZE; i++) {
+    assertEquals(input[i],itr.next());
+  }
+  assertFalse(itr.hasNext());
+  server.registerQuery("B = load 'junit_unparted' using " + HCatLoader.class.getName() + ";");
+  Iterator<Tuple> i=server.openIterator("B");
+  int count=0;
+  while (i.hasNext()) {
+    Object o=i.next().get(5);
+    assertTrue(o instanceof DataByteArray);
+    count++;
+  }
+  assertEquals(LOOP_SIZE * LOOP_SIZE,count);
+  driver.run("drop table junit_unparted");
+}

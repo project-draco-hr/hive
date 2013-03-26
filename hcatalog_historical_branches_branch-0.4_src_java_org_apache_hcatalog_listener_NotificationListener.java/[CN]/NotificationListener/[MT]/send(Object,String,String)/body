@@ -1,0 +1,36 @@
+{
+  try {
+    if (null == session) {
+      createConnection();
+      if (null == session) {
+        LOG.error("Invalid session. Failed to send message on topic: " + topicName + " event: "+ event);
+        return;
+      }
+    }
+    Destination topic=null;
+    topic=getTopic(topicName);
+    if (null == topic) {
+      LOG.error("Invalid session. Failed to send message on topic: " + topicName + " event: "+ event);
+      return;
+    }
+    MessageProducer producer=session.createProducer(topic);
+    Message msg;
+    if (msgBody instanceof Map) {
+      MapMessage mapMsg=session.createMapMessage();
+      Map<String,String> incomingMap=(Map<String,String>)msgBody;
+      for (      Entry<String,String> partCol : incomingMap.entrySet()) {
+        mapMsg.setString(partCol.getKey(),partCol.getValue());
+      }
+      msg=mapMsg;
+    }
+ else {
+      msg=session.createObjectMessage((Serializable)msgBody);
+    }
+    msg.setStringProperty(HCatConstants.HCAT_EVENT,event);
+    producer.send(msg);
+    session.commit();
+  }
+ catch (  Exception e) {
+    LOG.error("Failed to send message on topic: " + topicName + " event: "+ event,e);
+  }
+}

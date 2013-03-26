@@ -1,0 +1,56 @@
+{
+  byte type=fSchema.type;
+switch (type) {
+case DataType.CHARARRAY:
+case DataType.BIGCHARARRAY:
+    return new HCatFieldSchema(fSchema.alias,Type.STRING,null);
+case DataType.INTEGER:
+  return new HCatFieldSchema(fSchema.alias,Type.INT,null);
+case DataType.LONG:
+return new HCatFieldSchema(fSchema.alias,Type.BIGINT,null);
+case DataType.FLOAT:
+return new HCatFieldSchema(fSchema.alias,Type.FLOAT,null);
+case DataType.DOUBLE:
+return new HCatFieldSchema(fSchema.alias,Type.DOUBLE,null);
+case DataType.BAG:
+Schema bagSchema=fSchema.schema;
+List<HCatFieldSchema> arrFields=new ArrayList<HCatFieldSchema>(1);
+arrFields.add(getHowlFSFromPigFS(bagSchema.getField(0)));
+return new HCatFieldSchema(fSchema.alias,Type.ARRAY,new HCatSchema(arrFields),"");
+case DataType.TUPLE:
+List<String> fieldNames=new ArrayList<String>();
+List<HCatFieldSchema> howlFSs=new ArrayList<HCatFieldSchema>();
+for (FieldSchema fieldSchema : fSchema.schema.getFields()) {
+fieldNames.add(fieldSchema.alias);
+howlFSs.add(getHowlFSFromPigFS(fieldSchema));
+}
+return new HCatFieldSchema(fSchema.alias,Type.STRUCT,new HCatSchema(howlFSs),"");
+case DataType.MAP:
+{
+HCatFieldSchema mapField=getTableCol(fSchema.alias,howlTblSchema);
+HCatFieldSchema valFS;
+List<HCatFieldSchema> valFSList=new ArrayList<HCatFieldSchema>(1);
+if (mapField != null) {
+Type mapValType=mapField.getMapValueSchema().get(0).getType();
+switch (mapValType) {
+case STRING:
+case BIGINT:
+case INT:
+case FLOAT:
+case DOUBLE:
+valFS=new HCatFieldSchema(fSchema.alias,mapValType,null);
+break;
+default :
+throw new FrontendException("Only pig primitive types are supported as map value types.",PigHCatUtil.PIG_EXCEPTION_CODE);
+}
+valFSList.add(valFS);
+return new HCatFieldSchema(fSchema.alias,Type.MAP,Type.STRING,new HCatSchema(valFSList),"");
+}
+valFS=new HCatFieldSchema(fSchema.alias,Type.STRING,"");
+valFSList.add(valFS);
+return new HCatFieldSchema(fSchema.alias,Type.MAP,Type.STRING,new HCatSchema(valFSList),"");
+}
+default :
+throw new FrontendException("Unsupported type: " + type + "  in Pig's schema",PigHCatUtil.PIG_EXCEPTION_CODE);
+}
+}

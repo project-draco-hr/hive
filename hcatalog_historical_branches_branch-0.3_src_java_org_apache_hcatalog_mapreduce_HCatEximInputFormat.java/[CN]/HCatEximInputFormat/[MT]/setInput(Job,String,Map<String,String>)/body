@@ -1,0 +1,56 @@
+{
+  FileSystem fs;
+  try {
+    fs=FileSystem.get(new URI(location),job.getConfiguration());
+  }
+ catch (  URISyntaxException e) {
+    throw new IOException(e);
+  }
+  Path fromPath=new Path(location);
+  Path metadataPath=new Path(fromPath,"_metadata");
+  try {
+    Map.Entry<org.apache.hadoop.hive.metastore.api.Table,List<Partition>> tp=EximUtil.readMetaData(fs,metadataPath);
+    org.apache.hadoop.hive.metastore.api.Table table=tp.getKey();
+    InputJobInfo inputInfo=InputJobInfo.create(table.getDbName(),table.getTableName(),null,null,null);
+    List<FieldSchema> partCols=table.getPartitionKeys();
+    List<PartInfo> partInfoList=null;
+    if (partCols.size() > 0) {
+      List<String> partColNames=new ArrayList<String>(partCols.size());
+      for (      FieldSchema fsc : partCols) {
+        partColNames.add(fsc.getName());
+      }
+      List<Partition> partitions=tp.getValue();
+      partInfoList=filterPartitions(partitionFilter,partitions,table.getPartitionKeys());
+    }
+ else {
+      partInfoList=new ArrayList<PartInfo>(1);
+      HCatSchema schema=new HCatSchema(HCatUtil.getHCatFieldSchemaList(table.getSd().getCols()));
+      Map<String,String> parameters=table.getParameters();
+      String inputStorageDriverClass=null;
+      if (parameters.containsKey(HCatConstants.HCAT_ISD_CLASS)) {
+        inputStorageDriverClass=parameters.get(HCatConstants.HCAT_ISD_CLASS);
+      }
+ else {
+        throw new IOException("No input storage driver classname found, cannot read partition");
+      }
+      Properties hcatProperties=new Properties();
+      for (      String key : parameters.keySet()) {
+        if (key.startsWith(InitializeInput.HCAT_KEY_PREFIX)) {
+          hcatProperties.put(key,parameters.get(key));
+        }
+      }
+      PartInfo partInfo=new PartInfo(schema,inputStorageDriverClass,location + "/data",hcatProperties);
+      partInfoList.add(partInfo);
+    }
+    inputInfo.setPartitions(partInfoList);
+    inputInfo.setTableInfo(HCatTableInfo.valueOf(table));
+    job.getConfiguration().set(HCatConstants.HCAT_KEY_JOB_INFO,HCatUtil.serialize(inputInfo));
+    List<HCatSchema> rv=new ArrayList<HCatSchema>(2);
+    rv.add(HCatSchemaUtils.getHCatSchema(table.getSd().getCols()));
+    rv.add(HCatSchemaUtils.getHCatSchema(partCols));
+    return rv;
+  }
+ catch (  SemanticException e) {
+    throw new IOException(e);
+  }
+}

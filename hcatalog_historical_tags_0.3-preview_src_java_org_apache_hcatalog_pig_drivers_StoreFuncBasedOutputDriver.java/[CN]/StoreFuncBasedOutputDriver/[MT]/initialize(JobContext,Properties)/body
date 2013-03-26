@@ -1,0 +1,41 @@
+{
+  String storerString=hcatProperties.getProperty(HCatConstants.HCAT_PIG_STORER);
+  if (storerString == null) {
+    throw new HCatException(ErrorType.ERROR_INIT_STORER,"Don't know how to instantiate storer, " + HCatConstants.HCAT_PIG_STORER + " property is not defined for table ");
+  }
+  String storerArgs=hcatProperties.getProperty(HCatConstants.HCAT_PIG_STORER_ARGS);
+  String[] args;
+  if (storerArgs != null) {
+    String delimit=hcatProperties.getProperty(HCatConstants.HCAT_PIG_ARGS_DELIMIT);
+    if (delimit == null) {
+      delimit=HCatConstants.HCAT_PIG_ARGS_DELIMIT_DEFAULT;
+    }
+    args=storerArgs.split(delimit);
+  }
+ else {
+    args=new String[0];
+  }
+  try {
+    Class storerClass=Class.forName(storerString);
+    Constructor[] constructors=storerClass.getConstructors();
+    for (    Constructor constructor : constructors) {
+      if (constructor.getParameterTypes().length == args.length) {
+        sf=(StoreFuncInterface)constructor.newInstance(args);
+        break;
+      }
+    }
+  }
+ catch (  Exception e) {
+    throw new HCatException(ErrorType.ERROR_INIT_STORER,"Cannot instantiate " + storerString,e);
+  }
+  if (sf == null) {
+    throw new HCatException(ErrorType.ERROR_INIT_STORER,"Cannot instantiate " + storerString + " with construct args "+ storerArgs);
+  }
+  super.initialize(jobContext,hcatProperties);
+  Job job=new Job(jobContext.getConfiguration());
+  String innerSignature=jobContext.getConfiguration().get(HCatStorer.INNER_SIGNATURE);
+  sf.setStoreFuncUDFContextSignature(innerSignature);
+  sf.checkSchema(PigHCatUtil.getResourceSchema(schema));
+  sf.setStoreLocation(location,job);
+  ConfigurationUtil.mergeConf(jobContext.getConfiguration(),job.getConfiguration());
+}

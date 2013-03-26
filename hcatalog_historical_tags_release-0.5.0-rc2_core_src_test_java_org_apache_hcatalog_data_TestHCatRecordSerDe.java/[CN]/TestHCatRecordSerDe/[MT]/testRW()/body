@@ -1,0 +1,30 @@
+{
+  Configuration conf=new Configuration();
+  for (  Entry<Properties,HCatRecord> e : getData().entrySet()) {
+    Properties tblProps=e.getKey();
+    HCatRecord r=e.getValue();
+    HCatRecordSerDe hrsd=new HCatRecordSerDe();
+    hrsd.initialize(conf,tblProps);
+    LOG.info("ORIG: {}",r);
+    Writable s=hrsd.serialize(r,hrsd.getObjectInspector());
+    LOG.info("ONE: {}",s);
+    HCatRecord r2=(HCatRecord)hrsd.deserialize(s);
+    Assert.assertTrue(HCatDataCheckUtil.recordsEqual(r,r2));
+    Writable s2=hrsd.serialize(s,hrsd.getObjectInspector());
+    LOG.info("TWO: {}",s2);
+    Assert.assertTrue(HCatDataCheckUtil.recordsEqual(r,(HCatRecord)s));
+    Assert.assertTrue(HCatDataCheckUtil.recordsEqual(r,(HCatRecord)s2));
+    LazySimpleSerDe testSD=new LazySimpleSerDe();
+    testSD.initialize(conf,tblProps);
+    Writable s3=testSD.serialize(s,hrsd.getObjectInspector());
+    LOG.info("THREE: {}",s3);
+    Object o3=testSD.deserialize(s3);
+    Assert.assertFalse(r.getClass().equals(o3.getClass()));
+    HCatRecord s4=(HCatRecord)hrsd.serialize(o3,testSD.getObjectInspector());
+    LOG.info("FOUR: {}",s4);
+    LazyHCatRecord s5=new LazyHCatRecord(o3,testSD.getObjectInspector());
+    LOG.info("FIVE: {}",s5);
+    LazyHCatRecord s6=new LazyHCatRecord(s4,hrsd.getObjectInspector());
+    LOG.info("SIX: {}",s6);
+  }
+}

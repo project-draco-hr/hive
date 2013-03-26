@@ -1,0 +1,36 @@
+{
+  Map<String,String> partSpec=((DDLWork)rootTasks.get(rootTasks.size() - 1).getWork()).getAlterTblDesc().getPartSpec();
+  Map<String,String> hcatProps=new HashMap<String,String>(2);
+  hcatProps.put(HCatConstants.HCAT_ISD_CLASS,inDriver);
+  hcatProps.put(HCatConstants.HCAT_OSD_CLASS,outDriver);
+  if (loader != null) {
+    hcatProps.put(HCatConstants.HCAT_PIG_LOADER,loader);
+  }
+  if (storer != null) {
+    hcatProps.put(HCatConstants.HCAT_PIG_STORER,storer);
+  }
+  try {
+    Hive db=context.getHive();
+    Table tbl=db.getTable(tableName);
+    if (partSpec == null) {
+      tbl.getTTable().getParameters().putAll(hcatProps);
+      db.alterTable(tableName,tbl);
+    }
+ else {
+      Partition part=db.getPartition(tbl,partSpec,false);
+      Map<String,String> partParams=part.getParameters();
+      if (partParams == null) {
+        partParams=new HashMap<String,String>();
+      }
+      partParams.putAll(hcatProps);
+      part.getTPartition().setParameters(partParams);
+      db.alterPartition(tableName,part);
+    }
+  }
+ catch (  HiveException he) {
+    throw new SemanticException(he);
+  }
+catch (  InvalidOperationException e) {
+    throw new SemanticException(e);
+  }
+}

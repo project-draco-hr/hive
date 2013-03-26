@@ -1,0 +1,27 @@
+{
+  Configuration conf=context.getConfiguration();
+  copyLocal(COPY_NAME,conf);
+  String[] jarArgs=TempletonUtils.decodeArray(conf.get(JAR_ARGS_NAME));
+  ArrayList<String> removeEnv=new ArrayList<String>();
+  removeEnv.add("HADOOP_ROOT_LOGGER");
+  Map<String,String> env=TempletonUtils.hadoopUserEnv(user,overrideClasspath);
+  List<String> jarArgsList=new LinkedList<String>(Arrays.asList(jarArgs));
+  String tokenFile=System.getenv("HADOOP_TOKEN_FILE_LOCATION");
+  if (tokenFile != null) {
+    String tokenArg="mapreduce.job.credentials.binary=" + tokenFile;
+    for (int i=0; i < jarArgsList.size(); i++) {
+      String newArg=jarArgsList.get(i).replace(TOKEN_FILE_ARG_PLACEHOLDER,tokenArg);
+      jarArgsList.set(i,newArg);
+    }
+  }
+ else {
+    Iterator<String> it=jarArgsList.iterator();
+    while (it.hasNext()) {
+      String arg=it.next();
+      if (arg.contains(TOKEN_FILE_ARG_PLACEHOLDER)) {
+        it.remove();
+      }
+    }
+  }
+  return execService.run(jarArgsList,removeEnv,env);
+}

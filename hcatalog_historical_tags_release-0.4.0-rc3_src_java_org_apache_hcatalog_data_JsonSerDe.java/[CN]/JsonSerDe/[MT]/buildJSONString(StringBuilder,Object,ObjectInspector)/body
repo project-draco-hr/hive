@@ -1,0 +1,170 @@
+{
+switch (oi.getCategory()) {
+case PRIMITIVE:
+{
+      PrimitiveObjectInspector poi=(PrimitiveObjectInspector)oi;
+      if (o == null) {
+        sb.append("null");
+      }
+ else {
+switch (poi.getPrimitiveCategory()) {
+case BOOLEAN:
+{
+            boolean b=((BooleanObjectInspector)poi).get(o);
+            sb.append(b ? "true" : "false");
+            break;
+          }
+case BYTE:
+{
+          sb.append(((ByteObjectInspector)poi).get(o));
+          break;
+        }
+case SHORT:
+{
+        sb.append(((ShortObjectInspector)poi).get(o));
+        break;
+      }
+case INT:
+{
+      sb.append(((IntObjectInspector)poi).get(o));
+      break;
+    }
+case LONG:
+{
+    sb.append(((LongObjectInspector)poi).get(o));
+    break;
+  }
+case FLOAT:
+{
+  sb.append(((FloatObjectInspector)poi).get(o));
+  break;
+}
+case DOUBLE:
+{
+sb.append(((DoubleObjectInspector)poi).get(o));
+break;
+}
+case STRING:
+{
+sb.append('"');
+sb.append(SerDeUtils.escapeString(((StringObjectInspector)poi).getPrimitiveJavaObject(o)));
+sb.append('"');
+break;
+}
+case TIMESTAMP:
+{
+sb.append('"');
+sb.append(((TimestampObjectInspector)poi).getPrimitiveWritableObject(o));
+sb.append('"');
+break;
+}
+case BINARY:
+{
+throw new IOException("JsonSerDe does not support BINARY type");
+}
+default :
+throw new RuntimeException("Unknown primitive type: " + poi.getPrimitiveCategory());
+}
+}
+break;
+}
+case LIST:
+{
+ListObjectInspector loi=(ListObjectInspector)oi;
+ObjectInspector listElementObjectInspector=loi.getListElementObjectInspector();
+List<?> olist=loi.getList(o);
+if (olist == null) {
+sb.append("null");
+}
+ else {
+sb.append(SerDeUtils.LBRACKET);
+for (int i=0; i < olist.size(); i++) {
+if (i > 0) {
+sb.append(SerDeUtils.COMMA);
+}
+buildJSONString(sb,olist.get(i),listElementObjectInspector);
+}
+sb.append(SerDeUtils.RBRACKET);
+}
+break;
+}
+case MAP:
+{
+MapObjectInspector moi=(MapObjectInspector)oi;
+ObjectInspector mapKeyObjectInspector=moi.getMapKeyObjectInspector();
+ObjectInspector mapValueObjectInspector=moi.getMapValueObjectInspector();
+Map<?,?> omap=moi.getMap(o);
+if (omap == null) {
+sb.append("null");
+}
+ else {
+sb.append(SerDeUtils.LBRACE);
+boolean first=true;
+for (Object entry : omap.entrySet()) {
+if (first) {
+first=false;
+}
+ else {
+sb.append(SerDeUtils.COMMA);
+}
+Map.Entry<?,?> e=(Map.Entry<?,?>)entry;
+StringBuilder keyBuilder=new StringBuilder();
+buildJSONString(keyBuilder,e.getKey(),mapKeyObjectInspector);
+String keyString=keyBuilder.toString().trim();
+boolean doQuoting=(!keyString.isEmpty()) && (keyString.charAt(0) != SerDeUtils.QUOTE);
+if (doQuoting) {
+sb.append(SerDeUtils.QUOTE);
+}
+sb.append(keyString);
+if (doQuoting) {
+sb.append(SerDeUtils.QUOTE);
+}
+sb.append(SerDeUtils.COLON);
+buildJSONString(sb,e.getValue(),mapValueObjectInspector);
+}
+sb.append(SerDeUtils.RBRACE);
+}
+break;
+}
+case STRUCT:
+{
+StructObjectInspector soi=(StructObjectInspector)oi;
+List<? extends StructField> structFields=soi.getAllStructFieldRefs();
+if (o == null) {
+sb.append("null");
+}
+ else {
+sb.append(SerDeUtils.LBRACE);
+for (int i=0; i < structFields.size(); i++) {
+if (i > 0) {
+sb.append(SerDeUtils.COMMA);
+}
+sb.append(SerDeUtils.QUOTE);
+sb.append(structFields.get(i).getFieldName());
+sb.append(SerDeUtils.QUOTE);
+sb.append(SerDeUtils.COLON);
+buildJSONString(sb,soi.getStructFieldData(o,structFields.get(i)),structFields.get(i).getFieldObjectInspector());
+}
+sb.append(SerDeUtils.RBRACE);
+}
+break;
+}
+case UNION:
+{
+UnionObjectInspector uoi=(UnionObjectInspector)oi;
+if (o == null) {
+sb.append("null");
+}
+ else {
+sb.append(SerDeUtils.LBRACE);
+sb.append(uoi.getTag(o));
+sb.append(SerDeUtils.COLON);
+buildJSONString(sb,uoi.getField(o),uoi.getObjectInspectors().get(uoi.getTag(o)));
+sb.append(SerDeUtils.RBRACE);
+}
+break;
+}
+default :
+throw new RuntimeException("Unknown type in ObjectInspector!");
+}
+}

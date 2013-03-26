@@ -1,0 +1,36 @@
+{
+  RecordWriter<? super WritableComparable<?>,? super Writable> localWriter;
+  HCatOutputStorageDriver localDriver;
+  if (dynamicPartitioningUsed) {
+    List<String> dynamicPartValues=new ArrayList<String>();
+    for (    Integer colToAppend : dynamicPartCols) {
+      dynamicPartValues.add(value.get(colToAppend).toString());
+    }
+    int dynHashCode=dynamicPartValues.hashCode();
+    if (!baseDynamicWriters.containsKey(dynHashCode)) {
+      if ((maxDynamicPartitions != -1) && (baseDynamicStorageDrivers.size() > maxDynamicPartitions)) {
+        throw new HCatException(ErrorType.ERROR_TOO_MANY_DYNAMIC_PTNS,"Number of dynamic partitions being created " + "exceeds configured max allowable partitions[" + maxDynamicPartitions + "], increase parameter ["+ HiveConf.ConfVars.DYNAMICPARTITIONMAXPARTS.varname+ "] if needed.");
+      }
+      HCatOutputStorageDriver localOsd=createDynamicStorageDriver(dynamicPartValues);
+      RecordWriter<? super WritableComparable<?>,? super Writable> baseRecordWriter=localOsd.getOutputFormat().getRecordWriter(context);
+      localOsd.setupOutputCommitterJob(context);
+      OutputCommitter baseOutputCommitter=localOsd.getOutputFormat().getOutputCommitter(context);
+      baseOutputCommitter.setupTask(context);
+      prepareForStorageDriverOutput(localOsd,context);
+      baseDynamicWriters.put(dynHashCode,baseRecordWriter);
+      baseDynamicStorageDrivers.put(dynHashCode,localOsd);
+    }
+    localWriter=baseDynamicWriters.get(dynHashCode);
+    localDriver=baseDynamicStorageDrivers.get(dynHashCode);
+  }
+ else {
+    localWriter=baseWriter;
+    localDriver=storageDriver;
+  }
+  for (  Integer colToDel : partColsToDel) {
+    value.remove(colToDel);
+  }
+  WritableComparable<?> generatedKey=localDriver.generateKey(value);
+  Writable convertedValue=localDriver.convertValue(value);
+  localWriter.write(generatedKey,convertedValue);
+}

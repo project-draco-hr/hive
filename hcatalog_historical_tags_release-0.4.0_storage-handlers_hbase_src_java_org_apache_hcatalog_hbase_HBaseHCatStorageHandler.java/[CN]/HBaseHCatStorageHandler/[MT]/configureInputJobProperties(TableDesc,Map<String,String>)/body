@@ -1,0 +1,30 @@
+{
+  Map<String,String> tableJobProperties=tableDesc.getJobProperties();
+  String jobString=tableJobProperties.get(HCatConstants.HCAT_KEY_JOB_INFO);
+  try {
+    InputJobInfo inputJobInfo=(InputJobInfo)HCatUtil.deserialize(jobString);
+    HCatTableInfo tableInfo=inputJobInfo.getTableInfo();
+    String qualifiedTableName=HBaseHCatStorageHandler.getFullyQualifiedHBaseTableName(tableInfo);
+    jobProperties.put(TableInputFormat.INPUT_TABLE,qualifiedTableName);
+    Configuration jobConf=getJobConf();
+    addHbaseResources(jobConf,jobProperties);
+    JobConf copyOfConf=new JobConf(jobConf);
+    HBaseConfiguration.addHbaseResources(copyOfConf);
+    if (jobConf instanceof JobConf) {
+      HBaseUtil.addHBaseDelegationToken(copyOfConf);
+      ((JobConf)jobConf).getCredentials().addAll(copyOfConf.getCredentials());
+    }
+    String outputSchema=jobConf.get(HCatConstants.HCAT_KEY_OUTPUT_SCHEMA);
+    jobProperties.put(TableInputFormat.SCAN_COLUMNS,getScanColumns(tableInfo,outputSchema));
+    String serSnapshot=(String)inputJobInfo.getProperties().get(HBaseConstants.PROPERTY_TABLE_SNAPSHOT_KEY);
+    if (serSnapshot == null) {
+      HCatTableSnapshot snapshot=HBaseRevisionManagerUtil.createSnapshot(copyOfConf,qualifiedTableName,tableInfo);
+      jobProperties.put(HBaseConstants.PROPERTY_TABLE_SNAPSHOT_KEY,HCatUtil.serialize(snapshot));
+    }
+    addOutputDependencyJars(jobConf);
+    jobProperties.put("tmpjars",jobConf.get("tmpjars"));
+  }
+ catch (  IOException e) {
+    throw new IllegalStateException("Error while configuring job properties",e);
+  }
+}

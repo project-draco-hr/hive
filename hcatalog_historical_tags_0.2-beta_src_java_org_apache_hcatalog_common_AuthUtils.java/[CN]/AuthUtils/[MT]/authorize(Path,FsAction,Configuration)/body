@@ -1,0 +1,50 @@
+{
+  if (path == null) {
+    throw new HCatException(ErrorType.ERROR_INTERNAL_EXCEPTION);
+  }
+  final FileStatus stat;
+  try {
+    stat=path.getFileSystem(conf).getFileStatus(path);
+  }
+ catch (  FileNotFoundException fnfe) {
+    return;
+  }
+catch (  AccessControlException ace) {
+    throw new HCatException(ErrorType.ERROR_ACCESS_CONTROL,ace);
+  }
+catch (  org.apache.hadoop.fs.permission.AccessControlException ace) {
+    throw new HCatException(ErrorType.ERROR_ACCESS_CONTROL,ace);
+  }
+catch (  IOException ioe) {
+    throw new SemanticException(ioe);
+  }
+  final UserGroupInformation ugi;
+  try {
+    ugi=ShimLoader.getHadoopShims().getUGIForConf(conf);
+  }
+ catch (  LoginException le) {
+    throw new HCatException(ErrorType.ERROR_ACCESS_CONTROL,le);
+  }
+catch (  IOException ioe) {
+    throw new SemanticException(ioe);
+  }
+  final FsPermission dirPerms=stat.getPermission();
+  final String user=HiveConf.getBoolVar(conf,ConfVars.METASTORE_USE_THRIFT_SASL) ? ugi.getShortUserName() : ugi.getUserName();
+  final String grp=stat.getGroup();
+  if (user.equals(stat.getOwner())) {
+    if (dirPerms.getUserAction().implies(action)) {
+      return;
+    }
+    throw new HCatException(ErrorType.ERROR_ACCESS_CONTROL);
+  }
+  if (ArrayUtils.contains(ugi.getGroupNames(),grp)) {
+    if (dirPerms.getGroupAction().implies(action)) {
+      return;
+    }
+    throw new HCatException(ErrorType.ERROR_ACCESS_CONTROL);
+  }
+  if (dirPerms.getOtherAction().implies(action)) {
+    return;
+  }
+  throw new HCatException(ErrorType.ERROR_ACCESS_CONTROL);
+}

@@ -1,0 +1,34 @@
+{
+  InputJobInfo inputJobInfo;
+  try {
+    inputJobInfo=getJobInfo(jobContext);
+  }
+ catch (  Exception e) {
+    throw new IOException(e);
+  }
+  List<InputSplit> splits=new ArrayList<InputSplit>();
+  List<PartInfo> partitionInfoList=inputJobInfo.getPartitions();
+  if (partitionInfoList == null) {
+    return splits;
+  }
+  for (  PartInfo partitionInfo : partitionInfoList) {
+    Job localJob=new Job(jobContext.getConfiguration());
+    HCatInputStorageDriver storageDriver;
+    try {
+      storageDriver=getInputDriverInstance(partitionInfo.getInputStorageDriverClass());
+    }
+ catch (    Exception e) {
+      throw new IOException(e);
+    }
+    HCatSchema allCols=new HCatSchema(new LinkedList<HCatFieldSchema>());
+    for (    HCatFieldSchema field : inputJobInfo.getTableInfo().getDataColumns().getFields())     allCols.append(field);
+    for (    HCatFieldSchema field : inputJobInfo.getTableInfo().getPartitionColumns().getFields())     allCols.append(field);
+    initStorageDriver(storageDriver,localJob,partitionInfo,allCols);
+    InputFormat inputFormat=storageDriver.getInputFormat(partitionInfo.getInputStorageDriverProperties());
+    List<InputSplit> baseSplits=inputFormat.getSplits(localJob);
+    for (    InputSplit split : baseSplits) {
+      splits.add(new HCatSplit(partitionInfo,split,allCols));
+    }
+  }
+  return splits;
+}

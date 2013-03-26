@@ -1,0 +1,35 @@
+{
+  try {
+    OutputJobInfo jobInfo=(OutputJobInfo)HCatUtil.deserialize(tableDesc.getJobProperties().get(HCatConstants.HCAT_KEY_OUTPUT_INFO));
+    String parentPath=jobInfo.getTableInfo().getTableLocation();
+    String dynHash=tableDesc.getJobProperties().get(HCatConstants.HCAT_DYNAMIC_PTN_JOBID);
+    if (dynHash != null) {
+      parentPath=new Path(parentPath,DYNTEMP_DIR_NAME + dynHash).toString();
+    }
+    String outputLocation;
+    if (dynHash == null && jobInfo.getPartitionValues().size() == 0) {
+      outputLocation=TEMP_DIR_NAME;
+    }
+ else {
+      List<String> cols=new ArrayList<String>();
+      List<String> values=new ArrayList<String>();
+      for (      String name : jobInfo.getTableInfo().getPartitionColumns().getFieldNames()) {
+        String value=jobInfo.getPartitionValues().get(name);
+        int i=0;
+        while (i < cols.size() && name.compareTo(cols.get(i)) > 0)         i++;
+        cols.add(i,name);
+        values.add(i,value);
+      }
+      outputLocation=FileUtils.makePartName(cols,values);
+    }
+    jobInfo.setLocation(new Path(parentPath,outputLocation).toString());
+    if (jobInfo.getPartitionValues().size() == jobInfo.getTableInfo().getPartitionColumns().size()) {
+      jobProperties.put("mapred.output.dir",jobInfo.getLocation());
+    }
+    jobProperties.put(RCFile.COLUMN_NUMBER_CONF_STR,Integer.toOctalString(jobInfo.getOutputSchema().getFields().size()));
+    jobProperties.put(HCatConstants.HCAT_KEY_OUTPUT_INFO,HCatUtil.serialize(jobInfo));
+  }
+ catch (  IOException e) {
+    throw new IllegalStateException("Failed to set output path",e);
+  }
+}

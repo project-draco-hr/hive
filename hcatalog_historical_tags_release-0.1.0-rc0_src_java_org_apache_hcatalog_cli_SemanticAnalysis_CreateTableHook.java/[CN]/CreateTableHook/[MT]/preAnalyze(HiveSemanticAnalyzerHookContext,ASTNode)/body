@@ -1,0 +1,69 @@
+{
+  Hive db;
+  try {
+    db=context.getHive();
+  }
+ catch (  HiveException e) {
+    throw new SemanticException("Couldn't get Hive DB instance in semantic analysis phase.",e);
+  }
+  int numCh=ast.getChildCount();
+  String inputFormat=null, outputFormat=null;
+  tableName=BaseSemanticAnalyzer.getUnescapedName((ASTNode)ast.getChild(0));
+  for (int num=1; num < numCh; num++) {
+    ASTNode child=(ASTNode)ast.getChild(num);
+switch (child.getToken().getType()) {
+case HiveParser.TOK_QUERY:
+      throw new SemanticException("Operation not supported. Create table as Select is not a valid operation.");
+case HiveParser.TOK_TABLEBUCKETS:
+    throw new SemanticException("Operation not supported. HCatalog doesn't allow Clustered By in create table.");
+case HiveParser.TOK_TBLSEQUENCEFILE:
+  throw new SemanticException("Operation not supported. HCatalog doesn't support Sequence File by default yet. " + "You may specify it through INPUT/OUTPUT storage drivers.");
+case HiveParser.TOK_TBLTEXTFILE:
+throw new SemanticException("Operation not supported. HCatalog doesn't support Text File by default yet. " + "You may specify it through INPUT/OUTPUT storage drivers.");
+case HiveParser.TOK_LIKETABLE:
+String likeTableName;
+if (child.getChildCount() > 0 && (likeTableName=BaseSemanticAnalyzer.getUnescapedName((ASTNode)ast.getChild(0))) != null) {
+throw new SemanticException("Operation not supported. CREATE TABLE LIKE is not supported.");
+}
+break;
+case HiveParser.TOK_IFNOTEXISTS:
+try {
+List<String> tables=db.getTablesByPattern(tableName);
+if (tables != null && tables.size() > 0) {
+return ast;
+}
+}
+ catch (HiveException e) {
+throw new SemanticException(e);
+}
+break;
+case HiveParser.TOK_TABLEPARTCOLS:
+List<FieldSchema> partCols=BaseSemanticAnalyzer.getColumns((ASTNode)child.getChild(0),false);
+for (FieldSchema fs : partCols) {
+if (!fs.getType().equalsIgnoreCase("string")) {
+throw new SemanticException("Operation not supported. HCatalog only supports partition columns of type string. " + "For column: " + fs.getName() + " Found type: "+ fs.getType());
+}
+}
+break;
+case HiveParser.TOK_TABLEFILEFORMAT:
+if (child.getChildCount() < 4) {
+throw new SemanticException("Incomplete specification of File Format. You must provide InputFormat, OutputFormat, InputDriver, OutputDriver.");
+}
+inputFormat=BaseSemanticAnalyzer.unescapeSQLString(child.getChild(0).getText());
+outputFormat=BaseSemanticAnalyzer.unescapeSQLString(child.getChild(1).getText());
+inStorageDriver=BaseSemanticAnalyzer.unescapeSQLString(child.getChild(2).getText());
+outStorageDriver=BaseSemanticAnalyzer.unescapeSQLString(child.getChild(3).getText());
+break;
+case HiveParser.TOK_TBLRCFILE:
+inputFormat=RCFileInputFormat.class.getName();
+outputFormat=RCFileOutputFormat.class.getName();
+inStorageDriver=RCFileInputDriver.class.getName();
+outStorageDriver=RCFileOutputDriver.class.getName();
+break;
+}
+}
+if (inputFormat == null || outputFormat == null || inStorageDriver == null || outStorageDriver == null) {
+throw new SemanticException("STORED AS specification is either incomplete or incorrect.");
+}
+return ast;
+}

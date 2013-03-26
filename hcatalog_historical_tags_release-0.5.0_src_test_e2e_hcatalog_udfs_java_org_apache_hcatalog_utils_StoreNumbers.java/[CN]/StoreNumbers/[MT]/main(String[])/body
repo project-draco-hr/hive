@@ -1,0 +1,75 @@
+{
+  Configuration conf=new Configuration();
+  args=new GenericOptionsParser(conf,args).getRemainingArgs();
+  String[] otherArgs=new String[2];
+  int j=0;
+  for (int i=0; i < args.length; i++) {
+    if (args[i].equals("-libjars")) {
+      conf.set("tmpjars",args[i + 1]);
+      i=i + 1;
+    }
+ else {
+      otherArgs[j++]=args[i];
+    }
+  }
+  if (otherArgs.length != 2) {
+    usage();
+  }
+  String serverUri=otherArgs[0];
+  if (otherArgs[1] == null || (!otherArgs[1].equalsIgnoreCase("part") && !otherArgs[1].equalsIgnoreCase("nopart")) && !otherArgs[1].equalsIgnoreCase("nopart_pig")) {
+    usage();
+  }
+  boolean writeToPartitionedTable=(otherArgs[1].equalsIgnoreCase("part"));
+  boolean writeToNonPartPigTable=(otherArgs[1].equalsIgnoreCase("nopart_pig"));
+  String tableName=NUMBERS_TABLE_NAME;
+  String dbName="default";
+  Map<String,String> outputPartitionKvps=new HashMap<String,String>();
+  String outputTableName=null;
+  conf.set(IS_PIG_NON_PART_TABLE,"false");
+  if (writeToPartitionedTable) {
+    outputTableName=NUMBERS_PARTITIONED_TABLE_NAME;
+    outputPartitionKvps.put("datestamp","20100101");
+  }
+ else {
+    if (writeToNonPartPigTable) {
+      conf.set(IS_PIG_NON_PART_TABLE,"true");
+      outputTableName=NUMBERS_NON_PARTITIONED_PIG_TABLE_NAME;
+    }
+ else {
+      outputTableName=NUMBERS_NON_PARTITIONED_TABLE_NAME;
+    }
+    if (new Random().nextInt(2) == 0) {
+      outputPartitionKvps=null;
+    }
+  }
+  String principalID=System.getProperty(HCatConstants.HCAT_METASTORE_PRINCIPAL);
+  if (principalID != null)   conf.set(HCatConstants.HCAT_METASTORE_PRINCIPAL,principalID);
+  Job job=new Job(conf,"storenumbers");
+  HCatInputFormat.setInput(job,InputJobInfo.create(dbName,tableName,null));
+  HCatOutputFormat.setOutput(job,OutputJobInfo.create(dbName,outputTableName,outputPartitionKvps));
+  HCatSchema s=HCatInputFormat.getTableSchema(job);
+  if (writeToNonPartPigTable) {
+    List<HCatFieldSchema> newHfsList=new ArrayList<HCatFieldSchema>();
+    for (    HCatFieldSchema hfs : s.getFields()) {
+      if (hfs.getTypeString().equals("smallint")) {
+        newHfsList.add(new HCatFieldSchema(hfs.getName(),HCatFieldSchema.Type.INT,hfs.getComment()));
+      }
+ else       if (hfs.getTypeString().equals("tinyint")) {
+        newHfsList.add(new HCatFieldSchema(hfs.getName(),HCatFieldSchema.Type.INT,hfs.getComment()));
+      }
+ else {
+        newHfsList.add(hfs);
+      }
+    }
+    s=new HCatSchema(newHfsList);
+  }
+  HCatOutputFormat.setSchema(job,s);
+  job.setInputFormatClass(HCatInputFormat.class);
+  job.setOutputFormatClass(HCatOutputFormat.class);
+  job.setJarByClass(StoreNumbers.class);
+  job.setMapperClass(SumMapper.class);
+  job.setOutputKeyClass(IntWritable.class);
+  job.setNumReduceTasks(0);
+  job.setOutputValueClass(DefaultHCatRecord.class);
+  System.exit(job.waitForCompletion(true) ? 0 : 1);
+}

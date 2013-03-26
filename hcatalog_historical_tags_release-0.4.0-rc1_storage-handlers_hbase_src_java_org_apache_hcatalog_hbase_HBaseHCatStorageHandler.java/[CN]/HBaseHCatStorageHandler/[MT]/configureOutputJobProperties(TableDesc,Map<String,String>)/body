@@ -1,0 +1,46 @@
+{
+  Map<String,String> tableJobProperties=tableDesc.getJobProperties();
+  String jobString=tableJobProperties.get(HCatConstants.HCAT_KEY_OUTPUT_INFO);
+  try {
+    OutputJobInfo outputJobInfo=(OutputJobInfo)HCatUtil.deserialize(jobString);
+    HCatTableInfo tableInfo=outputJobInfo.getTableInfo();
+    String qualifiedTableName=HBaseHCatStorageHandler.getFullyQualifiedName(tableInfo);
+    jobProperties.put(HBaseConstants.PROPERTY_OUTPUT_TABLE_NAME_KEY,qualifiedTableName);
+    jobProperties.put(TableOutputFormat.OUTPUT_TABLE,qualifiedTableName);
+    Configuration jobConf=getConf();
+    addHbaseResources(jobConf,jobProperties);
+    Configuration copyOfConf=new Configuration(jobConf);
+    HBaseConfiguration.addHbaseResources(copyOfConf);
+    String txnString=outputJobInfo.getProperties().getProperty(HBaseConstants.PROPERTY_WRITE_TXN_KEY);
+    String jobTxnString=jobConf.get(HBaseConstants.PROPERTY_WRITE_TXN_KEY);
+    Transaction txn=null;
+    if (txnString == null && jobTxnString == null) {
+      txn=HBaseRevisionManagerUtil.beginWriteTransaction(qualifiedTableName,tableInfo,copyOfConf);
+      String serializedTxn=HCatUtil.serialize(txn);
+      outputJobInfo.getProperties().setProperty(HBaseConstants.PROPERTY_WRITE_TXN_KEY,serializedTxn);
+      jobProperties.put(HBaseConstants.PROPERTY_WRITE_TXN_KEY,serializedTxn);
+    }
+ else {
+      txnString=(txnString == null) ? jobTxnString : txnString;
+      txn=(Transaction)HCatUtil.deserialize(txnString);
+      outputJobInfo.getProperties().setProperty(HBaseConstants.PROPERTY_WRITE_TXN_KEY,txnString);
+      jobProperties.put(HBaseConstants.PROPERTY_WRITE_TXN_KEY,txnString);
+    }
+    if (isBulkMode(outputJobInfo)) {
+      String tableLocation=tableInfo.getTableLocation();
+      String location=new Path(tableLocation,"REVISION_" + txn.getRevisionNumber()).toString();
+      outputJobInfo.getProperties().setProperty(PROPERTY_INT_OUTPUT_LOCATION,location);
+      jobProperties.put("mapred.output.dir",location);
+      jobProperties.put("mapred.output.committer.class",HBaseBulkOutputCommitter.class.getName());
+    }
+ else {
+      jobProperties.put("mapred.output.committer.class",HBaseDirectOutputCommitter.class.getName());
+    }
+    jobProperties.put(HCatConstants.HCAT_KEY_OUTPUT_INFO,HCatUtil.serialize(outputJobInfo));
+    addOutputDependencyJars(jobConf);
+    jobProperties.put("tmpjars",jobConf.get("tmpjars"));
+  }
+ catch (  IOException e) {
+    throw new IllegalStateException("Error while configuring job properties",e);
+  }
+}

@@ -1,0 +1,38 @@
+{
+  try {
+    HCatCli.main(new String[]{"-e","create table testNoPartTbl (line string) stored as RCFILE","-p","rwx-wx---"});
+  }
+ catch (  Exception e) {
+    assertTrue(e instanceof ExitException);
+    assertEquals(((ExitException)e).getStatus(),0);
+  }
+  Warehouse wh=new Warehouse(conf);
+  Path dfsPath=wh.getDefaultTablePath(MetaStoreUtils.DEFAULT_DATABASE_NAME,"testNoPartTbl");
+  FileSystem fs=dfsPath.getFileSystem(conf);
+  assertEquals(fs.getFileStatus(dfsPath).getPermission(),FsPermission.valueOf("drwx-wx---"));
+  pig.setBatchOn();
+  pig.registerQuery("A  = load 'build.xml' as (line:chararray);");
+  pig.registerQuery("store A into 'testNoPartTbl' using " + HCatStorer.class.getName() + "();");
+  pig.executeBatch();
+  FileStatus[] status=fs.listStatus(dfsPath,hiddenFileFilter);
+  assertEquals(status.length,1);
+  assertEquals(FsPermission.valueOf("drwx-wx---"),status[0].getPermission());
+  try {
+    HCatCli.main(new String[]{"-e","create table testPartTbl (line string)  partitioned by (a string) stored as RCFILE","-p","rwx-wx--x"});
+  }
+ catch (  Exception e) {
+    assertTrue(e instanceof ExitException);
+    assertEquals(((ExitException)e).getStatus(),0);
+  }
+  dfsPath=wh.getDefaultTablePath(MetaStoreUtils.DEFAULT_DATABASE_NAME,"testPartTbl");
+  assertEquals(fs.getFileStatus(dfsPath).getPermission(),FsPermission.valueOf("drwx-wx--x"));
+  pig.setBatchOn();
+  pig.registerQuery("A  = load 'build.xml' as (line:chararray);");
+  pig.registerQuery("store A into 'testPartTbl' using " + HCatStorer.class.getName() + "('a=part');");
+  pig.executeBatch();
+  Path partPath=new Path(dfsPath,"a=part");
+  assertEquals(FsPermission.valueOf("drwx-wx--x"),fs.getFileStatus(partPath).getPermission());
+  status=fs.listStatus(partPath,hiddenFileFilter);
+  assertEquals(status.length,1);
+  assertEquals(FsPermission.valueOf("drwx-wx--x"),status[0].getPermission());
+}

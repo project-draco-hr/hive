@@ -1,0 +1,46 @@
+{
+  int port=getHbaseConf().getInt("hbase.zookeeper.property.clientPort",2181);
+  String host=getHbaseConf().get("hbase.zookeeper.quorum");
+  Configuration conf=RevisionManagerConfiguration.create(getHbaseConf());
+  conf.set(RMConstants.ZOOKEEPER_DATADIR,"/rm_base");
+  ZKBasedRevisionManager manager=new ZKBasedRevisionManager();
+  manager.initialize(conf);
+  manager.open();
+  ZKUtil zkutil=new ZKUtil(host + ':' + port,"/rm_base");
+  String tableName=newTableName("testTable");
+  List<String> columnFamilies=Arrays.asList("cf1","cf2","cf3");
+  Transaction txn=manager.beginWriteTransaction(tableName,columnFamilies);
+  List<String> cfs=zkutil.getColumnFamiliesOfTable(tableName);
+  assertTrue(cfs.size() == columnFamilies.size());
+  for (  String cf : cfs) {
+    assertTrue(columnFamilies.contains(cf));
+  }
+  for (  String colFamiliy : columnFamilies) {
+    String path=PathUtil.getRunningTxnInfoPath("/rm_base",tableName,colFamiliy);
+    byte[] data=zkutil.getRawData(path,null);
+    StoreFamilyRevisionList list=new StoreFamilyRevisionList();
+    ZKUtil.deserialize(list,data);
+    assertEquals(list.getRevisionListSize(),1);
+    StoreFamilyRevision lightTxn=list.getRevisionList().get(0);
+    assertEquals(lightTxn.timestamp,txn.getTransactionExpireTimeStamp());
+    assertEquals(lightTxn.revision,txn.getRevisionNumber());
+  }
+  manager.abortWriteTransaction(txn);
+  for (  String colFamiliy : columnFamilies) {
+    String path=PathUtil.getRunningTxnInfoPath("/rm_base",tableName,colFamiliy);
+    byte[] data=zkutil.getRawData(path,null);
+    StoreFamilyRevisionList list=new StoreFamilyRevisionList();
+    ZKUtil.deserialize(list,data);
+    assertEquals(list.getRevisionListSize(),0);
+  }
+  for (  String colFamiliy : columnFamilies) {
+    String path=PathUtil.getAbortInformationPath("/rm_base",tableName,colFamiliy);
+    byte[] data=zkutil.getRawData(path,null);
+    StoreFamilyRevisionList list=new StoreFamilyRevisionList();
+    ZKUtil.deserialize(list,data);
+    assertEquals(list.getRevisionListSize(),1);
+    StoreFamilyRevision abortedTxn=list.getRevisionList().get(0);
+    assertEquals(abortedTxn.getRevision(),txn.getRevisionNumber());
+  }
+  manager.close();
+}

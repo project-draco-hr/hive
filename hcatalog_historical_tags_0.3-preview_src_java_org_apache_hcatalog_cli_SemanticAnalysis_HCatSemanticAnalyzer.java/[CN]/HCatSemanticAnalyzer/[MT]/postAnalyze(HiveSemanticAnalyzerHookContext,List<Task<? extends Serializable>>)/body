@@ -1,0 +1,61 @@
+{
+  try {
+switch (ast.getToken().getType()) {
+case HiveParser.TOK_DESCTABLE:
+      authorize(getFullyQualifiedName((ASTNode)ast.getChild(0).getChild(0)),context,FsAction.READ,false);
+    break;
+case HiveParser.TOK_SHOWPARTITIONS:
+  authorize(BaseSemanticAnalyzer.getUnescapedName((ASTNode)ast.getChild(0)),context,FsAction.READ,false);
+break;
+case HiveParser.TOK_ALTERTABLE_ADDPARTS:
+case HiveParser.TOK_DROPTABLE:
+case HiveParser.TOK_ALTERTABLE_ADDCOLS:
+case HiveParser.TOK_ALTERTABLE_RENAME:
+case HiveParser.TOK_ALTERTABLE_DROPPARTS:
+case HiveParser.TOK_ALTERTABLE_PROPERTIES:
+case HiveParser.TOK_ALTERTABLE_SERIALIZER:
+case HiveParser.TOK_ALTERTABLE_SERDEPROPERTIES:
+authorize(BaseSemanticAnalyzer.getUnescapedName((ASTNode)ast.getChild(0)),context,FsAction.WRITE,false);
+break;
+case HiveParser.TOK_ALTERTABLE_PARTITION:
+authorize(BaseSemanticAnalyzer.unescapeIdentifier(((ASTNode)ast.getChild(0)).getChild(0).getText()),context,FsAction.WRITE,false);
+break;
+case HiveParser.TOK_DESCDATABASE:
+case HiveParser.TOK_SWITCHDATABASE:
+authorize(BaseSemanticAnalyzer.getUnescapedName((ASTNode)ast.getChild(0)),context,FsAction.READ,true);
+break;
+case HiveParser.TOK_DROPDATABASE:
+authorize(BaseSemanticAnalyzer.getUnescapedName((ASTNode)ast.getChild(0)),context,FsAction.WRITE,true);
+break;
+case HiveParser.TOK_CREATEDATABASE:
+case HiveParser.TOK_SHOWDATABASES:
+case HiveParser.TOK_SHOW_TABLESTATUS:
+case HiveParser.TOK_SHOWTABLES:
+case HiveParser.TOK_CREATETABLE:
+break;
+case HiveParser.TOK_EXPORT:
+String tableName=BaseSemanticAnalyzer.getUnescapedName(((ASTNode)ast.getChild(0).getChild(0)));
+LOG.debug("Export for table " + tableName);
+authorize(tableName,context,FsAction.READ,false);
+break;
+case HiveParser.TOK_IMPORT:
+LOG.debug("Import into location " + context.getConf().get("import.destination.dir"));
+AuthUtils.authorize(new Path(context.getConf().get("import.destination.dir")),FsAction.WRITE,context.getConf());
+break;
+default :
+throw new HCatException(ErrorType.ERROR_INTERNAL_EXCEPTION,"Unexpected token: " + ast.getToken());
+}
+}
+ catch (HCatException e) {
+throw new SemanticException(e);
+}
+catch (MetaException e) {
+throw new SemanticException(e);
+}
+catch (HiveException e) {
+throw new SemanticException(e);
+}
+if (hook != null) {
+hook.postAnalyze(context,rootTasks);
+}
+}

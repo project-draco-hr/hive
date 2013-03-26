@@ -1,0 +1,22 @@
+{
+  UserGroupInformation ugi=UserGroupInformation.createRemoteUser(user);
+  TempletonJobTracker tracker=null;
+  JobState state=null;
+  try {
+    tracker=new TempletonJobTracker(getAddress(appConf),appConf);
+    JobID jobid=StatusDelegator.StringToJobID(id);
+    if (jobid == null)     throw new BadParam("Invalid jobid: " + id);
+    tracker.killJob(jobid);
+    state=new JobState(id,Main.getAppConfigInstance());
+    String childid=state.getChildId();
+    if (childid != null)     tracker.killJob(StatusDelegator.StringToJobID(childid));
+    return StatusDelegator.makeStatus(tracker,jobid,state);
+  }
+ catch (  IllegalStateException e) {
+    throw new BadParam(e.getMessage());
+  }
+ finally {
+    if (tracker != null)     tracker.close();
+    if (state != null)     state.close();
+  }
+}

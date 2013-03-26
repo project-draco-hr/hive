@@ -1,0 +1,54 @@
+{
+  byte type=fSchema.type;
+switch (type) {
+case DataType.CHARARRAY:
+case DataType.BIGCHARARRAY:
+    return new HCatFieldSchema(fSchema.alias,Type.STRING,null);
+case DataType.INTEGER:
+  return new HCatFieldSchema(fSchema.alias,Type.INT,null);
+case DataType.LONG:
+return new HCatFieldSchema(fSchema.alias,Type.BIGINT,null);
+case DataType.FLOAT:
+return new HCatFieldSchema(fSchema.alias,Type.FLOAT,null);
+case DataType.DOUBLE:
+return new HCatFieldSchema(fSchema.alias,Type.DOUBLE,null);
+case DataType.BYTEARRAY:
+return new HCatFieldSchema(fSchema.alias,Type.BINARY,null);
+case DataType.BAG:
+Schema bagSchema=fSchema.schema;
+List<HCatFieldSchema> arrFields=new ArrayList<HCatFieldSchema>(1);
+FieldSchema field;
+if (removeTupleFromBag(hcatFieldSchema,fSchema)) {
+field=bagSchema.getField(0).schema.getField(0);
+}
+ else {
+field=bagSchema.getField(0);
+}
+arrFields.add(getHCatFSFromPigFS(field,hcatFieldSchema == null ? null : hcatFieldSchema.getArrayElementSchema().get(0)));
+return new HCatFieldSchema(fSchema.alias,Type.ARRAY,new HCatSchema(arrFields),"");
+case DataType.TUPLE:
+List<String> fieldNames=new ArrayList<String>();
+List<HCatFieldSchema> hcatFSs=new ArrayList<HCatFieldSchema>();
+HCatSchema structSubSchema=hcatFieldSchema == null ? null : hcatFieldSchema.getStructSubSchema();
+List<FieldSchema> fields=fSchema.schema.getFields();
+for (int i=0; i < fields.size(); i++) {
+FieldSchema fieldSchema=fields.get(i);
+fieldNames.add(fieldSchema.alias);
+hcatFSs.add(getHCatFSFromPigFS(fieldSchema,structSubSchema == null ? null : structSubSchema.get(i)));
+}
+return new HCatFieldSchema(fSchema.alias,Type.STRUCT,new HCatSchema(hcatFSs),"");
+case DataType.MAP:
+{
+HCatFieldSchema valFS;
+List<HCatFieldSchema> valFSList=new ArrayList<HCatFieldSchema>(1);
+if (hcatFieldSchema != null) {
+return new HCatFieldSchema(fSchema.alias,Type.MAP,Type.STRING,hcatFieldSchema.getMapValueSchema(),"");
+}
+valFS=new HCatFieldSchema(fSchema.alias,Type.STRING,"");
+valFSList.add(valFS);
+return new HCatFieldSchema(fSchema.alias,Type.MAP,Type.STRING,new HCatSchema(valFSList),"");
+}
+default :
+throw new FrontendException("Unsupported type: " + type + "  in Pig's schema",PigHCatUtil.PIG_EXCEPTION_CODE);
+}
+}

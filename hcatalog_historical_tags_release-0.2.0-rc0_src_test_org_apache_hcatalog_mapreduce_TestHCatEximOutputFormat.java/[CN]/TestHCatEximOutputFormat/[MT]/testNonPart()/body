@@ -1,0 +1,27 @@
+{
+  try {
+    HCatEximOutputFormat.setOutput(job,dbName,tblName,outputLocation.toString(),null,null,schema);
+    job.waitForCompletion(true);
+    HCatEximOutputCommitter committer=new HCatEximOutputCommitter(job,null);
+    committer.cleanupJob(job);
+    Path metadataPath=new Path(outputLocation,"_metadata");
+    Map.Entry<Table,List<Partition>> rv=EximUtil.readMetaData(fs,metadataPath);
+    Table table=rv.getKey();
+    List<Partition> partitions=rv.getValue();
+    assertEquals(dbName,table.getDbName());
+    assertEquals(tblName,table.getTableName());
+    assertTrue(EximUtil.schemaCompare(table.getSd().getCols(),HCatUtil.getFieldSchemaList(columns)));
+    assertEquals("org.apache.hcatalog.rcfile.RCFileInputDriver",table.getParameters().get(HCatConstants.HCAT_ISD_CLASS));
+    assertEquals("org.apache.hcatalog.rcfile.RCFileOutputDriver",table.getParameters().get(HCatConstants.HCAT_OSD_CLASS));
+    assertEquals("org.apache.hadoop.hive.ql.io.RCFileInputFormat",table.getSd().getInputFormat());
+    assertEquals("org.apache.hadoop.hive.ql.io.RCFileOutputFormat",table.getSd().getOutputFormat());
+    assertEquals("org.apache.hadoop.hive.serde2.columnar.ColumnarSerDe",table.getSd().getSerdeInfo().getSerializationLib());
+    assertEquals(0,table.getPartitionKeys().size());
+    assertEquals(0,partitions.size());
+  }
+ catch (  Exception e) {
+    System.out.println("Test failed with " + e.getMessage());
+    e.printStackTrace();
+    throw e;
+  }
+}

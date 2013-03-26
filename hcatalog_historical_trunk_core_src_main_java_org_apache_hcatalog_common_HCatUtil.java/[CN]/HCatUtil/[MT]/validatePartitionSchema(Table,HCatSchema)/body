@@ -1,0 +1,35 @@
+{
+  Map<String,FieldSchema> partitionKeyMap=new HashMap<String,FieldSchema>();
+  for (  FieldSchema field : table.getPartitionKeys()) {
+    partitionKeyMap.put(field.getName().toLowerCase(),field);
+  }
+  List<FieldSchema> tableCols=table.getCols();
+  List<FieldSchema> newFields=new ArrayList<FieldSchema>();
+  for (int i=0; i < partitionSchema.getFields().size(); i++) {
+    FieldSchema field=HCatSchemaUtils.getFieldSchema(partitionSchema.getFields().get(i));
+    FieldSchema tableField;
+    if (i < tableCols.size()) {
+      tableField=tableCols.get(i);
+      if (!tableField.getName().equalsIgnoreCase(field.getName())) {
+        throw new HCatException(ErrorType.ERROR_SCHEMA_COLUMN_MISMATCH,"Expected column <" + tableField.getName() + "> at position "+ (i + 1)+ ", found column <"+ field.getName()+ ">");
+      }
+    }
+ else {
+      tableField=partitionKeyMap.get(field.getName().toLowerCase());
+      if (tableField != null) {
+        throw new HCatException(ErrorType.ERROR_SCHEMA_PARTITION_KEY,"Key <" + field.getName() + ">");
+      }
+    }
+    if (tableField == null) {
+      newFields.add(field);
+    }
+ else {
+      TypeInfo partitionType=TypeInfoUtils.getTypeInfoFromTypeString(field.getType());
+      TypeInfo tableType=TypeInfoUtils.getTypeInfoFromTypeString(tableField.getType());
+      if (!partitionType.equals(tableType)) {
+        throw new HCatException(ErrorType.ERROR_SCHEMA_TYPE_MISMATCH,"Column <" + field.getName() + ">, expected <"+ tableType.getTypeName()+ ">, got <"+ partitionType.getTypeName()+ ">");
+      }
+    }
+  }
+  return newFields;
+}

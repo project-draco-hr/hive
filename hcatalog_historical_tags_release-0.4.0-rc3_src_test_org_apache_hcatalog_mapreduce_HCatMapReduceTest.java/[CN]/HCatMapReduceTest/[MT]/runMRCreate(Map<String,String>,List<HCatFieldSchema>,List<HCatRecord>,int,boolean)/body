@@ -1,0 +1,29 @@
+{
+  writeRecords=records;
+  MapCreate.writeCount=0;
+  Configuration conf=new Configuration();
+  Job job=new Job(conf,"hcat mapreduce write test");
+  job.setJarByClass(this.getClass());
+  job.setMapperClass(HCatMapReduceTest.MapCreate.class);
+  job.setInputFormatClass(TextInputFormat.class);
+  Path path=new Path(fs.getWorkingDirectory(),"mapred/testHCatMapReduceInput");
+  createInputFile(path,writeCount);
+  TextInputFormat.setInputPaths(job,path);
+  job.setOutputFormatClass(HCatOutputFormat.class);
+  OutputJobInfo outputJobInfo=OutputJobInfo.create(dbName,tableName,partitionValues);
+  HCatOutputFormat.setOutput(job,outputJobInfo);
+  job.setMapOutputKeyClass(BytesWritable.class);
+  job.setMapOutputValueClass(DefaultHCatRecord.class);
+  job.setNumReduceTasks(0);
+  HCatOutputFormat.setSchema(job,new HCatSchema(partitionColumns));
+  boolean success=job.waitForCompletion(true);
+  if (success) {
+    new FileOutputCommitterContainer(job,null).commitJob(job);
+  }
+ else {
+    new FileOutputCommitterContainer(job,null).abortJob(job,JobStatus.State.FAILED);
+  }
+  if (assertWrite) {
+    Assert.assertEquals(writeCount,MapCreate.writeCount);
+  }
+}

@@ -1,0 +1,29 @@
+{
+  if (UserGroupInformation.isSecurityEnabled()) {
+    UserGroupInformation ugi=UserGroupInformation.getCurrentUser();
+    TokenSelector<? extends TokenIdentifier> tokenSelector=new DelegationTokenSelector();
+    Token<? extends TokenIdentifier> token=tokenSelector.selectToken(new Text(),ugi.getTokens());
+    if (token != null) {
+      job.getCredentials().addToken(new Text(ugi.getUserName()),token);
+    }
+ else {
+      String tokenSignature=getTokenSignature(outputJobInfo);
+      if (tokenMap.get(tokenSignature) == null) {
+        tokenMap.put(tokenSignature,HCatUtil.extractThriftToken(client.getDelegationToken(ugi.getUserName()),tokenSignature));
+      }
+      String jcTokenSignature="jc." + tokenSignature;
+      if (harRequested) {
+        if (tokenMap.get(jcTokenSignature) == null) {
+          tokenMap.put(jcTokenSignature,HCatUtil.getJobTrackerDelegationToken(conf,ugi.getUserName()));
+        }
+      }
+      job.getCredentials().addToken(new Text(ugi.getUserName() + tokenSignature),tokenMap.get(tokenSignature));
+      job.getConfiguration().set(HCatConstants.HCAT_KEY_TOKEN_SIGNATURE,tokenSignature);
+      if (harRequested) {
+        job.getCredentials().addToken(new Text(ugi.getUserName() + jcTokenSignature),tokenMap.get(jcTokenSignature));
+        job.getConfiguration().set(HCatConstants.HCAT_KEY_JOBCLIENT_TOKEN_SIGNATURE,jcTokenSignature);
+        job.getConfiguration().set(HCatConstants.HCAT_KEY_JOBCLIENT_TOKEN_STRFORM,tokenMap.get(jcTokenSignature).encodeToUrlString());
+      }
+    }
+  }
+}

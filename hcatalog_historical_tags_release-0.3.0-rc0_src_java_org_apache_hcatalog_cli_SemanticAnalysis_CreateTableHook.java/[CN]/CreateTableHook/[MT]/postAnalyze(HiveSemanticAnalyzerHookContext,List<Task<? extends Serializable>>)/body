@@ -1,0 +1,40 @@
+{
+  if (rootTasks.size() == 0) {
+    return;
+  }
+  CreateTableDesc desc=((DDLTask)rootTasks.get(rootTasks.size() - 1)).getWork().getCreateTblDesc();
+  Map<String,String> tblProps=desc.getTblProps();
+  if (tblProps == null) {
+    tblProps=new HashMap<String,String>();
+  }
+  String storageHandler=desc.getStorageHandler();
+  if (StringUtils.isEmpty(storageHandler)) {
+    authorize(context,desc.getLocation());
+    tblProps.put(HCatConstants.HCAT_ISD_CLASS,inStorageDriver);
+    tblProps.put(HCatConstants.HCAT_OSD_CLASS,outStorageDriver);
+  }
+ else {
+    try {
+      HCatStorageHandler storageHandlerInst=HCatUtil.getStorageHandler(context.getConf(),storageHandler);
+      HiveAuthorizationProvider auth=storageHandlerInst.getAuthorizationProvider();
+      String databaseName=context.getHive().newTable(desc.getTableName()).getDbName();
+      auth.authorize(context.getHive().getDatabase(databaseName),null,null);
+      tblProps.put(HCatConstants.HCAT_ISD_CLASS,storageHandlerInst.getInputStorageDriver().getName());
+      tblProps.put(HCatConstants.HCAT_OSD_CLASS,storageHandlerInst.getOutputStorageDriver().getName());
+    }
+ catch (    HiveException e) {
+      throw new SemanticException(e);
+    }
+  }
+  if (loader != null) {
+    tblProps.put(HCatConstants.HCAT_PIG_LOADER,loader);
+  }
+  if (storer != null) {
+    tblProps.put(HCatConstants.HCAT_PIG_STORER,storer);
+  }
+  if (desc == null) {
+    return;
+  }
+  desc.setTblProps(tblProps);
+  context.getConf().set(HCatConstants.HCAT_CREATE_TBL_NAME,tableName);
+}

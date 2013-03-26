@@ -1,0 +1,32 @@
+{
+  job.getConfiguration().set(INNER_SIGNATURE,INNER_SIGNATURE_PREFIX + "_" + signature);
+  Pair<String,String> dbTablePair=PigHCatUtil.getDBTableNames(location);
+  dbName=dbTablePair.first;
+  tableName=dbTablePair.second;
+  if (!HCatUtil.checkJobContextIfRunningFromBackend(job)) {
+    HCatInputFormat.setInput(job,InputJobInfo.create(dbName,tableName,getPartitionFilterString(),hcatServerUri != null ? hcatServerUri : (hcatServerUri=PigHCatUtil.getHCatServerUri(job)),PigHCatUtil.getHCatServerPrincipal(job)));
+  }
+  UDFContext udfContext=UDFContext.getUDFContext();
+  Properties props=udfContext.getUDFProperties(this.getClass(),new String[]{signature});
+  RequiredFieldList requiredFieldsInfo=(RequiredFieldList)props.get(PRUNE_PROJECTION_INFO);
+  if (requiredFieldsInfo != null) {
+    try {
+      outputSchema=phutil.getHCatSchema(requiredFieldsInfo.getFields(),signature,this.getClass());
+      HCatInputFormat.setOutputSchema(job,outputSchema);
+    }
+ catch (    Exception e) {
+      throw new IOException(e);
+    }
+  }
+ else {
+    if (HCatUtil.checkJobContextIfRunningFromBackend(job)) {
+      try {
+        HCatSchema hcatTableSchema=(HCatSchema)props.get(HCatConstants.HCAT_TABLE_SCHEMA);
+        outputSchema=hcatTableSchema;
+      }
+ catch (      Exception e) {
+        throw new IOException(e);
+      }
+    }
+  }
+}

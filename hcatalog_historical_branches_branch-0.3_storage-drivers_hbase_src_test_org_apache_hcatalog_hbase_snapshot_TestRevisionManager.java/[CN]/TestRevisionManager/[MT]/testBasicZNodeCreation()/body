@@ -1,0 +1,29 @@
+{
+  int port=getHbaseConf().getInt("hbase.zookeeper.property.clientPort",2181);
+  String servers=getHbaseConf().get("hbase.zookeeper.quorum");
+  String[] splits=servers.split(",");
+  StringBuffer sb=new StringBuffer();
+  for (  String split : splits) {
+    sb.append(split);
+    sb.append(':');
+    sb.append(port);
+  }
+  ZKUtil zkutil=new ZKUtil(sb.toString(),"/rm_base");
+  String tableName=newTableName("testTable");
+  List<String> columnFamilies=Arrays.asList("cf001","cf002","cf003");
+  zkutil.createRootZNodes();
+  ZooKeeper zk=zkutil.getSession();
+  Stat tempTwo=zk.exists("/rm_base" + PathUtil.DATA_DIR,false);
+  assertTrue(tempTwo != null);
+  Stat tempThree=zk.exists("/rm_base" + PathUtil.CLOCK_NODE,false);
+  assertTrue(tempThree != null);
+  zkutil.setUpZnodesForTable(tableName,columnFamilies);
+  String transactionDataTablePath="/rm_base" + PathUtil.DATA_DIR + "/"+ tableName;
+  Stat result=zk.exists(transactionDataTablePath,false);
+  assertTrue(result != null);
+  for (  String colFamiliy : columnFamilies) {
+    String cfPath=transactionDataTablePath + "/" + colFamiliy;
+    Stat resultTwo=zk.exists(cfPath,false);
+    assertTrue(resultTwo != null);
+  }
+}

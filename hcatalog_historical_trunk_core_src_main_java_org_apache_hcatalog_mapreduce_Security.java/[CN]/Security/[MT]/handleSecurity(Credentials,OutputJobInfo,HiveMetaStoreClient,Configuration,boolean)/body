@@ -1,0 +1,20 @@
+{
+  if (UserGroupInformation.isSecurityEnabled()) {
+    UserGroupInformation ugi=UserGroupInformation.getCurrentUser();
+    TokenSelector<? extends TokenIdentifier> hiveTokenSelector=new DelegationTokenSelector();
+    Token<? extends TokenIdentifier> hiveToken=hiveTokenSelector.selectToken(new Text(),ugi.getTokens());
+    if (hiveToken == null) {
+      String tokenSignature=getTokenSignature(outputJobInfo);
+      hiveToken=HCatUtil.extractThriftToken(client.getDelegationToken(ugi.getUserName()),tokenSignature);
+      if (harRequested) {
+        TokenSelector<? extends TokenIdentifier> jtTokenSelector=new org.apache.hadoop.mapreduce.security.token.delegation.DelegationTokenSelector();
+        Token jtToken=jtTokenSelector.selectToken(org.apache.hadoop.security.SecurityUtil.buildTokenService(HCatHadoopShims.Instance.get().getResourceManagerAddress(conf)),ugi.getTokens());
+        if (jtToken == null) {
+          credentials.addToken(new Text("hcat jt token"),HCatUtil.getJobTrackerDelegationToken(conf,ugi.getUserName()));
+        }
+      }
+      credentials.addToken(new Text(ugi.getUserName() + "_" + tokenSignature),hiveToken);
+      conf.set(HCatConstants.HCAT_KEY_TOKEN_SIGNATURE,tokenSignature);
+    }
+  }
+}

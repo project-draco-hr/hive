@@ -1,0 +1,26 @@
+{
+  BytesRefArrayWritable[] bytesArr=initTestEnvironment();
+  RCFileInputDriver sd=new RCFileInputDriver();
+  JobContext jc=new JobContext(conf,new JobID());
+  sd.setInputPath(jc,file.toString());
+  InputFormat<?,?> iF=sd.getInputFormat(null);
+  InputSplit split=iF.getSplits(jc).get(0);
+  sd.setOriginalSchema(jc,buildHiveSchema());
+  sd.setOutputSchema(jc,buildPrunedSchema());
+  sd.initialize(jc,getProps());
+  conf.set(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR,jc.getConfiguration().get(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR));
+  TaskAttemptContext tac=new TaskAttemptContext(conf,new TaskAttemptID());
+  RecordReader<?,?> rr=iF.createRecordReader(split,tac);
+  rr.initialize(split,tac);
+  HCatRecord[] tuples=getPrunedRecords();
+  for (int j=0; j < 2; j++) {
+    Assert.assertTrue(rr.nextKeyValue());
+    BytesRefArrayWritable w=(BytesRefArrayWritable)rr.getCurrentValue();
+    Assert.assertFalse(bytesArr[j].equals(w));
+    Assert.assertEquals(w.size(),8);
+    HCatRecord t=sd.convertToHCatRecord(null,w);
+    Assert.assertEquals(5,t.size());
+    Assert.assertEquals(t,tuples[j]);
+  }
+  assertFalse(rr.nextKeyValue());
+}

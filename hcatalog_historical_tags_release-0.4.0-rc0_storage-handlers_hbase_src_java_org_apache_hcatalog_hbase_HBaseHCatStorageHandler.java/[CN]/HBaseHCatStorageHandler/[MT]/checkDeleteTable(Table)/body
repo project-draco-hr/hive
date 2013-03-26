@@ -1,0 +1,24 @@
+{
+  boolean isExternal=MetaStoreUtils.isExternalTable(table);
+  String tableName=getHBaseTableName(table);
+  RevisionManager rm=null;
+  try {
+    if (!isExternal && getHBaseAdmin().tableExists(tableName)) {
+      if (getHBaseAdmin().isTableEnabled(tableName)) {
+        getHBaseAdmin().disableTable(tableName);
+      }
+      getHBaseAdmin().deleteTable(tableName);
+      rm=HBaseRevisionManagerUtil.getOpenedRevisionManager(hbaseConf);
+      if (rm instanceof ZKBasedRevisionManager) {
+        ZKBasedRevisionManager zkRM=(ZKBasedRevisionManager)rm;
+        zkRM.deleteZNodes(tableName);
+      }
+    }
+  }
+ catch (  IOException ie) {
+    throw new MetaException(StringUtils.stringifyException(ie));
+  }
+ finally {
+    HBaseRevisionManagerUtil.closeRevisionManagerQuietly(rm);
+  }
+}

@@ -1,0 +1,32 @@
+{
+  if (fs.isFile(file)) {
+    Path finalOutputPath=getFinalPath(file,src,dest);
+    if (dryRun) {
+      if (fs.exists(finalOutputPath)) {
+        throw new HCatException(ErrorType.ERROR_MOVE_FAILED,"Data already exists in " + finalOutputPath + ", duplicate publish possible.");
+      }
+    }
+ else {
+      if (!fs.rename(file,finalOutputPath)) {
+        if (!fs.delete(finalOutputPath,true)) {
+          throw new HCatException(ErrorType.ERROR_MOVE_FAILED,"Failed to delete existing path " + finalOutputPath);
+        }
+        if (!fs.rename(file,finalOutputPath)) {
+          throw new HCatException(ErrorType.ERROR_MOVE_FAILED,"Failed to move output to " + dest);
+        }
+      }
+    }
+  }
+ else   if (fs.getFileStatus(file).isDir()) {
+    FileStatus[] paths=fs.listStatus(file);
+    Path finalOutputPath=getFinalPath(file,src,dest);
+    if (!dryRun) {
+      fs.mkdirs(finalOutputPath);
+    }
+    if (paths != null) {
+      for (      FileStatus path : paths) {
+        moveTaskOutputs(fs,path.getPath(),src,dest,dryRun);
+      }
+    }
+  }
+}

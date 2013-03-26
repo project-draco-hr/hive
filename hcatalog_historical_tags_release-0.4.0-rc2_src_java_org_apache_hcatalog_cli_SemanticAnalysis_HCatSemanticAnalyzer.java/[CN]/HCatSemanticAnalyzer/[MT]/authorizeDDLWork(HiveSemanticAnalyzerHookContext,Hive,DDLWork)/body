@@ -1,0 +1,74 @@
+{
+  ShowDatabasesDesc showDatabases=work.getShowDatabasesDesc();
+  if (showDatabases != null) {
+    authorize(HiveOperation.SHOWDATABASES.getInputRequiredPrivileges(),HiveOperation.SHOWDATABASES.getOutputRequiredPrivileges());
+  }
+  DropDatabaseDesc dropDb=work.getDropDatabaseDesc();
+  if (dropDb != null) {
+    Database db=cntxt.getHive().getDatabase(dropDb.getDatabaseName());
+    authorize(db,Privilege.DROP);
+  }
+  DescDatabaseDesc descDb=work.getDescDatabaseDesc();
+  if (descDb != null) {
+    Database db=cntxt.getHive().getDatabase(descDb.getDatabaseName());
+    authorize(db,Privilege.SELECT);
+  }
+  SwitchDatabaseDesc switchDb=work.getSwitchDatabaseDesc();
+  if (switchDb != null) {
+    Database db=cntxt.getHive().getDatabase(switchDb.getDatabaseName());
+    authorize(db,Privilege.SELECT);
+  }
+  ShowTablesDesc showTables=work.getShowTblsDesc();
+  if (showTables != null) {
+    String dbName=showTables.getDbName() == null ? cntxt.getHive().getCurrentDatabase() : showTables.getDbName();
+    authorize(cntxt.getHive().getDatabase(dbName),Privilege.SELECT);
+  }
+  ShowTableStatusDesc showTableStatus=work.getShowTblStatusDesc();
+  if (showTableStatus != null) {
+    String dbName=showTableStatus.getDbName() == null ? cntxt.getHive().getCurrentDatabase() : showTableStatus.getDbName();
+    authorize(cntxt.getHive().getDatabase(dbName),Privilege.SELECT);
+  }
+  DropTableDesc dropTable=work.getDropTblDesc();
+  if (dropTable != null) {
+    if (dropTable.getPartSpecs() == null) {
+    }
+ else {
+      for (      Map<String,String> partSpec : dropTable.getPartSpecs()) {
+        Table table=hive.getTable(hive.getCurrentDatabase(),dropTable.getTableName());
+        List<Partition> partitions=hive.getPartitions(table,partSpec);
+        for (        Partition part : partitions) {
+          authorize(part,Privilege.DROP);
+        }
+      }
+    }
+  }
+  AlterTableDesc alterTable=work.getAlterTblDesc();
+  if (alterTable != null) {
+    Table table=hive.getTable(hive.getCurrentDatabase(),alterTable.getOldName(),false);
+    Partition part=null;
+    if (alterTable.getPartSpec() != null) {
+      part=hive.getPartition(table,alterTable.getPartSpec(),false);
+    }
+    String newLocation=alterTable.getNewLocation();
+    if (alterTable.getOp() == AlterTableDesc.AlterTableTypes.ALTERLOCATION) {
+      if (part != null) {
+        authorize(part,Privilege.ALTER_DATA);
+        part.setLocation(newLocation);
+        authorize(part,Privilege.ALTER_DATA);
+      }
+ else {
+        authorize(table,Privilege.ALTER_DATA);
+        table.getTTable().getSd().setLocation(newLocation);
+        authorize(table,Privilege.ALTER_DATA);
+      }
+    }
+  }
+  DescTableDesc descTable=work.getDescTblDesc();
+  if (descTable != null) {
+    authorizeTable(cntxt.getHive(),descTable.getTableName(),Privilege.SELECT);
+  }
+  ShowPartitionsDesc showParts=work.getShowPartsDesc();
+  if (showParts != null) {
+    authorizeTable(cntxt.getHive(),showParts.getTabName(),Privilege.SELECT);
+  }
+}

@@ -1,0 +1,30 @@
+{
+  Initialize();
+  int port=getHbaseConf().getInt("hbase.zookeeper.property.clientPort",2181);
+  String servers=getHbaseConf().get("hbase.zookeeper.quorum");
+  String[] splits=servers.split(",");
+  StringBuffer sb=new StringBuffer();
+  for (  String split : splits) {
+    sb.append(split);
+    sb.append(':');
+    sb.append(port);
+  }
+  hcatDriver.run("drop table test_table");
+  CommandProcessorResponse response=hcatDriver.run("create table test_table(key int, value string) STORED BY " + "'org.apache.hcatalog.hbase.HBaseHCatStorageHandler'" + "TBLPROPERTIES ('hbase.columns.mapping'=':key,cf1:val')");
+  assertEquals(0,response.getResponseCode());
+  HBaseAdmin hAdmin=new HBaseAdmin(getHbaseConf());
+  boolean doesTableExist=hAdmin.tableExists("test_table");
+  assertTrue(doesTableExist);
+  ZKUtil zkutil=new ZKUtil(sb.toString(),"/rm_base");
+  ZooKeeper zk=zkutil.getSession();
+  String tablePath=PathUtil.getTxnDataPath("/rm_base","test_table");
+  Stat tempTwo=zk.exists(tablePath,false);
+  assertTrue(tempTwo != null);
+  String cfPath=PathUtil.getTxnDataPath("/rm_base","test_table") + "/cf1";
+  Stat tempThree=zk.exists(cfPath,false);
+  assertTrue(tempThree != null);
+  hcatDriver.run("drop table test_table");
+  System.out.println("Table path : " + tablePath);
+  Stat tempFour=zk.exists(tablePath,false);
+  assertTrue(tempFour == null);
+}

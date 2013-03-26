@@ -1,0 +1,94 @@
+{
+  if (dynamicPartitioningUsed) {
+    discoverPartitions(context);
+  }
+  OutputJobInfo jobInfo=HCatOutputFormat.getJobInfo(context);
+  Configuration conf=context.getConfiguration();
+  Table table=new Table(jobInfo.getTableInfo().getTable());
+  Path tblPath=new Path(table.getTTable().getSd().getLocation());
+  FileSystem fs=tblPath.getFileSystem(conf);
+  if (table.getPartitionKeys().size() == 0) {
+    Path src=new Path(jobInfo.getLocation());
+    moveTaskOutputs(fs,src,src,tblPath,false);
+    fs.delete(src,true);
+    return;
+  }
+  HiveMetaStoreClient client=null;
+  HCatTableInfo tableInfo=jobInfo.getTableInfo();
+  List<Partition> partitionsAdded=new ArrayList<Partition>();
+  try {
+    HiveConf hiveConf=HCatUtil.getHiveConf(conf);
+    client=HCatUtil.getHiveClient(hiveConf);
+    StorerInfo storer=InternalUtil.extractStorerInfo(table.getTTable().getSd(),table.getParameters());
+    FileStatus tblStat=fs.getFileStatus(tblPath);
+    String grpName=tblStat.getGroup();
+    FsPermission perms=tblStat.getPermission();
+    List<Partition> partitionsToAdd=new ArrayList<Partition>();
+    if (!dynamicPartitioningUsed) {
+      partitionsToAdd.add(constructPartition(context,jobInfo,tblPath.toString(),jobInfo.getPartitionValues(),jobInfo.getOutputSchema(),getStorerParameterMap(storer),table,fs,grpName,perms));
+    }
+ else {
+      for (      Entry<String,Map<String,String>> entry : partitionsDiscoveredByPath.entrySet()) {
+        partitionsToAdd.add(constructPartition(context,jobInfo,getPartitionRootLocation(entry.getKey(),entry.getValue().size()),entry.getValue(),jobInfo.getOutputSchema(),getStorerParameterMap(storer),table,fs,grpName,perms));
+      }
+    }
+    ArrayList<Map<String,String>> ptnInfos=new ArrayList<Map<String,String>>();
+    for (    Partition ptn : partitionsToAdd) {
+      ptnInfos.add(InternalUtil.createPtnKeyValueMap(new Table(tableInfo.getTable()),ptn));
+    }
+    if (dynamicPartitioningUsed && harProcessor.isEnabled() && (!partitionsToAdd.isEmpty())) {
+      Path src=new Path(ptnRootLocation);
+      moveTaskOutputs(fs,src,src,tblPath,true);
+      moveTaskOutputs(fs,src,src,tblPath,false);
+      fs.delete(src,true);
+      try {
+        updateTableSchema(client,table,jobInfo.getOutputSchema());
+        LOG.info("HAR is being used. The table {} has new partitions {}.",table.getTableName(),ptnInfos);
+        client.add_partitions(partitionsToAdd);
+        partitionsAdded=partitionsToAdd;
+      }
+ catch (      Exception e) {
+        for (        Partition p : partitionsToAdd) {
+          Path ptnPath=new Path(harProcessor.getParentFSPath(new Path(p.getSd().getLocation())));
+          if (fs.exists(ptnPath)) {
+            fs.delete(ptnPath,true);
+          }
+        }
+        throw e;
+      }
+    }
+ else {
+      updateTableSchema(client,table,jobInfo.getOutputSchema());
+      LOG.info("HAR not is not being used. The table {} has new partitions {}.",table.getTableName(),ptnInfos);
+      partitionsAdded=partitionsToAdd;
+      if (dynamicPartitioningUsed && (partitionsAdded.size() > 0)) {
+        Path src=new Path(ptnRootLocation);
+        moveTaskOutputs(fs,src,src,tblPath,true);
+        moveTaskOutputs(fs,src,src,tblPath,false);
+        fs.delete(src,true);
+      }
+      client.add_partitions(partitionsToAdd);
+    }
+  }
+ catch (  Exception e) {
+    if (partitionsAdded.size() > 0) {
+      try {
+        for (        Partition p : partitionsAdded) {
+          client.dropPartition(tableInfo.getDatabaseName(),tableInfo.getTableName(),p.getValues());
+        }
+      }
+ catch (      Exception te) {
+        throw new HCatException(ErrorType.ERROR_PUBLISHING_PARTITION,e);
+      }
+    }
+    if (e instanceof HCatException) {
+      throw (HCatException)e;
+    }
+ else {
+      throw new HCatException(ErrorType.ERROR_PUBLISHING_PARTITION,e);
+    }
+  }
+ finally {
+    HCatUtil.closeHiveClientQuietly(client);
+  }
+}

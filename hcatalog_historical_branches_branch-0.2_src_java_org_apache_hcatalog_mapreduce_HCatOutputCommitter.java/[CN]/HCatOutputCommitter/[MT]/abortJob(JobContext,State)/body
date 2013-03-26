@@ -1,0 +1,52 @@
+{
+  if (dynamicPartitioningUsed) {
+    discoverPartitions(jobContext);
+  }
+  if (baseCommitter != null) {
+    baseCommitter.abortJob(jobContext,state);
+  }
+ else {
+    if (dynamicPartitioningUsed) {
+      for (      HCatOutputStorageDriver baseOsd : storageDriversDiscoveredByPath.values()) {
+        try {
+          baseOsd.abortOutputCommitterJob(new TaskAttemptContext(jobContext.getConfiguration(),TaskAttemptID.forName(ptnRootLocation)),state);
+        }
+ catch (        Exception e) {
+          throw new IOException(e);
+        }
+      }
+    }
+  }
+  OutputJobInfo jobInfo=HCatOutputFormat.getJobInfo(jobContext);
+  try {
+    HiveMetaStoreClient client=HCatOutputFormat.createHiveClient(jobInfo.getTableInfo().getServerUri(),jobContext.getConfiguration());
+    String tokenStrForm=client.getTokenStrForm();
+    if (tokenStrForm != null && jobContext.getConfiguration().get(HCatConstants.HCAT_KEY_TOKEN_SIGNATURE) != null) {
+      client.cancelDelegationToken(tokenStrForm);
+    }
+    if (harProcessor.isEnabled()) {
+      String jcTokenStrForm=jobContext.getConfiguration().get(HCatConstants.HCAT_KEY_JOBCLIENT_TOKEN_STRFORM);
+      String jcTokenSignature=jobContext.getConfiguration().get(HCatConstants.HCAT_KEY_JOBCLIENT_TOKEN_SIGNATURE);
+      if (jcTokenStrForm != null && jcTokenSignature != null) {
+        HCatUtil.cancelJobTrackerDelegationToken(tokenStrForm,jcTokenSignature);
+      }
+    }
+  }
+ catch (  Exception e) {
+    if (e instanceof HCatException) {
+      throw (HCatException)e;
+    }
+ else {
+      throw new HCatException(ErrorType.ERROR_PUBLISHING_PARTITION,e);
+    }
+  }
+  Path src;
+  if (dynamicPartitioningUsed) {
+    src=new Path(getPartitionRootLocation(jobInfo.getLocation().toString(),jobInfo.getTable().getPartitionKeysSize()));
+  }
+ else {
+    src=new Path(jobInfo.getLocation());
+  }
+  FileSystem fs=src.getFileSystem(jobContext.getConfiguration());
+  fs.delete(src,true);
+}

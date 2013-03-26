@@ -1,0 +1,34 @@
+{
+  Pair<String,String> dbAndTableName=HCatUtil.getDbAndTableName(tableDesc.getTableName());
+  OutputJobInfo outputJobInfo=OutputJobInfo.create(dbAndTableName.first,dbAndTableName.second,ptnValues);
+  Job job=new Job(new Configuration());
+  HCatOutputFormat.setOutput(job,outputJobInfo);
+  LOG.debug("HCatOutputFormat.setOutput() done");
+  Properties tprops=tableDesc.getProperties();
+  String columnNameProperty=tprops.getProperty(Constants.LIST_COLUMNS);
+  String columnTypeProperty=tprops.getProperty(Constants.LIST_COLUMN_TYPES);
+  List<String> columnNames;
+  if (columnNameProperty.length() == 0) {
+    columnNames=new ArrayList<String>();
+  }
+ else {
+    columnNames=Arrays.asList(columnNameProperty.split(","));
+  }
+  List<TypeInfo> columnTypes;
+  if (columnTypeProperty.length() == 0) {
+    columnTypes=new ArrayList<TypeInfo>();
+  }
+ else {
+    columnTypes=TypeInfoUtils.getTypeInfosFromTypeString(columnTypeProperty);
+  }
+  StructTypeInfo rowTypeInfo=(StructTypeInfo)TypeInfoFactory.getStructTypeInfo(columnNames,columnTypes);
+  HCatSchema hsch=HCatSchemaUtils.getHCatSchema(rowTypeInfo).getFields().get(0).getStructSubSchema();
+  LOG.debug("schema " + hsch.toString());
+  HCatOutputFormat.setSchema(job,hsch);
+  for (  String confToSave : HCatConstants.OUTPUT_CONFS_TO_SAVE) {
+    String confVal=job.getConfiguration().get(confToSave);
+    if (confVal != null) {
+      jobProperties.put(confToSave,confVal);
+    }
+  }
+}

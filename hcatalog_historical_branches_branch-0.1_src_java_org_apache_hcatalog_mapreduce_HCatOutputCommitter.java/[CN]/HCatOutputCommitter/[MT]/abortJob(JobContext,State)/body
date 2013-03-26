@@ -1,0 +1,24 @@
+{
+  if (baseCommitter != null) {
+    baseCommitter.abortJob(jobContext,state);
+  }
+  OutputJobInfo jobInfo=HCatOutputFormat.getJobInfo(jobContext);
+  try {
+    HiveMetaStoreClient client=HCatOutputFormat.createHiveClient(jobInfo.getTableInfo().getServerUri(),jobContext.getConfiguration());
+    String tokenStrForm=client.getTokenStrForm();
+    if (tokenStrForm != null && jobContext.getConfiguration().get(HCatConstants.HCAT_KEY_TOKEN_SIGNATURE) != null) {
+      client.cancelDelegationToken(tokenStrForm);
+    }
+  }
+ catch (  Exception e) {
+    if (e instanceof HCatException) {
+      throw (HCatException)e;
+    }
+ else {
+      throw new HCatException(ErrorType.ERROR_PUBLISHING_PARTITION,e);
+    }
+  }
+  Path src=new Path(jobInfo.getLocation());
+  FileSystem fs=src.getFileSystem(jobContext.getConfiguration());
+  fs.delete(src,true);
+}

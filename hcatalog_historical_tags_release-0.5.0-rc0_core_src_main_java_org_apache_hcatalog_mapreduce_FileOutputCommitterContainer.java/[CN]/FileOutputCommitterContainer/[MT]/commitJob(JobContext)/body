@@ -1,0 +1,28 @@
+{
+  try {
+    if (dynamicPartitioningUsed) {
+      discoverPartitions(jobContext);
+      for (      JobContext context : contextDiscoveredByPath.values()) {
+        new JobConf(context.getConfiguration()).getOutputCommitter().commitJob(context);
+      }
+    }
+    if (getBaseOutputCommitter() != null && !dynamicPartitioningUsed) {
+      getBaseOutputCommitter().commitJob(HCatMapRedUtil.createJobContext(jobContext));
+    }
+    registerPartitions(jobContext);
+    OutputJobInfo jobInfo=HCatOutputFormat.getJobInfo(jobContext);
+    if (getOutputDirMarking(jobContext.getConfiguration())) {
+      Path outputPath=new Path(jobInfo.getLocation());
+      FileSystem fileSys=outputPath.getFileSystem(jobContext.getConfiguration());
+      if (fileSys.exists(outputPath)) {
+        Path filePath=new Path(outputPath,SUCCEEDED_FILE_NAME);
+        if (!fileSys.exists(filePath)) {
+          fileSys.create(filePath).close();
+        }
+      }
+    }
+  }
+  finally {
+    cancelDelegationTokens(jobContext);
+  }
+}

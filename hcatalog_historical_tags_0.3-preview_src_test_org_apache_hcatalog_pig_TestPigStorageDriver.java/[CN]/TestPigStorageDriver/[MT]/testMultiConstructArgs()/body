@@ -1,0 +1,23 @@
+{
+  String fsLoc=hcatConf.get("fs.default.name");
+  Path tblPath=new Path(fsLoc,tblLocation);
+  String tblName="junit_pigstorage_constructs";
+  tblPath.getFileSystem(hcatConf).copyFromLocalFile(new Path(anyExistingFileInCurDir),tblPath);
+  hcatDriver.run("drop table junit_pigstorage_constructs");
+  CommandProcessorResponse resp;
+  String createTable="create table " + tblName + " (a string) partitioned by (b string) stored as TEXTFILE";
+  resp=hcatDriver.run(createTable);
+  assertEquals(0,resp.getResponseCode());
+  assertNull(resp.getErrorMessage());
+  resp=hcatDriver.run("alter table " + tblName + " set TBLPROPERTIES ('hcat.pig.storer'='org.apache.hcatalog.pig.MyPigStorage', 'hcat.pig.storer.args'=':#hello', 'hcat.pig.args.delimiter'='#')");
+  assertEquals(0,resp.getResponseCode());
+  assertNull(resp.getErrorMessage());
+  PigServer server=new PigServer(ExecType.LOCAL,hcatConf.getAllProperties());
+  UDFContext.getUDFContext().setClientSystemProps();
+  server.registerQuery("a = load '" + tblPath.toString() + "' using PigStorage() as (a:chararray);");
+  server.store("a",tblName,HCatStorer.class.getName() + "('b=2010-10-11')");
+  server.registerQuery("a = load '" + warehouseDir + "/"+ tblName+ "/b=2010-10-11' using PigStorage() as (a:chararray);");
+  Iterator<Tuple> itr=server.openIterator("a");
+  boolean result=compareWithFile(itr,anyExistingFileInCurDir,1,"2010-10-11",":hello");
+  assertTrue(result);
+}

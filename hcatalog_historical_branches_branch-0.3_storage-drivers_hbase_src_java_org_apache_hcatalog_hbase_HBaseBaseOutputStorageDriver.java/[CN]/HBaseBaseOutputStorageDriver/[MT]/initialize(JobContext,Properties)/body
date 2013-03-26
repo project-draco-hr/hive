@@ -1,0 +1,37 @@
+{
+  hcatProperties=(Properties)hcatProperties.clone();
+  super.initialize(context,hcatProperties);
+  String jobString=context.getConfiguration().get(HCatConstants.HCAT_KEY_OUTPUT_INFO);
+  if (jobString == null) {
+    throw new IOException("OutputJobInfo information not found in JobContext. HCatInputFormat.setOutput() not called?");
+  }
+  outputJobInfo=(OutputJobInfo)HCatUtil.deserialize(jobString);
+  hcatProperties.putAll(outputJobInfo.getProperties());
+  outputJobInfo.getProperties().putAll(hcatProperties);
+  hcatProperties=outputJobInfo.getProperties();
+  tableInfo=outputJobInfo.getTableInfo();
+  schema=tableInfo.getDataColumns();
+  String qualifiedTableName=HBaseHCatStorageHandler.getFullyQualifiedName(tableInfo);
+  List<FieldSchema> fields=HCatUtil.getFieldSchemaList(outputSchema.getFields());
+  hcatProperties.setProperty(Constants.LIST_COLUMNS,MetaStoreUtils.getColumnNamesFromFieldSchema(fields));
+  hcatProperties.setProperty(Constants.LIST_COLUMN_TYPES,MetaStoreUtils.getColumnTypesFromFieldSchema(fields));
+  context.getConfiguration().set(HBaseConstants.PROPERTY_OUTPUT_TABLE_NAME_KEY,qualifiedTableName);
+  String txnString=outputJobInfo.getProperties().getProperty(HBaseConstants.PROPERTY_WRITE_TXN_KEY);
+  if (txnString == null) {
+    HBaseConfiguration.addHbaseResources(context.getConfiguration());
+    converter=new HBaseSerDeResultConverter(schema,outputSchema,hcatProperties);
+    RevisionManager rm=HBaseHCatStorageHandler.getOpenedRevisionManager(context.getConfiguration());
+    Transaction txn=null;
+    try {
+      txn=rm.beginWriteTransaction(qualifiedTableName,Arrays.asList(converter.getHBaseScanColumns().split(" ")));
+    }
+  finally {
+      rm.close();
+    }
+    outputJobInfo.getProperties().setProperty(HBaseConstants.PROPERTY_WRITE_TXN_KEY,HCatUtil.serialize(txn));
+  }
+ else {
+    Transaction txn=(Transaction)HCatUtil.deserialize(txnString);
+    converter=new HBaseSerDeResultConverter(schema,outputSchema,hcatProperties,txn.getRevisionNumber());
+  }
+}

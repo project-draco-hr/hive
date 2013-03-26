@@ -1,0 +1,20 @@
+{
+  super.initialize(context,hcatProperties);
+  if (!outputJobInfo.getProperties().containsKey(PROPERTY_INT_OUTPUT_LOCATION)) {
+    Transaction txn=(Transaction)HCatUtil.deserialize(outputJobInfo.getProperties().getProperty(HBaseConstants.PROPERTY_WRITE_TXN_KEY));
+    String tableLocation=context.getConfiguration().get(PROPERTY_TABLE_LOCATION);
+    String location=new Path(tableLocation,"REVISION_" + txn.getRevisionNumber()).toString();
+    outputJobInfo.getProperties().setProperty(PROPERTY_INT_OUTPUT_LOCATION,location);
+    context.getConfiguration().set("mapred.output.dir",location);
+    if (context.getConfiguration().getBoolean("hadoop.security.authorization",false)) {
+      Path p=new Path(tableLocation);
+      FileSystem fs=FileSystem.get(context.getConfiguration());
+      fs.setPermission(new Path(tableLocation),FsPermission.valueOf("drwx--x--x"));
+      while ((p=p.getParent()) != null) {
+        if (!fs.getFileStatus(p).getPermission().getOtherAction().implies(FsAction.EXECUTE))         throw new IOException("Table's parent directories must at least have global execute permissions.");
+      }
+    }
+  }
+  outputFormat=new HBaseBulkOutputFormat();
+  context.getConfiguration().set(HCatConstants.HCAT_KEY_OUTPUT_INFO,HCatUtil.serialize(outputJobInfo));
+}

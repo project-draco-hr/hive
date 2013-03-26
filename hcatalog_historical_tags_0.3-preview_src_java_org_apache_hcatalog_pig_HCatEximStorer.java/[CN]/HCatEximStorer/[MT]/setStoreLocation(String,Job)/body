@@ -1,0 +1,51 @@
+{
+  LOG.debug("setStoreLocation called with :" + location);
+  String[] userStr=location.split("\\.");
+  String dbname=MetaStoreUtils.DEFAULT_DATABASE_NAME;
+  String tablename=null;
+  if (userStr.length == 2) {
+    dbname=userStr[0];
+    tablename=userStr[1];
+  }
+ else {
+    tablename=userStr[0];
+  }
+  Properties p=UDFContext.getUDFContext().getUDFProperties(this.getClass(),new String[]{sign});
+  Configuration config=job.getConfiguration();
+  if (!HCatUtil.checkJobContextIfRunningFromBackend(job)) {
+    Schema schema=(Schema)ObjectSerializer.deserialize(p.getProperty(PIG_SCHEMA));
+    if (schema != null) {
+      pigSchema=schema;
+    }
+    if (pigSchema == null) {
+      throw new FrontendException("Schema for data cannot be determined.",PigHCatUtil.PIG_EXCEPTION_CODE);
+    }
+    HCatSchema hcatTblSchema=new HCatSchema(new ArrayList<HCatFieldSchema>());
+    try {
+      doSchemaValidations(pigSchema,hcatTblSchema);
+    }
+ catch (    HCatException he) {
+      throw new FrontendException(he.getMessage(),PigHCatUtil.PIG_EXCEPTION_CODE,he);
+    }
+    List<HCatFieldSchema> hcatFields=new ArrayList<HCatFieldSchema>();
+    List<String> partVals=new ArrayList<String>();
+    for (    String key : partitionKeys) {
+      hcatFields.add(new HCatFieldSchema(key,HCatFieldSchema.Type.STRING,""));
+      partVals.add(partitions.get(key));
+    }
+    HCatSchema outputSchema=convertPigSchemaToHCatSchema(pigSchema,hcatTblSchema);
+    LOG.debug("Pig Schema '" + pigSchema.toString() + "' was converted to HCatSchema '"+ outputSchema);
+    HCatEximOutputFormat.setOutput(job,dbname,tablename,outputLocation,new HCatSchema(hcatFields),partVals,outputSchema);
+    p.setProperty(COMPUTED_OUTPUT_SCHEMA,ObjectSerializer.serialize(outputSchema));
+    p.setProperty(HCatConstants.HCAT_KEY_OUTPUT_INFO,config.get(HCatConstants.HCAT_KEY_OUTPUT_INFO));
+    if (config.get(HCatConstants.HCAT_KEY_HIVE_CONF) != null) {
+      p.setProperty(HCatConstants.HCAT_KEY_HIVE_CONF,config.get(HCatConstants.HCAT_KEY_HIVE_CONF));
+    }
+  }
+ else {
+    config.set(HCatConstants.HCAT_KEY_OUTPUT_INFO,p.getProperty(HCatConstants.HCAT_KEY_OUTPUT_INFO));
+    if (p.getProperty(HCatConstants.HCAT_KEY_HIVE_CONF) != null) {
+      config.set(HCatConstants.HCAT_KEY_HIVE_CONF,p.getProperty(HCatConstants.HCAT_KEY_HIVE_CONF));
+    }
+  }
+}

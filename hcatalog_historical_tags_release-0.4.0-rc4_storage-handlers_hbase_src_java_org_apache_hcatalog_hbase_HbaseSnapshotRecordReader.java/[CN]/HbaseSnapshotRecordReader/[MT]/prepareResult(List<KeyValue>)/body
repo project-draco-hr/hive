@@ -1,0 +1,45 @@
+{
+  List<KeyValue> finalKeyVals=new ArrayList<KeyValue>();
+  Map<String,List<KeyValue>> qualValMap=new HashMap<String,List<KeyValue>>();
+  for (  KeyValue kv : keyvalues) {
+    byte[] cf=kv.getFamily();
+    byte[] qualifier=kv.getQualifier();
+    String key=Bytes.toString(cf) + ":" + Bytes.toString(qualifier);
+    List<KeyValue> kvs;
+    if (qualValMap.containsKey(key)) {
+      kvs=qualValMap.get(key);
+    }
+ else {
+      kvs=new ArrayList<KeyValue>();
+    }
+    String family=Bytes.toString(kv.getFamily());
+    if (allAbortedTransactions.contains(kv.getTimestamp())) {
+      continue;
+    }
+    long desiredTS=snapshot.getRevision(family);
+    if (kv.getTimestamp() <= desiredTS) {
+      kvs.add(kv);
+    }
+    qualValMap.put(key,kvs);
+  }
+  Set<String> keys=qualValMap.keySet();
+  for (  String cf : keys) {
+    List<KeyValue> kvs=qualValMap.get(cf);
+    if (maxRevisions <= kvs.size()) {
+      for (int i=0; i < maxRevisions; i++) {
+        finalKeyVals.add(kvs.get(i));
+      }
+    }
+ else {
+      finalKeyVals.addAll(kvs);
+    }
+  }
+  if (finalKeyVals.size() == 0) {
+    return null;
+  }
+ else {
+    KeyValue[] kvArray=new KeyValue[finalKeyVals.size()];
+    finalKeyVals.toArray(kvArray);
+    return new Result(kvArray);
+  }
+}

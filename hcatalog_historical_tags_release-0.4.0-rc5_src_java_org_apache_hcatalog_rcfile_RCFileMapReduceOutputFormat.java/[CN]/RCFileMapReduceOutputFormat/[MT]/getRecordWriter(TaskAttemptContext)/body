@@ -1,0 +1,24 @@
+{
+  FileOutputCommitter committer=(FileOutputCommitter)getOutputCommitter(task);
+  Path outputPath=committer.getWorkPath();
+  FileSystem fs=outputPath.getFileSystem(task.getConfiguration());
+  if (!fs.exists(outputPath)) {
+    fs.mkdirs(outputPath);
+  }
+  Path file=getDefaultWorkFile(task,"");
+  CompressionCodec codec=null;
+  if (getCompressOutput(task)) {
+    Class<?> codecClass=getOutputCompressorClass(task,DefaultCodec.class);
+    codec=(CompressionCodec)ReflectionUtils.newInstance(codecClass,task.getConfiguration());
+  }
+  final RCFile.Writer out=new RCFile.Writer(fs,task.getConfiguration(),file,task,codec);
+  return new RecordWriter<WritableComparable<?>,BytesRefArrayWritable>(){
+    @Override public void write(    WritableComparable<?> key,    BytesRefArrayWritable value) throws IOException {
+      out.append(value);
+    }
+    @Override public void close(    TaskAttemptContext task) throws IOException, InterruptedException {
+      out.close();
+    }
+  }
+;
+}

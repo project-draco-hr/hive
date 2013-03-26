@@ -1,0 +1,26 @@
+{
+  Job job=new Job(conf,NAME + "_" + tableName);
+  job.setJarByClass(SequenceFileImporter.class);
+  FileInputFormat.setInputPaths(job,inputDir);
+  job.setInputFormatClass(SequenceFileInputFormat.class);
+  job.setMapperClass(SequenceFileImporter.class);
+  HTable table=new HTable(conf,tableName);
+  job.setReducerClass(PutSortReducer.class);
+  FileOutputFormat.setOutputPath(job,scratchDir);
+  job.setMapOutputKeyClass(ImmutableBytesWritable.class);
+  job.setMapOutputValueClass(Put.class);
+  HFileOutputFormat.configureIncrementalLoad(job,table);
+  job.setOutputFormatClass(ImporterOutputFormat.class);
+  if (localMode) {
+    String partitionFile=null;
+    for (    URI uri : DistributedCache.getCacheFiles(job.getConfiguration())) {
+      if (DEFAULT_PATH.equals(uri.getFragment())) {
+        partitionFile=uri.toString();
+        break;
+      }
+    }
+    partitionFile=partitionFile.substring(0,partitionFile.lastIndexOf("#"));
+    job.getConfiguration().set(TotalOrderPartitioner.PARTITIONER_PATH,partitionFile.toString());
+  }
+  return job;
+}

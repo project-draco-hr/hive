@@ -1,0 +1,23 @@
+{
+  String exec=String.format("use %s; show table extended like %s;",db,table);
+  try {
+    String res=jsonRun(user,exec);
+    JsonBuilder jb=JsonBuilder.create(singleTable(res,table)).remove("tableName").put("database",db).put("table",table);
+    String loc=(String)jb.getMap().get("location");
+    if (loc != null && loc.startsWith("hdfs://")) {
+      try {
+        FileSystem fs=FileSystem.get(appConf);
+        FileStatus status=fs.getFileStatus(new Path(new URI(loc)));
+        jb.put("group",status.getGroup());
+        jb.put("permission",status.getPermission().toString());
+      }
+ catch (      Exception e) {
+        LOG.warn(e.getMessage() + " Couldn't get permissions for " + loc);
+      }
+    }
+    return jb.build();
+  }
+ catch (  HcatException e) {
+    throw new HcatException("unable to show table: " + table,e.execBean,exec);
+  }
+}

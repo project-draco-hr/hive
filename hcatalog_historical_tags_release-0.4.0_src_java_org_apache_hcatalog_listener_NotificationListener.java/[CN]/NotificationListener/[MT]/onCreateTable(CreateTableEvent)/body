@@ -1,0 +1,24 @@
+{
+  if (tableEvent.getStatus()) {
+    Table tbl=tableEvent.getTable();
+    HMSHandler handler=tableEvent.getHandler();
+    HiveConf conf=handler.getHiveConf();
+    Table newTbl;
+    try {
+      newTbl=handler.get_table(tbl.getDbName(),tbl.getTableName()).deepCopy();
+      newTbl.getParameters().put(HCatConstants.HCAT_MSGBUS_TOPIC_NAME,getTopicPrefix(conf) + "." + newTbl.getDbName().toLowerCase()+ "."+ newTbl.getTableName().toLowerCase());
+      handler.alter_table(newTbl.getDbName(),newTbl.getTableName(),newTbl);
+    }
+ catch (    InvalidOperationException e) {
+      MetaException me=new MetaException(e.toString());
+      me.initCause(e);
+      throw me;
+    }
+catch (    NoSuchObjectException e) {
+      MetaException me=new MetaException(e.toString());
+      me.initCause(e);
+      throw me;
+    }
+    send(newTbl,getTopicPrefix(conf) + "." + newTbl.getDbName().toLowerCase(),HCatConstants.HCAT_ADD_TABLE_EVENT);
+  }
+}

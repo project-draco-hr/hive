@@ -1,0 +1,55 @@
+{
+  if (driver == null) {
+    driver=HCatDataCheckUtil.instantiateDriver(cluster);
+  }
+  Properties props=new Properties();
+  props.setProperty("fs.default.name",cluster.getProperties().getProperty("fs.default.name"));
+  String basicFileFullName=cluster.getProperties().getProperty("fs.default.name") + basicFile;
+  cleanup();
+  HCatDataCheckUtil.generateDataFile(cluster,basicFile);
+  String createPtnedTable="(j int, s string) partitioned by (i int) " + "stored by '" + HCatStorageHandlerImpl.class.getName() + "' tblproperties"+ "('hcat.isd'='org.apache.hcatalog.rcfile.RCFileInputDriver',"+ "'hcat.osd'='org.apache.hcatalog.rcfile.RCFileOutputDriver') ";
+  HCatDataCheckUtil.createTable(driver,PTNED_TABLE,createPtnedTable);
+  String createUnptnedTable="(i int, j int, s string) " + "stored by '" + HCatStorageHandlerImpl.class.getName() + "' tblproperties"+ "('hcat.isd'='org.apache.hcatalog.rcfile.RCFileInputDriver',"+ "'hcat.osd'='org.apache.hcatalog.rcfile.RCFileOutputDriver') ";
+  HCatDataCheckUtil.createTable(driver,UNPTNED_TABLE,createUnptnedTable);
+  driver.run("describe extended " + UNPTNED_TABLE);
+  ArrayList<String> des_values=new ArrayList<String>();
+  driver.getResults(des_values);
+  for (  String s : des_values) {
+    System.err.println("du:" + s);
+  }
+  driver.run("describe extended " + PTNED_TABLE);
+  ArrayList<String> des2_values=new ArrayList<String>();
+  driver.getResults(des2_values);
+  for (  String s : des2_values) {
+    System.err.println("dp:" + s);
+  }
+  PigServer server=new PigServer(ExecType.LOCAL,props);
+  UDFContext.getUDFContext().setClientSystemProps();
+  server.setBatchOn();
+  server.registerQuery("A = load '" + basicFileFullName + "' as (i:int, j:int, s:chararray);");
+  server.registerQuery("store A into '" + UNPTNED_TABLE + "' using org.apache.hcatalog.pig.HCatStorer();");
+  server.executeBatch();
+  server.setBatchOn();
+  server.registerQuery("A = load '" + basicFileFullName + "' as (i:int, j:int, s:chararray);");
+  server.registerQuery("store A into '" + PTNED_TABLE + "' using org.apache.hcatalog.pig.HCatStorer();");
+  server.executeBatch();
+  ArrayList<String> p_select_star_nofilter=HCatDataCheckUtil.formattedRun(driver,"p_select_star_nofilter","select * from " + PTNED_TABLE);
+  ArrayList<String> p_select_named_nofilter=HCatDataCheckUtil.formattedRun(driver,"p_select_named_nofilter","select j,s,i from " + PTNED_TABLE);
+  assertDataIdentical(p_select_star_nofilter,p_select_named_nofilter,50);
+  ArrayList<String> p_select_star_ptnfilter=HCatDataCheckUtil.formattedRun(driver,"p_select_star_ptnfilter","select * from " + PTNED_TABLE + " where i = 3");
+  ArrayList<String> p_select_named_ptnfilter=HCatDataCheckUtil.formattedRun(driver,"p_select_named_ptnfilter","select j,s,i from " + PTNED_TABLE + " where i = 3");
+  assertDataIdentical(p_select_star_ptnfilter,p_select_named_ptnfilter,10);
+  ArrayList<String> select_star_nonptnfilter=HCatDataCheckUtil.formattedRun(driver,"select_star_nonptnfilter","select * from " + PTNED_TABLE + " where j = 28");
+  ArrayList<String> select_named_nonptnfilter=HCatDataCheckUtil.formattedRun(driver,"select_named_nonptnfilter","select j,s,i from " + PTNED_TABLE + " where j = 28");
+  assertDataIdentical(select_star_nonptnfilter,select_named_nonptnfilter,1);
+  ArrayList<String> select_star_nofilter=HCatDataCheckUtil.formattedRun(driver,"select_star_nofilter","select * from " + UNPTNED_TABLE);
+  ArrayList<String> select_ijs_nofilter=HCatDataCheckUtil.formattedRun(driver,"select_ijs_nofilter","select i,j,s from " + UNPTNED_TABLE);
+  assertDataIdentical(select_star_nofilter,select_ijs_nofilter,50);
+  ArrayList<String> select_star_ptnfilter=HCatDataCheckUtil.formattedRun(driver,"select_star_ptnfilter","select * from " + UNPTNED_TABLE + " where i = 3");
+  ArrayList<String> select_ijs_ptnfilter=HCatDataCheckUtil.formattedRun(driver,"select_ijs_ptnfilter","select i,j,s from " + UNPTNED_TABLE + " where i = 3");
+  assertDataIdentical(select_star_ptnfilter,select_ijs_ptnfilter,10);
+  ArrayList<String> select_jsi_nofilter=HCatDataCheckUtil.formattedRun(driver,"select_jsi_nofilter","select j,s,i from " + UNPTNED_TABLE);
+  assertDataIdentical(p_select_named_nofilter,select_jsi_nofilter,50,true);
+  ArrayList<String> select_jsi_ptnfilter=HCatDataCheckUtil.formattedRun(driver,"select_jsi_ptnfilter","select j,s,i from " + UNPTNED_TABLE + " where i = 3");
+  assertDataIdentical(p_select_named_ptnfilter,select_jsi_ptnfilter,10,true);
+}

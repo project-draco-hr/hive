@@ -1,0 +1,53 @@
+{
+  String testName="importSequenceFileTest";
+  Path methodTestDir=new Path(getTestDir(),testName);
+  LOG.info("starting: " + testName);
+  String tableName=newTableName(testName).toLowerCase();
+  byte[] tableNameBytes=Bytes.toBytes(tableName);
+  String familyName="my_family";
+  byte[] familyNameBytes=Bytes.toBytes(familyName);
+  Configuration conf=new Configuration(allConf);
+  createTable(tableName,new String[]{familyName});
+  String data[]={"1,english:one,spanish:uno","2,english:two,spanish:dos","3,english:three,spanish:tres"};
+  Path inputPath=new Path(methodTestDir,"mr_input");
+  getFileSystem().mkdirs(inputPath);
+  FSDataOutputStream os=getFileSystem().create(new Path(inputPath,"inputFile.txt"));
+  for (  String line : data)   os.write(Bytes.toBytes(line + "\n"));
+  os.close();
+  Path interPath=new Path(methodTestDir,"inter");
+  Path scratchPath=new Path(methodTestDir,"scratch");
+  Job job=new Job(conf,testName);
+  HBaseHCatStorageHandler.addDependencyJars(job.getConfiguration());
+  job.setWorkingDirectory(new Path(methodTestDir,"mr_work"));
+  job.setJarByClass(this.getClass());
+  job.setMapperClass(MapWrite.class);
+  job.setInputFormatClass(TextInputFormat.class);
+  TextInputFormat.setInputPaths(job,inputPath);
+  job.setOutputFormatClass(SequenceFileOutputFormat.class);
+  SequenceFileOutputFormat.setOutputPath(job,interPath);
+  job.setMapOutputKeyClass(ImmutableBytesWritable.class);
+  job.setMapOutputValueClass(Put.class);
+  job.setOutputKeyClass(ImmutableBytesWritable.class);
+  job.setOutputValueClass(Put.class);
+  job.setNumReduceTasks(0);
+  assertTrue(job.waitForCompletion(true));
+  job=new Job(new Configuration(allConf),testName + "_importer");
+  HBaseHCatStorageHandler.addDependencyJars(job.getConfiguration());
+  assertTrue(ImportSequenceFile.runJob(job,tableName,interPath,scratchPath));
+  HTable table=new HTable(conf,tableName);
+  Scan scan=new Scan();
+  scan.addFamily(familyNameBytes);
+  ResultScanner scanner=table.getScanner(scan);
+  int index=0;
+  for (  Result result : scanner) {
+    String vals[]=data[index].toString().split(",");
+    for (int i=1; i < vals.length; i++) {
+      String pair[]=vals[i].split(":");
+      assertTrue(result.containsColumn(familyNameBytes,Bytes.toBytes(pair[0])));
+      assertEquals(pair[1],Bytes.toString(result.getValue(familyNameBytes,Bytes.toBytes(pair[0]))));
+    }
+    index++;
+  }
+  assertEquals(data.length,index);
+  assertFalse(FileSystem.get(job.getConfiguration()).exists(scratchPath));
+}
