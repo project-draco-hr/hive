@@ -19,7 +19,7 @@
   joinValuesObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinValues,inputObjInspectors,NOTSKIPBIGTABLE,tagLen);
   joinFilterObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinFilters,inputObjInspectors,NOTSKIPBIGTABLE,tagLen);
   joinValuesStandardObjectInspectors=JoinUtil.getStandardObjectInspectors(joinValuesObjectInspectors,NOTSKIPBIGTABLE,tagLen);
-  filterMap=conf.getFilterMap();
+  filterMaps=conf.getFilterMap();
   if (noOuterJoin) {
     rowContainerStandardObjectInspectors=joinValuesStandardObjectInspectors;
   }
@@ -33,7 +33,7 @@
     }
     rowContainerStandardObjectInspectors=JoinUtil.getStandardObjectInspectors(rowContainerObjectInspectors,NOTSKIPBIGTABLE,tagLen);
   }
-  dummyObj=new Object[numAliases];
+  dummyObj=new ArrayList[numAliases];
   dummyObjVectors=new RowContainer[numAliases];
   joinEmitInterval=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVEJOINEMITINTERVAL);
   joinCacheSize=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVEJOINCACHESIZE);
@@ -49,13 +49,28 @@
     }
     dummyObj[pos]=nr;
     RowContainer<ArrayList<Object>> values=JoinUtil.getRowContainer(hconf,rowContainerStandardObjectInspectors[pos],alias,1,spillTableDesc,conf,!hasFilter(pos),reporter);
-    values.add((ArrayList<Object>)dummyObj[pos]);
+    values.add(dummyObj[pos]);
     dummyObjVectors[pos]=values;
     RowContainer rc=JoinUtil.getRowContainer(hconf,rowContainerStandardObjectInspectors[pos],alias,joinCacheSize,spillTableDesc,conf,!hasFilter(pos),reporter);
     storage[pos]=rc;
     pos++;
   }
   forwardCache=new Object[totalSz];
+  aliasFilterTags=new short[numAliases];
+  Arrays.fill(aliasFilterTags,(byte)0xff);
+  filterTags=new short[numAliases];
+  skipVectors=new boolean[numAliases][];
+  for (int i=0; i < skipVectors.length; i++) {
+    skipVectors[i]=new boolean[i + 1];
+  }
+  intermediate=new List[numAliases];
+  offsets=new int[numAliases + 1];
+  int sum=0;
+  for (int i=0; i < numAliases; i++) {
+    offsets[i]=sum;
+    sum+=joinValues[order[i]].size();
+  }
+  offsets[numAliases]=sum;
   outputObjInspector=getJoinOutputObjectInspector(order,joinValuesStandardObjectInspectors,conf);
   for (int i=0; i < condn.length; i++) {
     if (condn[i].getType() == JoinDesc.LEFT_SEMI_JOIN) {

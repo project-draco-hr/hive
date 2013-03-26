@@ -1,0 +1,58 @@
+{
+  if (aliasNum < numAliases) {
+    boolean[] skip=skipVectors[aliasNum];
+    boolean[] prevSkip=skipVectors[aliasNum - 1];
+    JoinCondDesc joinCond=condn[aliasNum - 1];
+    int type=joinCond.getType();
+    int left=joinCond.getLeft();
+    int right=joinCond.getRight();
+    AbstractRowContainer<ArrayList<Object>> aliasRes=storage[order[aliasNum]];
+    boolean done=false;
+    boolean loopAgain=false;
+    boolean tryLOForFO=type == JoinDesc.FULL_OUTER_JOIN;
+    boolean rightFirst=true;
+    for (List<Object> rightObj=aliasRes.first(); !done && rightObj != null; rightObj=loopAgain ? rightObj : aliasRes.next(), rightFirst=loopAgain=false) {
+      System.arraycopy(prevSkip,0,skip,0,prevSkip.length);
+      boolean rightNull=rightObj == dummyObj[aliasNum];
+      if (hasFilter(order[aliasNum])) {
+        filterTags[aliasNum]=getFilterTag(rightObj);
+      }
+      skip[right]=rightNull;
+      if (type == JoinDesc.INNER_JOIN) {
+        innerJoin(skip,left,right);
+      }
+ else       if (type == JoinDesc.LEFT_SEMI_JOIN) {
+        if (innerJoin(skip,left,right)) {
+          done=true;
+        }
+      }
+ else       if (type == JoinDesc.LEFT_OUTER_JOIN || (type == JoinDesc.FULL_OUTER_JOIN && rightNull)) {
+        int result=leftOuterJoin(skip,left,right);
+        if (result < 0) {
+          continue;
+        }
+        done=result > 0;
+      }
+ else       if (type == JoinDesc.RIGHT_OUTER_JOIN || (type == JoinDesc.FULL_OUTER_JOIN && allLeftNull)) {
+        if (allLeftFirst && !rightOuterJoin(skip,left,right) || !allLeftFirst && !innerJoin(skip,left,right)) {
+          continue;
+        }
+      }
+ else       if (type == JoinDesc.FULL_OUTER_JOIN) {
+        if (tryLOForFO && leftOuterJoin(skip,left,right) > 0) {
+          loopAgain=allLeftFirst;
+          done=!loopAgain;
+          tryLOForFO=false;
+        }
+ else         if (allLeftFirst && !rightOuterJoin(skip,left,right) || !allLeftFirst && !innerJoin(skip,left,right)) {
+          continue;
+        }
+      }
+      intermediate[aliasNum]=rightObj;
+      genObject(aliasNum + 1,allLeftFirst && rightFirst,allLeftNull && rightNull);
+    }
+  }
+ else   if (!allLeftNull) {
+    createForwardJoinObject(skipVectors[numAliases - 1]);
+  }
+}
