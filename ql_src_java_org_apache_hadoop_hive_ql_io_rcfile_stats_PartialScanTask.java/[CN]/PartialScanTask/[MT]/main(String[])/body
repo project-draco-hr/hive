@@ -1,0 +1,74 @@
+{
+  String inputPathStr=null;
+  String outputDir=null;
+  String jobConfFileName=null;
+  try {
+    for (int i=0; i < args.length; i++) {
+      if (args[i].equals("-input")) {
+        inputPathStr=args[++i];
+      }
+ else       if (args[i].equals("-jobconffile")) {
+        jobConfFileName=args[++i];
+      }
+ else       if (args[i].equals("-outputDir")) {
+        outputDir=args[++i];
+      }
+    }
+  }
+ catch (  IndexOutOfBoundsException e) {
+    System.err.println("Missing argument to option");
+    printUsage();
+  }
+  if (inputPathStr == null || outputDir == null || outputDir.trim().equals("")) {
+    printUsage();
+  }
+  List<String> inputPaths=new ArrayList<String>();
+  String[] paths=inputPathStr.split(INPUT_SEPERATOR);
+  if (paths == null || paths.length == 0) {
+    printUsage();
+  }
+  FileSystem fs=null;
+  JobConf conf=new JobConf(PartialScanTask.class);
+  for (  String path : paths) {
+    try {
+      Path pathObj=new Path(path);
+      if (fs == null) {
+        fs=FileSystem.get(pathObj.toUri(),conf);
+      }
+      FileStatus fstatus=fs.getFileStatus(pathObj);
+      if (fstatus.isDir()) {
+        FileStatus[] fileStatus=fs.listStatus(pathObj);
+        for (        FileStatus st : fileStatus) {
+          inputPaths.add(st.getPath().toString());
+        }
+      }
+ else {
+        inputPaths.add(fstatus.getPath().toString());
+      }
+    }
+ catch (    IOException e) {
+      e.printStackTrace(System.err);
+    }
+  }
+  if (jobConfFileName != null) {
+    conf.addResource(new Path(jobConfFileName));
+  }
+  HiveConf hiveConf=new HiveConf(conf,PartialScanTask.class);
+  Log LOG=LogFactory.getLog(PartialScanTask.class.getName());
+  boolean isSilent=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVESESSIONSILENT);
+  LogHelper console=new LogHelper(LOG,isSilent);
+  for (  Appender appender : Collections.list((Enumeration<Appender>)LogManager.getRootLogger().getAllAppenders())) {
+    if (appender instanceof FileAppender) {
+      console.printInfo("Execution log at: " + ((FileAppender)appender).getFile());
+    }
+  }
+  PartialScanWork mergeWork=new PartialScanWork(inputPaths);
+  DriverContext driverCxt=new DriverContext();
+  PartialScanTask taskExec=new PartialScanTask();
+  taskExec.initialize(hiveConf,null,driverCxt);
+  taskExec.setWork(mergeWork);
+  int ret=taskExec.execute(driverCxt);
+  if (ret != 0) {
+    System.exit(2);
+  }
+}

@@ -1,0 +1,23 @@
+{
+  StatsPublisher statsPublisher=Utilities.getStatsPublisher(jc);
+  if (statsPublisher == null) {
+    LOG.error("StatsPublishing error: StatsPublisher is not initialized.");
+    throw new HiveException(ErrorMsg.STATSPUBLISHER_NOT_OBTAINED.getErrorCodedMsg());
+  }
+  if (!statsPublisher.connect(jc)) {
+    LOG.error("StatsPublishing error: cannot connect to database");
+    throw new HiveException(ErrorMsg.STATSPUBLISHER_CONNECTION_ERROR.getErrorCodedMsg());
+  }
+  String taskID=Utilities.getTaskIdFromFilename(Utilities.getTaskId(jc));
+  String keyPrefix=Utilities.getHashedStatsPrefix(statsAggKeyPrefix,HiveConf.getIntVar(jc,ConfVars.HIVE_STATS_KEY_PREFIX_MAX_LENGTH));
+  String key=keyPrefix + taskID;
+  Map<String,String> statsToPublish=new HashMap<String,String>();
+  statsToPublish.put(StatsSetupConst.RAW_DATA_SIZE,Long.toString(uncompressedFileSize));
+  statsToPublish.put(StatsSetupConst.ROW_COUNT,Long.toString(rowNo));
+  if (!statsPublisher.publishStat(key,statsToPublish)) {
+    throw new HiveException(ErrorMsg.STATSPUBLISHER_PUBLISHING_ERROR.getErrorCodedMsg());
+  }
+  if (!statsPublisher.closeConnection()) {
+    throw new HiveException(ErrorMsg.STATSPUBLISHER_CLOSING_ERROR.getErrorCodedMsg());
+  }
+}
