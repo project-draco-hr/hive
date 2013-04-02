@@ -1,0 +1,25 @@
+{
+  ConstantExprCheck constantExprCheck=new ConstantExprCheck();
+  AggregationExprCheck aggrExprCheck=new AggregationExprCheck(currQB.getParseInfo().getAggregationExprsForClause(clause));
+  TreeWizard tw=new TreeWizard(ParseDriver.adaptor,HiveParser.tokenNames);
+  ASTNode selectNode=currQB.getParseInfo().getSelForClause(clause);
+  if (selectNode != null && selectNode.getType() == HiveParser.TOK_SELECTDI) {
+    return true;
+  }
+  for (int i=0; selectNode != null && i < selectNode.getChildCount(); i++) {
+    ASTNode selectExpr=(ASTNode)selectNode.getChild(i);
+    if (selectExpr.getType() != HiveParser.TOK_SELEXPR) {
+      continue;
+    }
+    constantExprCheck.reset();
+    PTFTranslator.visit(selectExpr.getChild(0),constantExprCheck);
+    if (!constantExprCheck.isConstant()) {
+      aggrExprCheck.reset();
+      PTFTranslator.visit(selectExpr.getChild(0),aggrExprCheck);
+      if (!aggrExprCheck.isAggr()) {
+        return false;
+      }
+    }
+  }
+  return true;
+}

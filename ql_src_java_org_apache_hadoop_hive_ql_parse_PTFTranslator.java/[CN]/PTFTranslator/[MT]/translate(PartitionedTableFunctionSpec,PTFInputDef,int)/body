@@ -1,0 +1,49 @@
+{
+  TableFunctionResolver tFn=FunctionRegistry.getTableFunctionResolver(spec.getName());
+  if (tFn == null) {
+    throw new SemanticException(String.format("Unknown Table Function %s",spec.getName()));
+  }
+  PartitionedTableFunctionDef def=new PartitionedTableFunctionDef();
+  def.setInput(inpDef);
+  def.setName(spec.getName());
+  def.setResolverClassName(tFn.getClass().getName());
+  def.setAlias(spec.getAlias() == null ? "ptf_" + inpNum : spec.getAlias());
+  def.setExpressionTreeString(spec.getAstNode().toStringTree());
+  def.setTransformsRawInput(tFn.transformsRawInput());
+  ArrayList<ASTNode> args=spec.getArgs();
+  if (args != null) {
+    for (    ASTNode expr : args) {
+      PTFExpressionDef argDef=null;
+      try {
+        argDef=buildExpressionDef(inpDef.getOutputShape(),expr);
+      }
+ catch (      HiveException he) {
+        throw new SemanticException(he);
+      }
+      def.addArg(argDef);
+    }
+  }
+  tFn.initialize(hCfg,ptfDesc,def);
+  TableFunctionEvaluator tEval=tFn.getEvaluator();
+  def.setTFunction(tEval);
+  def.setCarryForwardNames(tFn.carryForwardNames());
+  tFn.setupRawInputOI();
+  if (tFn.transformsRawInput()) {
+    StructObjectInspector rawInOutOI=tEval.getRawInputOI();
+    ArrayList<String> rawInOutColNames=tFn.getRawInputColumnNames();
+    RowResolver rawInRR=buildRowResolverForPTF(def.getName(),spec.getAlias(),rawInOutOI,rawInOutColNames,inpDef.getOutputShape().getRr());
+    ShapeDetails rawInpShape=setupTableFnShape(def.getName(),inpDef.getOutputShape(),rawInOutOI,rawInOutColNames,rawInRR);
+    def.setRawInputShape(rawInpShape);
+  }
+ else {
+    def.setRawInputShape(inpDef.getOutputShape());
+  }
+  translatePartitioning(def,spec);
+  tFn.setupOutputOI();
+  StructObjectInspector outputOI=tEval.getOutputOI();
+  ArrayList<String> outColNames=tFn.getOutputColumnNames();
+  RowResolver outRR=buildRowResolverForPTF(def.getName(),spec.getAlias(),outputOI,outColNames,def.getRawInputShape().getRr());
+  ShapeDetails outputShape=setupTableFnShape(def.getName(),inpDef.getOutputShape(),outputOI,outColNames,outRR);
+  def.setOutputShape(outputShape);
+  return def;
+}

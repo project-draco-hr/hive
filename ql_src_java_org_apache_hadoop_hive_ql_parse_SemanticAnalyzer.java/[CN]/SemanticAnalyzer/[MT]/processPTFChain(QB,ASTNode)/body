@@ -1,0 +1,30 @@
+{
+  int child_count=ptf.getChildCount();
+  if (child_count < 2) {
+    throw new SemanticException(generateErrorMessage(ptf,"Not enough Children " + child_count));
+  }
+  PartitionedTableFunctionSpec ptfSpec=new PartitionedTableFunctionSpec();
+  ptfSpec.setAstNode(ptf);
+  ASTNode nameNode=(ASTNode)ptf.getChild(0);
+  ptfSpec.setName(nameNode.getText());
+  int inputIdx=1;
+  ASTNode secondChild=(ASTNode)ptf.getChild(1);
+  if (secondChild.getType() == HiveParser.Identifier) {
+    ptfSpec.setAlias(secondChild.getText());
+    inputIdx++;
+  }
+  ASTNode inputNode=(ASTNode)ptf.getChild(inputIdx);
+  ptfSpec.setInput(processPTFSource(qb,inputNode));
+  int argStartIdx=inputIdx + 1;
+  int pSpecIdx=inputIdx + 1;
+  ASTNode pSpecNode=ptf.getChildCount() > inputIdx ? (ASTNode)ptf.getChild(pSpecIdx) : null;
+  if (pSpecNode != null && pSpecNode.getType() == HiveParser.TOK_PARTITIONINGSPEC) {
+    PartitioningSpec partitioning=processPTFPartitionSpec(pSpecNode);
+    ptfSpec.setPartitioning(partitioning);
+    argStartIdx++;
+  }
+  for (int i=argStartIdx; i < ptf.getChildCount(); i++) {
+    ptfSpec.addArg((ASTNode)ptf.getChild(i));
+  }
+  return ptfSpec;
+}

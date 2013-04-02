@@ -1,0 +1,37 @@
+{
+  LOG.info("QueryTranslationInfo::getRowResolver invoked on ObjectInspector");
+  RowResolver rwsch=new RowResolver();
+  List<? extends StructField> fields=rowObjectInspector.getAllStructFieldRefs();
+  for (int i=0; i < fields.size(); i++) {
+    StructField field=fields.get(i);
+    String internalName=field.getFieldName();
+    String[] tabColAlias=inputRowResolver == null ? null : inputRowResolver.reverseLookup(internalName);
+    String colTabAlias=tabColAlias == null ? tabAlias : tabColAlias[0];
+    String colAlias=tabColAlias == null ? null : tabColAlias[1];
+    ColumnInfo inpColInfo;
+    ColumnInfo colInfo;
+    if (tabColAlias != null) {
+      inpColInfo=inputRowResolver.get(colTabAlias,colAlias);
+    }
+ else {
+      inpColInfo=inputRowResolver == null ? null : inputRowResolver.get(tabAlias,internalName);
+      colAlias=inpColInfo != null ? inpColInfo.getInternalName() : colAlias;
+    }
+    if (inpColInfo != null) {
+      colInfo=new ColumnInfo(inpColInfo);
+      colInfo.setTabAlias(tabAlias);
+    }
+ else {
+      colInfo=new ColumnInfo(fields.get(i).getFieldName(),TypeInfoUtils.getTypeInfoFromObjectInspector(fields.get(i).getFieldObjectInspector()),tabAlias,false);
+      colAlias=colInfo.getInternalName();
+    }
+    ASTNode expr=inputRowResolver == null ? null : PTFTranslator.getASTNode(inpColInfo,inputRowResolver);
+    if (expr != null) {
+      rwsch.putExpression(expr,colInfo);
+    }
+ else {
+      rwsch.put(tabAlias,colAlias,colInfo);
+    }
+  }
+  return rwsch;
+}

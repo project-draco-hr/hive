@@ -1,0 +1,22 @@
+{
+  PTFOperator op=(PTFOperator)nd;
+  PTFDesc conf=op.getConf();
+  if (!conf.forWindowing()) {
+    return getDefaultProc().process(nd,stack,ctx,nodeOutputs);
+  }
+  ColumnPrunerProcCtx cppCtx=(ColumnPrunerProcCtx)ctx;
+  WindowTableFunctionDef def=(WindowTableFunctionDef)conf.getFuncDef();
+  ArrayList<ColumnInfo> sig=new ArrayList<ColumnInfo>();
+  List<String> prunedCols=cppCtx.getPrunedColList(op.getChildOperators().get(0));
+  prunedCols=new ArrayList<String>(prunedCols);
+  prunedColumnsList(prunedCols,def);
+  setSerdePropsOfShape(def.getInput().getOutputShape(),prunedCols);
+  setSerdePropsOfShape(def.getOutputFromWdwFnProcessing(),prunedCols);
+  setSerdePropsOfShape(def.getOutputShape(),prunedCols);
+  RowResolver oldRR=cppCtx.getOpToParseCtxMap().get(op).getRowResolver();
+  RowResolver newRR=buildPrunedRR(prunedCols,oldRR,sig);
+  cppCtx.getPrunedColLists().put(op,prunedInputList(prunedCols,def));
+  cppCtx.getOpToParseCtxMap().get(op).setRowResolver(newRR);
+  op.getSchema().setSignature(sig);
+  return null;
+}

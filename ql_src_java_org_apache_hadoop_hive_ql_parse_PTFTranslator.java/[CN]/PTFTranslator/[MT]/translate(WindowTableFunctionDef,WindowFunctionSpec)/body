@@ -1,0 +1,50 @@
+{
+  WindowFunctionInfo wFnInfo=FunctionRegistry.getWindowFunctionInfo(spec.getName());
+  WindowFunctionDef def=new WindowFunctionDef();
+  def.setName(spec.getName());
+  def.setAlias(spec.getAlias());
+  def.setDistinct(spec.isDistinct());
+  def.setExpressionTreeString(spec.getExpression().toStringTree());
+  def.setStar(spec.isStar());
+  def.setPivotResult(wFnInfo.isPivotResult());
+  ShapeDetails inpShape=wdwTFnDef.getRawInputShape();
+  ArrayList<ASTNode> args=spec.getArgs();
+  if (args != null) {
+    for (    ASTNode expr : args) {
+      PTFExpressionDef argDef=null;
+      try {
+        argDef=buildExpressionDef(inpShape,expr);
+      }
+ catch (      HiveException he) {
+        throw new SemanticException(he);
+      }
+      def.addArg(argDef);
+    }
+  }
+  if (RANKING_FUNCS.contains(spec.getName())) {
+    setupRankingArgs(wdwTFnDef,def,spec);
+  }
+  WindowSpec wdwSpec=spec.getWindowSpec();
+  if (wdwSpec != null) {
+    String desc=spec.toString();
+    WindowFrameDef wdwFrame=translate(spec.getName(),inpShape,wdwSpec);
+    if (!wFnInfo.isSupportsWindow()) {
+      BoundarySpec start=wdwSpec.getWindowFrame().getStart();
+      if (start.getAmt() != BoundarySpec.UNBOUNDED_AMOUNT) {
+        throw new SemanticException(String.format("Expecting left window frame boundary for " + "function %s to be unbounded. Found : %d",desc,start.getAmt()));
+      }
+      BoundarySpec end=wdwSpec.getWindowFrame().getEnd();
+      if (end.getAmt() != BoundarySpec.UNBOUNDED_AMOUNT) {
+        throw new SemanticException(String.format("Expecting right window frame boundary for " + "function %s to be unbounded. Found : %d",desc,start.getAmt()));
+      }
+    }
+    def.setWindowFrame(wdwFrame);
+  }
+  try {
+    setupWdwFnEvaluator(def);
+  }
+ catch (  HiveException he) {
+    throw new SemanticException(he);
+  }
+  return def;
+}

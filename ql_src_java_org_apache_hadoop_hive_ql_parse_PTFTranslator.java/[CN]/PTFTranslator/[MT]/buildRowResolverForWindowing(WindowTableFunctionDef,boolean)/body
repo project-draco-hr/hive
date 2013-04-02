@@ -1,0 +1,41 @@
+{
+  RowResolver rr=new RowResolver();
+  HashMap<String,WindowExpressionSpec> aliasToExprMap=windowingSpec.getAliasToWdwExpr();
+  if (addWdwExprs) {
+    for (    WindowExpressionDef wEDef : def.getWindowExpressions()) {
+      ASTNode ast=aliasToExprMap.get(wEDef.getAlias()).getExpression();
+      ColumnInfo cInfo=new ColumnInfo(wEDef.getAlias(),TypeInfoUtils.getTypeInfoFromObjectInspector(wEDef.getOI()),null,false);
+      rr.putExpression(ast,cInfo);
+    }
+  }
+  for (  WindowFunctionDef wFnDef : def.getWindowFunctions()) {
+    ASTNode ast=aliasToExprMap.get(wFnDef.getAlias()).getExpression();
+    ObjectInspector wFnOI=null;
+    if (wFnDef.isPivotResult()) {
+      wFnOI=((ListObjectInspector)wFnDef.getOI()).getListElementObjectInspector();
+    }
+ else {
+      wFnOI=wFnDef.getOI();
+    }
+    ColumnInfo cInfo=new ColumnInfo(wFnDef.getAlias(),TypeInfoUtils.getTypeInfoFromObjectInspector(wFnOI),null,false);
+    rr.putExpression(ast,cInfo);
+  }
+  RowResolver inpRR=def.getRawInputShape().getRr();
+  for (  ColumnInfo inpCInfo : inputRR.getColumnInfos()) {
+    ColumnInfo cInfo=new ColumnInfo(inpCInfo);
+    String colAlias=cInfo.getAlias();
+    String[] tabColAlias=inputRR.reverseLookup(inpCInfo.getInternalName());
+    if (tabColAlias != null) {
+      colAlias=tabColAlias[1];
+    }
+    ASTNode inExpr=null;
+    inExpr=PTFTranslator.getASTNode(inpCInfo,inpRR);
+    if (inExpr != null) {
+      rr.putExpression(inExpr,cInfo);
+    }
+ else {
+      rr.put(cInfo.getTabAlias(),colAlias,cInfo);
+    }
+  }
+  return rr;
+}

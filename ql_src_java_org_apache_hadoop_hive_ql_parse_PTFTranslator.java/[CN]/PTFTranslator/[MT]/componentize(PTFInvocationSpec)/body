@@ -1,0 +1,50 @@
+{
+  ArrayList<PTFInvocationSpec> componentInvocations=new ArrayList<PTFInvocationSpec>();
+  Stack<PTFInputSpec> ptfChain=new Stack<PTFInvocationSpec.PTFInputSpec>();
+  PTFInputSpec spec=ptfInvocation.getFunction();
+  while (spec instanceof PartitionedTableFunctionSpec) {
+    ptfChain.push(spec);
+    spec=spec.getInput();
+  }
+  PartitionedTableFunctionSpec prevFn=(PartitionedTableFunctionSpec)ptfChain.pop();
+  applyConstantPartition(prevFn);
+  PartitionSpec partSpec=prevFn.getPartition();
+  OrderSpec orderSpec=prevFn.getOrder();
+  if (partSpec == null) {
+    throw new SemanticException("No Partitioning specification specified at start of a PTFChain");
+  }
+  if (orderSpec == null) {
+    orderSpec=new OrderSpec(partSpec);
+    prevFn.setOrder(orderSpec);
+  }
+  while (!ptfChain.isEmpty()) {
+    PartitionedTableFunctionSpec currentFn=(PartitionedTableFunctionSpec)ptfChain.pop();
+    String fnName=currentFn.getName();
+    if (!FunctionRegistry.isTableFunction(fnName)) {
+      throw new SemanticException(ErrorMsg.INVALID_FUNCTION.getMsg(fnName));
+    }
+    boolean transformsRawInput=FunctionRegistry.getTableFunctionResolver(fnName).transformsRawInput();
+    if (currentFn.getPartition() == null) {
+      currentFn.setPartition(prevFn.getPartition());
+      if (currentFn.getOrder() == null) {
+        currentFn.setOrder(prevFn.getOrder());
+      }
+    }
+    if (currentFn.getOrder() == null) {
+      currentFn.setOrder(new OrderSpec(currentFn.getPartition()));
+    }
+    if (!currentFn.getPartition().equals(partSpec) || !currentFn.getOrder().equals(orderSpec) || transformsRawInput) {
+      PTFInvocationSpec component=new PTFInvocationSpec();
+      component.setFunction(prevFn);
+      componentInvocations.add(component);
+      PTFQueryInputSpec cQInSpec=new PTFQueryInputSpec();
+      cQInSpec.setType(PTFQueryInputType.PTFCOMPONENT);
+      currentFn.setInput(cQInSpec);
+    }
+    prevFn=currentFn;
+    partSpec=prevFn.getPartition();
+    orderSpec=prevFn.getOrder();
+  }
+  componentInvocations.add(ptfInvocation);
+  return componentInvocations;
+}

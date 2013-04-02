@@ -1,0 +1,30 @@
+{
+  RowResolver rr=opParseCtx.get(input).getRowResolver();
+  PTFDesc ptfDesc=translatePTFInvocationSpec(ptfQSpec,rr);
+  RowResolver extractOpRR=new RowResolver();
+{
+    PartitionedTableFunctionDef tabDef=ptfDesc.getStartOfChain();
+    if (tabDef.isTransformsRawInput()) {
+      RowResolver ptfMapRR=tabDef.getRawInputShape().getRr();
+      input=putOpInsertMap(OperatorFactory.getAndMakeChild(ptfDesc,new RowSchema(ptfMapRR.getColumnInfos()),input),ptfMapRR);
+      rr=opParseCtx.get(input).getRowResolver();
+    }
+    ArrayList<ExprNodeDesc> partCols=new ArrayList<ExprNodeDesc>();
+    ArrayList<ExprNodeDesc> valueCols=new ArrayList<ExprNodeDesc>();
+    ArrayList<ExprNodeDesc> orderCols=new ArrayList<ExprNodeDesc>();
+    Map<String,ExprNodeDesc> colExprMap=new HashMap<String,ExprNodeDesc>();
+    List<String> outputColumnNames=new ArrayList<String>();
+    StringBuilder orderString=new StringBuilder();
+    buildPTFReduceSinkDetails(tabDef,rr,partCols,valueCols,orderCols,colExprMap,outputColumnNames,orderString,extractOpRR);
+    input=putOpInsertMap(OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(orderCols,valueCols,outputColumnNames,false,-1,partCols,orderString.toString(),-1),new RowSchema(rr.getColumnInfos()),input),rr);
+    input.setColumnExprMap(colExprMap);
+  }
+{
+    input=putOpInsertMap(OperatorFactory.getAndMakeChild(new ExtractDesc(new ExprNodeColumnDesc(TypeInfoFactory.stringTypeInfo,Utilities.ReduceField.VALUE.toString(),"",false)),new RowSchema(extractOpRR.getColumnInfos()),input),extractOpRR);
+    rr=opParseCtx.get(input).getRowResolver();
+    ptfDesc=translatePTFInvocationSpec(ptfQSpec,rr);
+    RowResolver ptfOpRR=ptfDesc.getFuncDef().getOutputShape().getRr();
+    input=putOpInsertMap(OperatorFactory.getAndMakeChild(ptfDesc,new RowSchema(ptfOpRR.getColumnInfos()),input),ptfOpRR);
+  }
+  return input;
+}

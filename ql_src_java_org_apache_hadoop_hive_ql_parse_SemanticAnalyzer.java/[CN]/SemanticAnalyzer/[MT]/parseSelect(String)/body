@@ -1,0 +1,36 @@
+{
+  ASTNode selNode=null;
+  try {
+    ParseDriver pd=new ParseDriver();
+    selNode=pd.parseSelect(selectExprStr,null);
+  }
+ catch (  ParseException pe) {
+    throw new SemanticException(pe);
+  }
+  ArrayList<WindowExpressionSpec> selSpec=new ArrayList<WindowExpressionSpec>();
+  int childCount=selNode.getChildCount();
+  for (int i=0; i < childCount; i++) {
+    ASTNode selExpr=(ASTNode)selNode.getChild(i);
+    if (selExpr.getType() != HiveParser.TOK_SELEXPR) {
+      throw new SemanticException(String.format("Only Select expressions supported in dynamic select list: %s",selectExprStr));
+    }
+    ASTNode expr=(ASTNode)selExpr.getChild(0);
+    if (expr.getType() == HiveParser.TOK_ALLCOLREF) {
+      throw new SemanticException(String.format("'%s' column not allowed in dynamic select list",selectExprStr));
+    }
+    ASTNode aliasNode=selExpr.getChildCount() > 1 && selExpr.getChild(1).getType() == HiveParser.Identifier ? (ASTNode)selExpr.getChild(1) : null;
+    String alias=null;
+    if (aliasNode != null) {
+      alias=aliasNode.getText();
+    }
+ else {
+      String[] tabColAlias=getColAlias(selExpr,null,null,true,-1);
+      alias=tabColAlias[1];
+    }
+    WindowExpressionSpec exprSpec=new WindowExpressionSpec();
+    exprSpec.setAlias(alias);
+    exprSpec.setExpression(expr);
+    selSpec.add(exprSpec);
+  }
+  return selSpec;
+}

@@ -9,8 +9,28 @@
     Operator op=genTablePlan(alias,qb);
     aliasToOpInfo.put(alias,op);
   }
-  genLateralViewPlans(aliasToOpInfo,qb);
   Operator srcOpInfo=null;
+  Operator lastPTFOp=null;
+  if (queryProperties.hasPTF()) {
+    HashMap<ASTNode,PTFInvocationSpec> ptfNodeToSpec=qb.getPTFNodeToSpec();
+    if (ptfNodeToSpec != null) {
+      for (      Entry<ASTNode,PTFInvocationSpec> entry : ptfNodeToSpec.entrySet()) {
+        ASTNode ast=entry.getKey();
+        PTFInvocationSpec spec=entry.getValue();
+        String inputAlias=spec.getQueryInputName();
+        Operator inOp=aliasToOpInfo.get(inputAlias);
+        if (inOp == null) {
+          throw new SemanticException(generateErrorMessage(ast,"Cannot resolve input Operator for PTF invocation"));
+        }
+        lastPTFOp=genPTFPlan(spec,inOp);
+        String ptfAlias=((PartitionedTableFunctionSpec)spec.getFunction()).getAlias();
+        if (ptfAlias != null) {
+          aliasToOpInfo.put(ptfAlias,lastPTFOp);
+        }
+      }
+    }
+  }
+  genLateralViewPlans(aliasToOpInfo,qb);
   if (qb.getParseInfo().getJoinExpr() != null) {
     ASTNode joinExpr=qb.getParseInfo().getJoinExpr();
     if (joinExpr.getToken().getType() == HiveParser.TOK_UNIQUEJOIN) {
@@ -27,6 +47,7 @@
   }
  else {
     srcOpInfo=aliasToOpInfo.values().iterator().next();
+    srcOpInfo=lastPTFOp != null ? lastPTFOp : srcOpInfo;
   }
   Operator bodyOpInfo=genBodyPlan(qb,srcOpInfo);
   if (LOG.isDebugEnabled()) {

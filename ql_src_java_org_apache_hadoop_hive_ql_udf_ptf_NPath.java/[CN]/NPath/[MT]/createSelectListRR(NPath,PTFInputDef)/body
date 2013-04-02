@@ -1,0 +1,34 @@
+{
+  RowResolver rr=new RowResolver();
+  RowResolver inputRR=inpDef.getOutputShape().getRr();
+  boolean inputColNamesKnown=evaluator.inputColumnNames != null;
+  if (!inputColNamesKnown) {
+    evaluator.inputColumnNames=new ArrayList<String>();
+  }
+  ArrayList<ObjectInspector> inpColOIs=new ArrayList<ObjectInspector>();
+  for (  ColumnInfo inpCInfo : inputRR.getColumnInfos()) {
+    ColumnInfo cInfo=new ColumnInfo(inpCInfo);
+    String colAlias=cInfo.getAlias();
+    String[] tabColAlias=inputRR.reverseLookup(inpCInfo.getInternalName());
+    if (tabColAlias != null) {
+      colAlias=tabColAlias[1];
+    }
+    ASTNode inExpr=null;
+    inExpr=PTFTranslator.getASTNode(inpCInfo,inputRR);
+    if (inExpr != null) {
+      rr.putExpression(inExpr,cInfo);
+    }
+ else {
+      colAlias=colAlias == null ? cInfo.getInternalName() : colAlias;
+      rr.put(cInfo.getTabAlias(),colAlias,cInfo);
+    }
+    if (!inputColNamesKnown) {
+      evaluator.inputColumnNames.add(colAlias);
+    }
+    inpColOIs.add(cInfo.getObjectInspector());
+  }
+  StandardListObjectInspector pathAttrOI=ObjectInspectorFactory.getStandardListObjectInspector(ObjectInspectorFactory.getStandardStructObjectInspector(evaluator.inputColumnNames,inpColOIs));
+  ColumnInfo pathColumn=new ColumnInfo(PATHATTR_NAME,TypeInfoUtils.getTypeInfoFromObjectInspector(pathAttrOI),null,false,false);
+  rr.put(null,PATHATTR_NAME,pathColumn);
+  return rr;
+}

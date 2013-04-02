@@ -13,7 +13,8 @@ case HiveParser.TOK_SELECT:
 if (((ASTNode)ast.getChild(0)).getToken().getType() == HiveParser.TOK_HINTLIST) {
   qbp.setHints((ASTNode)ast.getChild(0));
 }
-LinkedHashMap<String,ASTNode> aggregations=doPhase1GetAggregationsFromSelect(ast);
+handleWindowingExprsInSelectList(qb,ctx_1.dest,ast);
+LinkedHashMap<String,ASTNode> aggregations=doPhase1GetAggregationsFromSelect(ast,qb,ctx_1.dest);
 doPhase1GetColumnAliasesFromSelect(ast,qbp);
 qbp.setAggregationExprsForClause(ctx_1.dest,aggregations);
 qbp.setDistinctFuncExprsForClause(ctx_1.dest,doPhase1GetDistinctFuncExprs(aggregations));
@@ -55,6 +56,10 @@ processLateralView(qb,frm);
 queryProperties.setHasJoin(true);
 processJoin(qb,frm);
 qbp.setJoinExpr(frm);
+}
+ else if (frm.getToken().getType() == HiveParser.TOK_PTBLFUNCTION) {
+queryProperties.setHasPTF(true);
+processPTF(qb,frm);
 }
 break;
 case HiveParser.TOK_CLUSTERBY:
@@ -113,7 +118,13 @@ qbp.getDestGroupingSets().add(ctx_1.dest);
 break;
 case HiveParser.TOK_HAVING:
 qbp.setHavingExprForClause(ctx_1.dest,ast);
-qbp.addAggregationExprsForClause(ctx_1.dest,doPhase1GetAggregationsFromSelect(ast));
+qbp.addAggregationExprsForClause(ctx_1.dest,doPhase1GetAggregationsFromSelect(ast,qb,ctx_1.dest));
+break;
+case HiveParser.KW_WINDOW:
+if (!qb.hasWindowingSpec(ctx_1.dest)) {
+throw new SemanticException(generateErrorMessage(ast,"Query has no Cluster/Distribute By; but has a Window definition"));
+}
+handleQueryWindowClauses(qb,ctx_1,ast);
 break;
 case HiveParser.TOK_LIMIT:
 qbp.setDestLimit(ctx_1.dest,new Integer(ast.getChild(0).getText()));

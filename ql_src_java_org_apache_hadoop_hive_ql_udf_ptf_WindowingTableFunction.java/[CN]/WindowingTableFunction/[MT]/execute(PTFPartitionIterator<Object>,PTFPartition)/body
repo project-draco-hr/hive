@@ -1,0 +1,51 @@
+{
+  ArrayList<List<?>> oColumns=new ArrayList<List<?>>();
+  PTFPartition iPart=pItr.getPartition();
+  StructObjectInspector inputOI;
+  try {
+    inputOI=(StructObjectInspector)iPart.getSerDe().getObjectInspector();
+  }
+ catch (  SerDeException se) {
+    throw new HiveException(se);
+  }
+  WindowTableFunctionDef wTFnDef=(WindowTableFunctionDef)getTableDef();
+  Order order=wTFnDef.getOrder().getExpressions().get(0).getOrder();
+  for (  WindowFunctionDef wFn : wTFnDef.getWindowFunctions()) {
+    boolean processWindow=processWindow(wFn);
+    pItr.reset();
+    if (!processWindow) {
+      GenericUDAFEvaluator fEval=wFn.getWFnEval();
+      Object[] args=new Object[wFn.getArgs() == null ? 0 : wFn.getArgs().size()];
+      AggregationBuffer aggBuffer=fEval.getNewAggregationBuffer();
+      while (pItr.hasNext()) {
+        Object row=pItr.next();
+        int i=0;
+        if (wFn.getArgs() != null) {
+          for (          PTFExpressionDef arg : wFn.getArgs()) {
+            args[i++]=arg.getExprEvaluator().evaluate(row);
+          }
+        }
+        fEval.aggregate(aggBuffer,args);
+      }
+      Object out=fEval.evaluate(aggBuffer);
+      if (!wFn.isPivotResult()) {
+        out=new SameList(iPart.size(),out);
+      }
+      oColumns.add((List<?>)out);
+    }
+ else {
+      oColumns.add(executeFnwithWindow(getQueryDef(),wFn,iPart,order));
+    }
+  }
+  for (int i=0; i < iPart.size(); i++) {
+    ArrayList oRow=new ArrayList();
+    Object iRow=iPart.getAt(i);
+    for (int j=0; j < oColumns.size(); j++) {
+      oRow.add(oColumns.get(j).get(i));
+    }
+    for (    StructField f : inputOI.getAllStructFieldRefs()) {
+      oRow.add(inputOI.getStructFieldData(iRow,f));
+    }
+    outP.append(oRow);
+  }
+}
