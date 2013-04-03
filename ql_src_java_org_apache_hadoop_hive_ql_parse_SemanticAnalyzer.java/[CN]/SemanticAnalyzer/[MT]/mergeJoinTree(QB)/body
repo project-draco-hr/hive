@@ -1,25 +1,56 @@
 {
-  QBJoinTree root=qb.getQbJoinTree();
-  QBJoinTree parent=null;
-  while (root != null) {
-    boolean merged=mergeJoinNodes(qb,parent,root,root.getJoinSrc());
-    if (parent == null) {
-      if (merged) {
-        root=qb.getQbJoinTree();
+  QBJoinTree tree=qb.getQbJoinTree();
+  if (tree.getJoinSrc() == null) {
+    return;
+  }
+  List<QBJoinTree> trees=new ArrayList<QBJoinTree>();
+  for (; tree != null; tree=tree.getJoinSrc()) {
+    trees.add(tree);
+  }
+  for (int i=trees.size() - 1; i >= 0; i--) {
+    QBJoinTree target=trees.get(i);
+    if (target == null) {
+      continue;
+    }
+    JoinType prevType=null;
+    for (int j=i - 1; j >= 0; j--) {
+      QBJoinTree node=trees.get(j);
+      if (node == null) {
+        continue;
       }
- else {
-        parent=root;
-        root=root.getJoinSrc();
+      JoinType currType=getType(node.getJoinCond());
+      if (prevType != null && prevType != currType) {
+        break;
+      }
+      int pos=findMergePos(node,target);
+      if (pos >= 0) {
+        if (!node.getNoOuterJoin() || !target.getNoOuterJoin()) {
+          if (node.getRightAliases().length + target.getRightAliases().length + 1 > 16) {
+            LOG.info(ErrorMsg.JOINNODE_OUTERJOIN_MORETHAN_16);
+            continue;
+          }
+        }
+        mergeJoins(qb,node,target,pos);
+        trees.set(j,null);
+        continue;
+      }
+      if (prevType == null) {
+        prevType=currType;
       }
     }
+  }
+  QBJoinTree current=null;
+  for (int i=0; i < trees.size(); i++) {
+    QBJoinTree target=trees.get(i);
+    if (target == null) {
+      continue;
+    }
+    if (current == null) {
+      qb.setQbJoinTree(current=target);
+    }
  else {
-      if (merged) {
-        root=root.getJoinSrc();
-      }
- else {
-        parent=parent.getJoinSrc();
-        root=parent.getJoinSrc();
-      }
+      current.setJoinSrc(target);
+      current=target;
     }
   }
 }
