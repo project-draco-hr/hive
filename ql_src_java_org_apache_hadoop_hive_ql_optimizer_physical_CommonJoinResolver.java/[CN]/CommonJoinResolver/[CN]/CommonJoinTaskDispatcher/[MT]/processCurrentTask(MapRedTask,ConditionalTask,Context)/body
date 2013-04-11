@@ -81,9 +81,8 @@
     String bigTableAlias=null;
     currWork.setOpParseCtxMap(parseCtx.getOpParseCtx());
     currWork.setJoinTree(joinTree);
-    String xml=currWork.toXML();
     if (convertJoinMapJoin) {
-      MapRedTask newTask=convertTaskToMapJoinTask(xml,bigTablePosition).getFirst();
+      MapRedTask newTask=convertTaskToMapJoinTask(currWork,bigTablePosition).getFirst();
       newTask.setTaskTag(Task.MAPJOIN_ONLY_NOBACKUP);
       replaceTask(currTask,newTask,physicalContext);
       if ((newTask.getChildTasks() != null) && (newTask.getChildTasks().size() == 1) && (newTask.getChildTasks().get(0).getTaskTag() == Task.MAPJOIN_ONLY_NOBACKUP)) {
@@ -92,11 +91,14 @@
       return newTask;
     }
     long ThresholdOfSmallTblSizeSum=HiveConf.getLongVar(conf,HiveConf.ConfVars.HIVESMALLTABLESFILESIZE);
+    String xml=currWork.toXML();
     for (int i=0; i < numAliases; i++) {
       if (!bigTableCandidates.contains(i)) {
         continue;
       }
-      ObjectPair<MapRedTask,String> newTaskAlias=convertTaskToMapJoinTask(xml,i);
+      InputStream in=new ByteArrayInputStream(xml.getBytes("UTF-8"));
+      MapredWork newWork=Utilities.deserializeMapRedWork(in,physicalContext.getConf());
+      ObjectPair<MapRedTask,String> newTaskAlias=convertTaskToMapJoinTask(newWork,i);
       MapRedTask newTask=newTaskAlias.getFirst();
       bigTableAlias=newTaskAlias.getSecond();
       Long aliasKnownSize=aliasToSize.get(bigTableAlias);
