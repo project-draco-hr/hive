@@ -6,37 +6,7 @@
     if (lateralViews != null) {
       Operator op=e.getValue();
       for (      ASTNode lateralViewTree : aliasToLateralViews.get(alias)) {
-        RowResolver lvForwardRR=new RowResolver();
-        RowResolver source=opParseCtx.get(op).getRowResolver();
-        for (        ColumnInfo col : source.getColumnInfos()) {
-          if (col.getIsVirtualCol() && col.isHiddenVirtualCol()) {
-            continue;
-          }
-          String[] tabCol=source.reverseLookup(col.getInternalName());
-          lvForwardRR.put(tabCol[0],tabCol[1],col);
-        }
-        Operator lvForward=putOpInsertMap(OperatorFactory.getAndMakeChild(new LateralViewForwardDesc(),new RowSchema(lvForwardRR.getColumnInfos()),op),lvForwardRR);
-        RowResolver allPathRR=opParseCtx.get(lvForward).getRowResolver();
-        Operator allPath=putOpInsertMap(OperatorFactory.getAndMakeChild(new SelectDesc(true),new RowSchema(allPathRR.getColumnInfos()),lvForward),allPathRR);
-        QB blankQb=new QB(null,null,false);
-        Operator udtfPath=genSelectPlan((ASTNode)lateralViewTree.getChild(0),blankQb,lvForward);
-        for (        String udtfAlias : blankQb.getAliases()) {
-          qb.addAlias(udtfAlias);
-        }
-        RowResolver udtfPathRR=opParseCtx.get(udtfPath).getRowResolver();
-        RowResolver lateralViewRR=new RowResolver();
-        ArrayList<String> outputInternalColNames=new ArrayList<String>();
-        LVmergeRowResolvers(allPathRR,lateralViewRR,outputInternalColNames);
-        LVmergeRowResolvers(udtfPathRR,lateralViewRR,outputInternalColNames);
-        Map<String,ExprNodeDesc> colExprMap=new HashMap<String,ExprNodeDesc>();
-        int i=0;
-        for (        ColumnInfo c : allPathRR.getColumnInfos()) {
-          String internalName=getColumnInternalName(i);
-          i++;
-          colExprMap.put(internalName,new ExprNodeColumnDesc(c.getType(),c.getInternalName(),c.getTabAlias(),c.getIsVirtualCol()));
-        }
-        Operator lateralViewJoin=putOpInsertMap(OperatorFactory.getAndMakeChild(new LateralViewJoinDesc(outputInternalColNames),new RowSchema(lateralViewRR.getColumnInfos()),allPath,udtfPath),lateralViewRR);
-        lateralViewJoin.setColumnExprMap(colExprMap);
+        Operator lateralViewJoin=genLateralViewPlan(qb,op,lateralViewTree);
         op=lateralViewJoin;
       }
       e.setValue(op);

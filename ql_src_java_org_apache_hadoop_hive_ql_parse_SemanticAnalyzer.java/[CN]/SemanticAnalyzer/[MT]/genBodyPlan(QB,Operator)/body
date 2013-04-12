@@ -1,6 +1,7 @@
 {
   QBParseInfo qbp=qb.getParseInfo();
   TreeSet<String> ks=new TreeSet<String>(qbp.getClauseNames());
+  Map<String,Operator<? extends OperatorDesc>> inputs=createInputForDests(qb,input,ks);
   List<ASTNode> commonDistinctExprs=getCommonDistinctExprs(qb,input);
   boolean optimizeMultiGroupBy=commonDistinctExprs != null && conf.getBoolVar(HiveConf.ConfVars.HIVE_OPTIMIZE_MULTI_GROUPBY_COMMON_DISTINCTS);
   Operator curr=input;
@@ -24,7 +25,7 @@
     List<List<String>> commonGroupByDestGroups=null;
     if (conf.getBoolVar(HiveConf.ConfVars.HIVEMULTIGROUPBYSINGLEREDUCER)) {
       try {
-        commonGroupByDestGroups=getCommonGroupByDestGroups(qb,curr);
+        commonGroupByDestGroups=getCommonGroupByDestGroups(qb,inputs);
       }
  catch (      SemanticException e) {
         LOG.error("Failed to group clauses by common spray keys.",e);
@@ -40,9 +41,10 @@
           continue;
         }
         String firstDest=commonGroupByDestGroup.get(0);
+        input=inputs.get(firstDest);
         if (commonGroupByDestGroup.size() == 1 || (qbp.getAggregationExprsForClause(firstDest).size() == 0 && getGroupByForClause(qbp,firstDest).size() == 0) || conf.getBoolVar(HiveConf.ConfVars.HIVEGROUPBYSKEW) || !conf.getBoolVar(HiveConf.ConfVars.HIVEMULTIGROUPBYSINGLEREDUCER)) {
           for (          String dest : commonGroupByDestGroup) {
-            curr=input;
+            curr=inputs.get(dest);
             if (qbp.getWhrForClause(dest) != null) {
               curr=genFilterPlan(dest,qb,curr);
             }
@@ -70,7 +72,7 @@
           }
         }
  else {
-          curr=genGroupByPlan1MRMultiReduceGB(commonGroupByDestGroup,qb,input);
+          curr=genGroupByPlan1ReduceMultiGBY(commonGroupByDestGroup,qb,input);
         }
       }
     }
