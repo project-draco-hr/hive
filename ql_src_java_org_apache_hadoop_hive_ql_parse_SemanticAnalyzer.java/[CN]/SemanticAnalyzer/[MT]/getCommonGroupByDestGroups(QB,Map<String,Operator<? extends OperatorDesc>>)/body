@@ -1,5 +1,4 @@
 {
-  RowResolver inputRR=opParseCtx.get(input).getRowResolver();
   QBParseInfo qbp=qb.getParseInfo();
   TreeSet<String> ks=new TreeSet<String>();
   ks.addAll(qbp.getClauseNames());
@@ -12,18 +11,24 @@
     commonGroupByDestGroups.add(oneList);
     return commonGroupByDestGroups;
   }
-  List<List<ExprNodeDesc.ExprNodeDescEqualityWrapper>> sprayKeyLists=new ArrayList<List<ExprNodeDesc.ExprNodeDescEqualityWrapper>>(ks.size());
+  List<Operator<? extends OperatorDesc>> inputOperators=new ArrayList<Operator<? extends OperatorDesc>>(ks.size());
+  List<List<ExprNodeDesc>> sprayKeyLists=new ArrayList<List<ExprNodeDesc>>(ks.size());
   for (  String dest : ks) {
-    List<ExprNodeDesc.ExprNodeDescEqualityWrapper> sprayKeys=getDistinctExprs(qbp,dest,inputRR);
+    Operator input=inputs.get(dest);
+    RowResolver inputRR=opParseCtx.get(input).getRowResolver();
+    List<ExprNodeDesc> sprayKeys=getDistinctExprs(qbp,dest,inputRR);
     List<ASTNode> grpByExprs=getGroupByForClause(qbp,dest);
     for (    ASTNode grpByExpr : grpByExprs) {
-      ExprNodeDesc.ExprNodeDescEqualityWrapper grpByExprWrapper=new ExprNodeDesc.ExprNodeDescEqualityWrapper(genExprNodeDesc(grpByExpr,inputRR));
-      if (!sprayKeys.contains(grpByExprWrapper)) {
-        sprayKeys.add(grpByExprWrapper);
+      ExprNodeDesc exprDesc=genExprNodeDesc(grpByExpr,inputRR);
+      if (ExprNodeDescUtils.indexOf(exprDesc,sprayKeys) < 0) {
+        sprayKeys.add(exprDesc);
       }
     }
     boolean found=false;
     for (int i=0; i < sprayKeyLists.size(); i++) {
+      if (!input.equals(inputOperators.get(i))) {
+        continue;
+      }
       if (!matchExprLists(sprayKeyLists.get(i),sprayKeys)) {
         continue;
       }
@@ -32,6 +37,7 @@
       break;
     }
     if (!found) {
+      inputOperators.add(input);
       sprayKeyLists.add(sprayKeys);
       List<String> destGroup=new ArrayList<String>();
       destGroup.add(dest);

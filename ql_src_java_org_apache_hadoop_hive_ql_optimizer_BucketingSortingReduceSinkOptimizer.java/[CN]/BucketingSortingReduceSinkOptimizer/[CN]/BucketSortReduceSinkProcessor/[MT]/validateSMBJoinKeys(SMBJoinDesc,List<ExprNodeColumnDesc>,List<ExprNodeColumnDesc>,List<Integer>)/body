@@ -1,0 +1,51 @@
+{
+  if (!sourceTableBucketCols.equals(sourceTableSortCols)) {
+    return false;
+  }
+  Byte[] tagOrder=smbJoinDesc.getTagOrder();
+  Map<Byte,List<Integer>> retainList=smbJoinDesc.getRetainList();
+  int totalNumberColumns=0;
+  for (  Byte tag : tagOrder) {
+    totalNumberColumns+=retainList.get(tag).size();
+  }
+  byte[] columnTableMappings=new byte[totalNumberColumns];
+  int[] columnNumberMappings=new int[totalNumberColumns];
+  int currentColumnPosition=0;
+  for (  Byte tag : tagOrder) {
+    for (int pos=0; pos < retainList.get(tag).size(); pos++) {
+      columnTableMappings[currentColumnPosition]=tag;
+      columnNumberMappings[currentColumnPosition]=pos;
+      currentColumnPosition++;
+    }
+  }
+  List<String> outputColumnNames=smbJoinDesc.getOutputColumnNames();
+  byte tableTag=-1;
+  int[] columnNumbersExprList=new int[sourceTableBucketCols.size()];
+  int currentColPosition=0;
+  for (  ExprNodeColumnDesc bucketCol : sourceTableBucketCols) {
+    String colName=bucketCol.getColumn();
+    int colNumber=outputColumnNames.indexOf(colName);
+    if (colNumber < 0) {
+      return false;
+    }
+    if (tableTag < 0) {
+      tableTag=columnTableMappings[colNumber];
+    }
+ else     if (tableTag != columnTableMappings[colNumber]) {
+      return false;
+    }
+    columnNumbersExprList[currentColPosition++]=columnNumberMappings[colNumber];
+  }
+  List<ExprNodeDesc> allExprs=smbJoinDesc.getExprs().get(tableTag);
+  List<ExprNodeDesc> keysSelectedTable=smbJoinDesc.getKeys().get(tableTag);
+  currentColPosition=0;
+  for (  ExprNodeDesc keySelectedTable : keysSelectedTable) {
+    if (!(keySelectedTable instanceof ExprNodeColumnDesc)) {
+      return false;
+    }
+    if (!allExprs.get(columnNumbersExprList[currentColPosition++]).isSame(keySelectedTable)) {
+      return false;
+    }
+  }
+  return true;
+}
