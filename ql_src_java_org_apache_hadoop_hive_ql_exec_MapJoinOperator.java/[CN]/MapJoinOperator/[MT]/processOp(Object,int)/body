@@ -9,28 +9,33 @@
       nextSz=joinEmitInterval;
     }
     AbstractMapJoinKey key=JoinUtil.computeMapJoinKeys(row,joinKeys[alias],joinKeysObjectInspectors[alias]);
-    ArrayList<Object> value=getFilteredValue(alias,row);
-    storage[alias].add(value);
+    boolean joinNeeded=false;
     for (byte pos=0; pos < order.length; pos++) {
       if (pos != alias) {
         MapJoinObjectValue o=mapJoinTables[pos].get(key);
         MapJoinRowContainer<ArrayList<Object>> rowContainer=rowContainerMap[pos];
         if (o == null || key.hasAnyNulls(nullsafes)) {
-          if (noOuterJoin) {
-            storage[pos]=emptyList;
+          if (!noOuterJoin) {
+            joinNeeded=true;
+            storage[pos]=dummyObjVectors[pos];
           }
  else {
-            storage[pos]=dummyObjVectors[pos];
+            storage[pos]=emptyList;
           }
         }
  else {
+          joinNeeded=true;
           rowContainer.reset(o.getObj());
           storage[pos]=rowContainer;
           aliasFilterTags[pos]=o.getAliasFilter();
         }
       }
     }
-    checkAndGenObject();
+    if (joinNeeded) {
+      ArrayList<Object> value=getFilteredValue(alias,row);
+      storage[alias].add(value);
+      checkAndGenObject();
+    }
     storage[tag].clear();
     for (byte pos=0; pos < order.length; pos++) {
       if (pos != tag) {
