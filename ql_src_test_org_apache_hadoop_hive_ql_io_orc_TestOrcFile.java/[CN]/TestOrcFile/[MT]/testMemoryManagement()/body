@@ -1,0 +1,22 @@
+{
+  ObjectInspector inspector;
+synchronized (TestOrcFile.class) {
+    inspector=ObjectInspectorFactory.getReflectionObjectInspector(InnerStruct.class,ObjectInspectorFactory.ObjectInspectorOptions.JAVA);
+  }
+  MyMemoryManager memory=new MyMemoryManager(conf,10000,0.1);
+  Writer writer=new WriterImpl(fs,testFilePath,inspector,50000,CompressionKind.NONE,100,0,memory);
+  assertEquals(testFilePath,memory.path);
+  for (int i=0; i < 2500; ++i) {
+    writer.addRow(new InnerStruct(i * 300,Integer.toHexString(10 * i)));
+  }
+  writer.close();
+  assertEquals(null,memory.path);
+  Reader reader=OrcFile.createReader(fs,testFilePath);
+  int i=0;
+  for (  StripeInformation stripe : reader.getStripes()) {
+    i+=1;
+    assertTrue("stripe " + i + " is too long at "+ stripe.getDataLength(),stripe.getDataLength() < 10000);
+  }
+  assertEquals(3,i);
+  assertEquals(2500,reader.getNumberOfRows());
+}
