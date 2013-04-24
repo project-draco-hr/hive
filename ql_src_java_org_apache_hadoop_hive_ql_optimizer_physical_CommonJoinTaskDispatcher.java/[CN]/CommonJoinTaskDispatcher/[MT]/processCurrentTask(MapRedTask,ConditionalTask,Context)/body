@@ -15,29 +15,11 @@
   JoinDesc joinDesc=joinOp.getConf();
   Byte[] order=joinDesc.getTagOrder();
   int numAliases=order.length;
-  long aliasTotalKnownInputSize=0;
   if (aliasToSize == null) {
     aliasToSize=new HashMap<String,Long>();
   }
   try {
-    Utilities.getInputSummary(context,currWork,null).getLength();
-    for (    Map.Entry<String,ArrayList<String>> entry : pathToAliases.entrySet()) {
-      String path=entry.getKey();
-      List<String> aliasList=entry.getValue();
-      ContentSummary cs=context.getCS(path);
-      if (cs != null) {
-        long size=cs.getLength();
-        for (        String alias : aliasList) {
-          aliasTotalKnownInputSize+=size;
-          Long es=aliasToSize.get(alias);
-          if (es == null) {
-            es=new Long(0);
-          }
-          es+=size;
-          aliasToSize.put(alias,es);
-        }
-      }
-    }
+    long aliasTotalKnownInputSize=getTotalKnownInputSize(context,currWork,pathToAliases,aliasToSize);
     HashSet<Integer> bigTableCandidates=MapJoinProcessor.getBigTableCandidates(joinDesc.getConds());
     if (bigTableCandidates == null) {
       return null;
@@ -93,11 +75,11 @@
       return newTask;
     }
     long ThresholdOfSmallTblSizeSum=HiveConf.getLongVar(conf,HiveConf.ConfVars.HIVESMALLTABLESFILESIZE);
-    String xml=currWork.toXML();
     for (int i=0; i < numAliases; i++) {
       if (!bigTableCandidates.contains(i)) {
         continue;
       }
+      String xml=currWork.toXML();
       InputStream in=new ByteArrayInputStream(xml.getBytes("UTF-8"));
       MapredWork newWork=Utilities.deserializeMapRedWork(in,physicalContext.getConf());
       ObjectPair<MapRedTask,String> newTaskAlias=convertTaskToMapJoinTask(newWork,i);
@@ -138,6 +120,6 @@
   resolverCtx.setLocalTmpDir(context.getLocalScratchDir(false));
   resolverCtx.setHdfsTmpDir(context.getMRScratchDir());
   cndTsk.setResolverCtx(resolverCtx);
-  this.replaceTaskWithConditionalTask(currTask,cndTsk,physicalContext);
+  replaceTaskWithConditionalTask(currTask,cndTsk,physicalContext);
   return cndTsk;
 }
