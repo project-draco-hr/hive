@@ -1,0 +1,75 @@
+{
+  BytesColumnVector inputColVector=(BytesColumnVector)batch.cols[colNum];
+  int[] sel=batch.selected;
+  int n=batch.size;
+  byte[][] vector=inputColVector.vector;
+  int start[]=inputColVector.start;
+  int length[]=inputColVector.length;
+  BytesColumnVector outV=(BytesColumnVector)batch.cols[outputColumn];
+  byte[][] outputVector=outV.vector;
+  Text t;
+  if (n == 0) {
+    return;
+  }
+  if (inputColVector.noNulls) {
+    outV.noNulls=true;
+    if (inputColVector.isRepeating) {
+      outV.isRepeating=true;
+      s.set(vector[0],start[0],length[0]);
+      t=func.evaluate(s);
+      outV.setRef(0,t.getBytes(),0,t.getLength());
+    }
+ else     if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        s.set(vector[i],start[i],length[i]);
+        t=func.evaluate(s);
+        outV.setRef(i,t.getBytes(),0,t.getLength());
+      }
+      outV.isRepeating=false;
+    }
+ else {
+      for (int i=0; i != n; i++) {
+        s.set(vector[i],start[i],length[i]);
+        t=func.evaluate(s);
+        outV.setRef(i,t.getBytes(),0,t.getLength());
+      }
+      outV.isRepeating=false;
+    }
+  }
+ else {
+    outV.noNulls=false;
+    if (inputColVector.isRepeating) {
+      outV.isRepeating=true;
+      outV.isNull[0]=inputColVector.isNull[0];
+      if (!inputColVector.isNull[0]) {
+        s.set(vector[0],start[0],length[0]);
+        t=func.evaluate(s);
+        outV.setRef(0,t.getBytes(),0,t.getLength());
+      }
+    }
+ else     if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        if (!inputColVector.isNull[i]) {
+          s.set(vector[i],start[i],length[i]);
+          t=func.evaluate(s);
+          outV.setRef(i,t.getBytes(),0,t.getLength());
+        }
+        outV.isNull[i]=inputColVector.isNull[i];
+      }
+      outV.isRepeating=false;
+    }
+ else {
+      for (int i=0; i != n; i++) {
+        if (!inputColVector.isNull[i]) {
+          s.set(vector[i],start[i],length[i]);
+          t=func.evaluate(s);
+          outV.setRef(i,t.getBytes(),0,t.getLength());
+        }
+        outV.isNull[i]=inputColVector.isNull[i];
+      }
+      outV.isRepeating=false;
+    }
+  }
+}
