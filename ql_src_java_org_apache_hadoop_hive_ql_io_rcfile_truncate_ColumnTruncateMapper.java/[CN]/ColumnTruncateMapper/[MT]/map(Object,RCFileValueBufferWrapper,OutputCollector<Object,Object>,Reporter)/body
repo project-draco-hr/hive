@@ -1,0 +1,38 @@
+{
+  try {
+    RCFileKeyBufferWrapper key=null;
+    if (k instanceof CombineHiveKey) {
+      key=(RCFileKeyBufferWrapper)((CombineHiveKey)k).getKey();
+    }
+ else {
+      key=(RCFileKeyBufferWrapper)k;
+    }
+    if (work.getListBucketingCtx().calculateListBucketingLevel() > 0) {
+      if (!this.tmpPathFixedConcatenate) {
+        fixTmpPathConcatenate(key.getInputPath().getParent(),work.getListBucketingCtx().calculateListBucketingLevel());
+        tmpPathFixedConcatenate=true;
+      }
+    }
+    if (outWriter == null) {
+      codec=key.getCodec();
+      columnNumber=key.getKeyBuffer().getColumnNumber();
+      jc.setInt(RCFile.COLUMN_NUMBER_CONF_STR,columnNumber);
+      outWriter=new RCFile.Writer(fs,jc,outPath,null,codec);
+    }
+    for (    Integer i : work.getDroppedColumns()) {
+      key.getKeyBuffer().nullColumn(i);
+      value.getValueBuffer().nullColumn(i);
+    }
+    int keyLength=key.getKeyBuffer().getSize();
+    int recordLength=key.getKeyBuffer().getSize();
+    for (    int columnLen : key.getKeyBuffer().getEachColumnValueLen()) {
+      recordLength+=columnLen;
+    }
+    outWriter.flushBlock(key.getKeyBuffer(),value.getValueBuffer(),recordLength,keyLength,key.getCompressedKeyLength());
+  }
+ catch (  Throwable e) {
+    this.exception=true;
+    close();
+    throw new IOException(e);
+  }
+}

@@ -1,0 +1,85 @@
+{
+  MapRedTask childTask=(MapRedTask)task.getChildTasks().get(0);
+  MapredWork work=task.getWork();
+  MapredLocalWork localWork=work.getMapLocalWork();
+  MapredWork childWork=childTask.getWork();
+  MapredLocalWork childLocalWork=childWork.getMapLocalWork();
+  Map<String,Operator<? extends OperatorDesc>> aliasToWork=work.getAliasToWork();
+  if (aliasToWork.size() > 1) {
+    return;
+  }
+  Operator<? extends OperatorDesc> op=aliasToWork.values().iterator().next();
+  while (op.getChildOperators() != null) {
+    if (op.getChildOperators().size() > 1) {
+      return;
+    }
+    op=op.getChildOperators().get(0);
+  }
+  if (!(op instanceof FileSinkOperator)) {
+    return;
+  }
+  FileSinkOperator fop=(FileSinkOperator)op;
+  String workDir=fop.getConf().getDirName();
+  Map<String,ArrayList<String>> childPathToAliases=childWork.getPathToAliases();
+  if (childPathToAliases.size() > 1) {
+    return;
+  }
+  if (!childPathToAliases.keySet().iterator().next().equals(workDir)) {
+    return;
+  }
+  if ((localWork.getBucketMapjoinContext() != null) || (childLocalWork.getBucketMapjoinContext() != null)) {
+    return;
+  }
+  if (childWork.getAliasToWork().size() > 1) {
+    return;
+  }
+  long mapJoinSize=HiveConf.getLongVar(conf,HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASKTHRESHOLD);
+  long localTableTotalSize=0;
+  for (  String alias : localWork.getAliasToWork().keySet()) {
+    Long tabSize=aliasToSize.get(alias);
+    if (tabSize == null) {
+      return;
+    }
+    localTableTotalSize+=tabSize;
+  }
+  for (  String alias : childLocalWork.getAliasToWork().keySet()) {
+    Long tabSize=aliasToSize.get(alias);
+    if (tabSize == null) {
+      return;
+    }
+    localTableTotalSize+=tabSize;
+    if (localTableTotalSize > mapJoinSize) {
+      return;
+    }
+  }
+  Operator<? extends Serializable> childAliasOp=childWork.getAliasToWork().values().iterator().next();
+  if (fop.getParentOperators().size() > 1) {
+    return;
+  }
+  Operator<? extends Serializable> parentFOp=fop.getParentOperators().get(0);
+  parentFOp.getChildOperators().remove(fop);
+  parentFOp.getChildOperators().add(childAliasOp);
+  List<Operator<? extends OperatorDesc>> parentOps=new ArrayList<Operator<? extends OperatorDesc>>();
+  parentOps.add(parentFOp);
+  childAliasOp.setParentOperators(parentOps);
+  work.getAliasToPartnInfo().putAll(childWork.getAliasToPartnInfo());
+  for (  Map.Entry<String,PartitionDesc> childWorkEntry : childWork.getPathToPartitionInfo().entrySet()) {
+    if (childWork.getAliasToPartnInfo().containsValue(childWorkEntry.getKey())) {
+      work.getPathToPartitionInfo().put(childWorkEntry.getKey(),childWorkEntry.getValue());
+    }
+  }
+  localWork.getAliasToFetchWork().putAll(childLocalWork.getAliasToFetchWork());
+  localWork.getAliasToWork().putAll(childLocalWork.getAliasToWork());
+  List<Task<? extends Serializable>> oldChildTasks=childTask.getChildTasks();
+  task.setChildTasks(oldChildTasks);
+  if (oldChildTasks != null) {
+    for (    Task<? extends Serializable> oldChildTask : oldChildTasks) {
+      oldChildTask.getParentTasks().remove(childTask);
+      oldChildTask.getParentTasks().add(task);
+    }
+  }
+  boolean convertToSingleJob=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVEOPTIMIZEMAPJOINFOLLOWEDBYMR);
+  if (convertToSingleJob) {
+    copyReducerConf(task,childTask);
+  }
+}

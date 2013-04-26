@@ -1,0 +1,77 @@
+{
+  if (mapJoinTask.getChildTasks() == null || mapJoinTask.getChildTasks().size() > 1) {
+    return;
+  }
+  Task<? extends Serializable> firstChildTask=mapJoinTask.getChildTasks().get(0);
+  if (!(firstChildTask instanceof MapRedTask)) {
+    return;
+  }
+  MapRedTask childTask=(MapRedTask)firstChildTask;
+  MapredWork mapJoinWork=mapJoinTask.getWork();
+  MapredWork childWork=childTask.getWork();
+  Operator childReducer=childWork.getReducer();
+  if (childReducer == null) {
+    return;
+  }
+  Map<String,Operator<? extends OperatorDesc>> aliasToWork=mapJoinWork.getAliasToWork();
+  if (aliasToWork.size() > 1) {
+    return;
+  }
+  Map<String,ArrayList<String>> childPathToAliases=childWork.getPathToAliases();
+  if (childPathToAliases.size() > 1) {
+    return;
+  }
+  Operator<? extends OperatorDesc> mapJoinLeafOperator=aliasToWork.values().iterator().next();
+  while (mapJoinLeafOperator.getChildOperators() != null) {
+    if (mapJoinLeafOperator.getChildOperators().size() > 1) {
+      return;
+    }
+    mapJoinLeafOperator=mapJoinLeafOperator.getChildOperators().get(0);
+  }
+  assert(mapJoinLeafOperator instanceof FileSinkOperator);
+  if (!(mapJoinLeafOperator instanceof FileSinkOperator)) {
+    return;
+  }
+  FileSinkOperator mapJoinTaskFileSinkOperator=(FileSinkOperator)mapJoinLeafOperator;
+  String workDir=mapJoinTaskFileSinkOperator.getConf().getDirName();
+  if (!childPathToAliases.keySet().iterator().next().equals(workDir)) {
+    return;
+  }
+  MapredLocalWork mapJoinLocalWork=mapJoinWork.getMapLocalWork();
+  MapredLocalWork childLocalWork=childWork.getMapLocalWork();
+  if ((mapJoinLocalWork != null && mapJoinLocalWork.getBucketMapjoinContext() != null) || (childLocalWork != null && childLocalWork.getBucketMapjoinContext() != null)) {
+    return;
+  }
+  if (childWork.getAliasToWork().size() > 1) {
+    return;
+  }
+  Operator<? extends Serializable> childAliasOp=childWork.getAliasToWork().values().iterator().next();
+  if (mapJoinTaskFileSinkOperator.getParentOperators().size() > 1) {
+    return;
+  }
+  Operator<? extends Serializable> parentFOp=mapJoinTaskFileSinkOperator.getParentOperators().get(0);
+  parentFOp.getChildOperators().remove(mapJoinTaskFileSinkOperator);
+  parentFOp.getChildOperators().add(childAliasOp);
+  List<Operator<? extends OperatorDesc>> parentOps=new ArrayList<Operator<? extends OperatorDesc>>();
+  parentOps.add(parentFOp);
+  childAliasOp.setParentOperators(parentOps);
+  mapJoinWork.getAliasToPartnInfo().putAll(childWork.getAliasToPartnInfo());
+  for (  Map.Entry<String,PartitionDesc> childWorkEntry : childWork.getPathToPartitionInfo().entrySet()) {
+    if (childWork.getAliasToPartnInfo().containsValue(childWorkEntry.getKey())) {
+      mapJoinWork.getPathToPartitionInfo().put(childWorkEntry.getKey(),childWorkEntry.getValue());
+    }
+  }
+  if (mapJoinLocalWork != null && childLocalWork != null) {
+    mapJoinLocalWork.getAliasToFetchWork().putAll(childLocalWork.getAliasToFetchWork());
+    mapJoinLocalWork.getAliasToWork().putAll(childLocalWork.getAliasToWork());
+  }
+  List<Task<? extends Serializable>> oldChildTasks=childTask.getChildTasks();
+  mapJoinTask.setChildTasks(oldChildTasks);
+  if (oldChildTasks != null) {
+    for (    Task<? extends Serializable> oldChildTask : oldChildTasks) {
+      oldChildTask.getParentTasks().remove(childTask);
+      oldChildTask.getParentTasks().add(mapJoinTask);
+    }
+  }
+  copyReducerConf(mapJoinTask,childTask);
+}

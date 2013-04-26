@@ -1,0 +1,57 @@
+{
+  Map<String,PartitionDesc> aliasToPartitionInfo=currWork.getAliasToPartnInfo();
+  List<String> removePaths=new ArrayList<String>();
+  for (  Map.Entry<String,ArrayList<String>> entry : currWork.getPathToAliases().entrySet()) {
+    boolean keepPath=false;
+    for (    String alias : entry.getValue()) {
+      if (aliasToPartitionInfo.containsKey(alias)) {
+        keepPath=true;
+        break;
+      }
+    }
+    if (!keepPath) {
+      removePaths.add(entry.getKey());
+    }
+  }
+  List<String> removeAliases=new ArrayList<String>();
+  for (  String removePath : removePaths) {
+    removeAliases.addAll(currWork.getPathToAliases().get(removePath));
+    currWork.getPathToAliases().remove(removePath);
+    currWork.getPathToPartitionInfo().remove(removePath);
+  }
+  for (  String alias : removeAliases) {
+    currWork.getAliasToPartnInfo().remove(alias);
+    currWork.getAliasToWork().remove(alias);
+  }
+  MapredLocalWork localWork=smbJoinOp.getConf().getLocalWork();
+  for (  Map.Entry<String,Operator<? extends OperatorDesc>> entry : localWork.getAliasToWork().entrySet()) {
+    String alias=entry.getKey();
+    Operator<? extends OperatorDesc> op=entry.getValue();
+    FetchWork fetchWork=localWork.getAliasToFetchWork().get(alias);
+    currWork.getAliasToWork().put(alias,op);
+    PartitionDesc partitionInfo=currWork.getAliasToPartnInfo().get(alias);
+    if (fetchWork.getTblDir() != null) {
+      ArrayList<String> aliases=new ArrayList<String>();
+      aliases.add(alias);
+      currWork.getPathToAliases().put(fetchWork.getTblDir(),aliases);
+      currWork.getPathToPartitionInfo().put(fetchWork.getTblDir(),partitionInfo);
+    }
+ else {
+      for (      String pathDir : fetchWork.getPartDir()) {
+        ArrayList<String> aliases=new ArrayList<String>();
+        aliases.add(alias);
+        currWork.getPathToAliases().put(pathDir,aliases);
+        currWork.getPathToPartitionInfo().put(pathDir,partitionInfo);
+      }
+    }
+  }
+  for (  Operator<? extends OperatorDesc> parentOp : smbJoinOp.getParentOperators()) {
+    if (parentOp instanceof DummyStoreOperator) {
+      Operator<? extends OperatorDesc> grandParentOp=parentOp.getParentOperators().get(0);
+      smbJoinOp.replaceParent(parentOp,grandParentOp);
+      grandParentOp.setChildOperators(parentOp.getChildOperators());
+      parentOp.setParentOperators(null);
+      parentOp.setParentOperators(null);
+    }
+  }
+}
