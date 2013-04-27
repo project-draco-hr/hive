@@ -10,20 +10,25 @@
   }
   try {
     seek(position + 4);
-    in.readFully(syncCheck);
-    int syncLen=sync.length;
-    for (int i=0; in.getPos() < end; i++) {
-      int j=0;
-      for (; j < syncLen; j++) {
-        if (sync[j] != syncCheck[(i + j) % syncLen]) {
-          break;
+    int prefix=sync.length;
+    int n=conf.getInt("io.bytes.per.checksum",512);
+    byte[] buffer=new byte[prefix + n];
+    n=(int)Math.min(n,end - in.getPos());
+    Arrays.fill(buffer,(byte)(~sync[0]));
+    while (n > 0 && (in.getPos() + n) <= end) {
+      position=in.getPos();
+      in.readFully(buffer,prefix,n);
+      for (int i=0; i < n; i++) {
+        int j;
+        for (j=0; j < sync.length && sync[j] == buffer[i + j]; j++) {
+        }
+        if (j == sync.length) {
+          in.seek(position + i - SYNC_SIZE);
+          return;
         }
       }
-      if (j == syncLen) {
-        in.seek(in.getPos() - SYNC_SIZE);
-        return;
-      }
-      syncCheck[i % syncLen]=in.readByte();
+      System.arraycopy(buffer,buffer.length - prefix - 1,buffer,0,prefix);
+      n=(int)Math.min(n,end - in.getPos());
     }
   }
  catch (  ChecksumException e) {
