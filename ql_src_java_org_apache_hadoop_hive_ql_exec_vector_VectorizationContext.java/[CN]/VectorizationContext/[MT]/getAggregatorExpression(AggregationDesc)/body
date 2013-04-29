@@ -1,0 +1,27 @@
+{
+  ArrayList<ExprNodeDesc> paramDescList=desc.getParameters();
+  VectorExpression[] vectorParams=new VectorExpression[paramDescList.size()];
+  for (int i=0; i < paramDescList.size(); ++i) {
+    ExprNodeDesc exprDesc=paramDescList.get(i);
+    vectorParams[i]=this.getVectorExpression(exprDesc);
+  }
+  String aggregateName=desc.getGenericUDAFName();
+  List<ExprNodeDesc> params=desc.getParameters();
+  assert(params.size() == 1);
+  ExprNodeDesc inputExpr=params.get(0);
+  String inputType=getNormalizedTypeName(inputExpr.getTypeString());
+  for (  Object[] aggDef : aggregatesDefinition) {
+    if (aggDef[0].equals(aggregateName) && aggDef[1].equals(inputType)) {
+      Class<? extends VectorAggregateExpression> aggClass=(Class<? extends VectorAggregateExpression>)(aggDef[2]);
+      try {
+        Constructor<? extends VectorAggregateExpression> ctor=aggClass.getConstructor(VectorExpression.class);
+        VectorAggregateExpression aggExpr=ctor.newInstance(vectorParams[0]);
+        return aggExpr;
+      }
+ catch (      Exception e) {
+        throw new HiveException("Internal exception for vector aggregate : \"" + aggregateName + "\" for type: \""+ inputType+ "",e);
+      }
+    }
+  }
+  throw new HiveException("Vector aggregate not implemented: \"" + aggregateName + "\" for type: \""+ inputType+ "");
+}
