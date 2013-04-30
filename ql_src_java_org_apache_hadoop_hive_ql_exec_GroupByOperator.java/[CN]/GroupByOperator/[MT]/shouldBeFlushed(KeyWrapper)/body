@@ -1,2 +1,53 @@
 {
+  int numEntries=hashAggregations.size();
+  long usedMemory;
+  float rate;
+  if ((numEntriesHashTable == 0) || ((numEntries % NUMROWSESTIMATESIZE) == 0)) {
+    usedMemory=memoryMXBean.getHeapMemoryUsage().getUsed();
+    rate=(float)usedMemory / (float)maxMemory;
+    if (rate > memoryThreshold) {
+      return true;
+    }
+    for (    Integer pos : keyPositionsSize) {
+      Object key=newKeys.getKeyArray()[pos.intValue()];
+      if (key != null) {
+        if (key instanceof LazyString) {
+          totalVariableSize+=((LazyPrimitive<LazyStringObjectInspector,Text>)key).getWritableObject().getLength();
+        }
+ else         if (key instanceof String) {
+          totalVariableSize+=((String)key).length();
+        }
+ else         if (key instanceof Text) {
+          totalVariableSize+=((Text)key).getLength();
+        }
+ else         if (key instanceof LazyBinary) {
+          totalVariableSize+=((LazyPrimitive<LazyBinaryObjectInspector,BytesWritable>)key).getWritableObject().getLength();
+        }
+ else         if (key instanceof BytesWritable) {
+          totalVariableSize+=((BytesWritable)key).getLength();
+        }
+ else         if (key instanceof ByteArrayRef) {
+          totalVariableSize+=((ByteArrayRef)key).getData().length;
+        }
+      }
+    }
+    AggregationBuffer[] aggs=hashAggregations.get(newKeys);
+    for (int i=0; i < aggs.length; i++) {
+      AggregationBuffer agg=aggs[i];
+      if (GenericUDAFEvaluator.isEstimable(agg)) {
+        totalVariableSize+=((GenericUDAFEvaluator.AbstractAggregationBuffer)agg).estimate();
+        continue;
+      }
+      if (aggrPositions[i] != null) {
+        totalVariableSize+=estimateSize(agg,aggrPositions[i]);
+      }
+    }
+    numEntriesVarSize++;
+    numEntriesHashTable=(int)(maxHashTblMemory / (fixedRowSize + (totalVariableSize / numEntriesVarSize)));
+    LOG.trace("Hash Aggr: #hash table = " + numEntries + " #max in hash table = "+ numEntriesHashTable);
+  }
+  if (numEntries >= numEntriesHashTable) {
+    return true;
+  }
+  return false;
 }
