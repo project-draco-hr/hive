@@ -1,0 +1,35 @@
+{
+  Reader vreader=OrcFile.createReader(testFilePath.getFileSystem(conf),testFilePath);
+  Reader reader=OrcFile.createReader(testFilePath.getFileSystem(conf),testFilePath);
+  RecordReaderImpl vrr=(RecordReaderImpl)vreader.rows(null);
+  RecordReaderImpl rr=(RecordReaderImpl)reader.rows(null);
+  VectorizedRowBatch batch=null;
+  OrcStruct row=null;
+  while (vrr.hasNext()) {
+    batch=vrr.nextBatch(batch);
+    for (int i=0; i < batch.size; i++) {
+      row=(OrcStruct)rr.next((Object)row);
+      for (int j=0; j < batch.cols.length; j++) {
+        Object a=((Writable)row.getFieldValue(j));
+        Object b=batch.cols[j].getWritableObject(i);
+        if (null == a) {
+          Assert.assertEquals(true,(b == null));
+        }
+ else {
+          Assert.assertEquals(true,b.toString().equals(a.toString()));
+        }
+      }
+    }
+    Assert.assertEquals(false,batch.cols[0].isRepeating);
+    Assert.assertEquals(true,batch.cols[1].isRepeating);
+    Assert.assertEquals(false,batch.cols[2].isRepeating);
+    Assert.assertEquals(false,batch.cols[3].isRepeating);
+    Assert.assertEquals(false,batch.cols[4].isRepeating);
+    Assert.assertEquals(true,batch.cols[0].noNulls);
+    Assert.assertEquals(true,batch.cols[1].noNulls);
+    Assert.assertEquals(false,batch.cols[2].noNulls);
+    Assert.assertEquals(false,batch.cols[3].noNulls);
+    Assert.assertEquals(false,batch.cols[4].noNulls);
+  }
+  Assert.assertEquals(false,rr.hasNext());
+}
