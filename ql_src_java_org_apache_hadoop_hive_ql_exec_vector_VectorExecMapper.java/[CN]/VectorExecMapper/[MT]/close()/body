@@ -1,0 +1,37 @@
+{
+  if (oc == null) {
+    l4j.trace("Close called. no row processed by map.");
+  }
+  if (!abort) {
+    abort=execContext.getIoCxt().getIOExceptions();
+  }
+  try {
+    mo.close(abort);
+    if (localWork != null) {
+      List<Operator<? extends OperatorDesc>> dummyOps=localWork.getDummyParentOp();
+      for (      Operator<? extends OperatorDesc> dummyOp : dummyOps) {
+        dummyOp.close(abort);
+      }
+    }
+    if (fetchOperators != null) {
+      MapredLocalWork localWork=mo.getConf().getMapLocalWork();
+      for (      Map.Entry<String,FetchOperator> entry : fetchOperators.entrySet()) {
+        Operator<? extends OperatorDesc> forwardOp=localWork.getAliasToWork().get(entry.getKey());
+        forwardOp.close(abort);
+      }
+    }
+    if (isLogInfoEnabled) {
+      long used_memory=memoryMXBean.getHeapMemoryUsage().getUsed();
+      l4j.info("ExecMapper: processed " + numRows + " rows: used memory = "+ used_memory);
+    }
+    reportStats rps=new reportStats(rp);
+    mo.preorderMap(rps);
+    return;
+  }
+ catch (  Exception e) {
+    if (!abort) {
+      l4j.error("Hit error while closing operators - failing tree");
+      throw new RuntimeException("Hive Runtime Error while closing operators",e);
+    }
+  }
+}

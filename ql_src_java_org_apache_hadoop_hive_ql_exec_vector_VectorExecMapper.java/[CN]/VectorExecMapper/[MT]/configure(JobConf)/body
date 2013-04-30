@@ -1,0 +1,44 @@
+{
+  memoryMXBean=ManagementFactory.getMemoryMXBean();
+  l4j.info("maximum memory = " + memoryMXBean.getHeapMemoryUsage().getMax());
+  isLogInfoEnabled=l4j.isInfoEnabled();
+  try {
+    l4j.info("conf classpath = " + Arrays.asList(((URLClassLoader)job.getClassLoader()).getURLs()));
+    l4j.info("thread classpath = " + Arrays.asList(((URLClassLoader)Thread.currentThread().getContextClassLoader()).getURLs()));
+  }
+ catch (  Exception e) {
+    l4j.info("cannot get classpath: " + e.getMessage());
+  }
+  try {
+    jc=job;
+    execContext.setJc(jc);
+    MapredWork mrwork=Utilities.getMapRedWork(job);
+    mo=new VectorMapOperator();
+    mo.setConf(mrwork);
+    mo.setChildren(job);
+    l4j.info(mo.dump(0));
+    localWork=mrwork.getMapLocalWork();
+    execContext.setLocalWork(localWork);
+    mo.setExecContext(execContext);
+    mo.initializeLocalWork(jc);
+    mo.initialize(jc,null);
+    if (localWork == null) {
+      return;
+    }
+    l4j.info("Initializing dummy operator");
+    List<Operator<? extends OperatorDesc>> dummyOps=localWork.getDummyParentOp();
+    for (    Operator<? extends OperatorDesc> dummyOp : dummyOps) {
+      dummyOp.setExecContext(execContext);
+      dummyOp.initialize(jc,null);
+    }
+  }
+ catch (  Throwable e) {
+    abort=true;
+    if (e instanceof OutOfMemoryError) {
+      throw (OutOfMemoryError)e;
+    }
+ else {
+      throw new RuntimeException("Map operator initialization failed",e);
+    }
+  }
+}

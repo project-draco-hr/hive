@@ -1,0 +1,67 @@
+{
+  try {
+    this.hconf=hconf;
+    filesCreated=false;
+    isNativeTable=!conf.getTableInfo().isNonNative();
+    multiFileSpray=conf.isMultiFileSpray();
+    totalFiles=conf.getTotalFiles();
+    numFiles=conf.getNumFiles();
+    dpCtx=conf.getDynPartCtx();
+    lbCtx=conf.getLbCtx();
+    valToPaths=new HashMap<String,FSPaths>();
+    taskId=Utilities.getTaskId(hconf);
+    initializeSpecPath();
+    fs=specPath.getFileSystem(hconf);
+    hiveOutputFormat=conf.getTableInfo().getOutputFileFormatClass().newInstance();
+    isCompressed=conf.getCompressed();
+    parent=Utilities.toTempPath(conf.getDirName());
+    statsCollectRawDataSize=conf.isStatsCollectRawDataSize();
+    serializer=(Serializer)conf.getTableInfo().getDeserializerClass().newInstance();
+    System.out.println("Deserializer class = " + serializer.getClass().toString());
+    serializer.initialize(null,conf.getTableInfo().getProperties());
+    outputClass=serializer.getSerializedClass();
+    timeOut=hconf.getInt("mapred.healthChecker.script.timeout",600000) / 2;
+    if (hconf instanceof JobConf) {
+      jc=(JobConf)hconf;
+    }
+ else {
+      jc=new JobConf(hconf,ExecDriver.class);
+    }
+    if (multiFileSpray) {
+      partitionEval=new ExprNodeEvaluator[conf.getPartitionCols().size()];
+      int i=0;
+      for (      ExprNodeDesc e : conf.getPartitionCols()) {
+        partitionEval[i++]=ExprNodeEvaluatorFactory.get(e);
+      }
+      partitionObjectInspectors=initEvaluators(partitionEval,outputObjInspector);
+      prtner=(HivePartitioner<HiveKey,Object>)ReflectionUtils.newInstance(jc.getPartitionerClass(),null);
+    }
+    int id=conf.getDestTableId();
+    if ((id != 0) && (id <= TableIdEnum.values().length)) {
+      String enumName="TABLE_ID_" + String.valueOf(id) + "_ROWCOUNT";
+      tabIdEnum=TableIdEnum.valueOf(enumName);
+      row_count=new LongWritable();
+      statsMap.put(tabIdEnum,row_count);
+    }
+    if (dpCtx != null) {
+      dpSetup();
+    }
+    if (lbCtx != null) {
+      lbSetup();
+    }
+    if (!bDynParts) {
+      fsp=new FSPaths(specPath);
+      if (!this.isSkewedStoredAsSubDirectories) {
+        valToPaths.put("",fsp);
+      }
+    }
+    initializeChildren(hconf);
+  }
+ catch (  HiveException e) {
+    throw e;
+  }
+catch (  Exception e) {
+    e.printStackTrace();
+    throw new HiveException(e);
+  }
+}

@@ -1,0 +1,50 @@
+{
+  Operator<? extends OperatorDesc> vectorOp;
+  boolean recursive=true;
+switch (op.getType()) {
+case GROUPBY:
+    vectorOp=new VectorGroupByOperator(vectorizationContext,op.getConf());
+  recursive=false;
+break;
+case FILTER:
+vectorOp=new VectorFilterOperator(vectorizationContext,op.getConf());
+break;
+case SELECT:
+vectorOp=new VectorSelectOperator(vectorizationContext,op.getConf());
+break;
+case FILESINK:
+vectorOp=new VectorFileSinkOperator(vectorizationContext,op.getConf());
+break;
+case TABLESCAN:
+vectorOp=op;
+break;
+default :
+throw new HiveException("Operator: " + op.getName() + ", "+ "not vectorized");
+}
+if (recursive) {
+List<Operator<? extends OperatorDesc>> children=op.getChildOperators();
+if (children != null && !children.isEmpty()) {
+List<Operator<? extends OperatorDesc>> vectorizedChildren=new ArrayList<Operator<? extends OperatorDesc>>(children.size());
+for (Operator<? extends OperatorDesc> childOp : children) {
+Operator<? extends OperatorDesc> vectorizedChild=this.vectorizeOperator(childOp,vectorizationContext);
+List<Operator<? extends OperatorDesc>> parentList=new ArrayList<Operator<? extends OperatorDesc>>();
+parentList.add(vectorOp);
+vectorizedChild.setParentOperators(parentList);
+vectorizedChildren.add(vectorizedChild);
+}
+vectorOp.setChildOperators(vectorizedChildren);
+}
+}
+ else {
+List<Operator<? extends OperatorDesc>> children=op.getChildOperators();
+if (children != null && !children.isEmpty()) {
+List<Operator<? extends OperatorDesc>> parentList=new ArrayList<Operator<? extends OperatorDesc>>();
+parentList.add(vectorOp);
+for (Operator<? extends OperatorDesc> childOp : children) {
+childOp.setParentOperators(parentList);
+}
+vectorOp.setChildOperators(children);
+}
+}
+return vectorOp;
+}

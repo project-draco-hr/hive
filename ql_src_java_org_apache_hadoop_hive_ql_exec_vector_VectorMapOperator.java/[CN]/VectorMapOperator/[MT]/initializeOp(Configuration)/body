@@ -1,0 +1,24 @@
+{
+  state=State.INIT;
+  List<Operator<? extends OperatorDesc>> children=getChildOperators();
+  for (  Entry<Operator<? extends OperatorDesc>,MapOpCtx> entry : childrenOpToOpCtxMap.entrySet()) {
+    Operator<? extends OperatorDesc> child=entry.getKey();
+    MapOpCtx mapOpCtx=entry.getValue();
+    HiveConf.setVar(hconf,HiveConf.ConfVars.HIVETABLENAME,mapOpCtx.tableName);
+    HiveConf.setVar(hconf,HiveConf.ConfVars.HIVEPARTITIONNAME,mapOpCtx.partName);
+    child.initialize(hconf,new ObjectInspector[]{mapOpCtx.getRowObjectInspector()});
+  }
+  for (  Entry<MapInputPath,MapOpCtx> entry : opCtxMap.entrySet()) {
+    HiveConf.setVar(hconf,HiveConf.ConfVars.HIVETABLENAME,entry.getValue().tableName);
+    HiveConf.setVar(hconf,HiveConf.ConfVars.HIVEPARTITIONNAME,entry.getValue().partName);
+    MapInputPath input=entry.getKey();
+    Operator<? extends OperatorDesc> op=input.op;
+    if (children.indexOf(op) == -1) {
+      if (extraChildrenToClose == null) {
+        extraChildrenToClose=new ArrayList<Operator<? extends OperatorDesc>>();
+      }
+      extraChildrenToClose.add(op);
+      op.initialize(hconf,new ObjectInspector[]{entry.getValue().getRowObjectInspector()});
+    }
+  }
+}
