@@ -2,6 +2,8 @@
   ExprNodeDesc leftExpr=childExpr.get(0);
   ExprNodeDesc rightExpr=childExpr.get(1);
   VectorExpression expr=null;
+  VectorExpression v1=null;
+  VectorExpression v2=null;
   if ((leftExpr instanceof ExprNodeColumnDesc) && (rightExpr instanceof ExprNodeConstantDesc)) {
     ExprNodeColumnDesc leftColDesc=(ExprNodeColumnDesc)leftExpr;
     ExprNodeConstantDesc constDesc=(ExprNodeConstantDesc)rightExpr;
@@ -46,13 +48,14 @@
     }
   }
  else   if ((leftExpr instanceof ExprNodeGenericFuncDesc) && (rightExpr instanceof ExprNodeColumnDesc)) {
-    VectorExpression v1=getVectorExpression((ExprNodeGenericFuncDesc)leftExpr);
-    ExprNodeColumnDesc leftColDesc=(ExprNodeColumnDesc)leftExpr;
+    v1=getVectorExpression((ExprNodeGenericFuncDesc)leftExpr);
+    ExprNodeColumnDesc leftColDesc=(ExprNodeColumnDesc)rightExpr;
     int inputCol1=v1.getOutputColumn();
     int inputCol2=columnMap.get(leftColDesc.getColumn());
     String colType1=v1.getOutputType();
     String colType2=leftColDesc.getTypeString();
     String className=getFilterColumnColumnExpressionClassName(colType1,colType2,opName);
+    System.out.println("In the context, Input column 1: " + inputCol1 + ", column 2: "+ inputCol2);
     try {
       expr=(VectorExpression)Class.forName(className).getDeclaredConstructors()[0].newInstance(inputCol1,inputCol2);
     }
@@ -63,7 +66,7 @@
   }
  else   if ((leftExpr instanceof ExprNodeColumnDesc) && (rightExpr instanceof ExprNodeGenericFuncDesc)) {
     ExprNodeColumnDesc rightColDesc=(ExprNodeColumnDesc)leftExpr;
-    VectorExpression v2=getVectorExpression((ExprNodeGenericFuncDesc)rightExpr);
+    v2=getVectorExpression((ExprNodeGenericFuncDesc)rightExpr);
     int inputCol1=columnMap.get(rightColDesc.getColumn());
     int inputCol2=v2.getOutputColumn();
     String colType1=rightColDesc.getTypeString();
@@ -78,8 +81,8 @@
     expr.setChildExpressions(new VectorExpression[]{v2});
   }
  else   if ((leftExpr instanceof ExprNodeGenericFuncDesc) && (rightExpr instanceof ExprNodeConstantDesc)) {
-    VectorExpression v1=getVectorExpression((ExprNodeGenericFuncDesc)leftExpr);
-    ExprNodeConstantDesc constDesc=(ExprNodeConstantDesc)leftExpr;
+    v1=getVectorExpression((ExprNodeGenericFuncDesc)leftExpr);
+    ExprNodeConstantDesc constDesc=(ExprNodeConstantDesc)rightExpr;
     int inputCol1=v1.getOutputColumn();
     String colType1=v1.getOutputType();
     String scalarType=constDesc.getTypeString();
@@ -94,7 +97,7 @@
   }
  else   if ((leftExpr instanceof ExprNodeConstantDesc) && (rightExpr instanceof ExprNodeGenericFuncDesc)) {
     ExprNodeConstantDesc constDesc=(ExprNodeConstantDesc)leftExpr;
-    VectorExpression v2=getVectorExpression((ExprNodeGenericFuncDesc)rightExpr);
+    v2=getVectorExpression((ExprNodeGenericFuncDesc)rightExpr);
     int inputCol2=v2.getOutputColumn();
     String scalarType=constDesc.getTypeString();
     String colType=v2.getOutputType();
@@ -108,8 +111,8 @@
     expr.setChildExpressions(new VectorExpression[]{v2});
   }
  else {
-    VectorExpression v1=getVectorExpression(leftExpr);
-    VectorExpression v2=getVectorExpression(rightExpr);
+    v1=getVectorExpression(leftExpr);
+    v2=getVectorExpression(rightExpr);
     int inputCol1=v1.getOutputColumn();
     int inputCol2=v2.getOutputColumn();
     String colType1=v1.getOutputType();
@@ -122,6 +125,12 @@
       throw new RuntimeException((ex));
     }
     expr.setChildExpressions(new VectorExpression[]{v1,v2});
+  }
+  if (v1 != null) {
+    ocm.freeOutputColumn(v1.getOutputColumn());
+  }
+  if (v2 != null) {
+    ocm.freeOutputColumn(v2.getOutputColumn());
   }
   return expr;
 }
