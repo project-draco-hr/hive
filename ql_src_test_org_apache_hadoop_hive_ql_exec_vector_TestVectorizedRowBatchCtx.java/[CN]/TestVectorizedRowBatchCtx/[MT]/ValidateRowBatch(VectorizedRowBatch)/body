@@ -1,0 +1,80 @@
+{
+  LongWritable rowID=new LongWritable();
+  RCFile.Reader reader=new RCFile.Reader(fs,this.testFilePath,conf);
+  for (int i=0; i < batch.size; i++) {
+    reader.next(rowID);
+    BytesRefArrayWritable cols=new BytesRefArrayWritable();
+    reader.getCurrentRow(cols);
+    cols.resetValid(colCount);
+    Object row=serDe.deserialize(cols);
+    StructObjectInspector oi=(StructObjectInspector)serDe.getObjectInspector();
+    List<? extends StructField> fieldRefs=oi.getAllStructFieldRefs();
+    for (int j=0; j < fieldRefs.size(); j++) {
+      Object fieldData=oi.getStructFieldData(row,fieldRefs.get(j));
+      ObjectInspector foi=fieldRefs.get(j).getFieldObjectInspector();
+      Assert.assertEquals(true,foi.getCategory() == Category.PRIMITIVE);
+      PrimitiveObjectInspector poi=(PrimitiveObjectInspector)foi;
+      Object writableCol=poi.getPrimitiveWritableObject(fieldData);
+      if (writableCol != null) {
+switch (poi.getPrimitiveCategory()) {
+case SHORT:
+{
+            LongColumnVector lcv=(LongColumnVector)batch.cols[j];
+            Assert.assertEquals(true,lcv.vector[i] == ((ShortWritable)writableCol).get());
+          }
+        break;
+case INT:
+{
+        LongColumnVector lcv=(LongColumnVector)batch.cols[j];
+        Assert.assertEquals(true,lcv.vector[i] == ((IntWritable)writableCol).get());
+      }
+    break;
+case LONG:
+{
+    LongColumnVector lcv=(LongColumnVector)batch.cols[j];
+    Assert.assertEquals(true,lcv.vector[i] == ((LongWritable)writableCol).get());
+  }
+break;
+case FLOAT:
+{
+DoubleColumnVector dcv=(DoubleColumnVector)batch.cols[j];
+Assert.assertEquals(true,dcv.vector[i] == ((FloatWritable)writableCol).get());
+}
+break;
+case DOUBLE:
+{
+DoubleColumnVector dcv=(DoubleColumnVector)batch.cols[j];
+Assert.assertEquals(true,dcv.vector[i] == ((DoubleWritable)writableCol).get());
+}
+break;
+case STRING:
+{
+BytesColumnVector bcv=(BytesColumnVector)batch.cols[j];
+Text colText=(Text)writableCol;
+Text batchText=(Text)bcv.getWritableObject(i);
+String a=colText.toString();
+String b=batchText.toString();
+Assert.assertEquals(true,a.equals(b));
+}
+break;
+default :
+Assert.assertEquals("Unknown type",false);
+}
+}
+ else {
+Assert.assertEquals(true,batch.cols[j].isNull[i]);
+}
+}
+Assert.assertEquals(false,batch.cols[0].isRepeating);
+Assert.assertEquals(false,batch.cols[1].isRepeating);
+Assert.assertEquals(false,batch.cols[2].isRepeating);
+Assert.assertEquals(false,batch.cols[3].isRepeating);
+Assert.assertEquals(false,batch.cols[4].isRepeating);
+Assert.assertEquals(true,batch.cols[0].noNulls);
+Assert.assertEquals(false,batch.cols[1].noNulls);
+Assert.assertEquals(false,batch.cols[2].noNulls);
+Assert.assertEquals(false,batch.cols[3].noNulls);
+Assert.assertEquals(false,batch.cols[4].noNulls);
+}
+reader.close();
+}

@@ -1,0 +1,39 @@
+{
+  Map<String,PartitionDesc> pathToPartitionInfo=Utilities.getMapRedWork(hiveConf).getPathToPartitionInfo();
+  PartitionDesc part=HiveFileFormatUtils.getPartitionDescFromPathRecursively(pathToPartitionInfo,split.getPath(),IOPrepareCache.get().getPartitionDescMap());
+  Class serdeclass=part.getDeserializerClass();
+  if (serdeclass == null) {
+    String className=part.getSerdeClassName();
+    if ((className == null) || (className.isEmpty())) {
+      throw new HiveException("SerDe class or the SerDe class name is not set for table: " + part.getProperties().getProperty("name"));
+    }
+    serdeclass=hiveConf.getClassByName(className);
+  }
+  Properties partProps=(part.getPartSpec() == null || part.getPartSpec().isEmpty()) ? part.getTableDesc().getProperties() : part.getProperties();
+  Deserializer partDeserializer=(Deserializer)serdeclass.newInstance();
+  partDeserializer.initialize(hiveConf,partProps);
+  StructObjectInspector partRawRowObjectInspector=(StructObjectInspector)partDeserializer.getObjectInspector();
+  deserializer=partDeserializer;
+  String pcols=partProps.getProperty(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS);
+  if (pcols != null && pcols.length() > 0) {
+    LinkedHashMap<String,String> partSpec=part.getPartSpec();
+    String[] partKeys=pcols.trim().split("/");
+    List<String> partNames=new ArrayList<String>(partKeys.length);
+    partitionValues=new LinkedHashMap<String,String>();
+    List<ObjectInspector> partObjectInspectors=new ArrayList<ObjectInspector>(partKeys.length);
+    for (int i=0; i < partKeys.length; i++) {
+      String key=partKeys[i];
+      partNames.add(key);
+      partitionValues.put(key,partSpec.get(key));
+      partObjectInspectors.add(PrimitiveObjectInspectorFactory.writableStringObjectInspector);
+    }
+    StructObjectInspector partObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(partNames,partObjectInspectors);
+    StructObjectInspector rowObjectInspector=ObjectInspectorFactory.getUnionStructObjectInspector(Arrays.asList(new StructObjectInspector[]{partRawRowObjectInspector,partObjectInspector}));
+    rowOI=rowObjectInspector;
+    rawRowOI=partRawRowObjectInspector;
+  }
+ else {
+    rowOI=partRawRowObjectInspector;
+    rawRowOI=partRawRowObjectInspector;
+  }
+}
