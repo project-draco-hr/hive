@@ -1,0 +1,25 @@
+{
+  try {
+    if (session.get() == null) {
+      throw new JMSException("Invalid JMS session");
+    }
+    Destination topic=createTopic(topicName);
+    Message msg=session.get().createTextMessage(hCatEventMessage.toString());
+    msg.setStringProperty(HCatConstants.HCAT_EVENT,hCatEventMessage.getEventType().toString());
+    msg.setStringProperty(HCatConstants.HCAT_MESSAGE_VERSION,messageFactory.getVersion());
+    msg.setStringProperty(HCatConstants.HCAT_MESSAGE_FORMAT,messageFactory.getMessageFormat());
+    MessageProducer producer=createProducer(topic);
+    producer.send(msg);
+    session.get().commit();
+  }
+ catch (  Exception e) {
+    if (retries >= 0) {
+      LOG.error("Seems like connection is lost. Will retry. Retries left : " + retries + ". error was:",e);
+      testAndCreateConnection();
+      send(hCatEventMessage,topicName,retries - 1);
+    }
+ else {
+      LOG.error("Failed to send message on topic: " + topicName + " event: "+ hCatEventMessage.getEventType()+ " after retries: "+ NUM_RETRIES,e);
+    }
+  }
+}
