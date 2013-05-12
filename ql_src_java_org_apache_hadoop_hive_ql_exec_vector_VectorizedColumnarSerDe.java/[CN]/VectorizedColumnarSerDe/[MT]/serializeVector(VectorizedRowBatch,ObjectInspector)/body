@@ -1,0 +1,81 @@
+{
+  try {
+    if (objInspector.getCategory() != Category.STRUCT) {
+      throw new UnsupportedOperationException(getClass().toString() + " can only serialize struct types, but we got: " + objInspector.getTypeName());
+    }
+    VectorizedRowBatch batch=(VectorizedRowBatch)vrg;
+    StructObjectInspector soi=(StructObjectInspector)objInspector;
+    List<? extends StructField> fields=soi.getAllStructFieldRefs();
+    serializeVectorStream.reset();
+    int count=0;
+    int rowIndex=0;
+    for (int i=0; i < batch.size; i++) {
+      if (batch.selectedInUse) {
+        rowIndex=batch.selected[i];
+      }
+ else {
+        rowIndex=i;
+      }
+      BytesRefArrayWritable byteRow=byteRefArray[i];
+      int numCols=fields.size();
+      if (byteRow == null) {
+        byteRow=new BytesRefArrayWritable(numCols);
+        byteRefArray[i]=byteRow;
+      }
+      byteRow.resetValid(numCols);
+      for (int k=0; k < numCols; k++) {
+        ObjectInspector foi=fields.get(k).getFieldObjectInspector();
+        ColumnVector currentColVector=batch.cols[k];
+switch (foi.getCategory()) {
+case PRIMITIVE:
+{
+            PrimitiveObjectInspector poi=(PrimitiveObjectInspector)foi;
+            if (!currentColVector.noNulls && (currentColVector.isRepeating || currentColVector.isNull[rowIndex])) {
+              serializeVectorStream.write(new byte[0],0,0);
+            }
+ else {
+              if (currentColVector.isRepeating) {
+                rowIndex=0;
+              }
+switch (poi.getPrimitiveCategory()) {
+case SHORT:
+case INT:
+case LONG:
+                LongColumnVector lcv=(LongColumnVector)batch.cols[k];
+              LazyLong.writeUTF8(serializeVectorStream,lcv.vector[rowIndex]);
+            break;
+case FLOAT:
+case DOUBLE:
+          DoubleColumnVector dcv=(DoubleColumnVector)batch.cols[k];
+        ByteBuffer b=Text.encode(String.valueOf(dcv.vector[rowIndex]));
+      serializeVectorStream.write(b.array(),0,b.limit());
+    break;
+case STRING:
+  BytesColumnVector bcv=(BytesColumnVector)batch.cols[k];
+LazyUtils.writeEscaped(serializeVectorStream,bcv.vector[rowIndex],bcv.start[rowIndex],bcv.length[rowIndex],serdeParams.isEscaped(),serdeParams.getEscapeChar(),serdeParams.getNeedsEscape());
+break;
+default :
+throw new UnsupportedOperationException("Vectorizaton is not supported for datatype:" + poi.getPrimitiveCategory());
+}
+}
+break;
+}
+case LIST:
+case MAP:
+case STRUCT:
+case UNION:
+throw new UnsupportedOperationException("Vectorizaton is not supported for datatype:" + foi.getCategory());
+default :
+throw new SerDeException("Unknown ObjectInspector category!");
+}
+byteRow.get(k).set(serializeVectorStream.getData(),count,serializeVectorStream.getCount() - count);
+count=serializeVectorStream.getCount();
+}
+}
+ow.set(byteRefArray);
+}
+ catch (Exception e) {
+throw new SerDeException(e);
+}
+return ow;
+}
