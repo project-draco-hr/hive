@@ -3,15 +3,19 @@
   try {
     vContext.setOperatorType(OperatorType.GROUPBY);
     ArrayList<AggregationDesc> aggrDesc=conf.getAggregators();
+    keyExpressions=vContext.getVectorExpressions(conf.getKeys());
+    for (int i=0; i < keyExpressions.length; ++i) {
+      objectInspectors.add(vContext.createObjectInspector(keyExpressions[i]));
+    }
     aggregators=new VectorAggregateExpression[aggrDesc.size()];
-    aggregationBuffers=new AggregationBuffer[aggrDesc.size()];
     for (int i=0; i < aggrDesc.size(); ++i) {
       AggregationDesc desc=aggrDesc.get(i);
       aggregators[i]=vContext.getAggregatorExpression(desc);
-      aggregationBuffers[i]=aggregators[i].getNewAggregationBuffer();
-      aggregators[i].reset(aggregationBuffers[i]);
       objectInspectors.add(aggregators[i].getOutputObjectInspector());
     }
+    keyWrappersBatch=VectorHashKeyWrapperBatch.compileKeyWrapperBatch(keyExpressions);
+    aggregationBatchInfo=new VectorAggregationBufferBatch();
+    mapKeysAggregationBuffers=new HashMap<KeyWrapper,VectorAggregationBufferRow>();
     List<String> outputFieldNames=conf.getOutputColumnNames();
     outputObjInspector=ObjectInspectorFactory.getStandardStructObjectInspector(outputFieldNames,objectInspectors);
   }
