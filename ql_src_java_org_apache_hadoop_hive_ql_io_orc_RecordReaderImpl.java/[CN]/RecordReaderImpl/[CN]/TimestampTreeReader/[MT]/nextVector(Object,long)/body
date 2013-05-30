@@ -1,3 +1,34 @@
 {
-  throw new UnsupportedOperationException("NextVector is not supported operation for TimeStamp type");
+  LongColumnVector result=null;
+  if (previousVector == null) {
+    result=new LongColumnVector();
+  }
+ else {
+    result=(LongColumnVector)previousVector;
+  }
+  super.nextVector(result,batchSize);
+  data.nextVector(result,batchSize);
+  nanoVector.isNull=result.isNull;
+  nanos.nextVector(nanoVector,batchSize);
+  if (!(result.isRepeating && nanoVector.isRepeating)) {
+    for (int i=0; i < batchSize; i++) {
+      if (!result.isNull[i]) {
+        result.vector[i]=(result.vector[i] + WriterImpl.BASE_TIMESTAMP) * WriterImpl.MILLIS_PER_SECOND;
+        nanoVector.vector[i]=parseNanos(nanoVector.vector[i]);
+        if (result.vector[i] >= 0) {
+          result.vector[i]+=nanoVector.vector[i] / 1000000;
+        }
+ else {
+          result.vector[i]-=nanoVector.vector[i] / 1000000;
+        }
+        result.vector[i]=(result.vector[i] * 1000000) + nanoVector.vector[i];
+      }
+    }
+  }
+ else {
+    if (!result.isNull[0]) {
+      result.vector[0]=(result.vector[0] * 1000000) + nanoVector.vector[0];
+    }
+  }
+  return result;
 }
