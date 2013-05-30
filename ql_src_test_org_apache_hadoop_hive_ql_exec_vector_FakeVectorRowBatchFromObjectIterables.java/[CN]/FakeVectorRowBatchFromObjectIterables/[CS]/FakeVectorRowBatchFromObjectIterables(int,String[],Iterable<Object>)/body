@@ -1,0 +1,47 @@
+{
+  this.types=types;
+  this.batchSize=batchSize;
+  iterators=new ArrayList<Iterator<Object>>(types.length);
+  columnAssign=new ColumnVectorAssign[types.length];
+  batch=new VectorizedRowBatch(types.length,batchSize);
+  for (int i=0; i < types.length; ++i) {
+    if (types[i].equalsIgnoreCase("long")) {
+      batch.cols[i]=new LongColumnVector(batchSize);
+      columnAssign[i]=new ColumnVectorAssign(){
+        @Override public void assign(        ColumnVector columnVector,        int row,        Object value){
+          LongColumnVector lcv=(LongColumnVector)columnVector;
+          lcv.vector[row]=(Long)value;
+        }
+      }
+;
+    }
+ else     if (types[i].equalsIgnoreCase("string")) {
+      batch.cols[i]=new BytesColumnVector(batchSize);
+      columnAssign[i]=new ColumnVectorAssign(){
+        @Override public void assign(        ColumnVector columnVector,        int row,        Object value){
+          BytesColumnVector bcv=(BytesColumnVector)columnVector;
+          String s=(String)value;
+          byte[] bytes=s.getBytes();
+          bcv.vector[row]=bytes;
+          bcv.start[row]=0;
+          bcv.length[row]=bytes.length;
+        }
+      }
+;
+    }
+ else     if (types[i].equalsIgnoreCase("double")) {
+      batch.cols[i]=new DoubleColumnVector(batchSize);
+      columnAssign[i]=new ColumnVectorAssign(){
+        @Override public void assign(        ColumnVector columnVector,        int row,        Object value){
+          DoubleColumnVector dcv=(DoubleColumnVector)columnVector;
+          dcv.vector[row]=(Double)value;
+        }
+      }
+;
+    }
+ else {
+      throw new HiveException("Unimplemented type " + types[i]);
+    }
+    iterators.add(iterables[i].iterator());
+  }
+}

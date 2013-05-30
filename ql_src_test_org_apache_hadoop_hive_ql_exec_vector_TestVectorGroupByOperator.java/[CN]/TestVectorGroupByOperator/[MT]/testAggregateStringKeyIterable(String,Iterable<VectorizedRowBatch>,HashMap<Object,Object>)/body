@@ -1,0 +1,50 @@
+{
+  Map<String,Integer> mapColumnNames=new HashMap<String,Integer>();
+  mapColumnNames.put("Key",0);
+  mapColumnNames.put("Value",1);
+  VectorizationContext ctx=new VectorizationContext(mapColumnNames,2);
+  Set<Object> keys=new HashSet<Object>();
+  GroupByDesc desc=buildKeyGroupByDesc(ctx,aggregateName,"Value",TypeInfoFactory.stringTypeInfo,"Key");
+  VectorGroupByOperator vgo=new VectorGroupByOperator(ctx,desc);
+  FakeCaptureOutputOperator out=FakeCaptureOutputOperator.addCaptureOutputChild(vgo);
+  vgo.initialize(null,null);
+  out.setOutputInspector(new FakeCaptureOutputOperator.OutputInspector(){
+    private int rowIndex;
+    private String aggregateName;
+    private HashMap<Object,Object> expected;
+    private Set<Object> keys;
+    @SuppressWarnings("deprecation") @Override public void inspectRow(    Object row,    int tag) throws HiveException {
+      assertTrue(row instanceof Object[]);
+      Object[] fields=(Object[])row;
+      assertEquals(2,fields.length);
+      Object key=fields[0];
+      String keyValue=null;
+      if (null != key) {
+        assertTrue(key instanceof BytesWritable);
+        BytesWritable bwKey=(BytesWritable)key;
+        keyValue=new String(bwKey.get());
+      }
+      assertTrue(expected.containsKey(keyValue));
+      Object expectedValue=expected.get(keyValue);
+      Object value=fields[1];
+      Validator validator=getValidator(aggregateName);
+      validator.validate(expectedValue,new Object[]{value});
+      keys.add(keyValue);
+    }
+    private FakeCaptureOutputOperator.OutputInspector init(    String aggregateName,    HashMap<Object,Object> expected,    Set<Object> keys){
+      this.aggregateName=aggregateName;
+      this.expected=expected;
+      this.keys=keys;
+      return this;
+    }
+  }
+.init(aggregateName,expected,keys));
+  for (  VectorizedRowBatch unit : data) {
+    vgo.process(unit,0);
+  }
+  vgo.close(false);
+  List<Object> outBatchList=out.getCapturedRows();
+  assertNotNull(outBatchList);
+  assertEquals(expected.size(),outBatchList.size());
+  assertEquals(expected.size(),keys.size());
+}
