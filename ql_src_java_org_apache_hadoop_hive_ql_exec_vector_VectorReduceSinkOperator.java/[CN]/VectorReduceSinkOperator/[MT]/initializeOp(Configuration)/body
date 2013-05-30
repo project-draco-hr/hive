@@ -1,0 +1,43 @@
+{
+  try {
+    vContext.setOperatorType(OperatorType.REDUCESINK);
+    keyEval=vContext.getVectorExpressions(conf.getKeyCols());
+    valueEval=vContext.getVectorExpressions(conf.getValueCols());
+    partitionEval=vContext.getVectorExpressions(conf.getPartitionCols());
+    numDistributionKeys=conf.getNumDistributionKeys();
+    distinctColIndices=conf.getDistinctColumnIndices();
+    numDistinctExprs=distinctColIndices.size();
+    TableDesc keyTableDesc=conf.getKeySerializeInfo();
+    keySerializer=(Serializer)keyTableDesc.getDeserializerClass().newInstance();
+    keySerializer.initialize(null,keyTableDesc.getProperties());
+    keyIsText=keySerializer.getSerializedClass().equals(Text.class);
+    keyObjectInspector=vContext.createObjectInspector(keyEval,conf.getOutputKeyColumnNames());
+    partitionObjectInspectors=new ObjectInspector[partitionEval.length];
+    for (int i=0; i < partitionEval.length; i++) {
+      partitionObjectInspectors[i]=vContext.createObjectInspector(partitionEval[i]);
+    }
+    String colNames="";
+    for (    String colName : conf.getOutputKeyColumnNames()) {
+      colNames=String.format("%s %s",colNames,colName);
+    }
+    LOG.info(String.format("keyObjectInspector [%s]%s => %s",keyObjectInspector.getClass(),keyObjectInspector,colNames));
+    conf.getOutputKeyColumnNames();
+    conf.getOutputValueColumnNames();
+    TableDesc valueTableDesc=conf.getValueSerializeInfo();
+    valueSerializer=(Serializer)valueTableDesc.getDeserializerClass().newInstance();
+    valueSerializer.initialize(null,valueTableDesc.getProperties());
+    valueObjectInspector=vContext.createObjectInspector(valueEval,conf.getOutputValueColumnNames());
+    colNames="";
+    for (    String colName : conf.getOutputValueColumnNames()) {
+      colNames=String.format("%s %s",colNames,colName);
+    }
+    LOG.info(String.format("valueObjectInspector [%s]%s => %s",valueObjectInspector.getClass(),valueObjectInspector,colNames));
+    int numKeys=numDistinctExprs > 0 ? numDistinctExprs : 1;
+    int keyLen=numDistinctExprs > 0 ? numDistributionKeys + 1 : numDistributionKeys;
+    cachedKeys=new Object[numKeys][keyLen];
+    cachedValues=new Object[valueEval.length];
+  }
+ catch (  Exception e) {
+    throw new HiveException(e);
+  }
+}
