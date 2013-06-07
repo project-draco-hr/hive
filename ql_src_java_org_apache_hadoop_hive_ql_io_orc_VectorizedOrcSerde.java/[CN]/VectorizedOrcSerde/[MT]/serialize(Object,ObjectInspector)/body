@@ -1,32 +1,37 @@
 {
   VectorizedRowBatch batch=(VectorizedRowBatch)obj;
-  for (int i=0; i < batch.size; i++) {
-    OrcStruct ost=orcStructArray[i];
-    if (ost == null) {
-      ost=new OrcStruct(batch.numCols);
-      orcStructArray[i]=ost;
-    }
-    int index=0;
-    if (batch.selectedInUse) {
-      index=batch.selected[i];
-    }
- else {
-      index=i;
-    }
-    for (int p=0; p < batch.projectionSize; p++) {
-      int k=batch.projectedColumns[p];
-      Writable w;
-      if (batch.cols[k].isRepeating) {
-        w=batch.cols[k].getWritableObject(0);
+  try {
+    for (int i=0; i < batch.size; i++) {
+      OrcStruct ost=orcStructArray[i];
+      if (ost == null) {
+        ost=new OrcStruct(batch.numCols);
+        orcStructArray[i]=ost;
+      }
+      int index=0;
+      if (batch.selectedInUse) {
+        index=batch.selected[i];
       }
  else {
-        w=batch.cols[k].getWritableObject(index);
+        index=i;
       }
-      ost.setFieldValue(k,w);
+      for (int p=0; p < batch.projectionSize; p++) {
+        int k=batch.projectedColumns[p];
+        Writable w;
+        if (batch.cols[k].isRepeating) {
+          w=(Writable)valueWriters[p].writeValue(batch.cols[k],0);
+        }
+ else {
+          w=(Writable)valueWriters[p].writeValue(batch.cols[k],index);
+        }
+        ost.setFieldValue(k,w);
+      }
+      OrcSerdeRow row=(OrcSerdeRow)orcRowArray[i];
+      row.realRow=ost;
+      row.inspector=inspector;
     }
-    OrcSerdeRow row=(OrcSerdeRow)orcRowArray[i];
-    row.realRow=ost;
-    row.inspector=inspector;
+  }
+ catch (  HiveException ex) {
+    throw new RuntimeException(ex);
   }
   ow.set(orcRowArray);
   return ow;
