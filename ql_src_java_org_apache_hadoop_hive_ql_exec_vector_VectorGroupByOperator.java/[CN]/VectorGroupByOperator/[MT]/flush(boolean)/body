@@ -1,0 +1,40 @@
+{
+  int entriesToFlush=all ? numEntriesHashTable : (int)(numEntriesHashTable * PERCENT_ENTRIES_TO_FLUSH);
+  int entriesFlushed=0;
+  LOG.info(String.format("Flush %d %s entries:%d fixed:%d variable:%d (used:%dMb max:%dMb)",entriesToFlush,all ? "(all)" : "",numEntriesHashTable,fixedHashEntrySize,avgVariableSize,numEntriesHashTable * (fixedHashEntrySize + avgVariableSize) / 1024 / 1024,maxHashTblMemory / 1024 / 1024));
+  Object[] forwardCache=new Object[keyExpressions.length + aggregators.length];
+  if (keyExpressions.length == 0 && mapKeysAggregationBuffers.isEmpty()) {
+    VectorAggregationBufferRow emptyBuffers=allocateAggregationBuffer();
+    for (int i=0; i < aggregators.length; ++i) {
+      forwardCache[i]=aggregators[i].evaluateOutput(emptyBuffers.getAggregationBuffer(i));
+    }
+    forward(forwardCache,outputObjInspector);
+  }
+ else {
+    Iterator<Map.Entry<KeyWrapper,VectorAggregationBufferRow>> iter=mapKeysAggregationBuffers.entrySet().iterator();
+    while (iter.hasNext()) {
+      Map.Entry<KeyWrapper,VectorAggregationBufferRow> pair=iter.next();
+      int fi=0;
+      for (int i=0; i < keyExpressions.length; ++i) {
+        VectorHashKeyWrapper kw=(VectorHashKeyWrapper)pair.getKey();
+        forwardCache[fi++]=keyWrappersBatch.getWritableKeyValue(kw,i,keyOutputWriters[i]);
+      }
+      for (int i=0; i < aggregators.length; ++i) {
+        forwardCache[fi++]=aggregators[i].evaluateOutput(pair.getValue().getAggregationBuffer(i));
+      }
+      LOG.debug(String.format("forwarding keys: %s: %s",pair.getKey().toString(),Arrays.toString(forwardCache)));
+      forward(forwardCache,outputObjInspector);
+      if (!all) {
+        iter.remove();
+        --numEntriesHashTable;
+        if (++entriesFlushed >= entriesToFlush) {
+          break;
+        }
+      }
+    }
+  }
+  if (all) {
+    mapKeysAggregationBuffers.clear();
+    numEntriesHashTable=0;
+  }
+}
