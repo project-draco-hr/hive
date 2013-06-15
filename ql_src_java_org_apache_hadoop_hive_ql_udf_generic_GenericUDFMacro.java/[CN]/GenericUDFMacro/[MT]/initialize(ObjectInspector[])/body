@@ -1,0 +1,29 @@
+{
+  checkNotNull(colTypes,"colTypes");
+  checkNotNull(arguments,"arguments");
+  checkNotNull(bodyDesc,"bodyDesc");
+  if (colTypes.size() != arguments.length) {
+    throw new UDFArgumentLengthException("The macro " + macroName + " accepts exactly "+ colTypes.size()+ " arguments.");
+  }
+  try {
+    body=ExprNodeEvaluatorFactory.get(bodyDesc);
+  }
+ catch (  HiveException ex) {
+    throw new UDFArgumentException(ex);
+  }
+  converters=new ObjectInspectorConverters.Converter[arguments.length];
+  ArrayList<ObjectInspector> colObjectInspectors=new ArrayList<ObjectInspector>(colTypes.size());
+  for (int index=0; index < arguments.length; ++index) {
+    ObjectInspector objectInspector=TypeInfoUtils.getStandardWritableObjectInspectorFromTypeInfo(colTypes.get(index));
+    colObjectInspectors.add(objectInspector);
+    converters[index]=ObjectInspectorConverters.getConverter(arguments[index],objectInspector);
+  }
+  evaluatedArguments=new ArrayList<Object>(arguments.length);
+  ObjectInspector structOI=ObjectInspectorFactory.getStandardStructObjectInspector(colNames,colObjectInspectors);
+  try {
+    return body.initialize(structOI);
+  }
+ catch (  HiveException ex) {
+    throw new UDFArgumentException(ex);
+  }
+}
