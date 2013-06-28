@@ -12,16 +12,18 @@
     long indexEnd=start;
     for (    Map.Entry<StreamName,BufferedStream> pair : streams.entrySet()) {
       BufferedStream stream=pair.getValue();
-      stream.flush();
-      stream.spillTo(rawWriter);
-      stream.clear();
-      long end=rawWriter.getPos();
-      StreamName name=pair.getKey();
-      builder.addStreams(OrcProto.Stream.newBuilder().setColumn(name.getColumn()).setKind(name.getKind()).setLength(end - section));
-      section=end;
-      if (StreamName.Area.INDEX == name.getArea()) {
-        indexEnd=end;
+      if (!stream.isSuppressed()) {
+        stream.flush();
+        stream.spillTo(rawWriter);
+        long end=rawWriter.getPos();
+        StreamName name=pair.getKey();
+        builder.addStreams(OrcProto.Stream.newBuilder().setColumn(name.getColumn()).setKind(name.getKind()).setLength(end - section));
+        section=end;
+        if (StreamName.Area.INDEX == name.getArea()) {
+          indexEnd=end;
+        }
       }
+      stream.clear();
     }
     builder.build().writeTo(protobufWriter);
     protobufWriter.flush();
