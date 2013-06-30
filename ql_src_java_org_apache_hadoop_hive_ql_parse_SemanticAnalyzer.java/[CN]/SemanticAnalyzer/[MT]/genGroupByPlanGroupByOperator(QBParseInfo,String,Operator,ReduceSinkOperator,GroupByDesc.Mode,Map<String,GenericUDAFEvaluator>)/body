@@ -1,5 +1,5 @@
 {
-  RowResolver groupByInputRowResolver=opParseCtx.get(reduceSinkOperatorInfo).getRowResolver();
+  RowResolver groupByInputRowResolver=opParseCtx.get(input).getRowResolver();
   RowResolver groupByOutputRowResolver=new RowResolver();
   groupByOutputRowResolver.setIsExprResolver(true);
   ArrayList<ExprNodeDesc> groupByKeys=new ArrayList<ExprNodeDesc>();
@@ -22,14 +22,11 @@
   HashMap<String,ASTNode> aggregationTrees=parseInfo.getAggregationExprsForClause(dest);
   assert(aggregationTrees != null);
   String lastKeyColName=null;
-  List<ExprNodeDesc> reduceValues=null;
-  if (reduceSinkOperatorInfo.getConf() instanceof ReduceSinkDesc) {
-    List<String> inputKeyCols=((ReduceSinkDesc)reduceSinkOperatorInfo.getConf()).getOutputKeyColumnNames();
-    if (inputKeyCols.size() > 0) {
-      lastKeyColName=inputKeyCols.get(inputKeyCols.size() - 1);
-    }
-    reduceValues=((ReduceSinkDesc)reduceSinkOperatorInfo.getConf()).getValueCols();
+  List<String> inputKeyCols=((ReduceSinkDesc)rs.getConf()).getOutputKeyColumnNames();
+  if (inputKeyCols.size() > 0) {
+    lastKeyColName=inputKeyCols.get(inputKeyCols.size() - 1);
   }
+  List<ExprNodeDesc> reduceValues=((ReduceSinkDesc)rs.getConf()).getValueCols();
   int numDistinctUDFs=0;
   for (  Map.Entry<String,ASTNode> entry : aggregationTrees.entrySet()) {
     ASTNode value=entry.getValue();
@@ -72,7 +69,7 @@
   }
   float groupByMemoryUsage=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVEMAPAGGRHASHMEMORY);
   float memoryThreshold=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVEMAPAGGRMEMORYTHRESHOLD);
-  Operator op=putOpInsertMap(OperatorFactory.getAndMakeChild(new GroupByDesc(mode,outputColumnNames,groupByKeys,aggregations,false,groupByMemoryUsage,memoryThreshold,null,false,0,numDistinctUDFs > 0),new RowSchema(groupByOutputRowResolver.getColumnInfos()),reduceSinkOperatorInfo),groupByOutputRowResolver);
+  Operator op=putOpInsertMap(OperatorFactory.getAndMakeChild(new GroupByDesc(mode,outputColumnNames,groupByKeys,aggregations,false,groupByMemoryUsage,memoryThreshold,null,false,0,numDistinctUDFs > 0),new RowSchema(groupByOutputRowResolver.getColumnInfos()),input),groupByOutputRowResolver);
   op.setColumnExprMap(colExprMap);
   return op;
 }
