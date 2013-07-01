@@ -2,11 +2,12 @@
   List<? extends StructField> fieldRefs=rowOI.getAllStructFieldRefs();
   VectorizedRowBatch result=new VectorizedRowBatch(fieldRefs.size());
   for (int j=0; j < fieldRefs.size(); j++) {
-    ObjectInspector foi=fieldRefs.get(j).getFieldObjectInspector();
+    if ((colsToInclude == null) || colsToInclude.contains(j) || ((partitionValues != null) && (partitionValues.get(fieldRefs.get(j).getFieldName()) != null))) {
+      ObjectInspector foi=fieldRefs.get(j).getFieldObjectInspector();
 switch (foi.getCategory()) {
 case PRIMITIVE:
 {
-        PrimitiveObjectInspector poi=(PrimitiveObjectInspector)foi;
+          PrimitiveObjectInspector poi=(PrimitiveObjectInspector)foi;
 switch (poi.getPrimitiveCategory()) {
 case BOOLEAN:
 case BYTE:
@@ -14,15 +15,15 @@ case SHORT:
 case INT:
 case LONG:
 case TIMESTAMP:
-          result.cols[j]=new LongColumnVector(VectorizedRowBatch.DEFAULT_SIZE);
-        break;
+            result.cols[j]=new LongColumnVector(VectorizedRowBatch.DEFAULT_SIZE);
+          break;
 case FLOAT:
 case DOUBLE:
-      result.cols[j]=new DoubleColumnVector(VectorizedRowBatch.DEFAULT_SIZE);
-    break;
+        result.cols[j]=new DoubleColumnVector(VectorizedRowBatch.DEFAULT_SIZE);
+      break;
 case STRING:
-  result.cols[j]=new BytesColumnVector(VectorizedRowBatch.DEFAULT_SIZE);
-break;
+    result.cols[j]=new BytesColumnVector(VectorizedRowBatch.DEFAULT_SIZE);
+  break;
 default :
 throw new RuntimeException("Vectorizaton is not supported for datatype:" + poi.getPrimitiveCategory());
 }
@@ -35,6 +36,7 @@ case UNION:
 throw new HiveException("Vectorizaton is not supported for datatype:" + foi.getCategory());
 default :
 throw new HiveException("Unknown ObjectInspector category!");
+}
 }
 }
 result.numCols=fieldRefs.size();
