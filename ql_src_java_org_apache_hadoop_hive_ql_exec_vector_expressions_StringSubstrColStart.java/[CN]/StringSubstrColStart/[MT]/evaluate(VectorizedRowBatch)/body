@@ -1,0 +1,100 @@
+{
+  if (childExpressions != null) {
+    super.evaluateChildren(batch);
+  }
+  BytesColumnVector inV=(BytesColumnVector)batch.cols[colNum];
+  BytesColumnVector outV=(BytesColumnVector)batch.cols[outputColumn];
+  int n=batch.size;
+  if (n == 0) {
+    return;
+  }
+  byte[][] vector=inV.vector;
+  int[] sel=batch.selected;
+  int[] len=inV.length;
+  int[] start=inV.start;
+  if (inV.isRepeating) {
+    outV.isRepeating=true;
+    if (!inV.noNulls && inV.isNull[0]) {
+      outV.isNull[0]=true;
+      outV.noNulls=false;
+      outV.setRef(0,EMPTY_STRING,0,EMPTY_STRING.length);
+      return;
+    }
+ else {
+      outV.noNulls=true;
+      int offset=getSubstrStartOffset(vector[0],sel[0],len[0],startIdx);
+      if (offset != -1) {
+        outV.setRef(0,vector[0],offset,len[0] - offset);
+      }
+ else {
+        outV.setRef(0,EMPTY_STRING,0,EMPTY_STRING.length);
+      }
+    }
+  }
+ else {
+    outV.isRepeating=false;
+    if (batch.selectedInUse) {
+      if (!inV.noNulls) {
+        outV.noNulls=false;
+        for (int i=0; i != n; ++i) {
+          int selected=sel[i];
+          if (!inV.isNull[selected]) {
+            int offset=getSubstrStartOffset(vector[selected],start[selected],len[selected],startIdx);
+            outV.isNull[selected]=false;
+            if (offset != -1) {
+              outV.setRef(selected,vector[selected],offset,len[selected] - offset);
+            }
+ else {
+              outV.setRef(selected,EMPTY_STRING,0,EMPTY_STRING.length);
+            }
+          }
+ else {
+            outV.isNull[selected]=true;
+          }
+        }
+      }
+ else {
+        outV.noNulls=true;
+        for (int i=0; i != n; ++i) {
+          int selected=sel[i];
+          int offset=getSubstrStartOffset(vector[selected],start[selected],len[selected],startIdx);
+          if (offset != -1) {
+            outV.setRef(selected,vector[selected],offset,len[selected] - offset);
+          }
+ else {
+            outV.setRef(selected,EMPTY_STRING,0,EMPTY_STRING.length);
+          }
+        }
+      }
+    }
+ else {
+      if (!inV.noNulls) {
+        outV.noNulls=false;
+        System.arraycopy(inV.isNull,0,outV.isNull,0,n);
+        for (int i=0; i != n; ++i) {
+          if (!inV.isNull[i]) {
+            int offset=getSubstrStartOffset(vector[i],start[i],len[i],startIdx);
+            if (offset != -1) {
+              outV.setRef(i,vector[i],offset,len[i] - offset);
+            }
+ else {
+              outV.setRef(i,EMPTY_STRING,0,EMPTY_STRING.length);
+            }
+          }
+        }
+      }
+ else {
+        outV.noNulls=true;
+        for (int i=0; i != n; ++i) {
+          int offset=getSubstrStartOffset(vector[i],start[i],len[i],startIdx);
+          if (offset != -1) {
+            outV.setRef(i,vector[i],offset,len[i] - offset);
+          }
+ else {
+            outV.setRef(i,EMPTY_STRING,0,EMPTY_STRING.length);
+          }
+        }
+      }
+    }
+  }
+}
