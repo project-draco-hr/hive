@@ -1,0 +1,48 @@
+{
+  String functionName=ast.getChild(0).getText();
+  List<FieldSchema> arguments=BaseSemanticAnalyzer.getColumns((ASTNode)ast.getChild(1),true);
+  boolean isNoArgumentMacro=arguments.size() == 0;
+  RowResolver rowResolver=new RowResolver();
+  ArrayList<String> macroColNames=new ArrayList<String>(arguments.size());
+  ArrayList<TypeInfo> macroColTypes=new ArrayList<TypeInfo>(arguments.size());
+  final Set<String> actualColumnNames=new HashSet<String>();
+  if (!isNoArgumentMacro) {
+    Node expression=(Node)ast.getChild(2);
+    PreOrderWalker walker=new PreOrderWalker(new Dispatcher(){
+      @Override public Object dispatch(      Node nd,      Stack<Node> stack,      Object... nodeOutputs) throws SemanticException {
+        if (nd instanceof ASTNode) {
+          ASTNode node=(ASTNode)nd;
+          if (node.getType() == HiveParser.TOK_TABLE_OR_COL) {
+            actualColumnNames.add(node.getChild(0).getText());
+          }
+        }
+        return null;
+      }
+    }
+);
+    walker.startWalking(Collections.singletonList(expression),null);
+  }
+  for (  FieldSchema argument : arguments) {
+    TypeInfo colType=TypeInfoUtils.getTypeInfoFromTypeString(argument.getType());
+    rowResolver.put("",argument.getName(),new ColumnInfo(argument.getName(),colType,"",false));
+    macroColNames.add(argument.getName());
+    macroColTypes.add(colType);
+  }
+  Set<String> expectedColumnNames=new HashSet<String>(macroColNames);
+  if (!expectedColumnNames.equals(actualColumnNames)) {
+    throw new SemanticException("Expected columns " + expectedColumnNames + " but found "+ actualColumnNames);
+  }
+  if (expectedColumnNames.size() != macroColNames.size()) {
+    throw new SemanticException("At least one parameter name was used more than once " + macroColNames);
+  }
+  SemanticAnalyzer sa=new SemanticAnalyzer(conf);
+  ExprNodeDesc body;
+  if (isNoArgumentMacro) {
+    body=sa.genExprNodeDesc((ASTNode)ast.getChild(1),rowResolver);
+  }
+ else {
+    body=sa.genExprNodeDesc((ASTNode)ast.getChild(2),rowResolver);
+  }
+  CreateMacroDesc desc=new CreateMacroDesc(functionName,macroColNames,macroColTypes,body);
+  rootTasks.add(TaskFactory.get(new FunctionWork(desc),conf));
+}

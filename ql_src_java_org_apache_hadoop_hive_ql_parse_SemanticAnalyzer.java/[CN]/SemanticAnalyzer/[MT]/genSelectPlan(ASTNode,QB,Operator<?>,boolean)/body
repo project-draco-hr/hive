@@ -1,0 +1,168 @@
+{
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("tree: " + selExprList.toStringTree());
+  }
+  ArrayList<ExprNodeDesc> col_list=new ArrayList<ExprNodeDesc>();
+  RowResolver out_rwsch=new RowResolver();
+  ASTNode trfm=null;
+  Integer pos=Integer.valueOf(0);
+  RowResolver inputRR=opParseCtx.get(input).getRowResolver();
+  boolean selectStar=false;
+  int posn=0;
+  boolean hintPresent=(selExprList.getChild(0).getType() == HiveParser.TOK_HINTLIST);
+  if (hintPresent) {
+    posn++;
+  }
+  boolean subQuery=qb.getParseInfo().getIsSubQ();
+  boolean isInTransform=(selExprList.getChild(posn).getChild(0).getType() == HiveParser.TOK_TRANSFORM);
+  if (isInTransform) {
+    queryProperties.setUsesScript(true);
+    globalLimitCtx.setHasTransformOrUDTF(true);
+    trfm=(ASTNode)selExprList.getChild(posn).getChild(0);
+  }
+  boolean isUDTF=false;
+  String udtfTableAlias=null;
+  ArrayList<String> udtfColAliases=new ArrayList<String>();
+  ASTNode udtfExpr=(ASTNode)selExprList.getChild(posn).getChild(0);
+  GenericUDTF genericUDTF=null;
+  int udtfExprType=udtfExpr.getType();
+  if (udtfExprType == HiveParser.TOK_FUNCTION || udtfExprType == HiveParser.TOK_FUNCTIONSTAR) {
+    String funcName=TypeCheckProcFactory.DefaultExprProcessor.getFunctionText(udtfExpr,true);
+    FunctionInfo fi=FunctionRegistry.getFunctionInfo(funcName);
+    if (fi != null) {
+      genericUDTF=fi.getGenericUDTF();
+    }
+    isUDTF=(genericUDTF != null);
+    if (isUDTF) {
+      globalLimitCtx.setHasTransformOrUDTF(true);
+    }
+    if (isUDTF && !fi.isNative()) {
+      unparseTranslator.addIdentifierTranslation((ASTNode)udtfExpr.getChild(0));
+    }
+    if (isUDTF && (selectStar=udtfExprType == HiveParser.TOK_FUNCTIONSTAR)) {
+      genColListRegex(".*",null,(ASTNode)udtfExpr.getChild(0),col_list,inputRR,pos,out_rwsch,qb.getAliases(),subQuery);
+    }
+  }
+  if (isUDTF) {
+    if (selExprList.getChildCount() > 1) {
+      throw new SemanticException(generateErrorMessage((ASTNode)selExprList.getChild(1),ErrorMsg.UDTF_MULTIPLE_EXPR.getMsg()));
+    }
+    ASTNode selExpr=(ASTNode)selExprList.getChild(posn);
+    if (selExpr.getChildCount() < 2) {
+      throw new SemanticException(generateErrorMessage(udtfExpr,ErrorMsg.UDTF_REQUIRE_AS.getMsg()));
+    }
+    for (int i=1; i < selExpr.getChildCount(); i++) {
+      ASTNode selExprChild=(ASTNode)selExpr.getChild(i);
+switch (selExprChild.getType()) {
+case HiveParser.Identifier:
+        udtfColAliases.add(unescapeIdentifier(selExprChild.getText()));
+      unparseTranslator.addIdentifierTranslation(selExprChild);
+    break;
+case HiveParser.TOK_TABALIAS:
+  assert(selExprChild.getChildCount() == 1);
+udtfTableAlias=unescapeIdentifier(selExprChild.getChild(0).getText());
+qb.addAlias(udtfTableAlias);
+unparseTranslator.addIdentifierTranslation((ASTNode)selExprChild.getChild(0));
+break;
+default :
+assert(false);
+}
+}
+if (LOG.isDebugEnabled()) {
+LOG.debug("UDTF table alias is " + udtfTableAlias);
+LOG.debug("UDTF col aliases are " + udtfColAliases);
+}
+}
+ASTNode exprList;
+if (isInTransform) {
+exprList=(ASTNode)trfm.getChild(0);
+}
+ else if (isUDTF) {
+exprList=udtfExpr;
+}
+ else {
+exprList=selExprList;
+}
+if (LOG.isDebugEnabled()) {
+LOG.debug("genSelectPlan: input = " + inputRR.toString());
+}
+int startPosn=isUDTF ? posn + 1 : posn;
+if (isInTransform) {
+startPosn=0;
+}
+for (int i=startPosn; i < exprList.getChildCount(); ++i) {
+ASTNode child=(ASTNode)exprList.getChild(i);
+boolean hasAsClause=(!isInTransform) && (child.getChildCount() == 2);
+boolean isWindowSpec=child.getChildCount() == 3 ? (child.getChild(2).getType() == HiveParser.TOK_WINDOWSPEC) : false;
+if (!isWindowSpec && !isInTransform && !isUDTF&& child.getChildCount() > 2) {
+throw new SemanticException(generateErrorMessage((ASTNode)child.getChild(2),ErrorMsg.INVALID_AS.getMsg()));
+}
+ASTNode expr;
+String tabAlias;
+String colAlias;
+if (isInTransform || isUDTF) {
+tabAlias=null;
+colAlias=autogenColAliasPrfxLbl + i;
+expr=child;
+}
+ else {
+expr=(ASTNode)child.getChild(0);
+String[] colRef=getColAlias(child,autogenColAliasPrfxLbl,inputRR,autogenColAliasPrfxIncludeFuncName,i);
+tabAlias=colRef[0];
+colAlias=colRef[1];
+if (hasAsClause) {
+unparseTranslator.addIdentifierTranslation((ASTNode)child.getChild(1));
+}
+}
+if (expr.getType() == HiveParser.TOK_ALLCOLREF) {
+pos=genColListRegex(".*",expr.getChildCount() == 0 ? null : getUnescapedName((ASTNode)expr.getChild(0)).toLowerCase(),expr,col_list,inputRR,pos,out_rwsch,qb.getAliases(),subQuery);
+selectStar=true;
+}
+ else if (expr.getType() == HiveParser.TOK_TABLE_OR_COL && !hasAsClause && !inputRR.getIsExprResolver() && isRegex(unescapeIdentifier(expr.getChild(0).getText()))) {
+pos=genColListRegex(unescapeIdentifier(expr.getChild(0).getText()),null,expr,col_list,inputRR,pos,out_rwsch,qb.getAliases(),subQuery);
+}
+ else if (expr.getType() == HiveParser.DOT && expr.getChild(0).getType() == HiveParser.TOK_TABLE_OR_COL && inputRR.hasTableAlias(unescapeIdentifier(expr.getChild(0).getChild(0).getText().toLowerCase())) && !hasAsClause && !inputRR.getIsExprResolver() && isRegex(unescapeIdentifier(expr.getChild(1).getText()))) {
+pos=genColListRegex(unescapeIdentifier(expr.getChild(1).getText()),unescapeIdentifier(expr.getChild(0).getChild(0).getText().toLowerCase()),expr,col_list,inputRR,pos,out_rwsch,qb.getAliases(),subQuery);
+}
+ else {
+TypeCheckCtx tcCtx=new TypeCheckCtx(inputRR);
+tcCtx.setAllowStatefulFunctions(true);
+ExprNodeDesc exp=genExprNodeDesc(expr,inputRR,tcCtx);
+String recommended=recommendName(exp,colAlias);
+if (recommended != null && out_rwsch.get(null,recommended) == null) {
+colAlias=recommended;
+}
+col_list.add(exp);
+if (subQuery) {
+out_rwsch.checkColumn(tabAlias,colAlias);
+}
+ColumnInfo colInfo=new ColumnInfo(getColumnInternalName(pos),exp.getWritableObjectInspector(),tabAlias,false);
+colInfo.setSkewedCol((exp instanceof ExprNodeColumnDesc) ? ((ExprNodeColumnDesc)exp).isSkewedCol() : false);
+out_rwsch.put(tabAlias,colAlias,colInfo);
+pos=Integer.valueOf(pos.intValue() + 1);
+}
+}
+selectStar=selectStar && exprList.getChildCount() == posn + 1;
+ArrayList<String> columnNames=new ArrayList<String>();
+Map<String,ExprNodeDesc> colExprMap=new HashMap<String,ExprNodeDesc>();
+for (int i=0; i < col_list.size(); i++) {
+if (col_list.get(i) instanceof ExprNodeNullDesc) {
+col_list.set(i,new ExprNodeConstantDesc(TypeInfoFactory.stringTypeInfo,null));
+}
+String outputCol=getColumnInternalName(i);
+colExprMap.put(outputCol,col_list.get(i));
+columnNames.add(outputCol);
+}
+Operator output=putOpInsertMap(OperatorFactory.getAndMakeChild(new SelectDesc(col_list,columnNames,selectStar),new RowSchema(out_rwsch.getColumnInfos()),input),out_rwsch);
+output.setColumnExprMap(colExprMap);
+if (isInTransform) {
+output=genScriptPlan(trfm,qb,output);
+}
+if (isUDTF) {
+output=genUDTFPlan(genericUDTF,udtfTableAlias,udtfColAliases,qb,output,outerLV);
+}
+if (LOG.isDebugEnabled()) {
+LOG.debug("Created Select Plan row schema: " + out_rwsch.toString());
+}
+return output;
+}

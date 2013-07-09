@@ -6,8 +6,7 @@
     if (alterTbl.getOp() != AlterTableDesc.AlterTableTypes.ALTERPROTECTMODE) {
       part=db.getPartition(tbl,alterTbl.getPartSpec(),false);
       if (part == null) {
-        formatter.consoleError(console,"Partition : " + alterTbl.getPartSpec().toString() + " does not exist.",formatter.MISSING);
-        return 1;
+        throw new HiveException(ErrorMsg.INVALID_PARTITION,StringUtils.join(alterTbl.getPartSpec().keySet(),',') + " for table " + alterTbl.getOldName());
       }
     }
  else {
@@ -35,8 +34,7 @@
         while (iterOldCols.hasNext()) {
           String oldColName=iterOldCols.next().getName();
           if (oldColName.equalsIgnoreCase(newColName)) {
-            formatter.consoleError(console,"Column '" + newColName + "' exists",formatter.CONFLICT);
-            return 1;
+            throw new HiveException(ErrorMsg.DUPLICATE_COLUMN_NAMES,newColName);
           }
         }
         oldCols.add(newCol);
@@ -65,8 +63,7 @@
       FieldSchema col=iterOldCols.next();
       String oldColName=col.getName();
       if (oldColName.equalsIgnoreCase(newName) && !oldColName.equalsIgnoreCase(oldName)) {
-        formatter.consoleError(console,"Column '" + newName + "' exists",formatter.CONFLICT);
-        return 1;
+        throw new HiveException(ErrorMsg.DUPLICATE_COLUMN_NAMES,newName);
       }
  else       if (oldColName.equalsIgnoreCase(oldName)) {
         col.setName(newName);
@@ -89,12 +86,10 @@
       newCols.add(col);
     }
     if (!found) {
-      formatter.consoleError(console,"Column '" + oldName + "' does not exists",formatter.MISSING);
-      return 1;
+      throw new HiveException(ErrorMsg.INVALID_COLUMN,oldName);
     }
     if ((afterCol != null && !afterCol.trim().equals("")) && position < 0) {
-      formatter.consoleError(console,"Column '" + afterCol + "' does not exists",formatter.MISSING);
-      return 1;
+      throw new HiveException(ErrorMsg.INVALID_COLUMN,afterCol);
     }
     if (position >= 0) {
       newCols.add(position,column);
@@ -107,8 +102,7 @@
       tbl.setSerializationLib(LazySimpleSerDe.class.getName());
     }
  else     if (!tbl.getSerializationLib().equals(MetadataTypedColumnsetSerDe.class.getName()) && !tbl.getSerializationLib().equals(LazySimpleSerDe.class.getName()) && !tbl.getSerializationLib().equals(ColumnarSerDe.class.getName())&& !tbl.getSerializationLib().equals(DynamicSerDe.class.getName())) {
-      formatter.consoleError(console,"Replace columns is not supported for this table. " + "SerDe may be incompatible.",formatter.ERROR);
-      return 1;
+      throw new HiveException(ErrorMsg.CANNOT_REPLACE_COLUMNS,alterTbl.getOldName());
     }
     tbl.getTTable().getSd().setCols(alterTbl.getNewCols());
   }
@@ -207,7 +201,7 @@
     try {
       URI locUri=new URI(newLocation);
       if (!locUri.isAbsolute() || locUri.getScheme() == null || locUri.getScheme().trim().equals("")) {
-        throw new HiveException(newLocation + " is not absolute or has no scheme information. " + "Please specify a complete absolute uri with scheme information.");
+        throw new HiveException(ErrorMsg.BAD_LOCATION_VALUE,newLocation);
       }
       if (part != null) {
         part.setLocation(newLocation);
@@ -279,31 +273,18 @@
     }
   }
  else {
-    formatter.consoleError(console,"Unsupported Alter commnad",formatter.ERROR);
-    return 1;
+    throw new HiveException(ErrorMsg.UNSUPPORTED_ALTER_TBL_OP,alterTbl.getOp().toString());
   }
   if (part == null && allPartitions == null) {
-    if (!updateModifiedParameters(tbl.getTTable().getParameters(),conf)) {
-      return 1;
-    }
-    try {
-      tbl.checkValidity();
-    }
- catch (    HiveException e) {
-      formatter.consoleError(console,"Invalid table columns : " + e.getMessage(),formatter.ERROR);
-      return 1;
-    }
+    updateModifiedParameters(tbl.getTTable().getParameters(),conf);
+    tbl.checkValidity();
   }
  else   if (part != null) {
-    if (!updateModifiedParameters(part.getParameters(),conf)) {
-      return 1;
-    }
+    updateModifiedParameters(part.getParameters(),conf);
   }
  else {
     for (    Partition tmpPart : allPartitions) {
-      if (!updateModifiedParameters(tmpPart.getParameters(),conf)) {
-        return 1;
-      }
+      updateModifiedParameters(tmpPart.getParameters(),conf);
     }
   }
   try {
@@ -318,12 +299,8 @@
     }
   }
  catch (  InvalidOperationException e) {
-    console.printError("Invalid alter operation: " + e.getMessage());
     LOG.info("alter table: " + stringifyException(e));
-    return 1;
-  }
-catch (  HiveException e) {
-    return 1;
+    throw new HiveException(e,ErrorMsg.GENERIC_ERROR);
   }
   if (part != null) {
     work.getInputs().add(new ReadEntity(part));

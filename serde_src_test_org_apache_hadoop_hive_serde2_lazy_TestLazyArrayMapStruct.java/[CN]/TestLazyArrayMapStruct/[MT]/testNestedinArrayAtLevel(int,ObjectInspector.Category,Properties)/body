@@ -1,0 +1,93 @@
+{
+  String inSchema=null;
+switch (dtype) {
+case LIST:
+    inSchema="array<tinyint>";
+  break;
+case MAP:
+inSchema="map<string,int>";
+break;
+case STRUCT:
+inSchema="struct<s:string,i:tinyint>";
+break;
+case UNION:
+inSchema="uniontype<string,tinyint>";
+break;
+default :
+fail("type not supported by test case");
+}
+StringBuilder schema=new StringBuilder(inSchema);
+for (int i=0; i < nestingLevel - 1; i++) {
+schema.insert(0,"array<");
+schema.append(">");
+}
+System.err.println("Testing nesting level " + nestingLevel + ". Using schema "+ schema);
+LazySimpleSerDe serDe=new LazySimpleSerDe();
+Configuration conf=new Configuration();
+tableProp.setProperty("columns","narray");
+tableProp.setProperty("columns.types",schema.toString());
+serDe.initialize(conf,tableProp);
+byte[] separators=serDe.serdeParams.getSeparators();
+System.err.println("Using separator " + (char)separators[nestingLevel]);
+byte[] serializedRow=null;
+switch (dtype) {
+case LIST:
+serializedRow=new byte[]{'8',separators[nestingLevel],'9'};
+break;
+case MAP:
+byte kvSep=separators[nestingLevel + 1];
+byte kvPairSep=separators[nestingLevel];
+serializedRow=new byte[]{'1',kvSep,'1',kvPairSep,'2',kvSep,'2'};
+break;
+case STRUCT:
+serializedRow=new byte[]{'8',separators[nestingLevel],'9'};
+break;
+case UNION:
+serializedRow=new byte[]{'0',separators[nestingLevel],'9'};
+break;
+default :
+fail("type not supported by test case");
+}
+StructObjectInspector oi=(StructObjectInspector)serDe.getObjectInspector();
+LazyStruct struct=(LazyStruct)LazyFactory.createLazyObject(oi);
+TestLazyPrimitive.initLazyObject(struct,serializedRow,0,serializedRow.length);
+LazyArray array=(LazyArray)struct.getField(0);
+for (int i=0; i < nestingLevel - 2; i++) {
+array=(LazyArray)array.getListElementObject(0);
+}
+switch (dtype) {
+case LIST:
+LazyArray array1=(LazyArray)array.getListElementObject(0);
+assertEquals(2,array1.getListLength());
+assertEquals(new ByteWritable((byte)8),((LazyByte)array1.getListElementObject(0)).getWritableObject());
+assertEquals(new ByteWritable((byte)9),((LazyByte)array1.getListElementObject(1)).getWritableObject());
+break;
+case MAP:
+LazyMap lazyMap=(LazyMap)array.getListElementObject(0);
+Map map=lazyMap.getMap();
+System.err.println(map);
+assertEquals(2,map.size());
+Iterator<Map.Entry<LazyString,LazyInteger>> it=map.entrySet().iterator();
+Entry<LazyString,LazyInteger> e1=it.next();
+assertEquals(e1.getKey().getWritableObject(),new Text(new byte[]{'1'}));
+assertEquals(e1.getValue().getWritableObject(),new IntWritable(1));
+Entry<LazyString,LazyInteger> e2=it.next();
+assertEquals(e2.getKey().getWritableObject(),new Text(new byte[]{'2'}));
+assertEquals(e2.getValue().getWritableObject(),new IntWritable(2));
+break;
+case STRUCT:
+LazyStruct innerStruct=(LazyStruct)array.getListElementObject(0);
+assertEquals(2,innerStruct.getFieldsAsList().size());
+assertEquals(new Text(new byte[]{'8'}),((LazyString)innerStruct.getField(0)).getWritableObject());
+assertEquals(new ByteWritable((byte)9),((LazyByte)innerStruct.getField(1)).getWritableObject());
+break;
+case UNION:
+LazyUnion lazyUnion=(LazyUnion)array.getListElementObject(0);
+assertEquals(new Text(new byte[]{'9'}),((LazyString)lazyUnion.getField()).getWritableObject());
+break;
+default :
+fail("type not supported by test case");
+}
+Text serializedText=(Text)serDe.serialize(struct.getObject(),serDe.getObjectInspector());
+org.junit.Assert.assertArrayEquals(serializedRow,serializedText.getBytes());
+}

@@ -42,83 +42,13 @@
   prompt=new VariableSubstitution().substitute(conf,prompt);
   prompt2=spacesForString(prompt);
   SessionState.start(ss);
-  if (ss.getHost() != null) {
-    ss.connect();
-    if (ss.isRemoteMode()) {
-      prompt="[" + ss.host + ':'+ ss.port+ "] "+ prompt;
-      char[] spaces=new char[prompt.length()];
-      Arrays.fill(spaces,' ');
-      prompt2=new String(spaces);
-    }
-  }
-  if (!ss.isRemoteMode() && !ShimLoader.getHadoopShims().usesJobShell()) {
-    ClassLoader loader=conf.getClassLoader();
-    String auxJars=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEAUXJARS);
-    if (StringUtils.isNotBlank(auxJars)) {
-      loader=Utilities.addToClassPath(loader,StringUtils.split(auxJars,","));
-    }
-    conf.setClassLoader(loader);
-    Thread.currentThread().setContextClassLoader(loader);
-  }
-  CliDriver cli=new CliDriver();
-  cli.setHiveVariables(oproc.getHiveVariables());
-  cli.processSelectDatabase(ss);
-  cli.processInitFiles(ss);
-  if (ss.execString != null) {
-    return cli.processLine(ss.execString);
-  }
+  int ret=0;
   try {
-    if (ss.fileName != null) {
-      return cli.processFile(ss.fileName);
-    }
-  }
- catch (  FileNotFoundException e) {
-    System.err.println("Could not open input file for reading. (" + e.getMessage() + ")");
-    return 3;
-  }
-  ConsoleReader reader=new ConsoleReader();
-  reader.setBellEnabled(false);
-  for (  Completor completor : getCommandCompletor()) {
-    reader.addCompletor(completor);
-  }
-  String line;
-  final String HISTORYFILE=".hivehistory";
-  String historyDirectory=System.getProperty("user.home");
-  try {
-    if ((new File(historyDirectory)).exists()) {
-      String historyFile=historyDirectory + File.separator + HISTORYFILE;
-      reader.setHistory(new History(new File(historyFile)));
-    }
- else {
-      System.err.println("WARNING: Directory for Hive history file: " + historyDirectory + " does not exist.   History will not be available during this session.");
-    }
+    ret=executeDriver(ss,conf,oproc);
   }
  catch (  Exception e) {
-    System.err.println("WARNING: Encountered an error while trying to initialize Hive's " + "history file.  History will not be available during this session.");
-    System.err.println(e.getMessage());
-  }
-  int ret=0;
-  String prefix="";
-  String curDB=getFormattedDb(conf,ss);
-  String curPrompt=prompt + curDB;
-  String dbSpaces=spacesForString(curDB);
-  while ((line=reader.readLine(curPrompt + "> ")) != null) {
-    if (!prefix.equals("")) {
-      prefix+='\n';
-    }
-    if (line.trim().endsWith(";") && !line.trim().endsWith("\\;")) {
-      line=prefix + line;
-      ret=cli.processLine(line,true);
-      prefix="";
-      curDB=getFormattedDb(conf,ss);
-      curPrompt=prompt + curDB;
-      dbSpaces=dbSpaces.length() == curDB.length() ? dbSpaces : spacesForString(curDB);
-    }
- else {
-      prefix=prefix + line;
-      curPrompt=prompt2 + dbSpaces;
-      continue;
-    }
+    ss.close();
+    throw e;
   }
   ss.close();
   return ret;
