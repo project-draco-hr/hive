@@ -1,17 +1,20 @@
 {
-  ctx.setExplain(true);
-  BaseSemanticAnalyzer sem=SemanticAnalyzerFactory.get(conf,(ASTNode)ast.getChild(0));
-  sem.analyze((ASTNode)ast.getChild(0),ctx);
-  sem.validate();
   boolean extended=false;
   boolean formatted=false;
   boolean dependency=false;
+  boolean logical=false;
   if (ast.getChildCount() == 2) {
     int explainOptions=ast.getChild(1).getType();
     formatted=(explainOptions == HiveParser.KW_FORMATTED);
     extended=(explainOptions == HiveParser.KW_EXTENDED);
     dependency=(explainOptions == HiveParser.KW_DEPENDENCY);
+    logical=(explainOptions == HiveParser.KW_LOGICAL);
   }
+  ctx.setExplain(true);
+  ctx.setExplainLogical(logical);
+  BaseSemanticAnalyzer sem=SemanticAnalyzerFactory.get(conf,(ASTNode)ast.getChild(0));
+  sem.analyze((ASTNode)ast.getChild(0),ctx);
+  sem.validate();
   ctx.setResFile(new Path(ctx.getLocalTmpFileURI()));
   List<Task<? extends Serializable>> tasks=sem.getRootTasks();
   Task<? extends Serializable> fetchTask=sem.getFetchTask();
@@ -24,7 +27,11 @@
  else   if (fetchTask != null) {
     tasks.add(fetchTask);
   }
-  Task<? extends Serializable> explTask=TaskFactory.get(new ExplainWork(ctx.getResFile().toString(),tasks,((ASTNode)ast.getChild(0)).toStringTree(),sem.getInputs(),extended,formatted,dependency),conf);
+  ParseContext pCtx=null;
+  if (sem instanceof SemanticAnalyzer) {
+    pCtx=((SemanticAnalyzer)sem).getParseContext();
+  }
+  Task<? extends Serializable> explTask=TaskFactory.get(new ExplainWork(ctx.getResFile().toString(),pCtx,tasks,((ASTNode)ast.getChild(0)).toStringTree(),sem.getInputs(),extended,formatted,dependency,logical),conf);
   fieldList=explTask.getResultSchema();
   rootTasks.add(explTask);
 }
