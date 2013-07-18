@@ -1,0 +1,22 @@
+{
+  ReduceSinkDeduplicateProcCtx dedupCtx=(ReduceSinkDeduplicateProcCtx)procCtx;
+  if (dedupCtx.hasBeenRemoved((Operator<?>)nd)) {
+    return false;
+  }
+  ReduceSinkOperator cRS=(ReduceSinkOperator)nd;
+  Operator<?> child=CorrelationUtilities.getSingleChild(cRS);
+  if (child instanceof JoinOperator) {
+    return false;
+  }
+  if (child instanceof GroupByOperator) {
+    GroupByOperator cGBY=(GroupByOperator)child;
+    if (!CorrelationUtilities.hasGroupingSet(cRS) && !cGBY.getConf().isGroupingSetsPresent()) {
+      return process(cRS,cGBY,dedupCtx);
+    }
+    return false;
+  }
+  if (child instanceof ExtractOperator) {
+    return process(cRS,dedupCtx);
+  }
+  return false;
+}
