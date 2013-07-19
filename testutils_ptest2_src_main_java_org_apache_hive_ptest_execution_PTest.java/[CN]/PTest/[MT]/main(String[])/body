@@ -1,0 +1,77 @@
+{
+  LOG.info("Args " + Arrays.toString(args));
+  CommandLineParser parser=new GnuParser();
+  Options options=new Options();
+  options.addOption(null,PROPERTIES,true,"properties file");
+  options.addOption(null,REPOSITORY,true,"Overrides git repository in properties file");
+  options.addOption(null,REPOSITORY_NAME,true,"Overrides git repository *name* in properties file");
+  options.addOption(null,BRANCH,true,"Overrides git branch in properties file");
+  options.addOption(null,PATCH,true,"URI to patch, either file:/// or http(s)://");
+  options.addOption(ANT_ARG,null,true,"Supplemntal ant arguments");
+  options.addOption(null,JAVA_HOME,true,"Java Home for compiling and running tests");
+  options.addOption(null,ANT_ENV_OPTS,true,"ANT_OPTS environemnt variable setting");
+  CommandLine commandLine=parser.parse(options,args);
+  if (!commandLine.hasOption(PROPERTIES)) {
+    throw new IllegalArgumentException(Joiner.on(" ").join(PTest.class.getName(),"--" + PROPERTIES,"config.properties"));
+  }
+  String testConfigurationFile=commandLine.getOptionValue(PROPERTIES);
+  ExecutionContextConfiguration executionContextConfiguration=ExecutionContextConfiguration.fromFile(testConfigurationFile);
+  String buildTag=System.getenv("BUILD_TAG") == null ? "undefined-" + System.currentTimeMillis() : System.getenv("BUILD_TAG");
+  File logDir=Dirs.create(new File(executionContextConfiguration.getGlobalLogDirectory(),buildTag));
+  LogDirectoryCleaner cleaner=new LogDirectoryCleaner(new File(executionContextConfiguration.getGlobalLogDirectory()),5);
+  cleaner.setName("LogCleaner-" + executionContextConfiguration.getGlobalLogDirectory());
+  cleaner.setDaemon(true);
+  cleaner.start();
+  TestConfiguration conf=TestConfiguration.fromFile(testConfigurationFile,LOG);
+  String repository=Strings.nullToEmpty(commandLine.getOptionValue(REPOSITORY)).trim();
+  if (!repository.isEmpty()) {
+    conf.setRepository(repository);
+  }
+  String repositoryName=Strings.nullToEmpty(commandLine.getOptionValue(REPOSITORY_NAME)).trim();
+  if (!repositoryName.isEmpty()) {
+    conf.setRepositoryName(repositoryName);
+  }
+  String branch=Strings.nullToEmpty(commandLine.getOptionValue(BRANCH)).trim();
+  if (!branch.isEmpty()) {
+    conf.setBranch(branch);
+  }
+  String patch=Strings.nullToEmpty(commandLine.getOptionValue(PATCH)).trim();
+  if (!patch.isEmpty()) {
+    conf.setPatch(patch);
+  }
+  String javaHome=Strings.nullToEmpty(commandLine.getOptionValue(JAVA_HOME)).trim();
+  if (!javaHome.isEmpty()) {
+    conf.setJavaHome(javaHome);
+  }
+  String antEnvOpts=Strings.nullToEmpty(commandLine.getOptionValue(ANT_ENV_OPTS)).trim();
+  if (!antEnvOpts.isEmpty()) {
+    conf.setAntEnvOpts(antEnvOpts);
+  }
+  String[] supplementalAntArgs=commandLine.getOptionValues(ANT_ARG);
+  if (supplementalAntArgs != null && supplementalAntArgs.length > 0) {
+    String antArgs=Strings.nullToEmpty(conf.getAntArgs());
+    if (!(antArgs.isEmpty() || antArgs.endsWith(" "))) {
+      antArgs+=" ";
+    }
+    antArgs+="-" + ANT_ARG + Joiner.on(" -" + ANT_ARG).join(supplementalAntArgs);
+    conf.setAntArgs(antArgs);
+  }
+  ExecutionContextProvider executionContextProvider=null;
+  ExecutionContext executionContext=null;
+  int exitCode=0;
+  try {
+    executionContextProvider=executionContextConfiguration.getExecutionContextProvider();
+    executionContext=executionContextProvider.createExecutionContext();
+    PTest ptest=new PTest(conf,executionContext,buildTag,logDir,new LocalCommandFactory(LOG),new SSHCommandExecutor(LOG),new RSyncCommandExecutor(LOG),LOG);
+    exitCode=ptest.run();
+  }
+  finally {
+    if (executionContext != null) {
+      executionContext.terminate();
+    }
+    if (executionContextProvider != null) {
+      executionContextProvider.close();
+    }
+  }
+  System.exit(exitCode);
+}

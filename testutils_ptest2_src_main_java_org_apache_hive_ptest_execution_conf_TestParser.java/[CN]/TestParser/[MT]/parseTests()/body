@@ -1,0 +1,48 @@
+{
+  Splitter splitter=Splitter.on(" ").trimResults().omitEmptyStrings();
+  Context unitContext=new Context(context.getSubProperties(Joiner.on(".").join("unitTests","")));
+  Set<String> excluded=Sets.newHashSet(splitter.split(unitContext.getString("exclude","")));
+  Set<String> isolated=Sets.newHashSet(splitter.split(unitContext.getString("isolate","")));
+  Set<String> included=Sets.newHashSet(splitter.split(unitContext.getString("include","")));
+  if (!included.isEmpty() && !excluded.isEmpty()) {
+    throw new IllegalArgumentException(String.format("Included and excluded mutally exclusive." + " Included = %s, excluded = %s",included.toString(),excluded.toString()));
+  }
+  List<File> unitTestsDirs=Lists.newArrayList();
+  for (  String unitTestDir : Splitter.on(" ").omitEmptyStrings().split(checkNotNull(unitContext.getString("directories"),"directories"))) {
+    File unitTestParent=new File(sourceDirectory,unitTestDir);
+    if (unitTestParent.isDirectory()) {
+      unitTestsDirs.add(unitTestParent);
+    }
+ else {
+      logger.warn("Unit test directory " + unitTestParent + " does not exist.");
+    }
+  }
+  List<TestBatch> result=Lists.newArrayList();
+  for (  QFileTestBatch test : parseQFileTests()) {
+    result.add(test);
+    excluded.add(test.getDriver());
+  }
+  for (  File unitTestDir : unitTestsDirs) {
+    for (    File classFile : FileUtils.listFiles(unitTestDir,new String[]{"class"},true)) {
+      String className=classFile.getName();
+      logger.debug("In  " + unitTestDir + ", found "+ className);
+      if (className.startsWith("Test") && !className.contains("$")) {
+        String testName=className.replaceAll("\\.class$","");
+        if (excluded.contains(testName)) {
+          logger.info("Exlcuding unit test " + testName);
+        }
+ else         if (included.isEmpty() || included.contains(testName)) {
+          if (isolated.contains(testName)) {
+            logger.info("Executing isolated unit test " + testName);
+            result.add(new UnitTestBatch(testName,false));
+          }
+ else {
+            logger.info("Executing parallel unit test " + testName);
+            result.add(new UnitTestBatch(testName,true));
+          }
+        }
+      }
+    }
+  }
+  return result;
+}

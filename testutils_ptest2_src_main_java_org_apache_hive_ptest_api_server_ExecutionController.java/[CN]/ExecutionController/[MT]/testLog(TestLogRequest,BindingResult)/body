@@ -1,0 +1,39 @@
+{
+  String testHandle=logsRequest.getTestHandle();
+  Test testExecution=mTests.get(testHandle);
+  if (result.hasErrors() || Strings.emptyToNull(logsRequest.getTestHandle()).trim().isEmpty() || testExecution == null || logsRequest.getLength() > MAX_READ_SIZE) {
+    return new TestLogResponse(Status.illegalArgument());
+  }
+  File outputFile=testExecution.getOutputFile();
+  if (outputFile == null || logsRequest.getOffset() > outputFile.length()) {
+    return new TestLogResponse(Status.illegalArgument());
+  }
+  RandomAccessFile fileHandle=null;
+  try {
+    fileHandle=new RandomAccessFile(outputFile,"r");
+    long offset=logsRequest.getOffset();
+    fileHandle.seek(offset);
+    int readLength=0;
+    if (offset < fileHandle.length()) {
+      readLength=(int)Math.min(fileHandle.length() - offset,logsRequest.getLength());
+    }
+    byte[] buffer=new byte[readLength];
+    fileHandle.readFully(buffer);
+    offset+=readLength;
+    return new TestLogResponse(Status.ok(),offset,new String(buffer,Charsets.UTF_8));
+  }
+ catch (  IOException e) {
+    LOG.info("Unexpected IO error reading " + testExecution.getOutputFile(),e);
+    return new TestLogResponse(Status.internalError(e.getMessage()));
+  }
+ finally {
+    if (fileHandle != null) {
+      try {
+        fileHandle.close();
+      }
+ catch (      IOException e) {
+        LOG.warn("Error closing " + outputFile,e);
+      }
+    }
+  }
+}

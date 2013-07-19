@@ -1,0 +1,46 @@
+{
+  long start=System.currentTimeMillis();
+  for (  TestBatch batch : testBatchSupplier.get()) {
+    if (batch.isParallel()) {
+      parallelWorkQueue.add(batch);
+    }
+ else {
+      isolatedWorkQueue.add(batch);
+    }
+  }
+  try {
+    do {
+      double numberBadHosts=0d;
+      for (      HostExecutor hostExecutor : hostExecutors) {
+        if (hostExecutor.remainingDrones() == 0) {
+          numberBadHosts++;
+        }
+      }
+      Preconditions.checkState(hostExecutors.size() > 0,"Host executors cannot be empty");
+      if ((numberBadHosts / (double)hostExecutors.size()) > 0.30d) {
+        throw new IllegalStateException("Too many bad hosts: " + (int)numberBadHosts + " bad hosts out of "+ hostExecutors.size()+ " is greater than threshold of 30%");
+      }
+      List<ListenableFuture<Void>> results=Lists.newArrayList();
+      for (      HostExecutor hostExecutor : getHostExecutors()) {
+        results.add(hostExecutor.submitTests(parallelWorkQueue,isolatedWorkQueue,failedTestResults));
+      }
+      Futures.allAsList(results).get();
+    }
+ while (!(parallelWorkQueue.isEmpty() && isolatedWorkQueue.isEmpty()));
+    Preconditions.checkState(parallelWorkQueue.isEmpty(),"Parallel work queue is not empty. All drones must have aborted.");
+    Preconditions.checkState(isolatedWorkQueue.isEmpty(),"Isolated work queue is not empty. All drones must have aborted.");
+    if (!failedTestResults.isEmpty()) {
+      for (      TestBatch failure : failedTestResults) {
+        File batchLogDir=new File(failedLogDir,failure.getName());
+        JUnitReportParser parser=new JUnitReportParser(logger,batchLogDir);
+        for (        String failedTest : parser.getFailedTests()) {
+          failedTests.add(failedTest);
+        }
+      }
+    }
+  }
+  finally {
+    long elapsed=System.currentTimeMillis() - start;
+    logger.info("PERF: exec phase " + TimeUnit.MINUTES.convert(elapsed,TimeUnit.MILLISECONDS) + " minutes");
+  }
+}

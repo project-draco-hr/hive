@@ -1,0 +1,23 @@
+{
+  List<ListenableFuture<RSyncResult>> result=Lists.newArrayList();
+  for (  final Drone drone : ImmutableList.copyOf(mDrones)) {
+    final Map<String,String> templateVariables=Maps.newHashMap(mTemplateDefaults);
+    templateVariables.put("instanceName",drone.getInstanceName());
+    templateVariables.put("localDir",drone.getLocalDirectory());
+    result.add(mExecutor.submit(new Callable<RSyncResult>(){
+      @Override public RSyncResult call() throws Exception {
+        RSyncResult result=new RSyncCommand(mRSyncCommandExecutor,drone.getPrivateKey(),drone.getUser(),drone.getHost(),drone.getInstance(),Templates.getTemplateResult(localFile,templateVariables),Templates.getTemplateResult(remoteFile,templateVariables),RSyncCommand.Type.FROM_LOCAL).call();
+        if (result.getExitCode() != Constants.EXIT_CODE_SUCCESS) {
+          mDrones.remove(drone);
+          mLogger.error("Aborting drone during rsync",new AbortDroneException("Drone " + drone + " exited with "+ result.getExitCode()+ ": "+ result));
+          return null;
+        }
+ else {
+          return result;
+        }
+      }
+    }
+));
+  }
+  return result;
+}

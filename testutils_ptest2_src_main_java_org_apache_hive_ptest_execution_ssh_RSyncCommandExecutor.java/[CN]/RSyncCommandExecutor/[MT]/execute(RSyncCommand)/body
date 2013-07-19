@@ -1,0 +1,42 @@
+{
+  CollectPolicy collector=new CollectPolicy();
+  boolean release=false;
+  try {
+    mSemaphore.acquire();
+    release=true;
+    int attempts=0;
+    boolean retry;
+    LocalCommand cmd;
+    do {
+      retry=false;
+      if (command.getType() == RSyncCommand.Type.TO_LOCAL) {
+        cmd=new LocalCommand(mLogger,collector,String.format("rsync -qaPe \"ssh -i %s\" %s@%s:%s %s",command.getPrivateKey(),command.getUser(),command.getHost(),command.getRemoteFile(),command.getLocalFile()));
+      }
+ else       if (command.getType() == RSyncCommand.Type.FROM_LOCAL) {
+        cmd=new LocalCommand(mLogger,collector,String.format("rsync -qaPe \"ssh -i %s\" --delete --delete-during --force %s %s@%s:%s",command.getPrivateKey(),command.getLocalFile(),command.getUser(),command.getHost(),command.getRemoteFile()));
+      }
+ else {
+        throw new UnsupportedOperationException(String.valueOf(command.getType()));
+      }
+      if (attempts++ <= 3 && cmd.getExitCode() != 0) {
+        mLogger.warn("Command exited with " + cmd.getExitCode() + ", will retry: "+ command);
+        retry=true;
+        TimeUnit.SECONDS.sleep(20);
+      }
+    }
+ while (retry);
+    command.setExitCode(cmd.getExitCode());
+  }
+ catch (  IOException e) {
+    command.setException(e);
+  }
+catch (  InterruptedException e) {
+    command.setException(e);
+  }
+ finally {
+    if (release) {
+      mSemaphore.release();
+    }
+    command.setOutput(collector.getOutput());
+  }
+}
