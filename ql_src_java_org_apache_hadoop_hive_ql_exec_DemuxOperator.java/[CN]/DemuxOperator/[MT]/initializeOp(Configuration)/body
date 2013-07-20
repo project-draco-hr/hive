@@ -1,22 +1,19 @@
 {
-  this.newTagToOldTag=conf.getNewTagToOldTag();
-  this.newTagToChildIndex=conf.getNewTagToChildIndex();
-  this.newTagToDispatchHandler=new HashMap<Integer,Handler>();
-  this.childInputObjInspectors=new HashMap<Integer,ObjectInspector[]>();
-  for (  Entry<Integer,Integer> entry : newTagToOldTag.entrySet()) {
-    int newTag=entry.getKey();
-    int oldTag=entry.getValue();
-    int childIndex=newTagToChildIndex.get(newTag);
-    Handler handler=new Handler((byte)newTag,(byte)childIndex,(byte)oldTag,LOG,id);
-    newTagToDispatchHandler.put(newTag,handler);
-    int childParentsCount=conf.getChildIndexToOriginalNumParents().get(childIndex);
-    childInputObjInspectors.put(childIndex,new ObjectInspector[childParentsCount]);
+  if (childOperatorsArray.length == 0) {
+    throw new HiveException("Expected number of children is at least 1. Found : " + childOperatorsArray.length);
   }
+  newTagToOldTag=conf.getNewTagToOldTag();
+  newTagToChildIndex=conf.getNewTagToChildIndex();
+  childInputObjInspectors=new HashMap<Integer,ObjectInspector[]>();
+  cntrs=new long[newTagToOldTag.size()];
+  nextCntrs=new long[newTagToOldTag.size()];
   try {
     for (    Entry<Integer,Integer> e1 : newTagToOldTag.entrySet()) {
       int newTag=e1.getKey();
       int oldTag=e1.getValue();
       int childIndex=newTagToChildIndex.get(newTag);
+      cntrs[newTag]=0;
+      nextCntrs[newTag]=0;
       TableDesc keyTableDesc=conf.getKeysSerializeInfos().get(newTag);
       Deserializer inputKeyDeserializer=(SerDe)ReflectionUtils.newInstance(keyTableDesc.getDeserializerClass(),null);
       inputKeyDeserializer.initialize(null,keyTableDesc.getProperties());
@@ -26,9 +23,12 @@
       List<ObjectInspector> oi=new ArrayList<ObjectInspector>();
       oi.add(inputKeyDeserializer.getObjectInspector());
       oi.add(inputValueDeserializer.getObjectInspector());
-      oi.add(PrimitiveObjectInspectorFactory.writableByteObjectInspector);
+      int childParentsCount=conf.getChildIndexToOriginalNumParents().get(childIndex);
+      if (!childInputObjInspectors.containsKey(childIndex)) {
+        childInputObjInspectors.put(childIndex,new ObjectInspector[childParentsCount]);
+      }
       ObjectInspector[] ois=childInputObjInspectors.get(childIndex);
-      ois[oldTag]=ObjectInspectorFactory.getStandardStructObjectInspector(Utilities.fieldNameList,oi);
+      ois[oldTag]=ObjectInspectorFactory.getStandardStructObjectInspector(Utilities.reduceFieldNameList,oi);
     }
   }
  catch (  Exception e) {
