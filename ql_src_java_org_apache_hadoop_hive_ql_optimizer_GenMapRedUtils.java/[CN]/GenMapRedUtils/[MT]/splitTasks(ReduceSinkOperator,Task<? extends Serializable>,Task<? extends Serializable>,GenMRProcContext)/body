@@ -1,0 +1,58 @@
+{
+  if (op.getNumParent() != 1) {
+    throw new IllegalStateException("Expecting operator " + op + " to have one parent. "+ "But found multiple parents : "+ op.getParentOperators());
+  }
+  ParseContext parseCtx=opProcCtx.getParseCtx();
+  parentTask.addDependentTask(childTask);
+  List<Task<? extends Serializable>> rootTasks=opProcCtx.getRootTasks();
+  if (rootTasks.contains(childTask)) {
+    rootTasks.remove(childTask);
+  }
+  Context baseCtx=parseCtx.getContext();
+  String taskTmpDir=baseCtx.getMRTmpFileURI();
+  Operator<? extends OperatorDesc> parent=op.getParentOperators().get(0);
+  TableDesc tt_desc=PlanUtils.getIntermediateFileTableDesc(PlanUtils.getFieldSchemasFromRowSchema(parent.getSchema(),"temporarycol"));
+  boolean compressIntermediate=parseCtx.getConf().getBoolVar(HiveConf.ConfVars.COMPRESSINTERMEDIATE);
+  FileSinkDesc desc=new FileSinkDesc(taskTmpDir,tt_desc,compressIntermediate);
+  if (compressIntermediate) {
+    desc.setCompressCodec(parseCtx.getConf().getVar(HiveConf.ConfVars.COMPRESSINTERMEDIATECODEC));
+    desc.setCompressType(parseCtx.getConf().getVar(HiveConf.ConfVars.COMPRESSINTERMEDIATETYPE));
+  }
+  Operator<? extends OperatorDesc> fs_op=putOpInsertMap(OperatorFactory.get(desc,parent.getSchema()),null,parseCtx);
+  List<Operator<? extends OperatorDesc>> childOpList=parent.getChildOperators();
+  for (int pos=0; pos < childOpList.size(); pos++) {
+    if (childOpList.get(pos) == op) {
+      childOpList.set(pos,fs_op);
+      break;
+    }
+  }
+  List<Operator<? extends OperatorDesc>> parentOpList=new ArrayList<Operator<? extends OperatorDesc>>();
+  parentOpList.add(parent);
+  fs_op.setParentOperators(parentOpList);
+  RowResolver rowResolver=opProcCtx.getParseCtx().getOpParseCtx().get(parent).getRowResolver();
+  Operator<? extends OperatorDesc> ts_op=putOpInsertMap(OperatorFactory.get(TableScanDesc.class,parent.getSchema()),rowResolver,parseCtx);
+  childOpList=new ArrayList<Operator<? extends OperatorDesc>>();
+  childOpList.add(op);
+  ts_op.setChildOperators(childOpList);
+  op.getParentOperators().set(0,ts_op);
+  Map<Operator<? extends OperatorDesc>,GenMapRedCtx> mapCurrCtx=opProcCtx.getMapCurrCtx();
+  mapCurrCtx.put(ts_op,new GenMapRedCtx(childTask,null));
+  String streamDesc=taskTmpDir;
+  MapredWork cplan=(MapredWork)childTask.getWork();
+  Operator<? extends OperatorDesc> reducer=op.getChildOperators().get(0);
+  if (needsTagging(reducer)) {
+    String origStreamDesc;
+    streamDesc="$INTNAME";
+    origStreamDesc=streamDesc;
+    int pos=0;
+    while (cplan.getAliasToWork().get(streamDesc) != null) {
+      streamDesc=origStreamDesc.concat(String.valueOf(++pos));
+    }
+    cplan.setNeedsTagging(true);
+  }
+  setTaskPlan(taskTmpDir,streamDesc,ts_op,cplan,false,tt_desc);
+  opProcCtx.setCurrTopOp(null);
+  opProcCtx.setCurrAliasId(null);
+  opProcCtx.setCurrTask(childTask);
+  opProcCtx.addRootIfPossible(parentTask);
+}
