@@ -1,0 +1,57 @@
+{
+  if (childOperatorsArray.length == 0) {
+    throw new HiveException("Expected number of children is at least 1. Found : " + childOperatorsArray.length);
+  }
+  newTagToOldTag=conf.getNewTagToOldTag();
+  newTagToChildIndex=conf.getNewTagToChildIndex();
+  childInputObjInspectors=new HashMap<Integer,ObjectInspector[]>();
+  cntrs=new long[newTagToOldTag.size()];
+  nextCntrs=new long[newTagToOldTag.size()];
+  try {
+    for (    Entry<Integer,Integer> e1 : newTagToOldTag.entrySet()) {
+      int newTag=e1.getKey();
+      int oldTag=e1.getValue();
+      int childIndex=newTagToChildIndex.get(newTag);
+      cntrs[newTag]=0;
+      nextCntrs[newTag]=0;
+      TableDesc keyTableDesc=conf.getKeysSerializeInfos().get(newTag);
+      Deserializer inputKeyDeserializer=(SerDe)ReflectionUtils.newInstance(keyTableDesc.getDeserializerClass(),null);
+      inputKeyDeserializer.initialize(null,keyTableDesc.getProperties());
+      TableDesc valueTableDesc=conf.getValuesSerializeInfos().get(newTag);
+      Deserializer inputValueDeserializer=(SerDe)ReflectionUtils.newInstance(valueTableDesc.getDeserializerClass(),null);
+      inputValueDeserializer.initialize(null,valueTableDesc.getProperties());
+      List<ObjectInspector> oi=new ArrayList<ObjectInspector>();
+      oi.add(inputKeyDeserializer.getObjectInspector());
+      oi.add(inputValueDeserializer.getObjectInspector());
+      int childParentsCount=conf.getChildIndexToOriginalNumParents().get(childIndex);
+      if (!childInputObjInspectors.containsKey(childIndex)) {
+        childInputObjInspectors.put(childIndex,new ObjectInspector[childParentsCount]);
+      }
+      ObjectInspector[] ois=childInputObjInspectors.get(childIndex);
+      ois[oldTag]=ObjectInspectorFactory.getStandardStructObjectInspector(Utilities.reduceFieldNameList,oi);
+    }
+  }
+ catch (  Exception e) {
+    throw new RuntimeException(e);
+  }
+  this.childrenDone=0;
+  newChildOperatorsTag=new ArrayList<List<Integer>>();
+  for (  Operator<? extends OperatorDesc> child : childOperators) {
+    List<Integer> childOperatorTags=new ArrayList<Integer>();
+    if (child instanceof MuxOperator) {
+      int index=0;
+      for (      Operator<? extends OperatorDesc> parent : child.getParentOperators()) {
+        if (this == parent) {
+          childOperatorTags.add(index);
+        }
+        index++;
+      }
+    }
+ else {
+      childOperatorTags.add(child.getParentOperators().indexOf(this));
+    }
+    newChildOperatorsTag.add(childOperatorTags);
+  }
+  LOG.info("newChildOperatorsTag " + newChildOperatorsTag);
+  initializeChildren(hconf);
+}

@@ -1,0 +1,30 @@
+{
+  testHandle=Strings.nullToEmpty(testHandle).trim();
+  if (testHandle.isEmpty()) {
+    throw new IllegalArgumentException("TestHandle is required");
+  }
+  TestStatusRequest statusRequest=new TestStatusRequest(testHandle);
+  TestStatusResponse statusResponse;
+  do {
+    TimeUnit.SECONDS.sleep(5);
+    statusResponse=post(statusRequest);
+  }
+ while (Status.isPending(statusResponse.getTestStatus().getStatus()));
+  long offset=0;
+  do {
+    long length=statusResponse.getTestStatus().getLogFileLength();
+    if (length > offset) {
+      offset=printLogs(testHandle,offset);
+    }
+ else {
+      TimeUnit.SECONDS.sleep(5);
+    }
+    statusResponse=post(statusRequest);
+  }
+ while (Status.isInProgress(statusResponse.getTestStatus().getStatus()));
+  while (offset < statusResponse.getTestStatus().getLogFileLength()) {
+    offset=printLogs(testHandle,offset);
+  }
+  Status.assertOKOrFailed(statusResponse.getTestStatus().getStatus());
+  return Status.isOK(statusResponse.getTestStatus().getStatus());
+}

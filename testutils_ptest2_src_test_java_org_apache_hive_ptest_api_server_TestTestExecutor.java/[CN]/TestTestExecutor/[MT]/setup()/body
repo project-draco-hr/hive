@@ -1,0 +1,31 @@
+{
+  startRequest=new TestStartRequest();
+  startRequest.setProfile(PROFILE);
+  startRequest.setTestHandle(TEST_HANDLE);
+  test=new Test(startRequest,Status.pending(),System.currentTimeMillis());
+  testQueue=new ArrayBlockingQueue<Test>(1);
+  executionContextConfiguration=mock(ExecutionContextConfiguration.class);
+  executionContextProvider=mock(ExecutionContextProvider.class);
+  ptest=mock(PTest.class);
+  Set<Host> hosts=Sets.newHashSet();
+  String baseDirPath=baseDir.getRoot().getAbsolutePath();
+  executionContext=new ExecutionContext(executionContextProvider,hosts,baseDirPath,PRIVATE_KEY);
+  profileProperties=new File(baseDirPath,PROFILE + ".properties");
+  when(executionContextConfiguration.getProfileDirectory()).thenReturn(baseDirPath);
+  when(executionContextConfiguration.getGlobalLogDirectory()).thenReturn(baseDirPath);
+  when(executionContextProvider.createExecutionContext()).thenReturn(executionContext);
+  Assert.assertTrue(profileProperties.toString(),profileProperties.createNewFile());
+  OutputStream profilePropertiesOutputStream=new FileOutputStream(profileProperties);
+  Resources.copy(Resources.getResource("test-configuration.properties"),profilePropertiesOutputStream);
+  profilePropertiesOutputStream.close();
+  ptestBuilder=new PTest.Builder(){
+    @Override public PTest build(    TestConfiguration configuration,    ExecutionContext executionContext,    String buildTag,    File logDir,    LocalCommandFactory localCommandFactory,    SSHCommandExecutor sshCommandExecutor,    RSyncCommandExecutor rsyncCommandExecutor,    Logger logger) throws Exception {
+      return ptest;
+    }
+  }
+;
+  testExecutor=new TestExecutor(executionContextConfiguration,executionContextProvider,testQueue,ptestBuilder);
+  testExecutor.setDaemon(true);
+  testExecutor.start();
+  TimeUnit.MILLISECONDS.sleep(100);
+}

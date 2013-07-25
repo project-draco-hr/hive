@@ -1,0 +1,26 @@
+{
+  CollectPolicy collector=new CollectPolicy();
+  try {
+    String commandText=String.format("ssh -v -i %s -l %s %s '%s'",command.getPrivateKey(),command.getUser(),command.getHost(),command.getCommand());
+    int attempts=0;
+    boolean retry;
+    LocalCommand cmd;
+    do {
+      retry=false;
+      cmd=new LocalCommand(mLogger,collector,commandText);
+      if (attempts++ <= 3 && cmd.getExitCode() == Constants.EXIT_CODE_UNKNOWN) {
+        mLogger.warn("Command exited with " + cmd.getExitCode() + ", will retry: "+ command);
+        retry=true;
+        TimeUnit.SECONDS.sleep(20);
+      }
+    }
+ while (retry);
+    command.setExitCode(cmd.getExitCode());
+  }
+ catch (  Exception e) {
+    command.setException(e);
+  }
+ finally {
+    command.setOutput(collector.getOutput());
+  }
+}

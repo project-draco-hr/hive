@@ -1,0 +1,54 @@
+{
+  rowObjectInspector=new ObjectInspector[Byte.MAX_VALUE];
+  ObjectInspector[] valueObjectInspector=new ObjectInspector[Byte.MAX_VALUE];
+  ObjectInspector keyObjectInspector;
+  memoryMXBean=ManagementFactory.getMemoryMXBean();
+  l4j.info("maximum memory = " + memoryMXBean.getHeapMemoryUsage().getMax());
+  isLogInfoEnabled=l4j.isInfoEnabled();
+  try {
+    l4j.info("conf classpath = " + Arrays.asList(((URLClassLoader)job.getClassLoader()).getURLs()));
+    l4j.info("thread classpath = " + Arrays.asList(((URLClassLoader)Thread.currentThread().getContextClassLoader()).getURLs()));
+  }
+ catch (  Exception e) {
+    l4j.info("cannot get classpath: " + e.getMessage());
+  }
+  jc=job;
+  MapredWork gWork=Utilities.getMapRedWork(job);
+  reducer=gWork.getReducer();
+  reducer.setParentOperators(null);
+  isTagged=gWork.getNeedsTagging();
+  try {
+    keyTableDesc=gWork.getKeyDesc();
+    inputKeyDeserializer=(SerDe)ReflectionUtils.newInstance(keyTableDesc.getDeserializerClass(),null);
+    inputKeyDeserializer.initialize(null,keyTableDesc.getProperties());
+    keyObjectInspector=inputKeyDeserializer.getObjectInspector();
+    valueTableDesc=new TableDesc[gWork.getTagToValueDesc().size()];
+    for (int tag=0; tag < gWork.getTagToValueDesc().size(); tag++) {
+      valueTableDesc[tag]=gWork.getTagToValueDesc().get(tag);
+      inputValueDeserializer[tag]=(SerDe)ReflectionUtils.newInstance(valueTableDesc[tag].getDeserializerClass(),null);
+      inputValueDeserializer[tag].initialize(null,valueTableDesc[tag].getProperties());
+      valueObjectInspector[tag]=inputValueDeserializer[tag].getObjectInspector();
+      ArrayList<ObjectInspector> ois=new ArrayList<ObjectInspector>();
+      ois.add(keyObjectInspector);
+      ois.add(valueObjectInspector[tag]);
+      rowObjectInspector[tag]=ObjectInspectorFactory.getStandardStructObjectInspector(Utilities.reduceFieldNameList,ois);
+    }
+  }
+ catch (  Exception e) {
+    throw new RuntimeException(e);
+  }
+  MapredContext.init(false,new JobConf(jc));
+  try {
+    l4j.info(reducer.dump(0));
+    reducer.initialize(jc,rowObjectInspector);
+  }
+ catch (  Throwable e) {
+    abort=true;
+    if (e instanceof OutOfMemoryError) {
+      throw (OutOfMemoryError)e;
+    }
+ else {
+      throw new RuntimeException("Reduce operator initialization failed",e);
+    }
+  }
+}
