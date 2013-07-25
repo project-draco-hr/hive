@@ -1,6 +1,8 @@
 {
   long start=System.currentTimeMillis();
+  List<TestBatch> testBatches=Lists.newArrayList();
   for (  TestBatch batch : testBatchSupplier.get()) {
+    testBatches.add(batch);
     if (batch.isParallel()) {
       parallelWorkQueue.add(batch);
     }
@@ -10,15 +12,16 @@
   }
   try {
     do {
-      double numberBadHosts=0d;
+      float numberBadHosts=0f;
       for (      HostExecutor hostExecutor : hostExecutors) {
         if (hostExecutor.remainingDrones() == 0) {
           numberBadHosts++;
         }
       }
       Preconditions.checkState(hostExecutors.size() > 0,"Host executors cannot be empty");
-      if ((numberBadHosts / (double)hostExecutors.size()) > 0.30d) {
-        throw new IllegalStateException("Too many bad hosts: " + (int)numberBadHosts + " bad hosts out of "+ hostExecutors.size()+ " is greater than threshold of 30%");
+      float percentBadHosts=numberBadHosts / (float)hostExecutors.size();
+      if (percentBadHosts > 0.50f) {
+        throw new IllegalStateException("Too many bad hosts: " + percentBadHosts + "% ("+ (int)numberBadHosts+ " / "+ hostExecutors.size()+ ") is greater than threshold of 50%");
       }
       List<ListenableFuture<Void>> results=Lists.newArrayList();
       for (      HostExecutor hostExecutor : getHostExecutors()) {
@@ -29,14 +32,17 @@
  while (!(parallelWorkQueue.isEmpty() && isolatedWorkQueue.isEmpty()));
     Preconditions.checkState(parallelWorkQueue.isEmpty(),"Parallel work queue is not empty. All drones must have aborted.");
     Preconditions.checkState(isolatedWorkQueue.isEmpty(),"Isolated work queue is not empty. All drones must have aborted.");
-    if (!failedTestResults.isEmpty()) {
-      for (      TestBatch failure : failedTestResults) {
-        File batchLogDir=new File(failedLogDir,failure.getName());
-        JUnitReportParser parser=new JUnitReportParser(logger,batchLogDir);
-        for (        String failedTest : parser.getFailedTests()) {
-          failedTests.add(failedTest);
-        }
+    for (    TestBatch batch : testBatches) {
+      File batchLogDir;
+      if (failedTestResults.contains(batch)) {
+        batchLogDir=new File(failedLogDir,batch.getName());
       }
+ else {
+        batchLogDir=new File(succeededLogDir,batch.getName());
+      }
+      JUnitReportParser parser=new JUnitReportParser(logger,batchLogDir);
+      executedTests.addAll(parser.getExecutedTests());
+      failedTests.addAll(parser.getFailedTests());
     }
   }
   finally {
