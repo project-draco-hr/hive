@@ -57,11 +57,18 @@
     return;
   }
   Operator<? extends Serializable> parentFOp=fop.getParentOperators().get(0);
-  parentFOp.getChildOperators().remove(fop);
-  parentFOp.getChildOperators().add(childAliasOp);
-  List<Operator<? extends OperatorDesc>> parentOps=new ArrayList<Operator<? extends OperatorDesc>>();
-  parentOps.add(parentFOp);
-  childAliasOp.setParentOperators(parentOps);
+  if (childAliasOp instanceof TableScanOperator) {
+    TableScanOperator tso=(TableScanOperator)childAliasOp;
+    if (tso.getNumChild() != 1) {
+      return;
+    }
+    childAliasOp=tso.getChildOperators().get(0);
+    childAliasOp.replaceParent(tso,parentFOp);
+  }
+ else {
+    childAliasOp.setParentOperators(Utilities.makeList(parentFOp));
+  }
+  parentFOp.replaceChild(fop,childAliasOp);
   work.getAliasToPartnInfo().putAll(childWork.getAliasToPartnInfo());
   for (  Map.Entry<String,PartitionDesc> childWorkEntry : childWork.getPathToPartitionInfo().entrySet()) {
     if (childWork.getAliasToPartnInfo().containsValue(childWorkEntry.getKey())) {
