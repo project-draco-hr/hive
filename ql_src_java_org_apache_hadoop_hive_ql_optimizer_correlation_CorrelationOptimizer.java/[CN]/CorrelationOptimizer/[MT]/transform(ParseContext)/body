@@ -1,0 +1,28 @@
+{
+  pCtx=pctx;
+  if (HiveConf.getBoolVar(pCtx.getConf(),HiveConf.ConfVars.HIVECONVERTJOIN)) {
+    findPossibleAutoConvertedJoinOperators();
+  }
+  CorrelationNodeProcCtx corrCtx=new CorrelationNodeProcCtx(pCtx);
+  Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
+  opRules.put(new RuleRegExp("R1",ReduceSinkOperator.getOperatorName() + "%"),new CorrelationNodeProc());
+  Dispatcher disp=new DefaultRuleDispatcher(getDefaultProc(),opRules,corrCtx);
+  GraphWalker ogw=new DefaultGraphWalker(disp);
+  List<Node> topNodes=new ArrayList<Node>();
+  topNodes.addAll(pCtx.getTopOps().values());
+  ogw.startWalking(topNodes,null);
+  abort=corrCtx.isAbort();
+  if (abort) {
+    LOG.info("Abort. Reasons are ...");
+    for (    String reason : corrCtx.getAbortReasons()) {
+      LOG.info("-- " + reason);
+    }
+  }
+ else {
+    LOG.info("Begain query plan transformation based on intra-query correlations. " + corrCtx.getCorrelations().size() + " correlation(s) to be applied");
+    for (    IntraQueryCorrelation correlation : corrCtx.getCorrelations()) {
+      QueryPlanTreeTransformation.applyCorrelation(pCtx,corrCtx,correlation);
+    }
+  }
+  return pCtx;
+}

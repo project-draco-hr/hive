@@ -3,7 +3,7 @@
   String inputFileName=TEST_DATA_DIR + "/testConvertBooleanToInt/data.txt";
   File inputDataDir=new File(inputFileName).getParentFile();
   inputDataDir.mkdir();
-  String[] lines=new String[]{"llama\t1","alpaca\t0"};
+  String[] lines=new String[]{"llama\ttrue","alpaca\tfalse"};
   HcatTestUtils.createTestDataFile(inputFileName,lines);
   assertEquals(0,driver.run("drop table if exists " + tbl).getResponseCode());
   assertEquals(0,driver.run("create external table " + tbl + " (a string, b boolean) row format delimited fields terminated by '\t'"+ " stored as textfile location 'file://"+ inputDataDir.getAbsolutePath()+ "'").getResponseCode());
@@ -16,7 +16,12 @@
   assertEquals("a",schema.getField(0).alias);
   assertEquals(DataType.CHARARRAY,schema.getField(0).type);
   assertEquals("b",schema.getField(1).alias);
-  assertEquals(DataType.INTEGER,schema.getField(1).type);
+  if (PigHCatUtil.pigHasBooleanSupport()) {
+    assertEquals(DataType.BOOLEAN,schema.getField(1).type);
+  }
+ else {
+    assertEquals(DataType.INTEGER,schema.getField(1).type);
+  }
   Iterator<Tuple> iterator=server.openIterator("data");
   Tuple t=iterator.next();
   assertEquals("llama",t.get(0));

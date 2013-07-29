@@ -1,0 +1,45 @@
+{
+  final MetricsScope fooScope=Metrics.startScope(scopeName);
+  expectIOE(new Callable<Void>(){
+    @Override public Void call() throws Exception {
+      fooScope.open();
+      return null;
+    }
+  }
+);
+  assertSame(fooScope,Metrics.getScope(scopeName));
+  Thread.sleep(periodMs + 1);
+  Metrics.endScope(scopeName);
+  assertTrue(fooScope.getNumCounter().longValue() >= 1);
+  final long t1=fooScope.getTimeCounter().longValue();
+  assertTrue(t1 > periodMs);
+  expectIOE(new Callable<Void>(){
+    @Override public Void call() throws Exception {
+      Metrics.endScope(scopeName);
+      return null;
+    }
+  }
+);
+  assertSame(fooScope,Metrics.getScope(scopeName));
+  Metrics.startScope(scopeName);
+  assertTrue(fooScope.getNumCounter().longValue() >= 1);
+  assertTrue(fooScope.getTimeCounter().longValue() >= t1);
+  expectIOE(new Callable<Void>(){
+    @Override public Void call() throws Exception {
+      Metrics.startScope(scopeName);
+      return null;
+    }
+  }
+);
+  assertSame(fooScope,Metrics.getScope(scopeName));
+  Thread.sleep(periodMs + 1);
+  fooScope.reopen();
+  assertTrue(fooScope.getNumCounter().longValue() >= 2);
+  assertTrue(fooScope.getTimeCounter().longValue() > 2 * periodMs);
+  Thread.sleep(periodMs + 1);
+  fooScope.close();
+  assertTrue(fooScope.getNumCounter().longValue() >= 3);
+  assertTrue(fooScope.getTimeCounter().longValue() > 3 * periodMs);
+  Double avgT=(Double)Metrics.get("foo.avg_t");
+  assertTrue(avgT.doubleValue() > periodMs);
+}

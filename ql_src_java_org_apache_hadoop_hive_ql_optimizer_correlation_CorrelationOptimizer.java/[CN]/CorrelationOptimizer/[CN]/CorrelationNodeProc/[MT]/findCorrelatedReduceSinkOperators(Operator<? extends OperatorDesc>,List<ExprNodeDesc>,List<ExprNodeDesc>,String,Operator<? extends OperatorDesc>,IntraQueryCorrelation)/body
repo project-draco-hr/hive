@@ -1,0 +1,114 @@
+{
+  LOG.info("now detecting operator " + current.getIdentifier() + " "+ current.getName());
+  LinkedHashSet<ReduceSinkOperator> correlatedReduceSinkOperators=new LinkedHashSet<ReduceSinkOperator>();
+  if (skipedJoinOperators.contains(current)) {
+    LOG.info(current.getName() + " " + current.getIdentifier()+ " may be converted to MapJoin by "+ "CommonJoinResolver. Correlation optimizer will not detect correlations"+ "involved in this operator");
+    return correlatedReduceSinkOperators;
+  }
+  if (current.getParentOperators() == null) {
+    return correlatedReduceSinkOperators;
+  }
+  if (current instanceof PTFOperator) {
+    LOG.info("Currently, correlation optimizer does not support PTF operator.");
+    return correlatedReduceSinkOperators;
+  }
+  if (current instanceof UnionOperator) {
+    LinkedHashSet<ReduceSinkOperator> corrRSs=new LinkedHashSet<ReduceSinkOperator>();
+    for (    Operator<? extends OperatorDesc> parent : current.getParentOperators()) {
+      LinkedHashSet<ReduceSinkOperator> tmp=findCorrelatedReduceSinkOperators(current,childKeyCols,childPartitionCols,childRSOrder,parent,correlation);
+      if (tmp != null && tmp.size() > 0) {
+        corrRSs.addAll(tmp);
+      }
+ else {
+        return correlatedReduceSinkOperators;
+      }
+    }
+    correlatedReduceSinkOperators.addAll(corrRSs);
+    UnionOperator union=(UnionOperator)current;
+    union.getConf().setAllInputsInSameReducer(true);
+  }
+ else   if (current.getColumnExprMap() == null && !(current instanceof ReduceSinkOperator)) {
+    for (    Operator<? extends OperatorDesc> parent : current.getParentOperators()) {
+      correlatedReduceSinkOperators.addAll(findCorrelatedReduceSinkOperators(current,childKeyCols,childPartitionCols,childRSOrder,parent,correlation));
+    }
+  }
+ else   if (current.getColumnExprMap() != null && !(current instanceof ReduceSinkOperator)) {
+    List<ExprNodeDesc> backtrackedKeyCols=ExprNodeDescUtils.backtrack(childKeyCols,child,current);
+    List<ExprNodeDesc> backtrackedPartitionCols=ExprNodeDescUtils.backtrack(childPartitionCols,child,current);
+    Set<String> tableNeedToCheck=new HashSet<String>();
+    for (    ExprNodeDesc expr : childKeyCols) {
+      if (!(expr instanceof ExprNodeColumnDesc)) {
+        return correlatedReduceSinkOperators;
+      }
+ else {
+        String colName=((ExprNodeColumnDesc)expr).getColumn();
+        OpParseContext opCtx=pCtx.getOpParseCtx().get(current);
+        for (        ColumnInfo cinfo : opCtx.getRowResolver().getColumnInfos()) {
+          if (colName.equals(cinfo.getInternalName())) {
+            tableNeedToCheck.add(cinfo.getTabAlias());
+          }
+        }
+      }
+    }
+    if (current instanceof JoinOperator) {
+      LinkedHashSet<ReduceSinkOperator> correlatedRsOps=new LinkedHashSet<ReduceSinkOperator>();
+      for (      Operator<? extends OperatorDesc> parent : current.getParentOperators()) {
+        Set<String> tableNames=pCtx.getOpParseCtx().get(parent).getRowResolver().getTableNames();
+        for (        String tbl : tableNames) {
+          if (tableNeedToCheck.contains(tbl)) {
+            correlatedRsOps.addAll(findCorrelatedReduceSinkOperators(current,backtrackedKeyCols,backtrackedPartitionCols,childRSOrder,parent,correlation));
+          }
+        }
+      }
+      if (correlatedRsOps.size() == current.getParentOperators().size()) {
+        correlatedReduceSinkOperators.addAll(correlatedRsOps);
+      }
+ else {
+        correlatedReduceSinkOperators.clear();
+      }
+    }
+ else {
+      for (      Operator<? extends OperatorDesc> parent : current.getParentOperators()) {
+        correlatedReduceSinkOperators.addAll(findCorrelatedReduceSinkOperators(current,backtrackedKeyCols,backtrackedPartitionCols,childRSOrder,parent,correlation));
+      }
+    }
+  }
+ else   if (current.getColumnExprMap() != null && current instanceof ReduceSinkOperator) {
+    ReduceSinkOperator rsop=(ReduceSinkOperator)current;
+    List<ExprNodeDesc> backtrackedKeyCols=ExprNodeDescUtils.backtrack(childKeyCols,child,current);
+    List<ExprNodeDesc> backtrackedPartitionCols=ExprNodeDescUtils.backtrack(childPartitionCols,child,current);
+    List<ExprNodeDesc> rsKeyCols=rsop.getConf().getKeyCols();
+    List<ExprNodeDesc> rsPartitionCols=rsop.getConf().getPartitionCols();
+    boolean isCorrelated=sameKeys(rsKeyCols,backtrackedKeyCols) && sameOrder(rsop.getConf().getOrder(),childRSOrder) && sameKeys(backtrackedPartitionCols,rsPartitionCols)&& correlation.adjustNumReducers(rsop.getConf().getNumReducers());
+    GroupByOperator cGBY=CorrelationUtilities.getSingleChild(rsop,GroupByOperator.class);
+    if (cGBY != null) {
+      if (CorrelationUtilities.hasGroupingSet(rsop) || cGBY.getConf().isGroupingSetsPresent()) {
+        isCorrelated=false;
+      }
+    }
+    if (isCorrelated) {
+      LOG.info("Operator " + current.getIdentifier() + " "+ current.getName()+ " is correlated");
+      Operator<? extends OperatorDesc> childOperator=CorrelationUtilities.getSingleChild(current,true);
+      if (childOperator instanceof JoinOperator) {
+        JoinOperator joinOp=(JoinOperator)childOperator;
+        JoinCondDesc[] joinConds=joinOp.getConf().getConds();
+        List<Operator<? extends OperatorDesc>> rsOps=joinOp.getParentOperators();
+        LinkedHashSet<ReduceSinkOperator> correlatedRsOps=new LinkedHashSet<ReduceSinkOperator>();
+        analyzeReduceSinkOperatorsOfJoinOperator(joinConds,rsOps,current,correlatedRsOps);
+        correlatedReduceSinkOperators.addAll(correlatedRsOps);
+      }
+ else {
+        correlatedReduceSinkOperators.add(rsop);
+      }
+    }
+ else {
+      LOG.info("Operator " + current.getIdentifier() + " "+ current.getName()+ " is not correlated");
+      correlatedReduceSinkOperators.clear();
+    }
+  }
+ else {
+    LOG.error("ReduceSinkOperator " + current.getIdentifier() + " does not have ColumnExprMap");
+    throw new SemanticException("CorrelationOptimizer cannot optimize this plan. " + "ReduceSinkOperator " + current.getIdentifier() + " does not have ColumnExprMap");
+  }
+  return correlatedReduceSinkOperators;
+}

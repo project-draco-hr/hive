@@ -9,36 +9,27 @@
     if (tbl == null) {
       FileSystem fs=resFile.getFileSystem(conf);
       outStream=fs.create(resFile);
-      String errMsg="Table " + tableName + " does not exist";
-      formatter.error(outStream,errMsg,formatter.MISSING);
-      ((FSDataOutputStream)outStream).close();
+      outStream.close();
       outStream=null;
-      return 0;
+      throw new HiveException(ErrorMsg.INVALID_TABLE,tableName);
     }
     if (descTbl.getPartSpec() != null) {
       part=db.getPartition(tbl,descTbl.getPartSpec(),false);
       if (part == null) {
         FileSystem fs=resFile.getFileSystem(conf);
         outStream=fs.create(resFile);
-        String errMsg="Partition " + descTbl.getPartSpec() + " for table "+ tableName+ " does not exist";
-        formatter.error(outStream,errMsg,formatter.MISSING);
-        ((FSDataOutputStream)outStream).close();
+        outStream.close();
         outStream=null;
-        return 0;
+        throw new HiveException(ErrorMsg.INVALID_PARTITION,StringUtils.join(descTbl.getPartSpec().keySet(),','),tableName);
       }
       tbl=part.getTable();
     }
   }
- catch (  FileNotFoundException e) {
-    formatter.logInfo(outStream,"describe table: " + stringifyException(e),formatter.ERROR);
-    return 1;
-  }
-catch (  IOException e) {
-    formatter.logInfo(outStream,"describe table: " + stringifyException(e),formatter.ERROR);
-    return 1;
+ catch (  IOException e) {
+    throw new HiveException(e,ErrorMsg.GENERIC_ERROR,tableName);
   }
  finally {
-    IOUtils.closeStream((FSDataOutputStream)outStream);
+    IOUtils.closeStream(outStream);
   }
   try {
     LOG.info("DDLTask: got data for " + tbl.getTableName());
@@ -59,22 +50,14 @@ catch (  IOException e) {
     }
     formatter.describeTable(outStream,colPath,tableName,tbl,part,cols,descTbl.isFormatted(),descTbl.isExt(),descTbl.isPretty());
     LOG.info("DDLTask: written data for " + tbl.getTableName());
-    ((FSDataOutputStream)outStream).close();
+    outStream.close();
     outStream=null;
   }
- catch (  FileNotFoundException e) {
-    formatter.logInfo(outStream,"describe table: " + stringifyException(e),formatter.ERROR);
-    return 1;
-  }
-catch (  IOException e) {
-    formatter.logInfo(outStream,"describe table: " + stringifyException(e),formatter.ERROR);
-    return 1;
-  }
-catch (  Exception e) {
-    throw new HiveException(e);
+ catch (  IOException e) {
+    throw new HiveException(e,ErrorMsg.GENERIC_ERROR,tableName);
   }
  finally {
-    IOUtils.closeStream((FSDataOutputStream)outStream);
+    IOUtils.closeStream(outStream);
   }
   return 0;
 }

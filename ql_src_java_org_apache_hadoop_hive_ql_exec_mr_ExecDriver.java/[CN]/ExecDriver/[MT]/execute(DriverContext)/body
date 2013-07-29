@@ -1,0 +1,218 @@
+{
+  IOPrepareCache ioPrepareCache=IOPrepareCache.get();
+  ioPrepareCache.clear();
+  boolean success=true;
+  Context ctx=driverContext.getCtx();
+  boolean ctxCreated=false;
+  String emptyScratchDirStr;
+  Path emptyScratchDir;
+  MapWork mWork=work.getMapWork();
+  ReduceWork rWork=work.getReduceWork();
+  try {
+    if (ctx == null) {
+      ctx=new Context(job);
+      ctxCreated=true;
+    }
+    emptyScratchDirStr=ctx.getMRTmpFileURI();
+    emptyScratchDir=new Path(emptyScratchDirStr);
+    FileSystem fs=emptyScratchDir.getFileSystem(job);
+    fs.mkdirs(emptyScratchDir);
+  }
+ catch (  IOException e) {
+    e.printStackTrace();
+    console.printError("Error launching map-reduce job","\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
+    return 5;
+  }
+  ShimLoader.getHadoopShims().prepareJobOutput(job);
+  job.setOutputFormat(HiveOutputFormatImpl.class);
+  job.setMapperClass(ExecMapper.class);
+  job.setMapOutputKeyClass(HiveKey.class);
+  job.setMapOutputValueClass(BytesWritable.class);
+  try {
+    job.setPartitionerClass((Class<? extends Partitioner>)(Class.forName(HiveConf.getVar(job,HiveConf.ConfVars.HIVEPARTITIONER))));
+  }
+ catch (  ClassNotFoundException e) {
+    throw new RuntimeException(e.getMessage());
+  }
+  if (mWork.getNumMapTasks() != null) {
+    job.setNumMapTasks(mWork.getNumMapTasks().intValue());
+  }
+  if (mWork.getMaxSplitSize() != null) {
+    HiveConf.setLongVar(job,HiveConf.ConfVars.MAPREDMAXSPLITSIZE,mWork.getMaxSplitSize().longValue());
+  }
+  if (mWork.getMinSplitSize() != null) {
+    HiveConf.setLongVar(job,HiveConf.ConfVars.MAPREDMINSPLITSIZE,mWork.getMinSplitSize().longValue());
+  }
+  if (mWork.getMinSplitSizePerNode() != null) {
+    HiveConf.setLongVar(job,HiveConf.ConfVars.MAPREDMINSPLITSIZEPERNODE,mWork.getMinSplitSizePerNode().longValue());
+  }
+  if (mWork.getMinSplitSizePerRack() != null) {
+    HiveConf.setLongVar(job,HiveConf.ConfVars.MAPREDMINSPLITSIZEPERRACK,mWork.getMinSplitSizePerRack().longValue());
+  }
+  job.setNumReduceTasks(rWork != null ? rWork.getNumReduceTasks().intValue() : 0);
+  job.setReducerClass(ExecReducer.class);
+  setInputAttributes(job);
+  boolean useSpeculativeExecReducers=HiveConf.getBoolVar(job,HiveConf.ConfVars.HIVESPECULATIVEEXECREDUCERS);
+  HiveConf.setBoolVar(job,HiveConf.ConfVars.HADOOPSPECULATIVEEXECREDUCERS,useSpeculativeExecReducers);
+  String inpFormat=HiveConf.getVar(job,HiveConf.ConfVars.HIVEINPUTFORMAT);
+  if ((inpFormat == null) || (!StringUtils.isNotBlank(inpFormat))) {
+    inpFormat=ShimLoader.getHadoopShims().getInputFormatClassName();
+  }
+  if (mWork.isUseBucketizedHiveInputFormat()) {
+    inpFormat=BucketizedHiveInputFormat.class.getName();
+  }
+  LOG.info("Using " + inpFormat);
+  try {
+    job.setInputFormat((Class<? extends InputFormat>)(Class.forName(inpFormat)));
+  }
+ catch (  ClassNotFoundException e) {
+    throw new RuntimeException(e.getMessage());
+  }
+  job.setOutputKeyClass(Text.class);
+  job.setOutputValueClass(Text.class);
+  String auxJars=HiveConf.getVar(job,HiveConf.ConfVars.HIVEAUXJARS);
+  String addedJars=HiveConf.getVar(job,HiveConf.ConfVars.HIVEADDEDJARS);
+  if (StringUtils.isNotBlank(auxJars) || StringUtils.isNotBlank(addedJars)) {
+    String allJars=StringUtils.isNotBlank(auxJars) ? (StringUtils.isNotBlank(addedJars) ? addedJars + "," + auxJars : auxJars) : addedJars;
+    LOG.info("adding libjars: " + allJars);
+    initializeFiles("tmpjars",allJars);
+  }
+  String addedFiles=HiveConf.getVar(job,HiveConf.ConfVars.HIVEADDEDFILES);
+  if (StringUtils.isNotBlank(addedFiles)) {
+    initializeFiles("tmpfiles",addedFiles);
+  }
+  int returnVal=0;
+  boolean noName=StringUtils.isEmpty(HiveConf.getVar(job,HiveConf.ConfVars.HADOOPJOBNAME));
+  if (noName) {
+    HiveConf.setVar(job,HiveConf.ConfVars.HADOOPJOBNAME,"JOB" + Utilities.randGen.nextInt());
+  }
+  String addedArchives=HiveConf.getVar(job,HiveConf.ConfVars.HIVEADDEDARCHIVES);
+  if (StringUtils.isNotBlank(addedArchives)) {
+    initializeFiles("tmparchives",addedArchives);
+  }
+  try {
+    MapredLocalWork localwork=mWork.getMapLocalWork();
+    if (localwork != null) {
+      if (!ShimLoader.getHadoopShims().isLocalMode(job)) {
+        Path localPath=new Path(localwork.getTmpFileURI());
+        Path hdfsPath=new Path(mWork.getTmpHDFSFileURI());
+        FileSystem hdfs=hdfsPath.getFileSystem(job);
+        FileSystem localFS=localPath.getFileSystem(job);
+        FileStatus[] hashtableFiles=localFS.listStatus(localPath);
+        int fileNumber=hashtableFiles.length;
+        String[] fileNames=new String[fileNumber];
+        for (int i=0; i < fileNumber; i++) {
+          fileNames[i]=hashtableFiles[i].getPath().getName();
+        }
+        String parentDir=localPath.toUri().getPath();
+        String stageId=this.getId();
+        String archiveFileURI=Utilities.generateTarURI(parentDir,stageId);
+        String archiveFileName=Utilities.generateTarFileName(stageId);
+        localwork.setStageID(stageId);
+        CompressionUtils.tar(parentDir,fileNames,archiveFileName);
+        Path archivePath=new Path(archiveFileURI);
+        LOG.info("Archive " + hashtableFiles.length + " hash table files to "+ archiveFileURI);
+        String hdfsFile=Utilities.generateTarURI(hdfsPath,stageId);
+        Path hdfsFilePath=new Path(hdfsFile);
+        short replication=(short)job.getInt("mapred.submit.replication",10);
+        hdfs.setReplication(hdfsFilePath,replication);
+        hdfs.copyFromLocalFile(archivePath,hdfsFilePath);
+        LOG.info("Upload 1 archive file  from" + archivePath + " to: "+ hdfsFilePath);
+        DistributedCache.createSymlink(job);
+        DistributedCache.addCacheArchive(hdfsFilePath.toUri(),job);
+        LOG.info("Add 1 archive file to distributed cache. Archive file: " + hdfsFilePath.toUri());
+      }
+    }
+    work.configureJobConf(job);
+    addInputPaths(job,mWork,emptyScratchDirStr,ctx);
+    Utilities.setMapRedWork(job,work,ctx.getMRTmpFileURI());
+    if (mWork.getSamplingType() > 0 && rWork != null && rWork.getNumReduceTasks() > 1) {
+      try {
+        handleSampling(driverContext,mWork,job,conf);
+        job.setPartitionerClass(HiveTotalOrderPartitioner.class);
+      }
+ catch (      Exception e) {
+        console.printInfo("Not enough sampling data.. Rolling back to single reducer task");
+        rWork.setNumReduceTasks(1);
+        job.setNumReduceTasks(1);
+      }
+    }
+    String pwd=HiveConf.getVar(job,HiveConf.ConfVars.METASTOREPWD);
+    if (pwd != null) {
+      HiveConf.setVar(job,HiveConf.ConfVars.METASTOREPWD,"HIVE");
+    }
+    JobClient jc=new JobClient(job);
+    Throttle.checkJobTracker(job,LOG);
+    if (mWork.isGatheringStats() || (rWork != null && rWork.isGatheringStats())) {
+      StatsPublisher statsPublisher;
+      String statsImplementationClass=HiveConf.getVar(job,HiveConf.ConfVars.HIVESTATSDBCLASS);
+      if (StatsFactory.setImplementation(statsImplementationClass,job)) {
+        statsPublisher=StatsFactory.getStatsPublisher();
+        if (!statsPublisher.init(job)) {
+          if (HiveConf.getBoolVar(job,HiveConf.ConfVars.HIVE_STATS_RELIABLE)) {
+            throw new HiveException(ErrorMsg.STATSPUBLISHER_INITIALIZATION_ERROR.getErrorCodedMsg());
+          }
+        }
+      }
+    }
+    this.createTmpDirs();
+    rj=jc.submitJob(job);
+    if (pwd != null) {
+      HiveConf.setVar(job,HiveConf.ConfVars.METASTOREPWD,pwd);
+    }
+    returnVal=jobExecHelper.progress(rj,jc);
+    success=(returnVal == 0);
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    String mesg=" with exception '" + Utilities.getNameMessage(e) + "'";
+    if (rj != null) {
+      mesg="Ended Job = " + rj.getJobID() + mesg;
+    }
+ else {
+      mesg="Job Submission failed" + mesg;
+    }
+    console.printError(mesg,"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
+    success=false;
+    returnVal=1;
+  }
+ finally {
+    Utilities.clearWork(job);
+    try {
+      if (ctxCreated) {
+        ctx.clear();
+      }
+      if (rj != null) {
+        if (returnVal != 0) {
+          rj.killJob();
+        }
+        HadoopJobExecHelper.runningJobKillURIs.remove(rj.getJobID());
+        jobID=rj.getID().toString();
+      }
+    }
+ catch (    Exception e) {
+    }
+  }
+  try {
+    if (rj != null) {
+      JobCloseFeedBack feedBack=new JobCloseFeedBack();
+      if (mWork.getAliasToWork() != null) {
+        for (        Operator<? extends OperatorDesc> op : mWork.getAliasToWork().values()) {
+          op.jobClose(job,success,feedBack);
+        }
+      }
+      if (rWork != null) {
+        rWork.getReducer().jobClose(job,success,feedBack);
+      }
+    }
+  }
+ catch (  Exception e) {
+    if (success) {
+      success=false;
+      returnVal=3;
+      String mesg="Job Commit failed with exception '" + Utilities.getNameMessage(e) + "'";
+      console.printError(mesg,"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
+    }
+  }
+  return (returnVal);
+}

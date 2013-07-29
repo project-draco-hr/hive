@@ -1,0 +1,56 @@
+{
+  int result=0;
+  boolean error=false;
+  List<String> messages=Lists.newArrayList();
+  Map<String,Long> elapsedTimes=Maps.newTreeMap();
+  try {
+    mLogger.info("Running tests with " + mConfiguration);
+    for (    Phase phase : mPhases) {
+      String msg="Executing " + phase.getClass().getName();
+      mLogger.info(msg);
+      messages.add(msg);
+      long start=System.currentTimeMillis();
+      try {
+        phase.execute();
+      }
+  finally {
+        long elapsedTime=TimeUnit.MINUTES.convert((System.currentTimeMillis() - start),TimeUnit.MILLISECONDS);
+        elapsedTimes.put(phase.getClass().getSimpleName(),elapsedTime);
+      }
+    }
+    if (!mFailedTests.isEmpty()) {
+      throw new TestsFailedException(mFailedTests.size() + " tests failed");
+    }
+  }
+ catch (  Throwable throwable) {
+    mLogger.error("Test run exited with an unexpected error",throwable);
+    messages.add("Tests failed with: " + throwable.getClass().getSimpleName() + ": "+ throwable.getMessage());
+    error=true;
+  }
+ finally {
+    for (    HostExecutor hostExecutor : mHostExecutors) {
+      if (hostExecutor.remainingDrones() == 0) {
+        mExecutionContext.addBadHost(hostExecutor.getHost());
+      }
+    }
+    mExecutor.shutdownNow();
+    if (mFailedTests.isEmpty()) {
+      mLogger.info(String.format("%d failed tests",mFailedTests.size()));
+    }
+ else {
+      mLogger.warn(String.format("%d failed tests",mFailedTests.size()));
+    }
+    for (    String failingTestName : mFailedTests) {
+      mLogger.warn(failingTestName);
+    }
+    mLogger.info("Executed " + mExecutedTests.size() + " tests");
+    for (    Map.Entry<String,Long> entry : elapsedTimes.entrySet()) {
+      mLogger.info(String.format("PERF: Phase %s took %d minutes",entry.getKey(),entry.getValue()));
+    }
+    publishJiraComment(error,messages);
+    if (error || !mFailedTests.isEmpty()) {
+      result=1;
+    }
+  }
+  return result;
+}

@@ -1,0 +1,41 @@
+{
+  CorrelationNodeProcCtx corrCtx=(CorrelationNodeProcCtx)ctx;
+  ReduceSinkOperator op=(ReduceSinkOperator)nd;
+  if (corrCtx.isWalked(op)) {
+    return null;
+  }
+  LOG.info("Walk to operator " + op.getIdentifier() + " "+ op.getName());
+  Operator<? extends OperatorDesc> child=CorrelationUtilities.getSingleChild(op,true);
+  if (!(child instanceof JoinOperator) && !(child instanceof GroupByOperator)) {
+    corrCtx.addWalked(op);
+    return null;
+  }
+  IntraQueryCorrelation correlation=new IntraQueryCorrelation(corrCtx.minReducer());
+  List<ReduceSinkOperator> topReduceSinkOperators=CorrelationUtilities.findSiblingReduceSinkOperators(op);
+  List<ReduceSinkOperator> bottomReduceSinkOperators=new ArrayList<ReduceSinkOperator>();
+  for (  ReduceSinkOperator rsop : topReduceSinkOperators) {
+    if (!correlation.adjustNumReducers(rsop.getConf().getNumReducers())) {
+      corrCtx.addWalked(op);
+      return null;
+    }
+  }
+  for (  ReduceSinkOperator rsop : topReduceSinkOperators) {
+    LinkedHashSet<ReduceSinkOperator> thisBottomReduceSinkOperators=exploitJobFlowCorrelation(rsop,corrCtx,correlation);
+    if (thisBottomReduceSinkOperators.size() == 0) {
+      thisBottomReduceSinkOperators.add(rsop);
+    }
+    bottomReduceSinkOperators.addAll(thisBottomReduceSinkOperators);
+  }
+  if (!topReduceSinkOperators.containsAll(bottomReduceSinkOperators)) {
+    LOG.info("has job flow correlation");
+    correlation.setJobFlowCorrelation(true,bottomReduceSinkOperators);
+  }
+  if (correlation.hasJobFlowCorrelation()) {
+    corrCtx.addCorrelation(correlation);
+  }
+ else {
+    corrCtx.removeWalkedAll(correlation.getAllReduceSinkOperators());
+  }
+  corrCtx.addWalked(op);
+  return null;
+}

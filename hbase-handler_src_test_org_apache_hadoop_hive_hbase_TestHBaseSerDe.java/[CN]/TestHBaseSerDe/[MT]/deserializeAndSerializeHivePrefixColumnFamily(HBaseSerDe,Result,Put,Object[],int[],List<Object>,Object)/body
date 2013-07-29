@@ -1,0 +1,27 @@
+{
+  StructObjectInspector soi=(StructObjectInspector)serDe.getObjectInspector();
+  List<? extends StructField> fieldRefs=soi.getAllStructFieldRefs();
+  Object row=serDe.deserialize(r);
+  int j=0;
+  for (int i=0; i < fieldRefs.size(); i++) {
+    Object fieldData=soi.getStructFieldData(row,fieldRefs.get(i));
+    assertNotNull(fieldData);
+    if (fieldData instanceof LazyPrimitive<?,?>) {
+      assertEquals(expectedFieldsData[i],((LazyPrimitive<?,?>)fieldData).getWritableObject());
+    }
+ else     if (fieldData instanceof LazyHBaseCellMap) {
+      assertEquals(expectedFieldsData[i],((LazyHBaseCellMap)fieldData).getMapValueElement(expectedQualifiers.get(j)).toString().trim());
+      assertEquals(expectedMapSize[j],((LazyHBaseCellMap)fieldData).getMapSize());
+      assertNull(((LazyHBaseCellMap)fieldData).getMapValueElement(notPresentKey));
+      j++;
+    }
+ else {
+      fail("Error: field data not an instance of LazyPrimitive<?, ?> or LazyHBaseCellMap");
+    }
+  }
+  SerDeUtils.getJSONString(row,soi);
+  Put put=(Put)serDe.serialize(row,soi);
+  if (p != null) {
+    assertEquals("Serialized put:",p.toString(),put.toString());
+  }
+}

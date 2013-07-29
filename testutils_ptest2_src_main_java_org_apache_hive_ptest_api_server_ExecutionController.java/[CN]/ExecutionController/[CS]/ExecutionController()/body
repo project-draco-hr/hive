@@ -1,0 +1,38 @@
+{
+  String executionContextConfigurationFile=System.getProperty(CONF_PROPERTY,"").trim();
+  Preconditions.checkArgument(!executionContextConfigurationFile.isEmpty(),CONF_PROPERTY + " is required");
+  mExecutionContextConfiguration=ExecutionContextConfiguration.fromFile(executionContextConfigurationFile);
+  mExecutionContextProvider=mExecutionContextConfiguration.getExecutionContextProvider();
+  mTests=Collections.synchronizedMap(new LinkedHashMap<String,Test>(){
+    private static final long serialVersionUID=1L;
+    @Override public boolean removeEldestEntry(    Map.Entry<String,Test> entry){
+      Test testExecution=entry.getValue();
+      File testOutputFile=testExecution.getOutputFile();
+      return size() > 30 || (testOutputFile != null && !testOutputFile.isFile());
+    }
+  }
+);
+  mTestQueue=new ArrayBlockingQueue<Test>(5);
+  mGlobalLogDir=new File(mExecutionContextConfiguration.getGlobalLogDirectory());
+  mTestExecutor=new TestExecutor(mExecutionContextConfiguration,mExecutionContextProvider,mTestQueue,new PTest.Builder());
+  mTestExecutor.setName("TestExecutor");
+  mTestExecutor.setDaemon(true);
+  mTestExecutor.start();
+  Runtime.getRuntime().addShutdownHook(new Thread(){
+    @Override public void run(){
+      try {
+        mTestExecutor.shutdown();
+      }
+ catch (      Exception e) {
+        LOG.error("Error shutting down TestExecutor",e);
+      }
+      try {
+        mExecutionContextProvider.close();
+      }
+ catch (      Exception e) {
+        LOG.error("Error shutting down ExecutionContextProvider",e);
+      }
+    }
+  }
+);
+}

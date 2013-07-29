@@ -1,0 +1,25 @@
+{
+  for (  Task<?> task : pctx.getRootTasks()) {
+    if (!(task instanceof MapRedTask) || !((MapRedTask)task).getWork().isFinalMapRed()) {
+      continue;
+    }
+    MapredWork mrWork=((MapRedTask)task).getWork();
+    MapWork mapWork=mrWork.getMapWork();
+    ReduceWork reduceWork=mrWork.getReduceWork();
+    if (reduceWork == null || reduceWork.getNumReduceTasks() != 1 || mapWork.getAliasToWork().size() != 1 || mapWork.getSamplingType() > 0 || reduceWork.getReducer() == null) {
+      continue;
+    }
+    Operator<?> operator=mapWork.getAliasToWork().values().iterator().next();
+    if (!(operator instanceof TableScanOperator)) {
+      continue;
+    }
+    ReduceSinkOperator child=OperatorUtils.findSingleOperator(operator,ReduceSinkOperator.class);
+    if (child == null || child.getConf().getNumReducers() != 1 || !child.getConf().getPartitionCols().isEmpty()) {
+      continue;
+    }
+    child.getConf().setNumReducers(-1);
+    reduceWork.setNumReduceTasks(-1);
+    mapWork.setSamplingType(MapWork.SAMPLING_ON_START);
+  }
+  return pctx;
+}

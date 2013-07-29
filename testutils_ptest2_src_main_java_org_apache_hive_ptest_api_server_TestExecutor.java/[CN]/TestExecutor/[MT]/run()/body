@@ -1,0 +1,77 @@
+{
+  while (execute) {
+    Test test=null;
+    PrintStream logStream=null;
+    Logger logger=null;
+    try {
+      LogDirectoryCleaner cleaner=new LogDirectoryCleaner(new File(mExecutionContextConfiguration.getGlobalLogDirectory()),mExecutionContextConfiguration.getMaxLogDirectoriesPerProfile());
+      cleaner.setName("LogCleaner-" + mExecutionContextConfiguration.getGlobalLogDirectory());
+      cleaner.setDaemon(true);
+      cleaner.start();
+      test=mTestQueue.poll(30,TimeUnit.MINUTES);
+      if (!execute) {
+        terminateExecutionContext();
+        break;
+      }
+      if (test == null) {
+        terminateExecutionContext();
+      }
+ else {
+        test.setStatus(Status.inProgress());
+        test.setDequeueTime(System.currentTimeMillis());
+        if (mExecutionContext == null) {
+          mExecutionContext=createExceutionContext();
+        }
+        test.setExecutionStartTime(System.currentTimeMillis());
+        TestStartRequest startRequest=test.getStartRequest();
+        String profile=startRequest.getProfile();
+        File profileConfFile=new File(mExecutionContextConfiguration.getProfileDirectory(),String.format("%s.properties",profile));
+        if (!profileConfFile.isFile()) {
+          test.setStatus(Status.illegalArgument("Profile " + profile + " not found"));
+          test.setExecutionFinishTime(System.currentTimeMillis());
+        }
+ else {
+          File logDir=Dirs.create(new File(mExecutionContextConfiguration.getGlobalLogDirectory(),test.getStartRequest().getTestHandle()));
+          File logFile=new File(logDir,"execution.txt");
+          test.setOutputFile(logFile);
+          logStream=new PrintStream(logFile);
+          logger=new TestLogger(logStream,TestLogger.LEVEL.DEBUG);
+          TestConfiguration testConfiguration=TestConfiguration.fromFile(profileConfFile,logger);
+          testConfiguration.setPatch(startRequest.getPatchURL());
+          testConfiguration.setJiraName(startRequest.getJiraName());
+          testConfiguration.setClearLibraryCache(startRequest.isClearLibraryCache());
+          PTest ptest=mPTestBuilder.build(testConfiguration,mExecutionContext,test.getStartRequest().getTestHandle(),logDir,new LocalCommandFactory(logger),new SSHCommandExecutor(logger),new RSyncCommandExecutor(logger),logger);
+          int result=ptest.run();
+          if (result == Constants.EXIT_CODE_SUCCESS) {
+            test.setStatus(Status.ok());
+          }
+ else {
+            test.setStatus(Status.failed("Tests failed with exit code " + result));
+          }
+          logStream.flush();
+          mExecutionContext.replaceBadHosts();
+        }
+      }
+    }
+ catch (    Exception e) {
+      LOG.error("Unxpected Error",e);
+      if (test != null) {
+        test.setStatus(Status.failed("Tests failed with exception " + e.getClass().getName() + ": "+ e.getMessage()));
+        if (logger != null) {
+          String msg="Error executing " + test.getStartRequest().getTestHandle();
+          logger.error(msg,e);
+        }
+      }
+      terminateExecutionContext();
+    }
+ finally {
+      if (test != null) {
+        test.setExecutionFinishTime(System.currentTimeMillis());
+      }
+      if (logStream != null) {
+        logStream.flush();
+        logStream.close();
+      }
+    }
+  }
+}

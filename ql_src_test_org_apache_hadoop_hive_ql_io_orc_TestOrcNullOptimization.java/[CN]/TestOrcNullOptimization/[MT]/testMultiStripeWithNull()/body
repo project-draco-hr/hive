@@ -1,0 +1,63 @@
+{
+  ObjectInspector inspector;
+synchronized (TestOrcNullOptimization.class) {
+    inspector=ObjectInspectorFactory.getReflectionObjectInspector(MyStruct.class,ObjectInspectorFactory.ObjectInspectorOptions.JAVA);
+  }
+  Writer writer=OrcFile.createWriter(fs,testFilePath,conf,inspector,100000,CompressionKind.NONE,10000,10000);
+  Random rand=new Random(100);
+  writer.addRow(new MyStruct(null,null,true,Lists.newArrayList(new InnerStruct(100))));
+  for (int i=2; i < 20000; i++) {
+    writer.addRow(new MyStruct(rand.nextInt(1),"a",true,Lists.newArrayList(new InnerStruct(100))));
+  }
+  writer.addRow(new MyStruct(null,null,true,Lists.newArrayList(new InnerStruct(100))));
+  writer.close();
+  Reader reader=OrcFile.createReader(fs,testFilePath);
+  ColumnStatistics[] stats=reader.getStatistics();
+  assertEquals(20000,reader.getNumberOfRows());
+  assertEquals(20000,stats[0].getNumberOfValues());
+  assertEquals(0,((IntegerColumnStatistics)stats[1]).getMaximum());
+  assertEquals(0,((IntegerColumnStatistics)stats[1]).getMinimum());
+  assertEquals(true,((IntegerColumnStatistics)stats[1]).isSumDefined());
+  assertEquals(0,((IntegerColumnStatistics)stats[1]).getSum());
+  assertEquals("count: 19998 min: 0 max: 0 sum: 0",stats[1].toString());
+  assertEquals("a",((StringColumnStatistics)stats[2]).getMaximum());
+  assertEquals("a",((StringColumnStatistics)stats[2]).getMinimum());
+  assertEquals(19998,((StringColumnStatistics)stats[2]).getNumberOfValues());
+  assertEquals("count: 19998 min: a max: a",stats[2].toString());
+  StructObjectInspector readerInspector=(StructObjectInspector)reader.getObjectInspector();
+  assertEquals(ObjectInspector.Category.STRUCT,readerInspector.getCategory());
+  assertEquals("struct<a:int,b:string,c:boolean,list:array<struct<z:int>>>",readerInspector.getTypeName());
+  RecordReader rows=reader.rows(null);
+  List<Boolean> expected=Lists.newArrayList();
+  for (  StripeInformation sinfo : reader.getStripes()) {
+    expected.add(false);
+  }
+  expected.set(0,true);
+  expected.set(expected.size() - 1,true);
+  List<Boolean> got=Lists.newArrayList();
+  for (  StripeInformation sinfo : reader.getStripes()) {
+    OrcProto.StripeFooter sf=((RecordReaderImpl)rows).readStripeFooter(sinfo);
+    got.add(sf.toString().indexOf(OrcProto.Stream.Kind.PRESENT.toString()) != -1);
+  }
+  assertEquals(expected,got);
+  OrcStruct row=(OrcStruct)rows.next(null);
+  assertNotNull(row);
+  assertNull(row.getFieldValue(0));
+  assertNull(row.getFieldValue(1));
+  assertEquals(new BooleanWritable(true),row.getFieldValue(2));
+  assertEquals(new IntWritable(100),((OrcStruct)((ArrayList<?>)row.getFieldValue(3)).get(0)).getFieldValue(0));
+  rows.seekToRow(19998);
+  row=(OrcStruct)rows.next(null);
+  assertNotNull(row);
+  assertNotNull(row.getFieldValue(1));
+  assertEquals(new IntWritable(0),row.getFieldValue(0));
+  assertEquals(new BooleanWritable(true),row.getFieldValue(2));
+  assertEquals(new IntWritable(100),((OrcStruct)((ArrayList<?>)row.getFieldValue(3)).get(0)).getFieldValue(0));
+  row=(OrcStruct)rows.next(row);
+  assertNotNull(row);
+  assertNull(row.getFieldValue(0));
+  assertNull(row.getFieldValue(1));
+  assertEquals(new BooleanWritable(true),row.getFieldValue(2));
+  assertEquals(new IntWritable(100),((OrcStruct)((ArrayList<?>)row.getFieldValue(3)).get(0)).getFieldValue(0));
+  rows.close();
+}

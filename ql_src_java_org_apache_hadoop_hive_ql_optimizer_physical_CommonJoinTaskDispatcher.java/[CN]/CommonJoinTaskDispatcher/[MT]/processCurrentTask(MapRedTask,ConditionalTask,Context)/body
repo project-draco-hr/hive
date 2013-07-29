@@ -4,7 +4,7 @@
     return null;
   }
   currTask.setTaskTag(Task.COMMON_JOIN);
-  MapredWork currWork=currTask.getWork();
+  MapWork currWork=currTask.getWork().getMapWork();
   List<Serializable> listWorks=new ArrayList<Serializable>();
   List<Task<? extends Serializable>> listTasks=new ArrayList<Task<? extends Serializable>>();
   HashMap<String,Task<? extends Serializable>> aliasToTask=new HashMap<String,Task<? extends Serializable>>();
@@ -66,7 +66,7 @@
     currWork.setOpParseCtxMap(parseCtx.getOpParseCtx());
     currWork.setJoinTree(joinTree);
     if (convertJoinMapJoin) {
-      MapRedTask newTask=convertTaskToMapJoinTask(currWork,bigTablePosition).getFirst();
+      MapRedTask newTask=convertTaskToMapJoinTask(currTask.getWork(),bigTablePosition).getFirst();
       newTask.setTaskTag(Task.MAPJOIN_ONLY_NOBACKUP);
       replaceTask(currTask,newTask,physicalContext);
       if ((newTask.getChildTasks() != null) && (newTask.getChildTasks().size() == 1)) {
@@ -85,18 +85,14 @@
       if (!bigTableCandidates.contains(i)) {
         continue;
       }
-      String xml=currWork.toXML();
+      String xml=currTask.getWork().toXML();
       InputStream in=new ByteArrayInputStream(xml.getBytes("UTF-8"));
-      MapredWork newWork=Utilities.deserializeMapRedWork(in,physicalContext.getConf());
+      MapredWork newWork=Utilities.deserializeObject(in);
       ObjectPair<MapRedTask,String> newTaskAlias=convertTaskToMapJoinTask(newWork,i);
       MapRedTask newTask=newTaskAlias.getFirst();
       bigTableAlias=newTaskAlias.getSecond();
-      Long aliasKnownSize=aliasToSize.get(bigTableAlias);
-      if (aliasKnownSize != null && aliasKnownSize.longValue() > 0) {
-        long smallTblTotalKnownSize=aliasTotalKnownInputSize - aliasKnownSize.longValue();
-        if (smallTblTotalKnownSize > ThresholdOfSmallTblSizeSum) {
-          continue;
-        }
+      if (cannotConvert(bigTableAlias,aliasToSize,aliasTotalKnownInputSize,ThresholdOfSmallTblSizeSum)) {
+        continue;
       }
       listWorks.add(newTask.getWork());
       listTasks.add(newTask);
