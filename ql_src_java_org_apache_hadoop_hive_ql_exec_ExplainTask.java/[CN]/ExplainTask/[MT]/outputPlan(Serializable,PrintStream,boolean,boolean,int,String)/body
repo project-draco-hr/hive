@@ -67,16 +67,21 @@
           continue;
         }
         String header=null;
+        boolean skipHeader=xpl_note.skipHeader();
+        boolean emptyHeader=false;
         if (!xpl_note.displayName().equals("")) {
           header=indentString(prop_indents) + xpl_note.displayName() + ":";
         }
  else {
+          emptyHeader=true;
           prop_indents=indent;
           header=indentString(prop_indents);
         }
         if (isPrintable(val)) {
           if (out != null && shouldPrint(xpl_note,val)) {
-            out.printf("%s ",header);
+            if (!skipHeader) {
+              out.printf("%s ",header);
+            }
             out.println(val);
           }
           if (jsonOutput) {
@@ -84,9 +89,21 @@
           }
           continue;
         }
+        int ind=0;
+        if (!jsonOutput) {
+          if (!skipHeader) {
+            ind=prop_indents + 2;
+          }
+ else {
+            ind=indent;
+          }
+        }
         try {
           Map<?,?> mp=(Map<?,?>)val;
-          JSONObject jsonOut=outputMap(mp,header,out,extended,jsonOutput,jsonOutput ? 0 : prop_indents + 2);
+          if (out != null && !skipHeader && mp != null && !mp.isEmpty()) {
+            out.print(header);
+          }
+          JSONObject jsonOut=outputMap(mp,!skipHeader && !emptyHeader,out,extended,jsonOutput,ind);
           if (jsonOutput) {
             json.put(header,jsonOut);
           }
@@ -96,7 +113,10 @@
         }
         try {
           List<?> l=(List<?>)val;
-          JSONArray jsonOut=outputList(l,header,out,extended,jsonOutput,jsonOutput ? 0 : prop_indents + 2);
+          if (out != null && !skipHeader && l != null && !l.isEmpty()) {
+            out.print(header);
+          }
+          JSONArray jsonOut=outputList(l,out,!skipHeader && !emptyHeader,extended,jsonOutput,ind);
           if (jsonOutput) {
             json.put(header,jsonOut);
           }
@@ -106,10 +126,10 @@
         }
         try {
           Serializable s=(Serializable)val;
-          if (out != null) {
+          if (!skipHeader && out != null) {
             out.println(header);
           }
-          JSONObject jsonOut=outputPlan(s,out,extended,jsonOutput,jsonOutput ? 0 : prop_indents + 2);
+          JSONObject jsonOut=outputPlan(s,out,extended,jsonOutput,ind);
           if (jsonOutput) {
             json.put(header,jsonOut);
           }

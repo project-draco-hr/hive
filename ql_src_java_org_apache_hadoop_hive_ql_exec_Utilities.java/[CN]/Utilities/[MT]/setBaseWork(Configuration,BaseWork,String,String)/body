@@ -1,0 +1,23 @@
+{
+  try {
+    setPlanPath(conf,hiveScratchDir);
+    Path planPath=getPlanPath(conf,name);
+    FileSystem fs=planPath.getFileSystem(conf);
+    FSDataOutputStream out=fs.create(planPath);
+    serializeObject(w,out);
+    if (!ShimLoader.getHadoopShims().isLocalMode(conf)) {
+      if (!DistributedCache.getSymlink(conf)) {
+        DistributedCache.createSymlink(conf);
+      }
+      String uriWithLink=planPath.toUri().toString() + "#" + name;
+      DistributedCache.addCacheFile(new URI(uriWithLink),conf);
+      short replication=(short)conf.getInt("mapred.submit.replication",10);
+      fs.setReplication(planPath,replication);
+    }
+    gWorkMap.put(planPath,w);
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    throw new RuntimeException(e);
+  }
+}

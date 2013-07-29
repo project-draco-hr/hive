@@ -29,13 +29,15 @@
     fsInputDesc.getTableInfo().getProperties().remove(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS);
   }
   MoveWork dummyMv=new MoveWork(null,null,null,new LoadFileDesc(fsInputDesc.getFinalDirName(),finalName,true,null,null),false);
-  MapredWork cplan;
+  MapWork cplan;
+  Serializable work;
   if (conf.getBoolVar(ConfVars.HIVEMERGERCFILEBLOCKLEVEL) && fsInputDesc.getTableInfo().getInputFileFormatClass().equals(RCFileInputFormat.class)) {
     String inputFormatClass=conf.getVar(ConfVars.HIVEMERGEINPUTFORMATBLOCKLEVEL);
     try {
       Class c=(Class<? extends InputFormat>)Class.forName(inputFormatClass);
       LOG.info("RCFile format- Using block level merge");
       cplan=createRCFileMergeTask(fsInputDesc,finalName,dpCtx != null && dpCtx.getNumDPCols() > 0);
+      work=cplan;
     }
  catch (    ClassNotFoundException e) {
       String msg="Illegal input format class: " + inputFormatClass;
@@ -44,9 +46,11 @@
   }
  else {
     cplan=createMRWorkForMergingFiles(conf,tsMerge,fsInputDesc);
+    work=new MapredWork();
+    ((MapredWork)work).setMapWork(cplan);
   }
   cplan.setInputformat("org.apache.hadoop.hive.ql.io.CombineHiveInputFormat");
-  ConditionalTask cndTsk=createCondTask(conf,ctx.getCurrTask(),dummyMv,cplan,fsInputDesc.getFinalDirName());
+  ConditionalTask cndTsk=createCondTask(conf,ctx.getCurrTask(),dummyMv,work,fsInputDesc.getFinalDirName());
   ConditionalResolverMergeFilesCtx mrCtx=(ConditionalResolverMergeFilesCtx)cndTsk.getResolverCtx();
   mrCtx.setDPCtx(fsInputDesc.getDynPartCtx());
   mrCtx.setLbCtx(fsInputDesc.getLbCtx());
