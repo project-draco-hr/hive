@@ -1,27 +1,33 @@
 {
-  if (expr instanceof ExprNodeConstantDesc) {
+  boolean isConst=expr instanceof ExprNodeConstantDesc;
+  boolean isCol=!isConst && (expr instanceof ExprNodeColumnDesc);
+  boolean isIntegralSupported=(parent != null) && (isConst || isCol) && doesJDOFuncSupportIntegral(parent);
+  if (isConst) {
     Object value=((ExprNodeConstantDesc)expr).getValue();
     if (value instanceof String) {
       return null;
     }
-    return "Constant " + value + " is not string type";
+    if (isIntegralSupported && isIntegralType(expr.getTypeInfo().getTypeName())) {
+      return null;
+    }
+    return "Constant " + value + " is not string "+ (isIntegralSupported ? "or integral " : "")+ "type: "+ expr.getTypeInfo().getTypeName();
   }
- else   if (expr instanceof ExprNodeColumnDesc) {
+ else   if (isCol) {
     TypeInfo type=expr.getTypeInfo();
-    if (type.getTypeName().equals(serdeConstants.STRING_TYPE_NAME)) {
+    if (type.getTypeName().equals(serdeConstants.STRING_TYPE_NAME) || (isIntegralSupported && isIntegralType(type.getTypeName()))) {
       String colName=((ExprNodeColumnDesc)expr).getColumn();
       for (      FieldSchema fs : tab.getPartCols()) {
         if (fs.getName().equals(colName)) {
-          if (fs.getType().equals(serdeConstants.STRING_TYPE_NAME)) {
+          if (fs.getType().equals(serdeConstants.STRING_TYPE_NAME) || (isIntegralSupported && isIntegralType(fs.getType()))) {
             return null;
           }
-          return "Partition column " + fs.getName() + " is not string type";
+          return "Partition column " + fs.getName() + " is not string "+ (isIntegralSupported ? "or integral " : "")+ "type: "+ fs.getType();
         }
       }
       assert(false);
     }
  else {
-      return "Column " + expr.getExprString() + " is not string type";
+      return "Column " + expr.getExprString() + " is not string "+ (isIntegralSupported ? "or integral " : "")+ "type: "+ type.getTypeName();
     }
   }
  else   if (expr instanceof ExprNodeGenericFuncDesc) {
@@ -36,7 +42,7 @@
       if (!(child instanceof ExprNodeConstantDesc)) {
         allChildrenConstant=false;
       }
-      String message=checkJDOPushDown(tab,child);
+      String message=checkJDOPushDown(tab,child,func);
       if (message != null) {
         return message;
       }
