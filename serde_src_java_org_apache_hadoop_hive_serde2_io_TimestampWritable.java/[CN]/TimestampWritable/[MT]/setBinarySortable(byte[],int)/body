@@ -1,14 +1,19 @@
 {
-  int seconds=bytesToInt(bytes,offset);
-  int nanos=bytesToInt(bytes,offset + 4);
-  if (nanos == 0) {
-    seconds&=NO_DECIMAL_MASK;
+  long seconds=readSevenByteLong(bytes,binSortOffset) ^ SEVEN_BYTE_LONG_SIGN_FLIP;
+  int nanos=bytesToInt(bytes,binSortOffset + 7);
+  int firstInt=(int)seconds;
+  boolean hasSecondVInt=seconds < 0 || seconds > Integer.MAX_VALUE;
+  if (nanos != 0 || hasSecondVInt) {
+    firstInt|=DECIMAL_OR_SECOND_VINT_FLAG;
   }
  else {
-    seconds|=HAS_DECIMAL_MASK;
+    firstInt&=LOWEST_31_BITS_OF_SEC_MASK;
   }
-  intToBytes(seconds,internalBytes,0);
-  setNanosBytes(nanos,internalBytes,4);
+  intToBytes(firstInt,internalBytes,0);
+  setNanosBytes(nanos,internalBytes,4,hasSecondVInt);
+  if (hasSecondVInt) {
+    LazyBinaryUtils.writeVLongToByteArray(internalBytes,4 + WritableUtils.decodeVIntSize(internalBytes[4]),seconds >> 31);
+  }
   currentBytes=internalBytes;
   this.offset=0;
 }
