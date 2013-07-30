@@ -2,14 +2,12 @@
   IOPrepareCache ioPrepareCache=IOPrepareCache.get();
   ioPrepareCache.clear();
   boolean success=true;
-  String invalidReason=work.isInvalid();
-  if (invalidReason != null) {
-    throw new RuntimeException("Plan invalid, Reason: " + invalidReason);
-  }
   Context ctx=driverContext.getCtx();
   boolean ctxCreated=false;
   String emptyScratchDirStr;
   Path emptyScratchDir;
+  MapWork mWork=work.getMapWork();
+  ReduceWork rWork=work.getReduceWork();
   try {
     if (ctx == null) {
       ctx=new Context(job);
@@ -49,22 +47,22 @@
  catch (  ClassNotFoundException e) {
     throw new RuntimeException(e.getMessage());
   }
-  if (work.getNumMapTasks() != null) {
-    job.setNumMapTasks(work.getNumMapTasks().intValue());
+  if (mWork.getNumMapTasks() != null) {
+    job.setNumMapTasks(mWork.getNumMapTasks().intValue());
   }
-  if (work.getMaxSplitSize() != null) {
-    HiveConf.setLongVar(job,HiveConf.ConfVars.MAPREDMAXSPLITSIZE,work.getMaxSplitSize().longValue());
+  if (mWork.getMaxSplitSize() != null) {
+    HiveConf.setLongVar(job,HiveConf.ConfVars.MAPREDMAXSPLITSIZE,mWork.getMaxSplitSize().longValue());
   }
-  if (work.getMinSplitSize() != null) {
-    HiveConf.setLongVar(job,HiveConf.ConfVars.MAPREDMINSPLITSIZE,work.getMinSplitSize().longValue());
+  if (mWork.getMinSplitSize() != null) {
+    HiveConf.setLongVar(job,HiveConf.ConfVars.MAPREDMINSPLITSIZE,mWork.getMinSplitSize().longValue());
   }
-  if (work.getMinSplitSizePerNode() != null) {
-    HiveConf.setLongVar(job,HiveConf.ConfVars.MAPREDMINSPLITSIZEPERNODE,work.getMinSplitSizePerNode().longValue());
+  if (mWork.getMinSplitSizePerNode() != null) {
+    HiveConf.setLongVar(job,HiveConf.ConfVars.MAPREDMINSPLITSIZEPERNODE,mWork.getMinSplitSizePerNode().longValue());
   }
-  if (work.getMinSplitSizePerRack() != null) {
-    HiveConf.setLongVar(job,HiveConf.ConfVars.MAPREDMINSPLITSIZEPERRACK,work.getMinSplitSizePerRack().longValue());
+  if (mWork.getMinSplitSizePerRack() != null) {
+    HiveConf.setLongVar(job,HiveConf.ConfVars.MAPREDMINSPLITSIZEPERRACK,mWork.getMinSplitSizePerRack().longValue());
   }
-  job.setNumReduceTasks(work.getNumReduceTasks().intValue());
+  job.setNumReduceTasks(rWork != null ? rWork.getNumReduceTasks().intValue() : 0);
   job.setReducerClass(ExecReducer.class);
   setInputAttributes(job);
   boolean useSpeculativeExecReducers=HiveConf.getBoolVar(job,HiveConf.ConfVars.HIVESPECULATIVEEXECREDUCERS);
@@ -73,7 +71,7 @@
   if ((inpFormat == null) || (!StringUtils.isNotBlank(inpFormat))) {
     inpFormat=ShimLoader.getHadoopShims().getInputFormatClassName();
   }
-  if (getWork().isUseBucketizedHiveInputFormat()) {
+  if (mWork.isUseBucketizedHiveInputFormat()) {
     inpFormat=BucketizedHiveInputFormat.class.getName();
   }
   LOG.info("Using " + inpFormat);
@@ -106,11 +104,11 @@
     initializeFiles("tmparchives",addedArchives);
   }
   try {
-    MapredLocalWork localwork=work.getMapLocalWork();
+    MapredLocalWork localwork=mWork.getMapLocalWork();
     if (localwork != null) {
       if (!ShimLoader.getHadoopShims().isLocalMode(job)) {
         Path localPath=new Path(localwork.getTmpFileURI());
-        Path hdfsPath=new Path(work.getTmpHDFSFileURI());
+        Path hdfsPath=new Path(mWork.getTmpHDFSFileURI());
         FileSystem hdfs=hdfsPath.getFileSystem(job);
         FileSystem localFS=localPath.getFileSystem(job);
         FileStatus[] hashtableFiles=localFS.listStatus(localPath);
@@ -139,16 +137,16 @@
       }
     }
     work.configureJobConf(job);
-    addInputPaths(job,work,emptyScratchDirStr,ctx);
+    addInputPaths(job,mWork,emptyScratchDirStr,ctx);
     Utilities.setMapRedWork(job,work,ctx.getMRTmpFileURI());
-    if (work.getSamplingType() > 0 && work.getNumReduceTasks() > 1) {
+    if (mWork.getSamplingType() > 0 && rWork != null && rWork.getNumReduceTasks() > 1) {
       try {
-        handleSampling(driverContext,work,job,new HiveConf(conf));
+        handleSampling(driverContext,mWork,job,conf);
         job.setPartitionerClass(HiveTotalOrderPartitioner.class);
       }
  catch (      Exception e) {
         console.printInfo("Not enough sampling data.. Rolling back to single reducer task");
-        work.setNumReduceTasks(1);
+        rWork.setNumReduceTasks(1);
         job.setNumReduceTasks(1);
       }
     }
@@ -158,7 +156,7 @@
     }
     JobClient jc=new JobClient(job);
     Throttle.checkJobTracker(job,LOG);
-    if (work.isGatheringStats()) {
+    if (mWork.isGatheringStats() || (rWork != null && rWork.isGatheringStats())) {
       StatsPublisher statsPublisher;
       String statsImplementationClass=HiveConf.getVar(job,HiveConf.ConfVars.HIVESTATSDBCLASS);
       if (StatsFactory.setImplementation(statsImplementationClass,job)) {
@@ -192,7 +190,7 @@
     returnVal=1;
   }
  finally {
-    Utilities.clearMapRedWork(job);
+    Utilities.clearWork(job);
     try {
       if (ctxCreated) {
         ctx.clear();
@@ -211,13 +209,13 @@
   try {
     if (rj != null) {
       JobCloseFeedBack feedBack=new JobCloseFeedBack();
-      if (work.getAliasToWork() != null) {
-        for (        Operator<? extends OperatorDesc> op : work.getAliasToWork().values()) {
+      if (mWork.getAliasToWork() != null) {
+        for (        Operator<? extends OperatorDesc> op : mWork.getAliasToWork().values()) {
           op.jobClose(job,success,feedBack);
         }
       }
-      if (work.getReducer() != null) {
-        work.getReducer().jobClose(job,success,feedBack);
+      if (rWork != null) {
+        rWork.getReducer().jobClose(job,success,feedBack);
       }
     }
   }

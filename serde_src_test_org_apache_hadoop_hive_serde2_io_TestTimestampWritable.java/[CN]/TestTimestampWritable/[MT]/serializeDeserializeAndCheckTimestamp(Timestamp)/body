@@ -1,0 +1,50 @@
+{
+  TimestampWritable tsw=new TimestampWritable(ts);
+  assertEquals(ts,tsw.getTimestamp());
+  byte[] tsBytes=serializeToBytes(tsw);
+  TimestampWritable deserTSW=deserializeFromBytes(tsBytes);
+  assertTSWEquals(tsw,deserTSW);
+  assertEquals(ts,deserTSW.getTimestamp());
+  assertEquals(tsBytes.length,tsw.getTotalLength());
+  int binarySortableOffset=Math.abs(tsw.hashCode()) % 10;
+  byte[] binarySortableBytes=padBytes(tsw.getBinarySortable(),binarySortableOffset);
+  TimestampWritable fromBinSort=new TimestampWritable();
+  fromBinSort.setBinarySortable(binarySortableBytes,binarySortableOffset);
+  assertTSWEquals(tsw,fromBinSort);
+  long timeSeconds=ts.getTime() / 1000;
+  if (0 <= timeSeconds && timeSeconds <= Integer.MAX_VALUE) {
+    assertEquals(new Timestamp(timeSeconds * 1000),fromIntAndVInts((int)timeSeconds,0).getTimestamp());
+    int nanos=reverseNanos(ts.getNanos());
+    assertEquals(ts,fromIntAndVInts((int)timeSeconds | (nanos != 0 ? HAS_DECIMAL_MASK : 0),nanos).getTimestamp());
+  }
+  assertEquals(ts.getNanos(),tsw.getNanos());
+  assertEquals(getSeconds(ts),tsw.getSeconds());
+{
+    TimestampWritable tsSet1=new TimestampWritable();
+    int offset=Math.abs(ts.hashCode() % 32);
+    byte[] shiftedBytes=padBytes(tsBytes,offset);
+    tsSet1.set(shiftedBytes,offset);
+    assertTSWEquals(tsw,tsSet1);
+    TimestampWritable tswShiftedBytes=new TimestampWritable(shiftedBytes,offset);
+    assertTSWEquals(tsw,tswShiftedBytes);
+    assertTSWEquals(tsw,deserializeFromBytes(serializeToBytes(tswShiftedBytes)));
+  }
+{
+    TimestampWritable tsSet2=new TimestampWritable();
+    tsSet2.set(ts);
+    assertTSWEquals(tsw,tsSet2);
+  }
+{
+    TimestampWritable tsSet3=new TimestampWritable();
+    tsSet3.set(tsw);
+    assertTSWEquals(tsw,tsSet3);
+  }
+{
+    TimestampWritable tsSet4=new TimestampWritable();
+    tsSet4.set(deserTSW);
+    assertTSWEquals(tsw,tsSet4);
+  }
+  double expectedDbl=getSeconds(ts) + 1e-9d * ts.getNanos();
+  assertTrue(Math.abs(tsw.getDouble() - expectedDbl) < 1e-10d);
+  return deserTSW;
+}

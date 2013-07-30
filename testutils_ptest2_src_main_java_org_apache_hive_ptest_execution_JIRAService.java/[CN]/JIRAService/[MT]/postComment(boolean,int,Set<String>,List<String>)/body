@@ -1,0 +1,76 @@
+{
+  DefaultHttpClient httpClient=new DefaultHttpClient();
+  try {
+    String buildTag=formatBuildTag(mBuildTag);
+    List<String> comments=Lists.newArrayList();
+    comments.add("");
+    comments.add("");
+    if (!failedTests.isEmpty()) {
+      comments.add("{color:red}Overall{color}: -1 at least one tests failed");
+    }
+ else     if (numExecutesTests == 0) {
+      comments.add("{color:red}Overall{color}: -1 no tests executed");
+    }
+ else     if (error) {
+      comments.add("{color:red}Overall{color}: -1 build exited with an error");
+    }
+ else {
+      comments.add("{color:green}Overall{color}: +1 all checks pass");
+    }
+    comments.add("");
+    if (!mPatch.isEmpty()) {
+      comments.add("Here are the results of testing the latest attachment:");
+      comments.add(mPatch);
+    }
+    comments.add("");
+    if (numExecutesTests > 0) {
+      if (failedTests.isEmpty()) {
+        comments.add(formatSuccess("+1 " + numExecutesTests + " tests passed"));
+      }
+ else {
+        comments.add(formatError("-1 due to " + failedTests.size() + " failed/errored test(s), "+ numExecutesTests+ " tests executed"));
+        comments.add("*Failed tests:*");
+        comments.add("{noformat}");
+        comments.addAll(failedTests);
+        comments.add("{noformat}");
+      }
+      comments.add("");
+    }
+    comments.add("Test results: " + mJenkinsURL + "/"+ buildTag+ "/testReport");
+    comments.add("Console output: " + mJenkinsURL + "/"+ buildTag+ "/console");
+    comments.add("");
+    if (!messages.isEmpty()) {
+      comments.add("Messages:");
+      comments.add("{noformat}");
+      comments.addAll(messages);
+      comments.add("{noformat}");
+      comments.add("");
+    }
+    comments.add("This message is automatically generated.");
+    mLogger.info("Comment: " + Joiner.on("\n").join(comments));
+    String body=Joiner.on("\n").join(comments);
+    String url=String.format("%s/rest/api/2/issue/%s/comment",mUrl,mName);
+    URL apiURL=new URL(mUrl);
+    httpClient.getCredentialsProvider().setCredentials(new AuthScope(apiURL.getHost(),apiURL.getPort(),AuthScope.ANY_REALM),new UsernamePasswordCredentials(mUser,mPassword));
+    BasicHttpContext localcontext=new BasicHttpContext();
+    localcontext.setAttribute("preemptive-auth",new BasicScheme());
+    httpClient.addRequestInterceptor(new PreemptiveAuth(),0);
+    HttpPost request=new HttpPost(url);
+    ObjectMapper mapper=new ObjectMapper();
+    StringEntity params=new StringEntity(mapper.writeValueAsString(new Body(body)));
+    request.addHeader("Content-Type","application/json");
+    request.setEntity(params);
+    HttpResponse httpResponse=httpClient.execute(request,localcontext);
+    StatusLine statusLine=httpResponse.getStatusLine();
+    if (statusLine.getStatusCode() != 201) {
+      throw new RuntimeException(statusLine.getStatusCode() + " " + statusLine.getReasonPhrase());
+    }
+    mLogger.info("JIRA Response Metadata: " + httpResponse);
+  }
+ catch (  Exception e) {
+    mLogger.error("Encountered error attempting to post comment to " + mName,e);
+  }
+ finally {
+    httpClient.getConnectionManager().shutdown();
+  }
+}

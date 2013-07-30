@@ -1,6 +1,7 @@
 {
   try {
     FileSystem fs=srcf.getFileSystem(conf);
+    boolean inheritPerms=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_WAREHOUSE_SUBDIR_INHERIT_PERMS);
     FileStatus[] srcs;
     try {
       srcs=fs.globStatus(srcf);
@@ -13,7 +14,7 @@
       return;
     }
     List<List<Path[]>> result=checkPaths(conf,fs,srcs,destf,true);
-    if (oldPath != null) {
+    if (oldPath != null && (!destf.getFileSystem(conf).equals(oldPath.getFileSystem(conf)) || !destf.equals(oldPath))) {
       try {
         FileSystem fs2=oldPath.getFileSystem(conf);
         if (fs2.exists(oldPath)) {
@@ -27,25 +28,28 @@
       }
     }
     if (srcs.length == 1 && srcs[0].isDir()) {
-      if (!fs.exists(destf.getParent())) {
-        fs.mkdirs(destf.getParent());
+      Path destfp=destf.getParent();
+      if (!fs.exists(destfp)) {
+        boolean success=fs.mkdirs(destfp);
+        if (inheritPerms && success) {
+          fs.setPermission(destfp,fs.getFileStatus(destfp.getParent()).getPermission());
+        }
       }
-      if (fs.exists(destf)) {
-        fs.delete(destf,true);
-      }
-      boolean b=fs.rename(srcs[0].getPath(),destf);
+      boolean b=renameFile(conf,srcs[0].getPath(),destf,fs,true);
       if (!b) {
         throw new HiveException("Unable to move results from " + srcs[0].getPath() + " to destination directory: "+ destf);
       }
-      LOG.debug("Renaming:" + srcf.toString() + " to "+ destf.toString()+ ",Status:"+ b);
     }
  else {
       if (!fs.exists(destf)) {
-        fs.mkdirs(destf);
+        boolean success=fs.mkdirs(destf);
+        if (inheritPerms && success) {
+          fs.setPermission(destf,fs.getFileStatus(destf.getParent()).getPermission());
+        }
       }
       for (      List<Path[]> sdpairs : result) {
         for (        Path[] sdpair : sdpairs) {
-          if (!fs.rename(sdpair[0],sdpair[1])) {
+          if (!renameFile(conf,sdpair[0],sdpair[1],fs,true)) {
             throw new IOException("Error moving: " + sdpair[0] + " into: "+ sdpair[1]);
           }
         }

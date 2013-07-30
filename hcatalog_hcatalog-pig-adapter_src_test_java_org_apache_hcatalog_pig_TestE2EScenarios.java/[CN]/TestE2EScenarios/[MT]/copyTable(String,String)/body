@@ -1,0 +1,34 @@
+{
+  Job ijob=new Job();
+  Job ojob=new Job();
+  HCatInputFormat inpy=new HCatInputFormat();
+  inpy.setInput(ijob,null,in);
+  HCatOutputFormat oupy=new HCatOutputFormat();
+  oupy.setOutput(ojob,OutputJobInfo.create(null,out,new HashMap<String,String>()));
+  System.err.println("HCatContext INSTANCE is present : " + HCatContext.INSTANCE.getConf().isPresent());
+  if (HCatContext.INSTANCE.getConf().isPresent()) {
+    System.err.println("HCatContext tinyint->int promotion says " + HCatContext.INSTANCE.getConf().get().getBoolean(HCatConstants.HCAT_DATA_TINY_SMALL_INT_PROMOTION,HCatConstants.HCAT_DATA_TINY_SMALL_INT_PROMOTION_DEFAULT));
+  }
+  HCatSchema tableSchema=inpy.getTableSchema(ijob.getConfiguration());
+  System.err.println("Copying from [" + in + "] to ["+ out+ "] with schema : "+ tableSchema.toString());
+  oupy.setSchema(ojob,tableSchema);
+  oupy.checkOutputSpecs(ojob);
+  OutputCommitter oc=oupy.getOutputCommitter(createTaskAttemptContext(ojob.getConfiguration()));
+  oc.setupJob(ojob);
+  for (  InputSplit split : inpy.getSplits(ijob)) {
+    TaskAttemptContext rtaskContext=createTaskAttemptContext(ijob.getConfiguration());
+    TaskAttemptContext wtaskContext=createTaskAttemptContext(ojob.getConfiguration());
+    RecordReader<WritableComparable,HCatRecord> rr=inpy.createRecordReader(split,rtaskContext);
+    rr.initialize(split,rtaskContext);
+    OutputCommitter taskOc=oupy.getOutputCommitter(wtaskContext);
+    taskOc.setupTask(wtaskContext);
+    RecordWriter<WritableComparable<?>,HCatRecord> rw=oupy.getRecordWriter(wtaskContext);
+    while (rr.nextKeyValue()) {
+      rw.write(rr.getCurrentKey(),rr.getCurrentValue());
+    }
+    rw.close(wtaskContext);
+    taskOc.commitTask(wtaskContext);
+    rr.close();
+  }
+  oc.commitJob(ojob);
+}

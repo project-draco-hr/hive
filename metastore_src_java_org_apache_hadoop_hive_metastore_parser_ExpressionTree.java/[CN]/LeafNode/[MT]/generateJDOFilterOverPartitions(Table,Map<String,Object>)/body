@@ -10,19 +10,28 @@
   if (partitionColumnIndex == table.getPartitionKeys().size()) {
     throw new MetaException("Specified key <" + keyName + "> is not a partitioning key for the table");
   }
-  if (!table.getPartitionKeys().get(partitionColumnIndex).getType().equals(org.apache.hadoop.hive.serde.serdeConstants.STRING_TYPE_NAME)) {
-    throw new MetaException("Filtering is supported only on partition keys of type string");
+  String keyType=table.getPartitionKeys().get(partitionColumnIndex).getType();
+  boolean isIntegralSupported=doesOperatorSupportIntegral(operator);
+  if (!keyType.equals(org.apache.hadoop.hive.serde.serdeConstants.STRING_TYPE_NAME) && (!isIntegralSupported || !isIntegralType(keyType))) {
+    throw new MetaException("Filtering is supported only on partition keys of type " + "string" + (isIntegralSupported ? ", or integral types" : ""));
   }
-  String valueParam=null;
+  boolean isStringValue=value instanceof String;
+  if (!isStringValue && (!isIntegralSupported || !(value instanceof Long))) {
+    throw new MetaException("Filtering is supported only on partition keys of type " + "string" + (isIntegralSupported ? ", or integral types" : ""));
+  }
+  String valueAsString=null;
   try {
-    valueParam=(String)value;
+    valueAsString=isStringValue ? (String)value : Long.toString((Long)value);
   }
  catch (  ClassCastException e) {
-    throw new MetaException("Filtering is supported only on partition keys of type string");
+    throw new MetaException("Unable to cast the constexpr to " + (isStringValue ? "string" : "long"));
   }
   String paramName=PARAM_PREFIX + params.size();
-  params.put(paramName,valueParam);
-  String filter;
+  params.put(paramName,valueAsString);
+  boolean isOpEquals=operator == Operator.EQUALS;
+  if (isOpEquals || operator == Operator.NOTEQUALS || operator == Operator.NOTEQUALS2) {
+    return makeFilterForEquals(keyName,valueAsString,paramName,params,partitionColumnIndex,partitionColumnCount,isOpEquals);
+  }
   String keyEqual=FileUtils.escapePathName(keyName) + "=";
   int keyEqualLength=keyEqual.length();
   String valString;
@@ -32,27 +41,11 @@
  else {
     valString="partitionName.substring(partitionName.indexOf(\"" + keyEqual + "\")+"+ keyEqualLength+ ").substring(0, partitionName.substring(partitionName.indexOf(\""+ keyEqual+ "\")+"+ keyEqualLength+ ").indexOf(\"/\"))";
   }
-  if (isReverseOrder) {
-    if (operator == Operator.LIKE) {
-      throw new MetaException("Value should be on the RHS for LIKE operator : " + "Key <" + keyName + ">");
+  if (operator == Operator.LIKE) {
+    if (isReverseOrder) {
+      throw new MetaException("Value should be on the RHS for LIKE operator : Key <" + keyName + ">");
     }
- else     if (operator == Operator.EQUALS) {
-      filter=makeFilterForEquals(keyName,valueParam,paramName,params,partitionColumnIndex,partitionColumnCount);
-    }
- else {
-      filter=paramName + " " + operator.getJdoOp()+ " "+ valString;
-    }
+    return " " + valString + "."+ operator.getJdoOp()+ "("+ paramName+ ") ";
   }
- else {
-    if (operator == Operator.LIKE) {
-      filter=" " + valString + "."+ operator.getJdoOp()+ "("+ paramName+ ") ";
-    }
- else     if (operator == Operator.EQUALS) {
-      filter=makeFilterForEquals(keyName,valueParam,paramName,params,partitionColumnIndex,partitionColumnCount);
-    }
- else {
-      filter=" " + valString + " "+ operator.getJdoOp()+ " "+ paramName;
-    }
-  }
-  return filter;
+  return isReverseOrder ? paramName + " " + operator.getJdoOp()+ " "+ valString : " " + valString + " "+ operator.getJdoOp()+ " "+ paramName;
 }

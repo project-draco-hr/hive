@@ -1,0 +1,56 @@
+{
+  boolean isConst=expr instanceof ExprNodeConstantDesc;
+  boolean isCol=!isConst && (expr instanceof ExprNodeColumnDesc);
+  boolean isIntegralSupported=(parent != null) && (isConst || isCol) && doesJDOFuncSupportIntegral(parent);
+  if (isConst) {
+    Object value=((ExprNodeConstantDesc)expr).getValue();
+    if (value instanceof String) {
+      return null;
+    }
+    if (isIntegralSupported && isIntegralType(expr.getTypeInfo().getTypeName())) {
+      return null;
+    }
+    return "Constant " + value + " is not string "+ (isIntegralSupported ? "or integral " : "")+ "type: "+ expr.getTypeInfo().getTypeName();
+  }
+ else   if (isCol) {
+    TypeInfo type=expr.getTypeInfo();
+    if (type.getTypeName().equals(serdeConstants.STRING_TYPE_NAME) || (isIntegralSupported && isIntegralType(type.getTypeName()))) {
+      String colName=((ExprNodeColumnDesc)expr).getColumn();
+      for (      FieldSchema fs : tab.getPartCols()) {
+        if (fs.getName().equals(colName)) {
+          if (fs.getType().equals(serdeConstants.STRING_TYPE_NAME) || (isIntegralSupported && isIntegralType(fs.getType()))) {
+            return null;
+          }
+          return "Partition column " + fs.getName() + " is not string "+ (isIntegralSupported ? "or integral " : "")+ "type: "+ fs.getType();
+        }
+      }
+      assert(false);
+    }
+ else {
+      return "Column " + expr.getExprString() + " is not string "+ (isIntegralSupported ? "or integral " : "")+ "type: "+ type.getTypeName();
+    }
+  }
+ else   if (expr instanceof ExprNodeGenericFuncDesc) {
+    ExprNodeGenericFuncDesc funcDesc=(ExprNodeGenericFuncDesc)expr;
+    GenericUDF func=funcDesc.getGenericUDF();
+    if (!supportedJDOFuncs(func)) {
+      return "Expression " + expr.getExprString() + " cannot be evaluated";
+    }
+    boolean allChildrenConstant=true;
+    List<ExprNodeDesc> children=funcDesc.getChildExprs();
+    for (    ExprNodeDesc child : children) {
+      if (!(child instanceof ExprNodeConstantDesc)) {
+        allChildrenConstant=false;
+      }
+      String message=checkJDOPushDown(tab,child,func);
+      if (message != null) {
+        return message;
+      }
+    }
+    if (allChildrenConstant) {
+      return "Expression " + expr.getExprString() + " has only constants as children.";
+    }
+    return null;
+  }
+  return "Expression " + expr.getExprString() + " cannot be evaluated";
+}

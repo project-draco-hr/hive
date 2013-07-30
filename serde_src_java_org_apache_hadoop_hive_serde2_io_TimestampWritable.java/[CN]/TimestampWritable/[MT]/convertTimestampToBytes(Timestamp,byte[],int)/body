@@ -1,9 +1,18 @@
 {
-  if (b.length < 9) {
-    LOG.error("byte array too short");
-  }
   long millis=t.getTime();
   int nanos=t.getNanos();
-  boolean hasDecimal=nanos != 0 && setNanosBytes(nanos,b,offset + 4);
-  setSecondsBytes(millis,b,offset,hasDecimal);
+  long seconds=millisToSeconds(millis);
+  boolean hasSecondVInt=seconds < 0 || seconds > Integer.MAX_VALUE;
+  boolean hasDecimal=setNanosBytes(nanos,b,offset + 4,hasSecondVInt);
+  int firstInt=(int)seconds;
+  if (hasDecimal || hasSecondVInt) {
+    firstInt|=DECIMAL_OR_SECOND_VINT_FLAG;
+  }
+ else {
+    firstInt&=LOWEST_31_BITS_OF_SEC_MASK;
+  }
+  intToBytes(firstInt,b,offset);
+  if (hasSecondVInt) {
+    LazyBinaryUtils.writeVLongToByteArray(b,offset + 4 + WritableUtils.decodeVIntSize(b[offset + 4]),seconds >> 31);
+  }
 }
