@@ -6,9 +6,9 @@
   mFailedTests=Collections.newSetFromMap(new ConcurrentHashMap<String,Boolean>());
   mExecutionContext=executionContext;
   mExecutor=MoreExecutors.listeningDecorator(Executors.newCachedThreadPool());
-  File failedLogDir=Dirs.create(new File(logDir,"failed"));
-  File succeededLogDir=Dirs.create(new File(logDir,"succeeded"));
-  File scratchDir=Dirs.createEmpty(new File(mExecutionContext.getLocalWorkingDirectory(),"scratch"));
+  final File failedLogDir=Dirs.create(new File(logDir,"failed"));
+  final File succeededLogDir=Dirs.create(new File(logDir,"succeeded"));
+  final File scratchDir=Dirs.createEmpty(new File(mExecutionContext.getLocalWorkingDirectory(),"scratch"));
   File patchDir=Dirs.createEmpty(new File(logDir,"patches"));
   File patchFile=null;
   if (!configuration.getPatch().isEmpty()) {
@@ -17,16 +17,21 @@
   }
   ImmutableMap.Builder<String,String> templateDefaultsBuilder=ImmutableMap.builder();
   templateDefaultsBuilder.put("repository",configuration.getRepository()).put("repositoryName",configuration.getRepositoryName()).put("repositoryType",configuration.getRepositoryType()).put("branch",configuration.getBranch()).put("clearLibraryCache",String.valueOf(configuration.isClearLibraryCache())).put("workingDir",mExecutionContext.getLocalWorkingDirectory()).put("antArgs",configuration.getAntArgs()).put("buildTag",buildTag).put("logDir",logDir.getAbsolutePath()).put("javaHome",configuration.getJavaHome()).put("antEnvOpts",configuration.getAntEnvOpts());
-  ImmutableMap<String,String> templateDefaults=templateDefaultsBuilder.build();
+  final ImmutableMap<String,String> templateDefaults=templateDefaultsBuilder.build();
   TestParser testParser=new TestParser(configuration.getContext(),new File(mExecutionContext.getLocalWorkingDirectory(),configuration.getRepositoryName() + "-source"),logger);
-  ImmutableList.Builder<HostExecutor> hostExecutorsBuilder=ImmutableList.builder();
-  for (  Host host : mExecutionContext.getHosts()) {
-    hostExecutorsBuilder.add(new HostExecutor(host,executionContext.getPrivateKey(),mExecutor,sshCommandExecutor,rsyncCommandExecutor,templateDefaults,scratchDir,succeededLogDir,failedLogDir,10,logger));
+  HostExecutorBuilder hostExecutorBuilder=new HostExecutorBuilder(){
+    @Override public HostExecutor build(    Host host){
+      return new HostExecutor(host,executionContext.getPrivateKey(),mExecutor,sshCommandExecutor,rsyncCommandExecutor,templateDefaults,scratchDir,succeededLogDir,failedLogDir,10,logger);
+    }
   }
-  mHostExecutors=hostExecutorsBuilder.build();
+;
+  List<HostExecutor> hostExecutors=new ArrayList<HostExecutor>();
+  for (  Host host : mExecutionContext.getHosts()) {
+    hostExecutors.add(hostExecutorBuilder.build(host));
+  }
+  mHostExecutors=new CopyOnWriteArrayList<HostExecutor>(hostExecutors);
   mPhases=Lists.newArrayList();
-  mPhases.add(new CleanupPhase(mHostExecutors,localCommandFactory,templateDefaults,logger));
   mPhases.add(new PrepPhase(mHostExecutors,localCommandFactory,templateDefaults,scratchDir,patchFile,logger));
-  mPhases.add(new ExecutionPhase(mHostExecutors,localCommandFactory,templateDefaults,succeededLogDir,failedLogDir,testParser.parse(),mExecutedTests,mFailedTests,logger));
+  mPhases.add(new ExecutionPhase(mHostExecutors,mExecutionContext,hostExecutorBuilder,localCommandFactory,templateDefaults,succeededLogDir,failedLogDir,testParser.parse(),mExecutedTests,mFailedTests,logger));
   mPhases.add(new ReportingPhase(mHostExecutors,localCommandFactory,templateDefaults,logger));
 }
