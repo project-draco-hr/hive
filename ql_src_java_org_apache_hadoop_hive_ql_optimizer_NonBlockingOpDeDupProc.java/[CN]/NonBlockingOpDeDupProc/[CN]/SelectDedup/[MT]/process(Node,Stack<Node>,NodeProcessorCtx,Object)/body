@@ -9,15 +9,35 @@
   }
   if (!cSEL.getConf().isSelStarNoCompute()) {
     Set<String> funcOutputs=getFunctionOutputs(pSEL.getConf().getOutputColumnNames(),pSEL.getConf().getColList());
-    List<ExprNodeDesc> sources=cSEL.getConf().getColList();
-    if (!funcOutputs.isEmpty() && !checkReferences(sources,funcOutputs)) {
+    List<ExprNodeDesc> cSELColList=cSEL.getConf().getColList();
+    List<String> cSELOutputColumnNames=cSEL.getConf().getOutputColumnNames();
+    if (!funcOutputs.isEmpty() && !checkReferences(cSELColList,funcOutputs)) {
       return null;
     }
-    pSEL.getConf().setColList(ExprNodeDescUtils.backtrack(sources,cSEL,pSEL));
-    pSEL.getConf().setOutputColumnNames(cSEL.getConf().getOutputColumnNames());
+    if (cSEL.getColumnExprMap() == null) {
+      pSEL.getConf().setColList(ExprNodeDescUtils.backtrack(cSELColList,cSEL,pSEL));
+      pSEL.getConf().setOutputColumnNames(cSELOutputColumnNames);
+    }
+ else {
+      List<ExprNodeDesc> newPSELColList=new ArrayList<ExprNodeDesc>();
+      List<String> newPSELOutputColumnNames=new ArrayList<String>();
+      Map<String,ExprNodeDesc> colExprMap=new HashMap<String,ExprNodeDesc>();
+      for (int i=0; i < cSELOutputColumnNames.size(); i++) {
+        String outputColumnName=cSELOutputColumnNames.get(i);
+        ExprNodeDesc cSELExprNodeDesc=cSELColList.get(i);
+        ExprNodeDesc newPSELExprNodeDesc=ExprNodeDescUtils.backtrack(cSELExprNodeDesc,cSEL,pSEL);
+        newPSELColList.add(newPSELExprNodeDesc);
+        newPSELOutputColumnNames.add(outputColumnName);
+        colExprMap.put(outputColumnName,newPSELExprNodeDesc);
+      }
+      pSEL.getConf().setColList(newPSELColList);
+      pSEL.getConf().setOutputColumnNames(newPSELOutputColumnNames);
+      pSEL.setColumnExprMap(colExprMap);
+    }
     pSEL.setSchema(cSEL.getSchema());
   }
   pSEL.getConf().setSelectStar(cSEL.getConf().isSelectStar());
+  pctx.updateOpParseCtx(pSEL,pctx.removeOpParseCtx(cSEL));
   pSEL.removeChildAndAdoptItsChildren(cSEL);
   cSEL.setParentOperators(null);
   cSEL.setChildOperators(null);
