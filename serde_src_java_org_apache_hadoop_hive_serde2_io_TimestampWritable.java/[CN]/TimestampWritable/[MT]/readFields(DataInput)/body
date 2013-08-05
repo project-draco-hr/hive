@@ -1,9 +1,22 @@
 {
   in.readFully(internalBytes,0,4);
-  if (TimestampWritable.hasDecimal(internalBytes[0])) {
+  if (TimestampWritable.hasDecimalOrSecondVInt(internalBytes[0])) {
     in.readFully(internalBytes,4,1);
     int len=(byte)WritableUtils.decodeVIntSize(internalBytes[4]);
-    in.readFully(internalBytes,5,len - 1);
+    if (len > 1) {
+      in.readFully(internalBytes,5,len - 1);
+    }
+    long vlong=LazyBinaryUtils.readVLongFromByteArray(internalBytes,4);
+    if (vlong < -1000000000 || vlong > 999999999) {
+      throw new IOException("Invalid first vint value (encoded nanoseconds) of a TimestampWritable: " + vlong + ", expected to be between -1000000000 and 999999999.");
+    }
+    if (vlong < 0) {
+      in.readFully(internalBytes,4 + len,1);
+      int secondVIntLen=(byte)WritableUtils.decodeVIntSize(internalBytes[4 + len]);
+      if (secondVIntLen > 1) {
+        in.readFully(internalBytes,5 + len,secondVIntLen - 1);
+      }
+    }
   }
   currentBytes=internalBytes;
   this.offset=0;

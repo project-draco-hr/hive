@@ -1,0 +1,35 @@
+{
+  Set<Host> goodHosts=Sets.newHashSet();
+  for (  HostExecutor hostExecutor : ImmutableList.copyOf(hostExecutors)) {
+    if (hostExecutor.isBad()) {
+      logger.info("Removing host during execution phase: " + hostExecutor.getHost());
+      executionContext.addBadHost(hostExecutor.getHost());
+      hostExecutors.remove(hostExecutor);
+    }
+ else {
+      goodHosts.add(hostExecutor.getHost());
+    }
+  }
+  long start=System.currentTimeMillis();
+  while (hostExecutors.size() < expectedNumHosts) {
+    if (System.currentTimeMillis() - start > FOUR_HOURS) {
+      throw new RuntimeException("Waited over fours for hosts, still have only " + hostExecutors.size() + " hosts out of an expected "+ expectedNumHosts);
+    }
+    logger.warn("Only " + hostExecutors.size() + " hosts out of an expected "+ expectedNumHosts+ ", attempting to replace bad hosts");
+    TimeUnit.MINUTES.sleep(1);
+    executionContext.replaceBadHosts();
+    for (    Host host : executionContext.getHosts()) {
+      if (!goodHosts.contains(host)) {
+        HostExecutor hostExecutor=hostExecutorBuilder.build(host);
+        initalizeHost(hostExecutor);
+        if (hostExecutor.isBad()) {
+          executionContext.addBadHost(hostExecutor.getHost());
+        }
+ else {
+          logger.info("Adding new host during execution phase: " + host);
+          hostExecutors.add(hostExecutor);
+        }
+      }
+    }
+  }
+}
