@@ -1,0 +1,34 @@
+{
+  ObjectInspector inspector;
+synchronized (TestVectorizedORCReader.class) {
+    inspector=ObjectInspectorFactory.getReflectionObjectInspector(recordClass,ObjectInspectorFactory.ObjectInspectorOptions.JAVA);
+  }
+  Writer writer=OrcFile.createWriter(fs,outputPath,conf,inspector,100000,CompressionKind.ZLIB,10000,10000);
+  try {
+    Constructor[] constructors=recordClass.getConstructors();
+    if (constructors.length != 1) {
+      throw new UnsupportedOperationException("The provided recordClass must have exactly one constructor.");
+    }
+    BatchDataDistribution[] dataDist=BatchDataDistribution.values();
+    Class[] columns=constructors[0].getParameterTypes();
+    for (int i=0; i < dataDist.length * 3; i++) {
+      Object[][] rows=new Object[columns.length][VectorizedRowBatch.DEFAULT_SIZE];
+      for (int c=0; c < columns.length; c++) {
+        if (!TYPE_TO_BATCH_GEN_MAP.containsKey(columns[c])) {
+          throw new UnsupportedOperationException("No batch generator defined for type " + columns[c].getName());
+        }
+        rows[c]=TYPE_TO_BATCH_GEN_MAP.get(columns[c]).generateBatch(dataDist[(i + c) % dataDist.length]);
+      }
+      for (int r=0; r < VectorizedRowBatch.DEFAULT_SIZE; r++) {
+        Object[] row=new Object[columns.length];
+        for (int c=0; c < columns.length; c++) {
+          row[c]=rows[c][r];
+        }
+        writer.addRow(constructors[0].newInstance(row));
+      }
+    }
+  }
+  finally {
+    writer.close();
+  }
+}
