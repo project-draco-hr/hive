@@ -1,0 +1,83 @@
+{
+  DAGStatus status;
+  boolean running=false;
+  boolean done=false;
+  int checkInterval=500;
+  int printInterval=3000;
+  int maxRetryInterval=5000;
+  int counter=0;
+  int failedCounter=0;
+  int rc=0;
+  DAGStatus.State lastState=null;
+  String lastReport=null;
+  console.printInfo("\n");
+  while (true) {
+    ++counter;
+    try {
+      status=dagClient.getDAGStatus();
+      Map<String,Progress> progressMap=status.getVertexProgress();
+      failedCounter=0;
+      DAGStatus.State state=status.getState();
+      if (state != lastState || state == RUNNING) {
+        lastState=state;
+switch (state) {
+case SUBMITTED:
+          console.printInfo("Status: Submitted");
+        break;
+case INITING:
+      console.printInfo("Status: Initializing");
+    break;
+case RUNNING:
+  if (!running) {
+    console.printInfo("Status: Running\n");
+    printTaskNumbers(progressMap,console);
+    running=true;
+  }
+if (counter % printInterval / checkInterval == 0) {
+  lastReport=printStatus(progressMap,lastReport,console);
+}
+break;
+case SUCCEEDED:
+lastReport=printStatus(progressMap,lastReport,console);
+console.printInfo("Status: Finished successfully");
+running=false;
+done=true;
+break;
+case KILLED:
+console.printInfo("Status: Killed");
+running=false;
+done=true;
+rc=1;
+break;
+case FAILED:
+case ERROR:
+console.printError("Status: Failed");
+running=false;
+done=true;
+rc=2;
+break;
+}
+}
+}
+ catch (Exception e) {
+if (failedCounter % maxRetryInterval / checkInterval == 0) {
+try {
+dagClient.tryKillDAG();
+}
+ catch (IOException io) {
+}
+catch (TezException te) {
+}
+e.printStackTrace();
+console.printError("Execution has failed.");
+rc=1;
+done=true;
+}
+}
+if (done) {
+break;
+}
+Thread.sleep(500);
+}
+return rc;
+}
