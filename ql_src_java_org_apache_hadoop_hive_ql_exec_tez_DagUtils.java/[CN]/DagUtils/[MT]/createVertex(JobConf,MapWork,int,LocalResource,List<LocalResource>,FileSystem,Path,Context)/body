@@ -1,0 +1,34 @@
+{
+  Path hashTableArchive=createHashTables(mapWork,conf);
+  LocalResource localWorkLr=null;
+  if (hashTableArchive != null) {
+    localWorkLr=createLocalResource(fs,hashTableArchive,LocalResourceType.ARCHIVE,LocalResourceVisibility.APPLICATION);
+  }
+  Path planPath=Utilities.setMapWork(conf,mapWork,mrScratchDir.toUri().toString(),false);
+  LocalResource planLr=createLocalResource(fs,planPath,LocalResourceType.FILE,LocalResourceVisibility.APPLICATION);
+  List<Path> inputPaths=Utilities.getInputPaths(conf,mapWork,mrScratchDir.toUri().toString(),ctx);
+  Utilities.setInputPaths(conf,inputPaths);
+  InputSplitInfo inputSplitInfo=MRHelpers.generateInputSplits(conf,mrScratchDir);
+  MultiStageMRConfToTezTranslator.translateVertexConfToTez(conf,conf);
+  Vertex map=null;
+  if (inputSplitInfo.getNumTasks() != 0) {
+    map=new Vertex("Map " + seqNo,new ProcessorDescriptor(MapProcessor.class.getName(),MRHelpers.createUserPayloadFromConf(conf)),inputSplitInfo.getNumTasks(),MRHelpers.getMapResource(conf));
+    Map<String,String> environment=new HashMap<String,String>();
+    MRHelpers.updateEnvironmentForMRTasks(conf,environment,true);
+    map.setTaskEnvironment(environment);
+    map.setJavaOpts(MRHelpers.getMapJavaOpts(conf));
+    map.setTaskLocationsHint(inputSplitInfo.getTaskLocationHints());
+    Map<String,LocalResource> localResources=new HashMap<String,LocalResource>();
+    if (localWorkLr != null) {
+      localResources.put(hashTableArchive.getName(),localWorkLr);
+    }
+    localResources.put(appJarLr.getResource().getFile(),appJarLr);
+    for (    LocalResource lr : additionalLr) {
+      localResources.put(lr.getResource().getFile(),lr);
+    }
+    localResources.put(planPath.getName(),planLr);
+    MRHelpers.updateLocalResourcesForInputSplits(FileSystem.get(conf),inputSplitInfo,localResources);
+    map.setTaskLocalResources(localResources);
+  }
+  return map;
+}
