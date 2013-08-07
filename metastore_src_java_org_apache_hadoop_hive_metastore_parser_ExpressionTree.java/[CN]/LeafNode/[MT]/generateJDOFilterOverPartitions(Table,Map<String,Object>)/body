@@ -1,31 +1,7 @@
 {
   int partitionColumnCount=table.getPartitionKeys().size();
-  int partitionColumnIndex;
-  for (partitionColumnIndex=0; partitionColumnIndex < partitionColumnCount; partitionColumnIndex++) {
-    if (table.getPartitionKeys().get(partitionColumnIndex).getName().equalsIgnoreCase(keyName)) {
-      break;
-    }
-  }
-  assert(table.getPartitionKeys().size() > 0);
-  if (partitionColumnIndex == table.getPartitionKeys().size()) {
-    throw new MetaException("Specified key <" + keyName + "> is not a partitioning key for the table");
-  }
-  String keyType=table.getPartitionKeys().get(partitionColumnIndex).getType();
-  boolean isIntegralSupported=doesOperatorSupportIntegral(operator);
-  if (!keyType.equals(org.apache.hadoop.hive.serde.serdeConstants.STRING_TYPE_NAME) && (!isIntegralSupported || !isIntegralType(keyType))) {
-    throw new MetaException("Filtering is supported only on partition keys of type " + "string" + (isIntegralSupported ? ", or integral types" : ""));
-  }
-  boolean isStringValue=value instanceof String;
-  if (!isStringValue && (!isIntegralSupported || !(value instanceof Long))) {
-    throw new MetaException("Filtering is supported only on partition keys of type " + "string" + (isIntegralSupported ? ", or integral types" : ""));
-  }
-  String valueAsString=null;
-  try {
-    valueAsString=isStringValue ? (String)value : Long.toString((Long)value);
-  }
- catch (  ClassCastException e) {
-    throw new MetaException("Unable to cast the constexpr to " + (isStringValue ? "string" : "long"));
-  }
+  int partitionColumnIndex=getPartColIndexForFilter(table);
+  String valueAsString=getFilterPushdownParam(table,partitionColumnIndex);
   String paramName=PARAM_PREFIX + params.size();
   params.put(paramName,valueAsString);
   boolean isOpEquals=operator == Operator.EQUALS;

@@ -1,0 +1,37 @@
+{
+  boolean doTrace=LOG.isDebugEnabled();
+  long start=doTrace ? System.nanoTime() : 0;
+  Query query=pm.newQuery("javax.jdo.query.SQL",queryText);
+  Object result=query.execute();
+  long queryTime=doTrace ? System.nanoTime() : 0;
+  if (result == null) {
+    query.closeAll();
+    return 0;
+  }
+  if (!(result instanceof List<?>)) {
+    throw new MetaException("Wrong result type " + result.getClass());
+  }
+  @SuppressWarnings("unchecked") List<Object[]> list=(List<Object[]>)result;
+  Iterator<Object[]> iter=list.iterator();
+  Object[] fields=null;
+  for (  Map.Entry<Long,T> entry : tree.entrySet()) {
+    if (fields == null && !iter.hasNext())     break;
+    long id=entry.getKey();
+    while (fields != null || iter.hasNext()) {
+      if (fields == null) {
+        fields=iter.next();
+      }
+      long nestedId=(Long)fields[keyIndex];
+      if (nestedId < id)       throw new MetaException("Found entries for unknown ID " + nestedId);
+      if (nestedId > id)       break;
+      func.apply(entry.getValue(),fields);
+      fields=null;
+    }
+  }
+  int rv=list.size();
+  query.closeAll();
+  if (doTrace) {
+    LOG.debug("Direct SQL query in " + (queryTime - start) / 1000000.0 + "ms + " + (System.nanoTime() - queryTime) / 1000000.0 + "ms, the query is [" + queryText + "]");
+  }
+  return rv;
+}
