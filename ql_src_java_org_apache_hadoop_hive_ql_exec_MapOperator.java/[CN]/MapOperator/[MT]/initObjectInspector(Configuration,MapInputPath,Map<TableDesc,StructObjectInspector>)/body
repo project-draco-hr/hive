@@ -1,24 +1,22 @@
 {
-  PartitionDesc pd=conf.getPathToPartitionInfo().get(onefile);
-  LinkedHashMap<String,String> partSpec=pd.getPartSpec();
-  Properties partProps=(pd.getPartSpec() == null || pd.getPartSpec().isEmpty()) ? pd.getTableDesc().getProperties() : pd.getOverlayedProperties();
+  PartitionDesc pd=ctx.partDesc;
+  TableDesc td=pd.getTableDesc();
+  MapOpCtx opCtx=new MapOpCtx();
+  Properties partProps=isPartitioned(pd) ? pd.getOverlayedProperties() : pd.getTableDesc().getProperties();
+  Map<String,String> partSpec=pd.getPartSpec();
+  opCtx.tableName=String.valueOf(partProps.getProperty("name"));
+  opCtx.partName=String.valueOf(partSpec);
   Class serdeclass=pd.getDeserializerClass();
   if (serdeclass == null) {
-    String className=pd.getSerdeClassName();
-    if ((className == null) || (className.isEmpty())) {
-      throw new HiveException("SerDe class or the SerDe class name is not set for table: " + pd.getProperties().getProperty("name"));
-    }
+    String className=checkSerdeClassName(pd.getSerdeClassName(),opCtx.tableName);
     serdeclass=hconf.getClassByName(className);
   }
-  String tableName=String.valueOf(partProps.getProperty("name"));
-  String partName=String.valueOf(partSpec);
-  Deserializer partDeserializer=(Deserializer)serdeclass.newInstance();
-  partDeserializer.initialize(hconf,partProps);
-  StructObjectInspector partRawRowObjectInspector=(StructObjectInspector)partDeserializer.getObjectInspector();
-  StructObjectInspector tblRawRowObjectInspector=convertedOI.get(pd.getTableDesc());
-  partTblObjectInspectorConverter=ObjectInspectorConverters.getConverter(partRawRowObjectInspector,tblRawRowObjectInspector);
-  MapOpCtx opCtx=null;
-  String pcols=partProps.getProperty(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS);
+  opCtx.deserializer=(Deserializer)serdeclass.newInstance();
+  opCtx.deserializer.initialize(hconf,partProps);
+  StructObjectInspector partRawRowObjectInspector=(StructObjectInspector)opCtx.deserializer.getObjectInspector();
+  opCtx.tblRawRowObjectInspector=convertedOI.get(td);
+  opCtx.partTblObjectInspectorConverter=ObjectInspectorConverters.getConverter(partRawRowObjectInspector,opCtx.tblRawRowObjectInspector);
+  String pcols=partProps.getProperty(hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS);
   if (pcols != null && pcols.length() > 0) {
     String[] partKeys=pcols.trim().split("/");
     List<String> partNames=new ArrayList<String>(partKeys.length);
