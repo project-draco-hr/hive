@@ -35,16 +35,36 @@
       }
       partObjectInspectors.add(PrimitiveObjectInspectorFactory.writableStringObjectInspector);
     }
-    StructObjectInspector partObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(partNames,partObjectInspectors);
-    Object[] rowWithPart=new Object[2];
-    rowWithPart[1]=partValues;
-    StructObjectInspector rowObjectInspector=ObjectInspectorFactory.getUnionStructObjectInspector(Arrays.asList(new StructObjectInspector[]{tblRawRowObjectInspector,partObjectInspector}));
-    opCtx=new MapOpCtx(true,rowObjectInspector,tblRawRowObjectInspector,partObjectInspector,rowWithPart,null,partDeserializer,partTblObjectInspectorConverter);
+    opCtx.rowWithPart=new Object[]{null,partValues};
+    opCtx.partObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(partNames,partObjectInspectors);
   }
+  if (ctx.op instanceof TableScanOperator) {
+    TableScanOperator tsOp=(TableScanOperator)ctx.op;
+    TableScanDesc tsDesc=tsOp.getConf();
+    if (tsDesc != null && tsDesc.hasVirtualCols()) {
+      opCtx.vcs=tsDesc.getVirtualCols();
+      opCtx.vcValues=new Writable[opCtx.vcs.size()];
+      opCtx.vcsObjectInspector=VirtualColumn.getVCSObjectInspector(opCtx.vcs);
+      if (opCtx.isPartitioned()) {
+        opCtx.rowWithPartAndVC=Arrays.copyOfRange(opCtx.rowWithPart,0,3);
+      }
  else {
-    opCtx=new MapOpCtx(false,tblRawRowObjectInspector,tblRawRowObjectInspector,null,null,null,partDeserializer,partTblObjectInspectorConverter);
+        opCtx.rowWithPartAndVC=new Object[2];
+      }
+    }
   }
-  opCtx.tableName=tableName;
-  opCtx.partName=partName;
+  if (!opCtx.hasVC() && !opCtx.isPartitioned()) {
+    opCtx.rowObjectInspector=opCtx.tblRawRowObjectInspector;
+    return opCtx;
+  }
+  List<StructObjectInspector> inspectors=new ArrayList<StructObjectInspector>();
+  inspectors.add(opCtx.tblRawRowObjectInspector);
+  if (opCtx.isPartitioned()) {
+    inspectors.add(opCtx.partObjectInspector);
+  }
+  if (opCtx.hasVC()) {
+    inspectors.add(opCtx.vcsObjectInspector);
+  }
+  opCtx.rowObjectInspector=ObjectInspectorFactory.getUnionStructObjectInspector(inspectors);
   return opCtx;
 }
