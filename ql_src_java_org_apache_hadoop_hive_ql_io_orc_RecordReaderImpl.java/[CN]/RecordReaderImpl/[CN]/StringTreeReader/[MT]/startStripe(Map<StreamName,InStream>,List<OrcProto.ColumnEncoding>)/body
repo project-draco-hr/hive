@@ -1,29 +1,13 @@
 {
-  super.startStripe(streams,encodings);
-  dictionarySize=encodings.get(columnId).getDictionarySize();
-  StreamName name=new StreamName(columnId,OrcProto.Stream.Kind.DICTIONARY_DATA);
-  InStream in=streams.get(name);
-  if (in.available() > 0) {
-    dictionaryBuffer=new DynamicByteArray(64,in.available());
-    dictionaryBuffer.readAll(in);
-  }
- else {
-    dictionaryBuffer=null;
-  }
-  in.close();
-  name=new StreamName(columnId,OrcProto.Stream.Kind.LENGTH);
-  in=streams.get(name);
-  RunLengthIntegerReader lenReader=new RunLengthIntegerReader(in,false);
-  int offset=0;
-  if (dictionaryOffsets == null || dictionaryOffsets.length < dictionarySize + 1) {
-    dictionaryOffsets=new int[dictionarySize + 1];
-  }
-  for (int i=0; i < dictionarySize; ++i) {
-    dictionaryOffsets[i]=offset;
-    offset+=(int)lenReader.next();
-  }
-  dictionaryOffsets[dictionarySize]=offset;
-  in.close();
-  name=new StreamName(columnId,OrcProto.Stream.Kind.DATA);
-  reader=new RunLengthIntegerReader(streams.get(name),false);
+switch (encodings.get(columnId).getKind()) {
+case DIRECT:
+    reader=new StringDirectTreeReader(path,columnId);
+  break;
+case DICTIONARY:
+reader=new StringDictionaryTreeReader(path,columnId);
+break;
+default :
+throw new IllegalArgumentException("Unsupported encoding " + encodings.get(columnId).getKind());
+}
+reader.startStripe(streams,encodings);
 }
