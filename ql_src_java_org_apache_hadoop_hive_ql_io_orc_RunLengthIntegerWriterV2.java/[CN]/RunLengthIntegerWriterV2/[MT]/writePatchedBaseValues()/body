@@ -1,0 +1,33 @@
+{
+  int fb=brBits95p;
+  int efb=SerializationUtils.encodeBitWidth(fb) << 1;
+  variableRunLength-=1;
+  int tailBits=(variableRunLength & 0x100) >>> 8;
+  int headerFirstByte=getOpcode() | efb | tailBits;
+  int headerSecondByte=variableRunLength & 0xff;
+  boolean isNegative=min < 0 ? true : false;
+  if (isNegative) {
+    min=-min;
+  }
+  int baseWidth=SerializationUtils.findClosestNumBits(min) + 1;
+  int baseBytes=baseWidth % 8 == 0 ? baseWidth / 8 : (baseWidth / 8) + 1;
+  int bb=(baseBytes - 1) << 5;
+  if (isNegative) {
+    min|=(1L << ((baseBytes * 8) - 1));
+  }
+  int headerThirdByte=bb | SerializationUtils.encodeBitWidth(patchWidth);
+  int headerFourthByte=(patchGapWidth - 1) << 5 | patchLength;
+  output.write(headerFirstByte);
+  output.write(headerSecondByte);
+  output.write(headerThirdByte);
+  output.write(headerFourthByte);
+  for (int i=baseBytes - 1; i >= 0; i--) {
+    byte b=(byte)((min >>> (i * 8)) & 0xff);
+    output.write(b);
+  }
+  int closestFixedBits=SerializationUtils.getClosestFixedBits(brBits95p);
+  SerializationUtils.writeInts(baseRedLiterals,0,baseRedLiterals.length,closestFixedBits,output);
+  closestFixedBits=SerializationUtils.getClosestFixedBits(patchGapWidth + patchWidth);
+  SerializationUtils.writeInts(gapVsPatchList,0,gapVsPatchList.length,closestFixedBits,output);
+  variableRunLength=0;
+}

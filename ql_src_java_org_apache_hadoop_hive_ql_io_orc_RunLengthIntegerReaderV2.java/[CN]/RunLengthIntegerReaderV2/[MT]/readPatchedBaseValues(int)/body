@@ -1,0 +1,62 @@
+{
+  int fbo=(firstByte >>> 1) & 0x1f;
+  int fb=SerializationUtils.decodeBitWidth(fbo);
+  int len=(firstByte & 0x01) << 8;
+  len|=input.read();
+  len+=1;
+  int thirdByte=input.read();
+  int bw=(thirdByte >>> 5) & 0x07;
+  bw+=1;
+  int pwo=thirdByte & 0x1f;
+  int pw=SerializationUtils.decodeBitWidth(pwo);
+  int fourthByte=input.read();
+  int pgw=(fourthByte >>> 5) & 0x07;
+  pgw+=1;
+  int pl=fourthByte & 0x1f;
+  long base=SerializationUtils.bytesToLongBE(input,bw);
+  long mask=(1L << ((bw * 8) - 1));
+  if ((base & mask) != 0) {
+    base=base & ~mask;
+    base=-base;
+  }
+  long[] unpacked=new long[len];
+  SerializationUtils.readInts(unpacked,0,len,fb,input);
+  long[] unpackedPatch=new long[pl];
+  SerializationUtils.readInts(unpackedPatch,0,pl,pw + pgw,input);
+  int patchIdx=0;
+  long currGap=0;
+  long currPatch=0;
+  currGap=unpackedPatch[patchIdx] >>> pw;
+  currPatch=unpackedPatch[patchIdx] & ((1 << pw) - 1);
+  long actualGap=0;
+  while (currGap == 255 && currPatch == 0) {
+    actualGap+=255;
+    patchIdx++;
+    currGap=unpackedPatch[patchIdx] >>> pw;
+    currPatch=unpackedPatch[patchIdx] & ((1 << pw) - 1);
+  }
+  actualGap+=currGap;
+  for (int i=0; i < unpacked.length; i++) {
+    if (i == actualGap) {
+      long patchedVal=unpacked[i] | (currPatch << fb);
+      literals[numLiterals++]=base + patchedVal;
+      patchIdx++;
+      if (patchIdx < pl) {
+        currGap=unpackedPatch[patchIdx] >>> pw;
+        currPatch=unpackedPatch[patchIdx] & ((1 << pw) - 1);
+        actualGap=0;
+        while (currGap == 255 && currPatch == 0) {
+          actualGap+=255;
+          patchIdx++;
+          currGap=unpackedPatch[patchIdx] >>> pw;
+          currPatch=unpackedPatch[patchIdx] & ((1 << pw) - 1);
+        }
+        actualGap+=currGap;
+        actualGap+=i;
+      }
+    }
+ else {
+      literals[numLiterals++]=base + unpacked[i];
+    }
+  }
+}
