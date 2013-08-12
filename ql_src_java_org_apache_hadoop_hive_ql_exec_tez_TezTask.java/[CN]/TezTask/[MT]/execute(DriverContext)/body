@@ -1,12 +1,20 @@
 {
   int rc=1;
-  Context ctx=driverContext.getCtx();
+  boolean cleanContext=false;
+  Context ctx=null;
+  DAGClient client=null;
   try {
+    ctx=driverContext.getCtx();
+    if (ctx == null) {
+      ctx=new Context(conf);
+      cleanContext=true;
+    }
     Path scratchDir=new Path(ctx.getMRScratchDir());
+    DagUtils.createTezDir(scratchDir,conf);
     JobConf jobConf=DagUtils.createConfiguration(conf);
     LocalResource appJarLr=DagUtils.createHiveExecLocalResource(conf);
     DAG dag=build(jobConf,work,scratchDir,appJarLr,ctx);
-    DAGClient client=submit(jobConf,dag,scratchDir,appJarLr);
+    client=submit(jobConf,dag,scratchDir,appJarLr);
     TezJobMonitor monitor=new TezJobMonitor();
     rc=monitor.monitorExecution(client);
   }
@@ -15,11 +23,16 @@
   }
  finally {
     Utilities.clearWork(conf);
-    try {
-      ctx.clear();
+    if (cleanContext) {
+      try {
+        ctx.clear();
+      }
+ catch (      Exception e) {
+        LOG.warn("Failed to clean up after tez job");
+      }
     }
- catch (    Exception e) {
-      LOG.warn("Failed to clean up after tez job");
+    if (client != null) {
+      rc=close(work,rc);
     }
   }
   return rc;
