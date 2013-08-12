@@ -4,5 +4,28 @@
   String addedJars=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEADDEDJARS);
   String addedFiles=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEADDEDFILES);
   String addedArchives=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEADDEDARCHIVES);
+  String hdfsDirPathStr=HiveConf.getVar(conf,HiveConf.ConfVars.HIVE_JAR_DIRECTORY);
+  Path hdfsDirPath=new Path(hdfsDirPathStr);
+  FileSystem fs=hdfsDirPath.getFileSystem(conf);
+  if (!(fs instanceof DistributedFileSystem)) {
+    throw new IOException(ErrorMsg.INVALID_HDFS_URI.format(hdfsDirPathStr));
+  }
+  FileStatus fstatus=null;
+  try {
+    fstatus=fs.getFileStatus(hdfsDirPath);
+  }
+ catch (  FileNotFoundException fe) {
+  }
+  if ((fstatus == null) || (!fstatus.isDir())) {
+    Path destDir=getDefaultDestDir(conf);
+    hdfsDirPathStr=destDir.toString();
+  }
+  String allFiles=auxJars + "," + addedJars+ ","+ addedFiles+ ","+ addedArchives;
+  String[] allFilesArr=allFiles.split(",");
+  for (  String file : allFilesArr) {
+    String hdfsFilePathStr=hdfsDirPathStr + "/" + getResourceBaseName(file);
+    LocalResource localResource=localizeResource(new Path(file),new Path(hdfsFilePathStr),conf);
+    tmpResources.add(localResource);
+  }
   return tmpResources;
 }
