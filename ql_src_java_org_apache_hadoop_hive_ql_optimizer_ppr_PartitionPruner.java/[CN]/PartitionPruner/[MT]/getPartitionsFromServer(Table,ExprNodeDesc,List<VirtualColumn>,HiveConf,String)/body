@@ -1,0 +1,40 @@
+{
+  try {
+    if (!tab.isPartitioned()) {
+      return new PrunedPartitionList(tab,new LinkedHashSet<Partition>(Hive.get().getPartitions(tab)),false);
+    }
+    LOG.debug("tabname = " + tab.getTableName() + " is partitioned");
+    if ("strict".equalsIgnoreCase(HiveConf.getVar(conf,HiveConf.ConfVars.HIVEMAPREDMODE)) && !hasColumnExpr(prunerExpr)) {
+      throw new SemanticException(ErrorMsg.NO_PARTITION_PREDICATE.getMsg("for Alias \"" + alias + "\" Table \""+ tab.getTableName()+ "\""));
+    }
+    if (prunerExpr == null) {
+      return new PrunedPartitionList(tab,new LinkedHashSet<Partition>(Hive.get().getPartitions(tab)),false);
+    }
+    ExprNodeDesc compactExpr=compactExpr(prunerExpr.clone());
+    String oldFilter=prunerExpr.getExprString();
+    if (compactExpr == null) {
+      LOG.debug("Filter " + oldFilter + " was null after compacting");
+      return new PrunedPartitionList(tab,new LinkedHashSet<Partition>(Hive.get().getPartitions(tab)),true);
+    }
+    Set<Partition> partitions=new LinkedHashSet<Partition>();
+    boolean hasUnknownPartitions=false;
+    String message=Utilities.checkJDOPushDown(tab,compactExpr,null);
+    if (message != null) {
+      LOG.info(ErrorMsg.INVALID_JDO_FILTER_EXPRESSION.getMsg("by condition '" + message + "'"));
+      hasUnknownPartitions=pruneBySequentialScan(tab,partitions,prunerExpr,vcs,conf);
+    }
+ else {
+      String filter=compactExpr.getExprString();
+      LOG.debug("Filter w/ compacting: " + filter + "; filter w/o compacting: "+ oldFilter);
+      hasUnknownPartitions=!filter.equals(oldFilter);
+      partitions.addAll(Hive.get().getPartitionsByFilter(tab,filter));
+    }
+    return new PrunedPartitionList(tab,partitions,hasUnknownPartitions);
+  }
+ catch (  HiveException e) {
+    throw e;
+  }
+catch (  Exception e) {
+    throw new HiveException(e);
+  }
+}
