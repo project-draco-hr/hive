@@ -1,0 +1,32 @@
+{
+  List<DiskRange> result=new ArrayList<DiskRange>();
+  long offset=0;
+  boolean[] hasNull=new boolean[types.size()];
+  for (  OrcProto.Stream stream : streamList) {
+    if (stream.getKind() == OrcProto.Stream.Kind.PRESENT) {
+      hasNull[stream.getColumn()]=true;
+    }
+  }
+  for (  OrcProto.Stream stream : streamList) {
+    long length=stream.getLength();
+    int column=stream.getColumn();
+    OrcProto.Stream.Kind streamKind=stream.getKind();
+    if (StreamName.getArea(streamKind) == StreamName.Area.DATA && includedColumns[column]) {
+      if (includedRowGroups == null || isDictionary(streamKind,encodings.get(column))) {
+        result.add(new DiskRange(offset,offset + length));
+      }
+ else {
+        for (int group=0; group < includedRowGroups.length; ++group) {
+          if (includedRowGroups[group]) {
+            int posn=getIndexPosition(encodings.get(column).getKind(),types.get(column).getKind(),stream.getKind(),isCompressed,hasNull[column]);
+            long start=indexes[column].getEntry(group).getPositions(posn);
+            long end=(group == includedRowGroups.length - 1) ? length : Math.min(length,indexes[column].getEntry(group + 1).getPositions(posn) + (isCompressed ? (OutStream.HEADER_SIZE + compressionSize) : WORST_UNCOMPRESSED_SLOP));
+            result.add(new DiskRange(offset + start,offset + end));
+          }
+        }
+      }
+    }
+    offset+=length;
+  }
+  return result;
+}

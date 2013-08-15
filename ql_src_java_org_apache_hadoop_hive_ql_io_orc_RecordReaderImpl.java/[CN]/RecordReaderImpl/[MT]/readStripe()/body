@@ -1,65 +1,32 @@
 {
   StripeInformation stripe=stripes.get(currentStripe);
   stripeFooter=readStripeFooter(stripe);
-  long offset=stripe.getOffset();
   streams.clear();
-  if (included == null) {
-    byte[] buffer=new byte[(int)(stripe.getDataLength())];
-    file.seek(offset + stripe.getIndexLength());
-    file.readFully(buffer,0,buffer.length);
-    int sectionOffset=0;
-    for (    OrcProto.Stream section : stripeFooter.getStreamsList()) {
-      if (StreamName.getArea(section.getKind()) == StreamName.Area.DATA) {
-        int sectionLength=(int)section.getLength();
-        ByteBuffer sectionBuffer=ByteBuffer.wrap(buffer,sectionOffset,sectionLength);
-        StreamName name=new StreamName(section.getColumn(),section.getKind());
-        streams.put(name,InStream.create(name.toString(),sectionBuffer,codec,bufferSize));
-        sectionOffset+=sectionLength;
-      }
-    }
-  }
- else {
-    List<OrcProto.Stream> streamList=stripeFooter.getStreamsList();
-    int currentSection=0;
-    while (currentSection < streamList.size() && StreamName.getArea(streamList.get(currentSection).getKind()) != StreamName.Area.DATA) {
-      currentSection+=1;
-    }
-    long sectionOffset=stripe.getIndexLength();
-    while (currentSection < streamList.size()) {
-      int bytes=0;
-      int excluded=currentSection;
-      while (excluded < streamList.size() && included[streamList.get(excluded).getColumn()]) {
-        bytes+=streamList.get(excluded).getLength();
-        excluded+=1;
-      }
-      if (bytes != 0) {
-        byte[] buffer=new byte[bytes];
-        file.seek(offset + sectionOffset);
-        file.readFully(buffer,0,bytes);
-        sectionOffset+=bytes;
-        bytes=0;
-        while (currentSection < excluded) {
-          OrcProto.Stream section=streamList.get(currentSection);
-          StreamName name=new StreamName(section.getColumn(),section.getKind());
-          this.streams.put(name,InStream.create(name.toString(),ByteBuffer.wrap(buffer,bytes,(int)section.getLength()),codec,bufferSize));
-          currentSection+=1;
-          bytes+=section.getLength();
-        }
-      }
-      while (currentSection < streamList.size() && !included[streamList.get(currentSection).getColumn()]) {
-        sectionOffset+=streamList.get(currentSection).getLength();
-        currentSection+=1;
-      }
-    }
-  }
-  reader.startStripe(streams,stripeFooter.getColumnsList());
-  rowInStripe=0;
   rowCountInStripe=stripe.getNumberOfRows();
+  rowInStripe=0;
   rowBaseInStripe=0;
   for (int i=0; i < currentStripe; ++i) {
     rowBaseInStripe+=stripes.get(i).getNumberOfRows();
   }
   for (int i=0; i < indexes.length; ++i) {
     indexes[i]=null;
+  }
+  includedRowGroups=pickRowGroups();
+  if (includedRowGroups != null) {
+    while (rowInStripe < rowCountInStripe && !includedRowGroups[(int)(rowInStripe / rowIndexStride)]) {
+      rowInStripe=Math.min(rowCountInStripe,rowInStripe + rowIndexStride);
+    }
+  }
+  if (rowInStripe < rowCountInStripe) {
+    if (included == null && includedRowGroups == null) {
+      readAllDataStreams(stripe);
+    }
+ else {
+      readPartialDataStreams(stripe);
+    }
+    reader.startStripe(streams,stripeFooter.getColumnsList());
+    if (rowInStripe != 0) {
+      seekToRowEntry((int)(rowInStripe / rowIndexStride));
+    }
   }
 }
