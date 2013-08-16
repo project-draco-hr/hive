@@ -164,26 +164,33 @@
       }
     }
 );
-    queryText="select SKEWED_COL_VALUE_LOC_MAP.SD_ID, SKEWED_STRING_LIST_VALUES.STRING_LIST_ID," + "  SKEWED_COL_VALUE_LOC_MAP.LOCATION, SKEWED_STRING_LIST_VALUES.STRING_LIST_VALUE " + "from SKEWED_COL_VALUE_LOC_MAP"+ "  left outer join SKEWED_STRING_LIST_VALUES on SKEWED_COL_VALUE_LOC_MAP."+ "STRING_LIST_ID_KID = SKEWED_STRING_LIST_VALUES.STRING_LIST_ID "+ "where SKEWED_COL_VALUE_LOC_MAP.SD_ID in (" + sdIds + ")"+ "  and SKEWED_COL_VALUE_LOC_MAP.STRING_LIST_ID_KID is not null "+ "order by SKEWED_COL_VALUE_LOC_MAP.SD_ID asc,"+ "  SKEWED_STRING_LIST_VALUES.INTEGER_IDX asc";
+    queryText="select SKEWED_COL_VALUE_LOC_MAP.SD_ID, SKEWED_STRING_LIST_VALUES.STRING_LIST_ID," + "  SKEWED_COL_VALUE_LOC_MAP.LOCATION, SKEWED_STRING_LIST_VALUES.STRING_LIST_VALUE " + "from SKEWED_COL_VALUE_LOC_MAP"+ "  left outer join SKEWED_STRING_LIST_VALUES on SKEWED_COL_VALUE_LOC_MAP."+ "STRING_LIST_ID_KID = SKEWED_STRING_LIST_VALUES.STRING_LIST_ID "+ "where SKEWED_COL_VALUE_LOC_MAP.SD_ID in (" + sdIds + ")"+ "  and SKEWED_COL_VALUE_LOC_MAP.STRING_LIST_ID_KID is not null "+ "order by SKEWED_COL_VALUE_LOC_MAP.SD_ID asc,"+ "  SKEWED_STRING_LIST_VALUES.STRING_LIST_ID asc,"+ "  SKEWED_STRING_LIST_VALUES.INTEGER_IDX asc";
     loopJoinOrderedResult(sds,queryText,0,new ApplyFunc<StorageDescriptor>(){
       private Long currentListId;
       private SkewedValueList currentList;
       public void apply(      StorageDescriptor t,      Object[] fields){
-        if (!t.isSetSkewedInfo())         t.setSkewedInfo(new SkewedInfo());
+        if (!t.isSetSkewedInfo()) {
+          SkewedInfo skewedInfo=new SkewedInfo();
+          skewedInfo.setSkewedColValueLocationMaps(new HashMap<SkewedValueList,String>());
+          t.setSkewedInfo(skewedInfo);
+        }
+        Map<SkewedValueList,String> skewMap=t.getSkewedInfo().getSkewedColValueLocationMaps();
         if (fields[1] == null) {
-          currentList=null;
+          currentList=new SkewedValueList();
           currentListId=null;
-          t.getSkewedInfo().putToSkewedColValueLocationMaps(new SkewedValueList(),(String)fields[2]);
         }
  else {
           long fieldsListId=(Long)fields[1];
           if (currentListId == null || fieldsListId != currentListId) {
             currentList=new SkewedValueList();
             currentListId=fieldsListId;
-            t.getSkewedInfo().putToSkewedColValueLocationMaps(currentList,(String)fields[2]);
+          }
+ else {
+            skewMap.remove(currentList);
           }
           currentList.addToSkewedValueList((String)fields[3]);
         }
+        skewMap.put(currentList,(String)fields[2]);
       }
     }
 );
