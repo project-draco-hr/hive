@@ -1,31 +1,23 @@
 {
   boolean isSilent=HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVESESSIONSILENT);
   console=new LogHelper(LOG,isSilent);
-  numMapRowsRead=0;
-  firstRow=true;
+  memoryExhaustionHandler=new MapJoinMemoryExhaustionHandler(console,conf.getHashtableMemoryUsage());
   posBigTableAlias=conf.getPosBigTable();
   order=conf.getTagOrder();
-  numAliases=conf.getExprs().size();
   this.hconf=hconf;
-  totalSz=0;
   noOuterJoin=conf.isNoOuterJoin();
   filterMaps=conf.getFilterMap();
   int tagLen=conf.getTagLength();
   joinKeys=new List[tagLen];
   JoinUtil.populateJoinKeyValue(joinKeys,conf.getKeys(),posBigTableAlias);
   joinKeysObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinKeys,inputObjInspectors,posBigTableAlias,tagLen);
-  joinKeysStandardObjectInspectors=JoinUtil.getStandardObjectInspectors(joinKeysObjectInspectors,posBigTableAlias,tagLen);
   joinValues=new List[tagLen];
   JoinUtil.populateJoinKeyValue(joinValues,conf.getExprs(),posBigTableAlias);
   joinValuesObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinValues,inputObjInspectors,posBigTableAlias,tagLen);
-  joinValuesStandardObjectInspectors=JoinUtil.getStandardObjectInspectors(joinValuesObjectInspectors,posBigTableAlias,tagLen);
   joinFilters=new List[tagLen];
   JoinUtil.populateJoinKeyValue(joinFilters,conf.getFilters(),posBigTableAlias);
   joinFilterObjectInspectors=JoinUtil.getObjectInspectorsFromEvaluators(joinFilters,inputObjInspectors,posBigTableAlias,tagLen);
-  if (noOuterJoin) {
-    rowContainerStandardObjectInspectors=joinValuesStandardObjectInspectors;
-  }
- else {
+  if (!noOuterJoin) {
     List<ObjectInspector>[] rowContainerObjectInspectors=new List[tagLen];
     for (    Byte alias : order) {
       if (alias == posBigTableAlias) {
@@ -38,25 +30,32 @@
       }
       rowContainerObjectInspectors[alias]=rcOIs;
     }
-    rowContainerStandardObjectInspectors=getStandardObjectInspectors(rowContainerObjectInspectors,tagLen);
   }
-  metadataValueTag=new int[numAliases];
-  for (int pos=0; pos < numAliases; pos++) {
-    metadataValueTag[pos]=-1;
-  }
-  mapJoinTables=new HashMapWrapper[tagLen];
+  mapJoinTables=new MapJoinTableContainer[tagLen];
+  mapJoinTableSerdes=new MapJoinTableContainerSerDe[tagLen];
   int hashTableThreshold=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVEHASHTABLETHRESHOLD);
   float hashTableLoadFactor=HiveConf.getFloatVar(hconf,HiveConf.ConfVars.HIVEHASHTABLELOADFACTOR);
-  float hashTableMaxMemoryUsage=this.getConf().getHashtableMemoryUsage();
   hashTableScale=HiveConf.getLongVar(hconf,HiveConf.ConfVars.HIVEHASHTABLESCALE);
   if (hashTableScale <= 0) {
     hashTableScale=1;
   }
-  for (  Byte pos : order) {
-    if (pos == posBigTableAlias) {
-      continue;
+  try {
+    TableDesc keyTableDesc=conf.getKeyTblDesc();
+    SerDe keySerde=(SerDe)ReflectionUtils.newInstance(keyTableDesc.getDeserializerClass(),null);
+    keySerde.initialize(null,keyTableDesc.getProperties());
+    MapJoinObjectSerDeContext keyContext=new MapJoinObjectSerDeContext(keySerde,false);
+    for (    Byte pos : order) {
+      if (pos == posBigTableAlias) {
+        continue;
+      }
+      mapJoinTables[pos]=new HashMapWrapper(hashTableThreshold,hashTableLoadFactor);
+      TableDesc valueTableDesc=conf.getValueTblFilteredDescs().get(pos);
+      SerDe valueSerDe=(SerDe)ReflectionUtils.newInstance(valueTableDesc.getDeserializerClass(),null);
+      valueSerDe.initialize(null,valueTableDesc.getProperties());
+      mapJoinTableSerdes[pos]=new MapJoinTableContainerSerDe(keyContext,new MapJoinObjectSerDeContext(valueSerDe,hasFilter(pos)));
     }
-    HashMapWrapper<AbstractMapJoinKey,MapJoinObjectValue> hashTable=new HashMapWrapper<AbstractMapJoinKey,MapJoinObjectValue>(hashTableThreshold,hashTableLoadFactor,hashTableMaxMemoryUsage);
-    mapJoinTables[pos]=hashTable;
+  }
+ catch (  SerDeException e) {
+    throw new HiveException(e);
   }
 }

@@ -2,32 +2,33 @@
   try {
     if (mapJoinTables != null) {
       String tmpURI=this.getExecContext().getLocalWork().getTmpFileURI();
-      LOG.info("Get TMP URI: " + tmpURI);
-      long fileLength;
+      LOG.info("Temp URI for side table: " + tmpURI);
       for (byte tag=0; tag < mapJoinTables.length; tag++) {
-        HashMapWrapper<AbstractMapJoinKey,MapJoinObjectValue> hashTable=mapJoinTables[tag];
-        if (hashTable == null) {
+        MapJoinTableContainer tableContainer=mapJoinTables[tag];
+        if (tableContainer == null) {
           continue;
         }
         String bigBucketFileName=getExecContext().getCurrentBigBucketFile();
         String fileName=getExecContext().getLocalWork().getBucketFileName(bigBucketFileName);
         String dumpFilePrefix=conf.getDumpFilePrefix();
         String tmpURIPath=Utilities.generatePath(tmpURI,dumpFilePrefix,tag,fileName);
-        hashTable.isAbort(rowNumber,console);
-        console.printInfo(Utilities.now() + "\tDump the hashtable into file: " + tmpURIPath);
+        console.printInfo(Utilities.now() + "\tDump the side-table into file: " + tmpURIPath);
         Path path=new Path(tmpURIPath);
         FileSystem fs=path.getFileSystem(hconf);
-        File file=new File(path.toUri().getPath());
-        fs.create(path);
-        fileLength=hashTable.flushMemoryCacheToPersistent(file);
-        console.printInfo(Utilities.now() + "\tUpload 1 File to: " + tmpURIPath+ " File size: "+ fileLength);
-        hashTable.close();
+        ObjectOutputStream out=new ObjectOutputStream(new BufferedOutputStream(fs.create(path),4096));
+        try {
+          mapJoinTableSerdes[tag].persist(out,tableContainer);
+        }
+  finally {
+          out.close();
+        }
+        tableContainer.clear();
+        console.printInfo(Utilities.now() + "\tUpload 1 File to: " + tmpURIPath);
       }
     }
     super.closeOp(abort);
   }
  catch (  Exception e) {
-    LOG.error("Generate Hashtable error",e);
-    e.printStackTrace();
+    LOG.error("Error generating side-table",e);
   }
 }
