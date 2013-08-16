@@ -1,0 +1,28 @@
+{
+  ObjectInspector inspector;
+synchronized (TestOrcFile.class) {
+    inspector=ObjectInspectorFactory.getReflectionObjectInspector(MyRecord.class,ObjectInspectorFactory.ObjectInspectorOptions.JAVA);
+  }
+  Configuration conf=new Configuration();
+  conf.setFloat(HiveConf.ConfVars.HIVE_ORC_DICTIONARY_KEY_SIZE_THRESHOLD.varname,0.49f);
+  Writer writer=OrcFile.createWriter(fs,testFilePath,conf,inspector,100000,CompressionKind.ZLIB,10000,10000);
+  Random r1=new Random(1);
+  String[] words=new String[]{"It","was","the","best","of","times,","it","was","the","worst","of","times,","it","was","the","age","of","wisdom,","it","was","the","age","of","foolishness,","it","was","the","epoch","of","belief,","it","was","the","epoch","of","incredulity,","it","was","the","season","of","Light,","it","was","the","season","of","Darkness,","it","was","the","spring","of","hope,","it","was","the","winter","of","despair,","we","had","everything","before","us,","we","had","nothing","before","us,","we","were","all","going","direct","to","Heaven,","we","were","all","going","direct","the","other","way"};
+  int nextInt=0;
+  for (int i=0; i < 21000; ++i) {
+    if (i % 2 == 0) {
+      nextInt=r1.nextInt(words.length);
+      words[nextInt]+="-" + i;
+    }
+    writer.addRow(new MyRecord(r1.nextInt(),r1.nextLong(),words[nextInt]));
+  }
+  writer.close();
+  PrintStream origOut=System.out;
+  String outputFilename=File.separator + "orc-file-dump-dictionary-threshold.out";
+  FileOutputStream myOut=new FileOutputStream(workDir + outputFilename);
+  System.setOut(new PrintStream(myOut));
+  FileDump.main(new String[]{testFilePath.toString()});
+  System.out.flush();
+  System.setOut(origOut);
+  checkOutput(resourceDir + outputFilename,workDir + outputFilename);
+}

@@ -1,0 +1,104 @@
+{
+  zigzagLiterals=new long[numLiterals];
+  baseRedLiterals=new long[numLiterals];
+  adjDeltas=new long[numLiterals - 1];
+  int idx=0;
+  boolean isIncreasing=false;
+  int increasingCount=1;
+  boolean isDecreasing=false;
+  int decreasingCount=1;
+  min=literals[0];
+  long max=literals[0];
+  isFixedDelta=true;
+  long currDelta=0;
+  min=literals[0];
+  long deltaMax=0;
+  if (numLiterals >= 1) {
+    currDelta=literals[1] - literals[0];
+    for (int i=0; i < numLiterals; i++) {
+      if (i > 0 && literals[i] >= max) {
+        max=literals[i];
+        increasingCount++;
+      }
+      if (i > 0 && literals[i] <= min) {
+        min=literals[i];
+        decreasingCount++;
+      }
+      if (i > 0 && isFixedDelta) {
+        if (literals[i] - literals[i - 1] != currDelta) {
+          isFixedDelta=false;
+        }
+        fixedDelta=currDelta;
+      }
+      long zzEncVal=0;
+      if (signed) {
+        zzEncVal=SerializationUtils.zigzagEncode(literals[i]);
+      }
+ else {
+        zzEncVal=literals[i];
+      }
+      zigzagLiterals[idx]=zzEncVal;
+      idx++;
+      if (i > 0) {
+        if (i == 1) {
+          adjDeltas[i - 1]=literals[i] - literals[i - 1];
+        }
+ else {
+          adjDeltas[i - 1]=Math.abs(literals[i] - literals[i - 1]);
+          if (adjDeltas[i - 1] > deltaMax) {
+            deltaMax=adjDeltas[i - 1];
+          }
+        }
+      }
+    }
+    bitsDeltaMax=SerializationUtils.findClosestNumBits(deltaMax);
+    if (increasingCount == 1 && decreasingCount == numLiterals) {
+      isDecreasing=true;
+    }
+    if (decreasingCount == 1 && increasingCount == numLiterals) {
+      isIncreasing=true;
+    }
+  }
+  if (isDecreasing && isIncreasing) {
+    isDecreasing=false;
+    isIncreasing=false;
+  }
+  if (isIncreasing == false && isDecreasing == false && isFixedDelta == true) {
+    encoding=EncodingType.DELTA;
+    return;
+  }
+  if (isIncreasing || isDecreasing) {
+    encoding=EncodingType.DELTA;
+    return;
+  }
+  double p=0.9;
+  zzBits90p=SerializationUtils.percentileBits(zigzagLiterals,p);
+  p=1.0;
+  zzBits100p=SerializationUtils.percentileBits(zigzagLiterals,p);
+  int diffBitsLH=zzBits100p - zzBits90p;
+  if (isIncreasing == false && isDecreasing == false && diffBitsLH > 1 && isFixedDelta == false) {
+    for (int i=0; i < zigzagLiterals.length; i++) {
+      baseRedLiterals[i]=literals[i] - min;
+    }
+    p=0.95;
+    brBits95p=SerializationUtils.percentileBits(baseRedLiterals,p);
+    p=1.0;
+    brBits100p=SerializationUtils.percentileBits(baseRedLiterals,p);
+    if ((brBits100p - brBits95p) != 0) {
+      encoding=EncodingType.PATCHED_BASE;
+      preparePatchedBlob();
+      return;
+    }
+ else {
+      encoding=EncodingType.DIRECT;
+      return;
+    }
+  }
+  if (isIncreasing == false && isDecreasing == false && diffBitsLH <= 1 && isFixedDelta == false) {
+    encoding=EncodingType.DIRECT;
+    return;
+  }
+  if (encoding == null) {
+    throw new RuntimeException("Integer encoding cannot be determined.");
+  }
+}

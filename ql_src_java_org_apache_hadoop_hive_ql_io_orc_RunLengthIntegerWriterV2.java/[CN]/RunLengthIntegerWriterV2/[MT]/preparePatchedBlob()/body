@@ -1,0 +1,54 @@
+{
+  int mask=(1 << brBits95p) - 1;
+  patchLength=(int)Math.ceil((baseRedLiterals.length * 0.05));
+  int[] gapList=new int[patchLength];
+  long[] patchList=new long[patchLength];
+  patchWidth=brBits100p - brBits95p;
+  patchWidth=SerializationUtils.getClosestFixedBits(patchWidth);
+  int gapIdx=0;
+  int patchIdx=0;
+  int prev=0;
+  int gap=0;
+  int maxGap=0;
+  for (int i=0; i < baseRedLiterals.length; i++) {
+    if (baseRedLiterals[i] > mask) {
+      gap=i - prev;
+      if (gap > maxGap) {
+        maxGap=gap;
+      }
+      prev=i;
+      gapList[gapIdx++]=gap;
+      long patch=baseRedLiterals[i] >>> brBits95p;
+      patchList[patchIdx++]=patch;
+      baseRedLiterals[i]&=mask;
+    }
+  }
+  patchLength=gapIdx;
+  if (maxGap == 0 && patchLength != 0) {
+    patchGapWidth=1;
+  }
+ else {
+    patchGapWidth=SerializationUtils.findClosestNumBits(maxGap);
+  }
+  if (patchGapWidth > 8) {
+    patchGapWidth=8;
+    if (maxGap == 511) {
+      patchLength+=2;
+    }
+ else {
+      patchLength+=1;
+    }
+  }
+  gapIdx=0;
+  patchIdx=0;
+  gapVsPatchList=new long[patchLength];
+  for (int i=0; i < patchLength; i++) {
+    long g=gapList[gapIdx++];
+    long p=patchList[patchIdx++];
+    while (g > 255) {
+      gapVsPatchList[i++]=(255 << patchWidth) | 0;
+      g-=255;
+    }
+    gapVsPatchList[i]=(g << patchWidth) | p;
+  }
+}

@@ -1,0 +1,19 @@
+{
+  if (node.operator == Operator.LIKE) {
+    throw new MetaException("LIKE is not supported for SQL filter pushdown");
+  }
+  int partColCount=table.getPartitionKeys().size();
+  int partColIndex=node.getPartColIndexForFilter(table);
+  String valueAsString=node.getFilterPushdownParam(table,partColIndex);
+  params.add(valueAsString);
+  if (joins.isEmpty()) {
+    for (int i=0; i < partColCount; ++i) {
+      joins.add(null);
+    }
+  }
+  if (joins.get(partColIndex) == null) {
+    joins.set(partColIndex,"inner join PARTITION_KEY_VALS as FILTER" + partColIndex + " on FILTER"+ partColIndex+ ".PART_ID = PARTITIONS.PART_ID and FILTER"+ partColIndex+ ".INTEGER_IDX = "+ partColIndex);
+  }
+  String tableValue="FILTER" + partColIndex + ".PART_KEY_VAL";
+  filterBuffer.append(node.isReverseOrder ? "(? " + node.operator.getSqlOp() + " "+ tableValue+ ")" : "(" + tableValue + " "+ node.operator.getSqlOp()+ " ?)");
+}

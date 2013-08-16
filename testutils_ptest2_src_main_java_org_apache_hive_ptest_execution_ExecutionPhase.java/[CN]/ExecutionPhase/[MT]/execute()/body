@@ -11,27 +11,17 @@
     }
   }
   try {
+    int expectedNumHosts=hostExecutors.size();
+    initalizeHosts();
     do {
-      float numberBadHosts=0f;
-      for (      HostExecutor hostExecutor : hostExecutors) {
-        if (hostExecutor.remainingDrones() == 0) {
-          numberBadHosts++;
-        }
-      }
-      Preconditions.checkState(hostExecutors.size() > 0,"Host executors cannot be empty");
-      float percentBadHosts=numberBadHosts / (float)hostExecutors.size();
-      if (percentBadHosts > 0.50f) {
-        throw new IllegalStateException("Too many bad hosts: " + percentBadHosts + "% ("+ (int)numberBadHosts+ " / "+ hostExecutors.size()+ ") is greater than threshold of 50%");
-      }
+      replaceBadHosts(expectedNumHosts);
       List<ListenableFuture<Void>> results=Lists.newArrayList();
-      for (      HostExecutor hostExecutor : getHostExecutors()) {
+      for (      HostExecutor hostExecutor : ImmutableList.copyOf(hostExecutors)) {
         results.add(hostExecutor.submitTests(parallelWorkQueue,isolatedWorkQueue,failedTestResults));
       }
       Futures.allAsList(results).get();
     }
  while (!(parallelWorkQueue.isEmpty() && isolatedWorkQueue.isEmpty()));
-    Preconditions.checkState(parallelWorkQueue.isEmpty(),"Parallel work queue is not empty. All drones must have aborted.");
-    Preconditions.checkState(isolatedWorkQueue.isEmpty(),"Isolated work queue is not empty. All drones must have aborted.");
     for (    TestBatch batch : testBatches) {
       File batchLogDir;
       if (failedTestResults.contains(batch)) {

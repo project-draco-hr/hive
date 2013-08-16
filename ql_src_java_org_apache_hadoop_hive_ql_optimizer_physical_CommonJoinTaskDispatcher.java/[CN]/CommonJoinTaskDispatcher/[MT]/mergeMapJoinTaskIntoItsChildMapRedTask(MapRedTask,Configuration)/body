@@ -1,0 +1,87 @@
+{
+  if (mapJoinTask.getChildTasks() == null || mapJoinTask.getChildTasks().size() > 1) {
+    return;
+  }
+  Task<? extends Serializable> childTask=mapJoinTask.getChildTasks().get(0);
+  if (!(childTask instanceof MapRedTask)) {
+    return;
+  }
+  MapRedTask childMapRedTask=(MapRedTask)childTask;
+  MapWork mapJoinMapWork=mapJoinTask.getWork().getMapWork();
+  MapWork childMapWork=childMapRedTask.getWork().getMapWork();
+  Map<String,Operator<? extends OperatorDesc>> mapJoinAliasToWork=mapJoinMapWork.getAliasToWork();
+  if (mapJoinAliasToWork.size() > 1) {
+    return;
+  }
+  Entry<String,Operator<? extends OperatorDesc>> mapJoinAliasToWorkEntry=mapJoinAliasToWork.entrySet().iterator().next();
+  String mapJoinAlias=mapJoinAliasToWorkEntry.getKey();
+  TableScanOperator mapJoinTaskTableScanOperator=OperatorUtils.findSingleOperator(mapJoinAliasToWorkEntry.getValue(),TableScanOperator.class);
+  if (mapJoinTaskTableScanOperator == null) {
+    throw new SemanticException("Expected a " + TableScanOperator.getOperatorName() + " operator as the work associated with alias "+ mapJoinAlias+ ". Found a "+ mapJoinAliasToWork.get(mapJoinAlias).getName()+ " operator.");
+  }
+  FileSinkOperator mapJoinTaskFileSinkOperator=OperatorUtils.findSingleOperator(mapJoinTaskTableScanOperator,FileSinkOperator.class);
+  if (mapJoinTaskFileSinkOperator == null) {
+    throw new SemanticException("Cannot find the " + FileSinkOperator.getOperatorName() + " operator at the last operator of the MapJoin Task.");
+  }
+  String childMRPath=mapJoinTaskFileSinkOperator.getConf().getDirName();
+  List<String> childMRAliases=childMapWork.getPathToAliases().get(childMRPath);
+  if (childMRAliases == null || childMRAliases.size() != 1) {
+    return;
+  }
+  String childMRAlias=childMRAliases.get(0);
+  MapredLocalWork mapJoinLocalWork=mapJoinMapWork.getMapLocalWork();
+  MapredLocalWork childLocalWork=childMapWork.getMapLocalWork();
+  if ((mapJoinLocalWork != null && mapJoinLocalWork.getBucketMapjoinContext() != null) || (childLocalWork != null && childLocalWork.getBucketMapjoinContext() != null)) {
+    return;
+  }
+  if (!isLocalTableTotalSizeUnderLimitAfterMerge(conf,mapJoinLocalWork,childLocalWork)) {
+    return;
+  }
+  TableScanOperator childMRTaskTableScanOperator=OperatorUtils.findSingleOperator(childMapWork.getAliasToWork().get(childMRAlias),TableScanOperator.class);
+  if (childMRTaskTableScanOperator == null) {
+    throw new SemanticException("Expected a " + TableScanOperator.getOperatorName() + " operator as the work associated with alias "+ childMRAlias+ ". Found a "+ childMapWork.getAliasToWork().get(childMRAlias).getName()+ " operator.");
+  }
+  List<Operator<? extends OperatorDesc>> parentsInMapJoinTask=mapJoinTaskFileSinkOperator.getParentOperators();
+  List<Operator<? extends OperatorDesc>> childrenInChildMRTask=childMRTaskTableScanOperator.getChildOperators();
+  if (parentsInMapJoinTask.size() > 1 || childrenInChildMRTask.size() > 1) {
+    return;
+  }
+  Operator<? extends OperatorDesc> parentInMapJoinTask=parentsInMapJoinTask.get(0);
+  Operator<? extends OperatorDesc> childInChildMRTask=childrenInChildMRTask.get(0);
+  parentInMapJoinTask.replaceChild(mapJoinTaskFileSinkOperator,childInChildMRTask);
+  childInChildMRTask.replaceParent(childMRTaskTableScanOperator,parentInMapJoinTask);
+  GenMapRedUtils.replaceMapWork(mapJoinAlias,childMRAlias,mapJoinMapWork,childMapWork);
+  if (mapJoinLocalWork != null) {
+    if (childLocalWork == null) {
+      childMapWork.setMapLocalWork(mapJoinLocalWork);
+    }
+ else {
+      childLocalWork.getAliasToFetchWork().putAll(mapJoinLocalWork.getAliasToFetchWork());
+      childLocalWork.getAliasToWork().putAll(mapJoinLocalWork.getAliasToWork());
+    }
+  }
+  List<Task<? extends Serializable>> parentTasks=mapJoinTask.getParentTasks();
+  mapJoinTask.setParentTasks(null);
+  mapJoinTask.setChildTasks(null);
+  childMapRedTask.getParentTasks().remove(mapJoinTask);
+  if (parentTasks != null) {
+    childMapRedTask.getParentTasks().addAll(parentTasks);
+    for (    Task<? extends Serializable> parentTask : parentTasks) {
+      parentTask.getChildTasks().remove(mapJoinTask);
+      if (!parentTask.getChildTasks().contains(childMapRedTask)) {
+        parentTask.getChildTasks().add(childMapRedTask);
+      }
+    }
+  }
+ else {
+    if (physicalContext.getRootTasks().contains(mapJoinTask)) {
+      physicalContext.removeFromRootTask(mapJoinTask);
+      if (childMapRedTask.getParentTasks() != null && childMapRedTask.getParentTasks().size() == 0 && !physicalContext.getRootTasks().contains(childMapRedTask)) {
+        physicalContext.addToRootTask(childMapRedTask);
+      }
+    }
+  }
+  if (childMapRedTask.getParentTasks().size() == 0) {
+    childMapRedTask.setParentTasks(null);
+  }
+}

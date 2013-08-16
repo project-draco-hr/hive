@@ -1,0 +1,29 @@
+{
+  long bytesPerReducer=conf.getLongVar(HiveConf.ConfVars.BYTESPERREDUCER);
+  int maxReducers=conf.getIntVar(HiveConf.ConfVars.MAXREDUCERS);
+  double samplePercentage=getHighestSamplePercentage(work);
+  long totalInputFileSize=getTotalInputFileSize(inputSummary,work,samplePercentage);
+  if (totalInputFileSize != inputSummary.getLength()) {
+    LOG.info("BytesPerReducer=" + bytesPerReducer + " maxReducers="+ maxReducers+ " estimated totalInputFileSize="+ totalInputFileSize);
+  }
+ else {
+    LOG.info("BytesPerReducer=" + bytesPerReducer + " maxReducers="+ maxReducers+ " totalInputFileSize="+ totalInputFileSize);
+  }
+  int reducers=(int)((totalInputFileSize + bytesPerReducer - 1) / bytesPerReducer);
+  reducers=Math.max(1,reducers);
+  reducers=Math.min(maxReducers,reducers);
+  if (conf.getBoolVar(HiveConf.ConfVars.HIVE_INFER_BUCKET_SORT_NUM_BUCKETS_POWER_TWO) && finalMapRed && !work.getBucketedColsByDirectory().isEmpty()) {
+    int reducersLog=(int)(Math.log(reducers) / Math.log(2)) + 1;
+    int reducersPowerTwo=(int)Math.pow(2,reducersLog);
+    if (reducersPowerTwo / 2 == reducers) {
+      return reducers;
+    }
+ else     if (reducersPowerTwo > maxReducers) {
+      reducers=reducersPowerTwo / 2;
+    }
+ else {
+      reducers=reducersPowerTwo;
+    }
+  }
+  return reducers;
+}

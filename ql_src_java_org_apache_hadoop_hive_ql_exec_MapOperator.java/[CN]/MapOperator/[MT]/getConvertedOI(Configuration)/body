@@ -6,13 +6,10 @@
       PartitionDesc pd=conf.getPathToPartitionInfo().get(onefile);
       TableDesc tableDesc=pd.getTableDesc();
       Properties tblProps=tableDesc.getProperties();
-      Properties partProps=(pd.getPartSpec() == null || pd.getPartSpec().isEmpty()) ? tblProps : pd.getOverlayedProperties();
+      Properties partProps=isPartitioned(pd) ? pd.getOverlayedProperties() : tblProps;
       Class sdclass=pd.getDeserializerClass();
       if (sdclass == null) {
-        String className=pd.getSerdeClassName();
-        if ((className == null) || (className.isEmpty())) {
-          throw new HiveException("SerDe class or the SerDe class name is not set for table: " + pd.getProperties().getProperty("name"));
-        }
+        String className=checkSerdeClassName(pd.getSerdeClassName(),pd.getProperties().getProperty("name"));
         sdclass=hconf.getClassByName(className);
       }
       Deserializer partDeserializer=(Deserializer)sdclass.newInstance();
@@ -22,15 +19,12 @@
       if ((tblRawRowObjectInspector == null) || (identityConverterTableDesc.contains(tableDesc))) {
         sdclass=tableDesc.getDeserializerClass();
         if (sdclass == null) {
-          String className=tableDesc.getSerdeClassName();
-          if ((className == null) || (className.isEmpty())) {
-            throw new HiveException("SerDe class or the SerDe class name is not set for table: " + tableDesc.getProperties().getProperty("name"));
-          }
+          String className=checkSerdeClassName(tableDesc.getSerdeClassName(),tableDesc.getProperties().getProperty("name"));
           sdclass=hconf.getClassByName(className);
         }
         Deserializer tblDeserializer=(Deserializer)sdclass.newInstance();
         tblDeserializer.initialize(hconf,tblProps);
-        tblRawRowObjectInspector=(StructObjectInspector)ObjectInspectorConverters.getConvertedOI(partRawRowObjectInspector,(StructObjectInspector)tblDeserializer.getObjectInspector());
+        tblRawRowObjectInspector=(StructObjectInspector)ObjectInspectorConverters.getConvertedOI(partRawRowObjectInspector,tblDeserializer.getObjectInspector());
         if (identityConverterTableDesc.contains(tableDesc)) {
           if (!partRawRowObjectInspector.equals(tblRawRowObjectInspector)) {
             identityConverterTableDesc.remove(tableDesc);
