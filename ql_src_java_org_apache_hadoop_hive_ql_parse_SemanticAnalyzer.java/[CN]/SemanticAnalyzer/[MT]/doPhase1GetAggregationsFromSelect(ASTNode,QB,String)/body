@@ -1,18 +1,26 @@
 {
   LinkedHashMap<String,ASTNode> aggregationTrees=new LinkedHashMap<String,ASTNode>();
+  List<ASTNode> wdwFns=new ArrayList<ASTNode>();
   for (int i=0; i < selExpr.getChildCount(); ++i) {
-    ASTNode sel=(ASTNode)selExpr.getChild(i);
-    doPhase1GetAllAggregations((ASTNode)sel.getChild(0),aggregationTrees);
+    ASTNode function=(ASTNode)selExpr.getChild(i).getChild(0);
+    doPhase1GetAllAggregations((ASTNode)function,aggregationTrees,wdwFns);
   }
-  if (queryProperties.hasWindowing() && qb.getWindowingSpec(dest) != null) {
-    HashMap<String,ASTNode> aliasToWdwExprs=qb.getParseInfo().getWindowingExprsForClause(dest);
-    LinkedHashMap<String,ASTNode> aggTreesMinusWindowing=new LinkedHashMap<String,ASTNode>();
-    for (    Map.Entry<String,ASTNode> entry : aggregationTrees.entrySet()) {
-      if (!aliasToWdwExprs.containsKey(entry.getKey())) {
-        aggTreesMinusWindowing.put(entry.getKey(),entry.getValue());
-      }
+  for (  ASTNode wdwFn : wdwFns) {
+    WindowingSpec spec=qb.getWindowingSpec(dest);
+    if (spec == null) {
+      queryProperties.setHasWindowing(true);
+      spec=new WindowingSpec();
+      qb.addDestToWindowingSpec(dest,spec);
     }
-    aggregationTrees=aggTreesMinusWindowing;
+    HashMap<String,ASTNode> wExprsInDest=qb.getParseInfo().getWindowingExprsForClause(dest);
+    int wColIdx=spec.getWindowExpressions() == null ? 0 : spec.getWindowExpressions().size();
+    WindowFunctionSpec wFnSpec=processWindowFunction(wdwFn,(ASTNode)wdwFn.getChild(wdwFn.getChildCount() - 1));
+    if (wExprsInDest != null && wExprsInDest.containsKey(wFnSpec.getExpression().toStringTree())) {
+      continue;
+    }
+    wFnSpec.setAlias("_wcol" + wColIdx++);
+    spec.addWindowFunction(wFnSpec);
+    qb.getParseInfo().addWindowingExprToClause(dest,wFnSpec.getExpression());
   }
   return aggregationTrees;
 }

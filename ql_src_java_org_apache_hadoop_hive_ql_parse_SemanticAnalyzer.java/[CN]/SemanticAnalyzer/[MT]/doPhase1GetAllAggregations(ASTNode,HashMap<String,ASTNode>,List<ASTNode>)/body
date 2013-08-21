@@ -2,9 +2,19 @@
   int exprTokenType=expressionTree.getToken().getType();
   if (exprTokenType == HiveParser.TOK_FUNCTION || exprTokenType == HiveParser.TOK_FUNCTIONDI || exprTokenType == HiveParser.TOK_FUNCTIONSTAR) {
     assert(expressionTree.getChildCount() != 0);
+    if (expressionTree.getChild(expressionTree.getChildCount() - 1).getType() == HiveParser.TOK_WINDOWSPEC) {
+      wdwFns.add(expressionTree);
+      return;
+    }
     if (expressionTree.getChild(0).getType() == HiveParser.Identifier) {
       String functionName=unescapeIdentifier(expressionTree.getChild(0).getText());
+      if (FunctionRegistry.impliesOrder(functionName)) {
+        throw new SemanticException(ErrorMsg.MISSING_OVER_CLAUSE.getMsg(functionName));
+      }
       if (FunctionRegistry.getGenericUDAFResolver(functionName) != null) {
+        if (containsLeadLagUDF(expressionTree)) {
+          throw new SemanticException(ErrorMsg.MISSING_OVER_CLAUSE.getMsg(functionName));
+        }
         aggregations.put(expressionTree.toStringTree(),expressionTree);
         FunctionInfo fi=FunctionRegistry.getFunctionInfo(functionName);
         if (!fi.isNative()) {
@@ -15,6 +25,6 @@
     }
   }
   for (int i=0; i < expressionTree.getChildCount(); i++) {
-    doPhase1GetAllAggregations((ASTNode)expressionTree.getChild(i),aggregations);
+    doPhase1GetAllAggregations((ASTNode)expressionTree.getChild(i),aggregations,wdwFns);
   }
 }
