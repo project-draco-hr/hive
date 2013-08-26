@@ -3,18 +3,24 @@
   boolean cleanContext=false;
   Context ctx=null;
   DAGClient client=null;
+  TezSessionState session=null;
   try {
     ctx=driverContext.getCtx();
     if (ctx == null) {
       ctx=new Context(conf);
       cleanContext=true;
     }
+    SessionState ss=SessionState.get();
+    session=ss.getTezSession();
+    if (!session.isOpen()) {
+      session.open(ss.getSessionId(),conf);
+    }
     Path scratchDir=new Path(ctx.getMRScratchDir());
     DagUtils.createTezDir(scratchDir,conf);
     JobConf jobConf=DagUtils.createConfiguration(conf);
-    LocalResource appJarLr=DagUtils.createHiveExecLocalResource(conf);
+    LocalResource appJarLr=session.getAppJarLr();
     DAG dag=build(jobConf,work,scratchDir,appJarLr,ctx);
-    client=submit(jobConf,dag,scratchDir,appJarLr);
+    client=submit(jobConf,dag,scratchDir,appJarLr,session.getSession());
     TezJobMonitor monitor=new TezJobMonitor();
     rc=monitor.monitorExecution(client);
   }
