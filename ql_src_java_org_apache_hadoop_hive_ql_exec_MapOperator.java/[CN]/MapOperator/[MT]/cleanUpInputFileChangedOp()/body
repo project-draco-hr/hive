@@ -1,14 +1,21 @@
 {
-  Path fpath=new Path((new Path(this.getExecContext().getCurrentInputFile())).toUri().getPath());
+  Path fpath=normalizePath(getExecContext().getCurrentInputFile());
   for (  String onefile : conf.getPathToAliases().keySet()) {
-    Path onepath=new Path(new Path(onefile).toUri().getPath());
-    if (!onepath.toUri().relativize(fpath.toUri()).equals(fpath.toUri())) {
-      String onealias=conf.getPathToAliases().get(onefile).get(0);
+    Path onepath=normalizePath(onefile);
+    if (onepath.toUri().relativize(fpath.toUri()).equals(fpath.toUri())) {
+      continue;
+    }
+    PartitionDesc partDesc=conf.getPathToPartitionInfo().get(onefile);
+    for (    String onealias : conf.getPathToAliases().get(onefile)) {
       Operator<? extends OperatorDesc> op=conf.getAliasToWork().get(onealias);
-      LOG.info("Processing alias " + onealias + " for file "+ onefile);
-      MapInputPath inp=new MapInputPath(onefile,onealias,op);
-      setInspectorInput(inp);
-      break;
+      MapInputPath inp=new MapInputPath(onefile,onealias,op,partDesc);
+      MapOpCtx context=opCtxMap.get(inp);
+      if (context != null) {
+        current=context;
+        LOG.info("Processing alias " + onealias + " for file "+ onefile);
+        return;
+      }
     }
   }
+  throw new IllegalStateException("Invalid path " + fpath);
 }

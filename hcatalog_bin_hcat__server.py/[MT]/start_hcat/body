@@ -1,0 +1,64 @@
+def start_hcat():
+    global sleepTime
+    pidFile = os.path.join(os.environ['HCAT_LOG_DIR'], 'hcat.pid')
+    try:
+        pidFileDesc = open(pidFile, 'r')
+        for line in pidFileDesc:
+            pidWords = line.split()
+            for pidStr in pidWords:
+                pid = int(pidStr.rstrip('\n'))
+        pidFileDesc.close()
+        os.kill(pid, 0)
+        sys.exit(('HCatalog server appears to be running. If you are sure it is not remove %s and re-run this script' % pidFile))
+    except:
+        pass
+    os.environ['HIVE_SITE_XML'] = os.path.join(os.environ['HIVE_HOME'], 'conf', 'hive-site.xml')
+    if (os.path.exists(os.environ['HIVE_SITE_XML']) == False):
+        sys.exit(('Missing hive-site.xml, expected at %s' % os.environ['HIVE_SITE_XML']))
+    if ('AUX_CLASSPATH' not in os.environ):
+        os.environ['AUX_CLASSPATH'] = ''
+    os.environ['AUX_CLASSPATH'] += (os.pathsep + os.path.dirname(os.environ['HIVE_SITE_XML']))
+    try:
+        for dbRootJars in glob.glob(os.path.join(os.environ['DBROOT'], '*.jar')):
+            os.environ['AUX_CLASSPATH'] += (os.pathsep + dbRootJars)
+    except:
+        pass
+    for hcatLibJars in glob.glob(os.path.join(os.environ['HCAT_PREFIX'], 'share', 'hcatalog', 'lib', '*.jar')):
+        os.environ['AUX_CLASSPATH'] += (os.pathsep + hcatLibJars)
+    for hcatJar in glob.glob(os.path.join(os.environ['HCAT_PREFIX'], 'share', 'hcatalog', '*.jar')):
+        os.environ['AUX_CLASSPATH'] += (os.pathsep + hcatJar)
+    if ('HADOOP_OPTS' not in os.environ):
+        os.environ['HADOOP_OPTS'] = ''
+    os.environ['HADOOP_OPTS'] += (((((' -server -XX:+UseConcMarkSweepGC -XX:ErrorFile=' + os.path.join(os.environ['HCAT_LOG_DIR'], 'hcat_err_pid%p.log')) + ' -Xloggc:') + os.path.join(os.environ['HCAT_LOG_DIR'], 'hcat_gc.log-')) + strftime('%Y%m%d%H%M')) + ' -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCTimeStamps -XX:+PrintGCDateStamps')
+    os.environ['HADOOP_HEAPSIZE'] = '2048'
+    if (os.name == 'posix'):
+        hivecmd = 'hive'
+    else:
+        hivecmd = 'hive.cmd'
+    command = os.path.join(os.environ['HIVE_HOME'], 'bin', hivecmd)
+    outFile = os.path.join(os.environ['HCAT_LOG_DIR'], 'hcat.out')
+    outfd = open(outFile, 'w')
+    errFile = os.path.join(os.environ['HCAT_LOG_DIR'], 'hcat.err')
+    errfd = open(errFile, 'w')
+    windowsTmpFile = os.path.join(os.environ['HCAT_LOG_DIR'], 'windows.tmp')
+    child = subprocess.Popen([command, '--service', 'metastore'], stdout=outfd, stderr=errfd)
+    pid = child.pid
+    print 'Started metastore server init, testing if initialized correctly...'
+    time.sleep(sleepTime)
+    try:
+        if (os.name == 'posix'):
+            os.kill(pid, 0)
+        else:
+            ret = os.system((('jps | find /I "HiveMetaStore" > ' + windowsTmpFile) + ''))
+            if (ret != 0):
+                raise Exception('error starting process')
+            windowsTmpFd = open(windowsTmpFile, 'r')
+            pid = int(windowsTmpFd.readline().split(' ')[0])
+        pidFileDesc = open(pidFile, 'w')
+        pidFileDesc.write(str(pid))
+        pidFileDesc.close()
+        print 'Metastore initialized successfully'
+    except Exception as inst:
+        print inst
+        sys.exit(('Metastore startup failed, see %s' % errFile))
+    return

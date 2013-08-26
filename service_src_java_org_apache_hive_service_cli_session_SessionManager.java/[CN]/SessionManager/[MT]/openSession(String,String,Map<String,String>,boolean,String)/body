@@ -1,11 +1,11 @@
 {
-  HiveSession session;
   if (username == null) {
     username=threadLocalUserName.get();
   }
+  HiveSession session;
   if (withImpersonation) {
     HiveSessionImplwithUGI hiveSessionUgi=new HiveSessionImplwithUGI(username,password,sessionConf,delegationToken);
-    session=(HiveSession)HiveSessionProxy.getProxy(hiveSessionUgi,hiveSessionUgi.getSessionUgi());
+    session=HiveSessionProxy.getProxy(hiveSessionUgi,hiveSessionUgi.getSessionUgi());
     hiveSessionUgi.setProxySession(session);
   }
  else {
@@ -15,6 +15,12 @@
   session.setOperationManager(operationManager);
 synchronized (sessionMapLock) {
     handleToSession.put(session.getSessionHandle(),session);
+  }
+  try {
+    executeSessionHooks(session,HiveSessionHookContext.State.OPEN);
+  }
+ catch (  Exception e) {
+    throw new HiveSQLException("Failed to execute session hooks",e);
   }
   return session.getSessionHandle();
 }

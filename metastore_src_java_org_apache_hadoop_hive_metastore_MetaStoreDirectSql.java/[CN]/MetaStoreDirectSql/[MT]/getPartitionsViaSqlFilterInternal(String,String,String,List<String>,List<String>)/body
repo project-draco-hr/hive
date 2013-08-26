@@ -1,0 +1,215 @@
+{
+  boolean doTrace=LOG.isDebugEnabled();
+  String queryText="select PARTITIONS.PART_ID from PARTITIONS" + "  inner join TBLS on PARTITIONS.TBL_ID = TBLS.TBL_ID " + "  inner join DBS on TBLS.DB_ID = DBS.DB_ID " + join(joinsForFilter,' ') + " where TBLS.TBL_NAME = ? and DBS.NAME = ?"+ ((sqlFilter == null) ? "" : " " + sqlFilter);
+  Object[] params=new Object[paramsForFilter.size() + 2];
+  params[0]=tblName;
+  params[1]=dbName;
+  for (int i=0; i < paramsForFilter.size(); ++i) {
+    params[i + 2]=paramsForFilter.get(i);
+  }
+  long start=doTrace ? System.nanoTime() : 0;
+  Query query=pm.newQuery("javax.jdo.query.SQL",queryText);
+  @SuppressWarnings("unchecked") List<Object> sqlResult=(List<Object>)query.executeWithArray(params);
+  if (sqlResult.isEmpty()) {
+    return new ArrayList<Partition>();
+  }
+  long queryTime=doTrace ? System.nanoTime() : 0;
+  int sbCapacity=sqlResult.size() * 7;
+  StringBuilder partSb=new StringBuilder(sbCapacity);
+  for (  Object partitionId : sqlResult) {
+    partSb.append((Long)partitionId).append(",");
+  }
+  String partIds=trimCommaList(partSb);
+  if (doTrace) {
+    LOG.debug("Direct SQL query in " + (queryTime - start) / 1000000.0 + "ms + " + (System.nanoTime() - queryTime) / 1000000.0 + "ms, the query is [ " + queryText + "]");
+  }
+  queryText="select PARTITIONS.PART_ID, SDS.SD_ID, SDS.CD_ID, SERDES.SERDE_ID, " + "  PARTITIONS.CREATE_TIME, PARTITIONS.LAST_ACCESS_TIME, SDS.INPUT_FORMAT, " + "  SDS.IS_COMPRESSED, SDS.IS_STOREDASSUBDIRECTORIES, SDS.LOCATION,  SDS.NUM_BUCKETS, "+ "  SDS.OUTPUT_FORMAT, SERDES.NAME, SERDES.SLIB "+ "from PARTITIONS"+ "  left outer join SDS on PARTITIONS.SD_ID = SDS.SD_ID "+ "  left outer join SERDES on SDS.SERDE_ID = SERDES.SERDE_ID "+ "where PART_ID in (" + partIds + ") order by PART_NAME asc";
+  start=doTrace ? System.nanoTime() : 0;
+  query=pm.newQuery("javax.jdo.query.SQL",queryText);
+  @SuppressWarnings("unchecked") List<Object[]> sqlResult2=(List<Object[]>)query.executeWithArray(params);
+  queryTime=doTrace ? System.nanoTime() : 0;
+  TreeMap<Long,Partition> partitions=new TreeMap<Long,Partition>();
+  TreeMap<Long,StorageDescriptor> sds=new TreeMap<Long,StorageDescriptor>();
+  TreeMap<Long,SerDeInfo> serdes=new TreeMap<Long,SerDeInfo>();
+  TreeMap<Long,List<FieldSchema>> colss=new TreeMap<Long,List<FieldSchema>>();
+  ArrayList<Partition> orderedResult=new ArrayList<Partition>(sqlResult.size());
+  StringBuilder sdSb=new StringBuilder(sbCapacity), serdeSb=new StringBuilder(sbCapacity);
+  StringBuilder colsSb=new StringBuilder(7);
+  tblName=tblName.toLowerCase();
+  dbName=dbName.toLowerCase();
+  for (  Object[] fields : sqlResult2) {
+    long partitionId=(Long)fields[0];
+    Long sdId=(Long)fields[1];
+    Long colId=(Long)fields[2];
+    Long serdeId=(Long)fields[3];
+    if (sdId == null || colId == null || serdeId == null) {
+      throw new MetaException("Unexpected null for one of the IDs, SD " + sdId + ", column "+ colId+ ", serde "+ serdeId);
+    }
+    Partition part=new Partition();
+    orderedResult.add(part);
+    part.setParameters(new HashMap<String,String>());
+    part.setValues(new ArrayList<String>());
+    part.setDbName(dbName);
+    part.setTableName(tblName);
+    if (fields[4] != null)     part.setCreateTime((Integer)fields[4]);
+    if (fields[5] != null)     part.setLastAccessTime((Integer)fields[5]);
+    partitions.put(partitionId,part);
+    StorageDescriptor sd=new StorageDescriptor();
+    StorageDescriptor oldSd=sds.put(sdId,sd);
+    if (oldSd != null) {
+      throw new MetaException("Partitions reuse SDs; we don't expect that");
+    }
+    sd.setSortCols(new ArrayList<Order>());
+    sd.setBucketCols(new ArrayList<String>());
+    sd.setParameters(new HashMap<String,String>());
+    sd.setSkewedInfo(new SkewedInfo(new ArrayList<String>(),new ArrayList<List<String>>(),new HashMap<SkewedValueList,String>()));
+    sd.setInputFormat((String)fields[6]);
+    Boolean tmpBoolean=extractSqlBoolean(fields[7]);
+    if (tmpBoolean != null)     sd.setCompressed(tmpBoolean);
+    tmpBoolean=extractSqlBoolean(fields[8]);
+    if (tmpBoolean != null)     sd.setStoredAsSubDirectories(tmpBoolean);
+    sd.setLocation((String)fields[9]);
+    if (fields[10] != null)     sd.setNumBuckets((Integer)fields[10]);
+    sd.setOutputFormat((String)fields[11]);
+    sdSb.append(sdId).append(",");
+    part.setSd(sd);
+    List<FieldSchema> cols=colss.get(colId);
+    if (cols == null) {
+      cols=new ArrayList<FieldSchema>();
+      colss.put(colId,cols);
+      colsSb.append(colId).append(",");
+    }
+    sd.setCols(cols);
+    SerDeInfo serde=new SerDeInfo();
+    SerDeInfo oldSerde=serdes.put(serdeId,serde);
+    if (oldSerde != null) {
+      throw new MetaException("SDs reuse serdes; we don't expect that");
+    }
+    serde.setParameters(new HashMap<String,String>());
+    serde.setName((String)fields[12]);
+    serde.setSerializationLib((String)fields[13]);
+    serdeSb.append(serdeId).append(",");
+    sd.setSerdeInfo(serde);
+  }
+  query.closeAll();
+  if (doTrace) {
+    LOG.debug("Direct SQL query in " + (queryTime - start) / 1000000.0 + "ms + " + (System.nanoTime() - queryTime) / 1000000.0 + "ms, the query is [ " + queryText + "]");
+  }
+  String sdIds=trimCommaList(sdSb), serdeIds=trimCommaList(serdeSb), colIds=trimCommaList(colsSb);
+  queryText="select PART_ID, PARAM_KEY, PARAM_VALUE from PARTITION_PARAMS where PART_ID in (" + partIds + ") and PARAM_KEY is not null order by PART_ID asc";
+  loopJoinOrderedResult(partitions,queryText,0,new ApplyFunc<Partition>(){
+    public void apply(    Partition t,    Object[] fields){
+      t.putToParameters((String)fields[1],(String)fields[2]);
+    }
+  }
+);
+  queryText="select PART_ID, PART_KEY_VAL from PARTITION_KEY_VALS where PART_ID in (" + partIds + ") and INTEGER_IDX >= 0 order by PART_ID asc, INTEGER_IDX asc";
+  loopJoinOrderedResult(partitions,queryText,0,new ApplyFunc<Partition>(){
+    public void apply(    Partition t,    Object[] fields){
+      t.addToValues((String)fields[1]);
+    }
+  }
+);
+  queryText="select SD_ID, PARAM_KEY, PARAM_VALUE from SD_PARAMS where SD_ID in (" + sdIds + ") and PARAM_KEY is not null order by SD_ID asc";
+  loopJoinOrderedResult(sds,queryText,0,new ApplyFunc<StorageDescriptor>(){
+    public void apply(    StorageDescriptor t,    Object[] fields){
+      t.putToParameters((String)fields[1],(String)fields[2]);
+    }
+  }
+);
+  queryText="select SD_ID, COLUMN_NAME, SORT_COLS.* from SORT_COLS where SD_ID in (" + sdIds + ") and INTEGER_IDX >= 0 order by SD_ID asc, INTEGER_IDX asc";
+  loopJoinOrderedResult(sds,queryText,0,new ApplyFunc<StorageDescriptor>(){
+    public void apply(    StorageDescriptor t,    Object[] fields){
+      if (fields[4] == null)       return;
+      t.addToSortCols(new Order((String)fields[1],(Integer)fields[4]));
+    }
+  }
+);
+  queryText="select SD_ID, BUCKET_COL_NAME from BUCKETING_COLS where SD_ID in (" + sdIds + ") and INTEGER_IDX >= 0 order by SD_ID asc, INTEGER_IDX asc";
+  loopJoinOrderedResult(sds,queryText,0,new ApplyFunc<StorageDescriptor>(){
+    public void apply(    StorageDescriptor t,    Object[] fields){
+      t.addToBucketCols((String)fields[1]);
+    }
+  }
+);
+  queryText="select SD_ID, SKEWED_COL_NAME from SKEWED_COL_NAMES where SD_ID in (" + sdIds + ") and INTEGER_IDX >= 0 order by SD_ID asc, INTEGER_IDX asc";
+  boolean hasSkewedColumns=loopJoinOrderedResult(sds,queryText,0,new ApplyFunc<StorageDescriptor>(){
+    public void apply(    StorageDescriptor t,    Object[] fields){
+      if (!t.isSetSkewedInfo())       t.setSkewedInfo(new SkewedInfo());
+      t.getSkewedInfo().addToSkewedColNames((String)fields[1]);
+    }
+  }
+) > 0;
+  if (hasSkewedColumns) {
+    queryText="select SKEWED_VALUES.SD_ID_OID, SKEWED_STRING_LIST_VALUES.STRING_LIST_ID, " + "  SKEWED_STRING_LIST_VALUES.STRING_LIST_VALUE " + "from SKEWED_VALUES "+ "  left outer join SKEWED_STRING_LIST_VALUES on "+ "    SKEWED_VALUES.STRING_LIST_ID_EID = SKEWED_STRING_LIST_VALUES.STRING_LIST_ID "+ "where SKEWED_VALUES.SD_ID_OID in (" + sdIds + ") "+ "  and SKEWED_VALUES.STRING_LIST_ID_EID is not null "+ "  and SKEWED_VALUES.INTEGER_IDX >= 0 "+ "order by SKEWED_VALUES.SD_ID_OID asc, SKEWED_VALUES.INTEGER_IDX asc, "+ "  SKEWED_STRING_LIST_VALUES.INTEGER_IDX asc";
+    loopJoinOrderedResult(sds,queryText,0,new ApplyFunc<StorageDescriptor>(){
+      private Long currentListId;
+      private List<String> currentList;
+      public void apply(      StorageDescriptor t,      Object[] fields){
+        if (!t.isSetSkewedInfo())         t.setSkewedInfo(new SkewedInfo());
+        if (fields[1] == null) {
+          currentList=null;
+          currentListId=null;
+          t.getSkewedInfo().addToSkewedColValues(new ArrayList<String>());
+        }
+ else {
+          long fieldsListId=(Long)fields[1];
+          if (currentListId == null || fieldsListId != currentListId) {
+            currentList=new ArrayList<String>();
+            currentListId=fieldsListId;
+            t.getSkewedInfo().addToSkewedColValues(currentList);
+          }
+          currentList.add((String)fields[2]);
+        }
+      }
+    }
+);
+    queryText="select SKEWED_COL_VALUE_LOC_MAP.SD_ID, SKEWED_STRING_LIST_VALUES.STRING_LIST_ID," + "  SKEWED_COL_VALUE_LOC_MAP.LOCATION, SKEWED_STRING_LIST_VALUES.STRING_LIST_VALUE " + "from SKEWED_COL_VALUE_LOC_MAP"+ "  left outer join SKEWED_STRING_LIST_VALUES on SKEWED_COL_VALUE_LOC_MAP."+ "STRING_LIST_ID_KID = SKEWED_STRING_LIST_VALUES.STRING_LIST_ID "+ "where SKEWED_COL_VALUE_LOC_MAP.SD_ID in (" + sdIds + ")"+ "  and SKEWED_COL_VALUE_LOC_MAP.STRING_LIST_ID_KID is not null "+ "order by SKEWED_COL_VALUE_LOC_MAP.SD_ID asc,"+ "  SKEWED_STRING_LIST_VALUES.STRING_LIST_ID asc,"+ "  SKEWED_STRING_LIST_VALUES.INTEGER_IDX asc";
+    loopJoinOrderedResult(sds,queryText,0,new ApplyFunc<StorageDescriptor>(){
+      private Long currentListId;
+      private SkewedValueList currentList;
+      public void apply(      StorageDescriptor t,      Object[] fields){
+        if (!t.isSetSkewedInfo()) {
+          SkewedInfo skewedInfo=new SkewedInfo();
+          skewedInfo.setSkewedColValueLocationMaps(new HashMap<SkewedValueList,String>());
+          t.setSkewedInfo(skewedInfo);
+        }
+        Map<SkewedValueList,String> skewMap=t.getSkewedInfo().getSkewedColValueLocationMaps();
+        if (fields[1] == null) {
+          currentList=new SkewedValueList();
+          currentListId=null;
+        }
+ else {
+          long fieldsListId=(Long)fields[1];
+          if (currentListId == null || fieldsListId != currentListId) {
+            currentList=new SkewedValueList();
+            currentListId=fieldsListId;
+          }
+ else {
+            skewMap.remove(currentList);
+          }
+          currentList.addToSkewedValueList((String)fields[3]);
+        }
+        skewMap.put(currentList,(String)fields[2]);
+      }
+    }
+);
+  }
+  if (!colss.isEmpty()) {
+    queryText="select CD_ID, COMMENT, COLUMN_NAME, TYPE_NAME from COLUMNS_V2 where CD_ID in (" + colIds + ") and INTEGER_IDX >= 0 order by CD_ID asc, INTEGER_IDX asc";
+    loopJoinOrderedResult(colss,queryText,0,new ApplyFunc<List<FieldSchema>>(){
+      public void apply(      List<FieldSchema> t,      Object[] fields){
+        t.add(new FieldSchema((String)fields[2],(String)fields[3],(String)fields[1]));
+      }
+    }
+);
+  }
+  queryText="select SERDE_ID, PARAM_KEY, PARAM_VALUE from SERDE_PARAMS where SERDE_ID in (" + serdeIds + ") and PARAM_KEY is not null order by SERDE_ID asc";
+  loopJoinOrderedResult(serdes,queryText,0,new ApplyFunc<SerDeInfo>(){
+    public void apply(    SerDeInfo t,    Object[] fields){
+      t.putToParameters((String)fields[1],(String)fields[2]);
+    }
+  }
+);
+  return orderedResult;
+}

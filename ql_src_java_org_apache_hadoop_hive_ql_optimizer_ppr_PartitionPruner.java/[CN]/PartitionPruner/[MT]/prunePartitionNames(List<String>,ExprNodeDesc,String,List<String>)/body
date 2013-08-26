@@ -1,0 +1,26 @@
+{
+  ObjectPair<PrimitiveObjectInspector,ExprNodeEvaluator> handle=PartExprEvalUtils.prepareExpr(prunerExpr,columnNames);
+  List<String> values=new ArrayList<String>(columnNames.size());
+  boolean hasUnknownPartitions=false;
+  Iterator<String> partIter=partNames.iterator();
+  while (partIter.hasNext()) {
+    String partName=partIter.next();
+    LinkedHashMap<String,String> partSpec=Warehouse.makeSpecFromName(partName);
+    values.clear();
+    values.addAll(partSpec.values());
+    Boolean isNeeded=(Boolean)PartExprEvalUtils.evaluateExprOnPart(handle,values);
+    boolean isUnknown=(isNeeded == null);
+    if (!isUnknown && !isNeeded) {
+      partIter.remove();
+      continue;
+    }
+    if (isUnknown && values.contains(defaultPartitionName)) {
+      LOG.debug("skipping default/bad partition: " + partName);
+      partIter.remove();
+      continue;
+    }
+    hasUnknownPartitions|=isUnknown;
+    LOG.debug("retained " + (isUnknown ? "unknown " : "") + "partition: "+ partName);
+  }
+  return hasUnknownPartitions;
+}

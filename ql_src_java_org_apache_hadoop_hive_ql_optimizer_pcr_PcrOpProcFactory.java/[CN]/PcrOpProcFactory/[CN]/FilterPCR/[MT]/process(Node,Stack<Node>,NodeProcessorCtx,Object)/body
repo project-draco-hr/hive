@@ -26,21 +26,14 @@
   if (fop.getParentOperators().size() > 1) {
     return null;
   }
-  PrunedPartitionList prunedPartList=owc.getParseContext().getOpToPartList().get(top);
-  if (prunedPartList == null) {
-    ExprNodeDesc ppr_pred=owc.getParseContext().getOpToPartPruner().get(top);
-    if (ppr_pred == null) {
-      return null;
-    }
-    try {
-      prunedPartList=PartitionPruner.prune(owc.getParseContext().getTopToTable().get(top),ppr_pred,owc.getParseContext().getConf(),(String)owc.getParseContext().getTopOps().keySet().toArray()[0],owc.getParseContext().getPrunedPartitions());
-      if (prunedPartList != null) {
-        owc.getParseContext().getOpToPartList().put(top,prunedPartList);
-      }
-    }
- catch (    HiveException e) {
-      throw new SemanticException(e.getMessage(),e);
-    }
+  ParseContext pctx=owc.getParseContext();
+  PrunedPartitionList prunedPartList;
+  try {
+    String alias=(String)owc.getParseContext().getTopOps().keySet().toArray()[0];
+    prunedPartList=pctx.getPrunedPartitions(alias,top);
+  }
+ catch (  HiveException e) {
+    throw new SemanticException(e.getMessage(),e);
   }
   ExprNodeDesc predicate=fop.getConf().getPredicate();
   String alias=top.getConf().getAlias();
@@ -48,19 +41,13 @@
   if (prunedPartList == null) {
     return null;
   }
-  for (  Partition p : prunedPartList.getConfirmedPartns()) {
+  for (  Partition p : prunedPartList.getPartitions()) {
     if (!p.getTable().isPartitioned()) {
       return null;
     }
   }
-  for (  Partition p : prunedPartList.getUnknownPartns()) {
-    if (!p.getTable().isPartitioned()) {
-      return null;
-    }
-  }
-  partitions.addAll(prunedPartList.getConfirmedPartns());
-  partitions.addAll(prunedPartList.getUnknownPartns());
-  PcrExprProcFactory.NodeInfoWrapper wrapper=PcrExprProcFactory.walkExprTree(alias,partitions,predicate);
+  partitions.addAll(prunedPartList.getPartitions());
+  PcrExprProcFactory.NodeInfoWrapper wrapper=PcrExprProcFactory.walkExprTree(alias,partitions,top.getConf().getVirtualCols(),predicate);
   if (wrapper.state == PcrExprProcFactory.WalkState.TRUE) {
     owc.getOpToRemove().add(new PcrOpWalkerCtx.OpToDeleteInfo(pop,fop));
   }

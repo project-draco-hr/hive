@@ -3,8 +3,6 @@
   int ret=0;
   try {
     Warehouse wh=new Warehouse(conf);
-    FileSystem fileSys;
-    FileStatus[] fileStatus;
     if (!this.getWork().getNoStatsAggregator()) {
       String statsImplementationClass=HiveConf.getVar(conf,HiveConf.ConfVars.HIVESTATSDBCLASS);
       StatsFactory.setImplementation(statsImplementationClass,conf);
@@ -40,15 +38,9 @@
       if (!tableStatsExist && atomic) {
         return 0;
       }
-      Path tablePath=wh.getTablePath(db.getDatabase(table.getDbName()),table.getTableName());
-      fileSys=tablePath.getFileSystem(conf);
-      fileStatus=Utilities.getFileStatusRecurse(tablePath,1,fileSys);
-      tblStats.setStat(StatsSetupConst.NUM_FILES,fileStatus.length);
-      long tableSize=0L;
-      for (int i=0; i < fileStatus.length; i++) {
-        tableSize+=fileStatus[i].getLen();
-      }
-      tblStats.setStat(StatsSetupConst.TOTAL_SIZE,tableSize);
+      long[] summary=summary(conf,table);
+      tblStats.setStat(StatsSetupConst.NUM_FILES,summary[0]);
+      tblStats.setStat(StatsSetupConst.TOTAL_SIZE,summary[1]);
       if (statsAggregator != null) {
         String aggKey=Utilities.getHashedStatsPrefix(work.getAggKey(),maxPrefixLength);
         updateStats(collectableStats,tblStats,statsAggregator,parameters,aggKey,atomic);
@@ -94,15 +86,9 @@
             }
           }
         }
-        fileSys=partn.getPartitionPath().getFileSystem(conf);
-        int listBucketingDepth=calculateListBucketingDMLDepth(partn);
-        fileStatus=Utilities.getFileStatusRecurse(partn.getPartitionPath(),(1 + listBucketingDepth),fileSys);
-        newPartStats.setStat(StatsSetupConst.NUM_FILES,fileStatus.length);
-        long partitionSize=0L;
-        for (int i=0; i < fileStatus.length; i++) {
-          partitionSize+=fileStatus[i].getLen();
-        }
-        newPartStats.setStat(StatsSetupConst.TOTAL_SIZE,partitionSize);
+        long[] summary=summary(conf,partn);
+        newPartStats.setStat(StatsSetupConst.NUM_FILES,summary[0]);
+        newPartStats.setStat(StatsSetupConst.TOTAL_SIZE,summary[1]);
         if (hasStats) {
           PartitionStatistics oldPartStats=new PartitionStatistics(currentValues);
           tblStats.updateStats(oldPartStats,newPartStats);

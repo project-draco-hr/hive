@@ -1,41 +1,19 @@
 {
-  try {
-    if (firstRow) {
-      setKeyMetaData();
-      firstRow=false;
+  alias=(byte)tag;
+  MapJoinKey key=JoinUtil.computeMapJoinKeys(null,row,joinKeys[alias],joinKeysObjectInspectors[alias]);
+  Object[] value=JoinUtil.computeMapJoinValues(row,joinValues[alias],joinValuesObjectInspectors[alias],joinFilters[alias],joinFilterObjectInspectors[alias],filterMaps == null ? null : filterMaps[alias]);
+  MapJoinTableContainer tableContainer=mapJoinTables[alias];
+  MapJoinRowContainer rowContainer=tableContainer.get(key);
+  if (rowContainer == null) {
+    rowContainer=new MapJoinRowContainer();
+    rowContainer.add(value);
+    rowNumber++;
+    if (rowNumber > hashTableScale && rowNumber % hashTableScale == 0) {
+      memoryExhaustionHandler.checkMemoryStatus(tableContainer.size(),rowNumber);
     }
-    alias=(byte)tag;
-    AbstractMapJoinKey keyMap=JoinUtil.computeMapJoinKeys(row,joinKeys[alias],joinKeysObjectInspectors[alias]);
-    Object[] value=JoinUtil.computeMapJoinValues(row,joinValues[alias],joinValuesObjectInspectors[alias],joinFilters[alias],joinFilterObjectInspectors[alias],filterMaps == null ? null : filterMaps[alias]);
-    HashMapWrapper<AbstractMapJoinKey,MapJoinObjectValue> hashTable=mapJoinTables[alias];
-    MapJoinObjectValue o=hashTable.get(keyMap);
-    MapJoinRowContainer<Object[]> res=null;
-    boolean needNewKey=true;
-    if (o == null) {
-      res=new MapJoinRowContainer<Object[]>();
-      res.add(value);
-      if (metadataValueTag[tag] == -1) {
-        metadataValueTag[tag]=order[tag];
-        setValueMetaData(tag);
-      }
-      if (needNewKey) {
-        MapJoinObjectValue valueObj=new MapJoinObjectValue(metadataValueTag[tag],res);
-        rowNumber++;
-        if (rowNumber > hashTableScale && rowNumber % hashTableScale == 0) {
-          isAbort=hashTable.isAbort(rowNumber,console);
-          if (isAbort) {
-            throw new HiveException("RunOutOfMeomoryUsage");
-          }
-        }
-        hashTable.put(keyMap,valueObj);
-      }
-    }
- else {
-      res=o.getObj();
-      res.add(value);
-    }
+    tableContainer.put(key,rowContainer);
   }
- catch (  SerDeException e) {
-    throw new HiveException(e);
+ else {
+    rowContainer.add(value);
   }
 }

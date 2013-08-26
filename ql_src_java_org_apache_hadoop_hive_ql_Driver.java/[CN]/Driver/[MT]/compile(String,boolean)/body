@@ -20,16 +20,16 @@
     ASTNode tree=pd.parse(command,ctx);
     tree=ParseUtils.findRootNonNullToken(tree);
     BaseSemanticAnalyzer sem=SemanticAnalyzerFactory.get(conf,tree);
-    List<AbstractSemanticAnalyzerHook> saHooks=getHooks(HiveConf.ConfVars.SEMANTIC_ANALYZER_HOOK,AbstractSemanticAnalyzerHook.class);
+    List<HiveSemanticAnalyzerHook> saHooks=getHooks(HiveConf.ConfVars.SEMANTIC_ANALYZER_HOOK,HiveSemanticAnalyzerHook.class);
     if (saHooks != null) {
       HiveSemanticAnalyzerHookContext hookCtx=new HiveSemanticAnalyzerHookContextImpl();
       hookCtx.setConf(conf);
-      for (      AbstractSemanticAnalyzerHook hook : saHooks) {
+      for (      HiveSemanticAnalyzerHook hook : saHooks) {
         tree=hook.preAnalyze(hookCtx,tree);
       }
       sem.analyze(tree,ctx);
       hookCtx.update(sem);
-      for (      AbstractSemanticAnalyzerHook hook : saHooks) {
+      for (      HiveSemanticAnalyzerHook hook : saHooks) {
         hook.postAnalyze(hookCtx,sem.getRootTasks());
       }
     }
@@ -77,7 +77,12 @@
     if (error != ErrorMsg.GENERIC_ERROR) {
       errorMessage+=" [Error " + error.getErrorCode() + "]:";
     }
-    errorMessage+=" " + e.getMessage();
+    if ((e instanceof IllegalArgumentException) && e.getMessage() == null && e.getCause() != null) {
+      errorMessage+=" " + e.getCause().getMessage();
+    }
+ else {
+      errorMessage+=" " + e.getMessage();
+    }
     SQLState=error.getSQLState();
     downstreamError=e;
     console.printError(errorMessage,"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));

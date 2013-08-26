@@ -1,33 +1,56 @@
 {
+  useDictionaryEncoding=rows.size() > 0 && (float)(dictionary.size()) / rows.size() <= dictionaryKeySizeThreshold;
   final int[] dumpOrder=new int[dictionary.size()];
-  dictionary.visit(new StringRedBlackTree.Visitor(){
-    private int currentId=0;
-    @Override public void visit(    StringRedBlackTree.VisitorContext context) throws IOException {
-      context.writeBytes(stringOutput);
-      lengthOutput.write(context.getLength());
-      dumpOrder[context.getOriginalPosition()]=currentId++;
+  if (useDictionaryEncoding) {
+    dictionary.visit(new StringRedBlackTree.Visitor(){
+      private int currentId=0;
+      @Override public void visit(      StringRedBlackTree.VisitorContext context) throws IOException {
+        context.writeBytes(stringOutput);
+        lengthOutput.write(context.getLength());
+        dumpOrder[context.getOriginalPosition()]=currentId++;
+      }
     }
-  }
 );
+  }
+ else {
+    stringOutput.suppress();
+  }
   int length=rows.size();
   int rowIndexEntry=0;
   OrcProto.RowIndex.Builder rowIndex=getRowIndex();
+  Text text=new Text();
   for (int i=0; i <= length; ++i) {
     if (buildIndex) {
       while (i == rowIndexValueCount.get(rowIndexEntry) && rowIndexEntry < savedRowIndex.size()) {
         OrcProto.RowIndexEntry.Builder base=savedRowIndex.get(rowIndexEntry++).toBuilder();
-        rowOutput.getPosition(new RowIndexPositionRecorder(base));
+        if (useDictionaryEncoding) {
+          rowOutput.getPosition(new RowIndexPositionRecorder(base));
+        }
+ else {
+          PositionRecorder posn=new RowIndexPositionRecorder(base);
+          directStreamOutput.getPosition(posn);
+          directLengthOutput.getPosition(posn);
+        }
         rowIndex.addEntry(base.build());
       }
     }
     if (i != length) {
-      rowOutput.write(dumpOrder[rows.get(i)]);
+      if (useDictionaryEncoding) {
+        rowOutput.write(dumpOrder[rows.get(i)]);
+      }
+ else {
+        dictionary.getText(text,rows.get(i));
+        directStreamOutput.write(text.getBytes(),0,text.getLength());
+        directLengthOutput.write(text.getLength());
+      }
     }
   }
   super.writeStripe(builder,requiredIndexEntries);
   stringOutput.flush();
   lengthOutput.flush();
   rowOutput.flush();
+  directStreamOutput.flush();
+  directLengthOutput.flush();
   dictionary.clear();
   rows.clear();
   savedRowIndex.clear();
