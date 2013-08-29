@@ -1,0 +1,37 @@
+{
+  OptimizeTezProcContext context=(OptimizeTezProcContext)procContext;
+  ReduceSinkOperator sink=(ReduceSinkOperator)nd;
+  ReduceSinkDesc desc=sink.getConf();
+  long bytesPerReducer=context.conf.getLongVar(HiveConf.ConfVars.BYTESPERREDUCER);
+  int maxReducers=context.conf.getIntVar(HiveConf.ConfVars.MAXREDUCERS);
+  int constantReducers=context.conf.getIntVar(HiveConf.ConfVars.HADOOPNUMREDUCERS);
+  if (context.visitedReduceSinks.contains(sink)) {
+    LOG.debug("Already processed reduce sink: " + sink.getName());
+    return true;
+  }
+  context.visitedReduceSinks.add(sink);
+  try {
+    if (desc.getNumReducers() <= 0) {
+      if (constantReducers > 0) {
+        LOG.info("Parallelism for reduce sink " + sink + " set by user to "+ constantReducers);
+        desc.setNumReducers(constantReducers);
+      }
+ else {
+        long numberOfBytes=0;
+        for (        Operator<? extends OperatorDesc> sibling : sink.getChildOperators().get(0).getParentOperators()) {
+          numberOfBytes+=sibling.getStatistics(context.conf).getNumberOfBytes();
+        }
+        int numReducers=Utilities.estimateReducers(numberOfBytes,bytesPerReducer,maxReducers,false);
+        LOG.info("Set parallelism for reduce sink " + sink + " to: "+ numReducers);
+        desc.setNumReducers(numReducers);
+      }
+    }
+ else {
+      LOG.info("Number of reducers determined to be: " + desc.getNumReducers());
+    }
+  }
+ catch (  HiveException e) {
+    throw new SemanticException(e);
+  }
+  return false;
+}
