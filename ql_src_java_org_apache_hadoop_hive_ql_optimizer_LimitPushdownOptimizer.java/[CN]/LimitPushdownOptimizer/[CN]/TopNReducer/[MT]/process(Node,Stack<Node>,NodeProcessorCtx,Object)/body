@@ -1,0 +1,29 @@
+{
+  ReduceSinkOperator rs=null;
+  for (int i=stack.size() - 2; i >= 0; i--) {
+    Operator<?> operator=(Operator<?>)stack.get(i);
+    if (operator.getNumChild() != 1) {
+      return false;
+    }
+    if (operator instanceof ReduceSinkOperator) {
+      rs=(ReduceSinkOperator)operator;
+      break;
+    }
+    if (!operator.acceptLimitPushdown()) {
+      return false;
+    }
+  }
+  if (rs != null) {
+    List<List<Integer>> distincts=rs.getConf().getDistinctColumnIndices();
+    if (distincts != null && distincts.size() > 1) {
+      return false;
+    }
+    LimitOperator limit=(LimitOperator)nd;
+    rs.getConf().setTopN(limit.getConf().getLimit());
+    rs.getConf().setTopNMemoryUsage(((LimitPushdownContext)procCtx).threshold);
+    if (rs.getNumChild() == 1 && rs.getChildren().get(0) instanceof GroupByOperator) {
+      rs.getConf().setMapGroupBy(true);
+    }
+  }
+  return true;
+}

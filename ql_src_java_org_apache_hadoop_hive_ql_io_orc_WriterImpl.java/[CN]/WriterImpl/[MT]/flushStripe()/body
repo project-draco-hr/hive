@@ -7,29 +7,48 @@
     int requiredIndexEntries=rowIndexStride == 0 ? 0 : (int)((rowsInStripe + rowIndexStride - 1) / rowIndexStride);
     OrcProto.StripeFooter.Builder builder=OrcProto.StripeFooter.newBuilder();
     treeWriter.writeStripe(builder,requiredIndexEntries);
-    long start=rawWriter.getPos();
-    long section=start;
-    long indexEnd=start;
+    long indexSize=0;
+    long dataSize=0;
     for (    Map.Entry<StreamName,BufferedStream> pair : streams.entrySet()) {
       BufferedStream stream=pair.getValue();
       if (!stream.isSuppressed()) {
         stream.flush();
-        stream.spillTo(rawWriter);
-        long end=rawWriter.getPos();
         StreamName name=pair.getKey();
-        builder.addStreams(OrcProto.Stream.newBuilder().setColumn(name.getColumn()).setKind(name.getKind()).setLength(end - section));
-        section=end;
+        long streamSize=pair.getValue().getOutputSize();
+        builder.addStreams(OrcProto.Stream.newBuilder().setColumn(name.getColumn()).setKind(name.getKind()).setLength(streamSize));
         if (StreamName.Area.INDEX == name.getArea()) {
-          indexEnd=end;
+          indexSize+=streamSize;
         }
+ else {
+          dataSize+=streamSize;
+        }
+      }
+    }
+    OrcProto.StripeFooter footer=builder.build();
+    long start=rawWriter.getPos();
+    long stripeSize=indexSize + dataSize + footer.getSerializedSize();
+    if (addBlockPadding && stripeSize < blockSize && (start % blockSize) + stripeSize > blockSize) {
+      long padding=blockSize - (start % blockSize);
+      byte[] pad=new byte[(int)Math.min(HDFS_BUFFER_SIZE,padding)];
+      start+=padding;
+      while (padding > 0) {
+        int writeLen=(int)Math.min(padding,pad.length);
+        rawWriter.write(pad,0,writeLen);
+        padding-=writeLen;
+      }
+    }
+    for (    Map.Entry<StreamName,BufferedStream> pair : streams.entrySet()) {
+      BufferedStream stream=pair.getValue();
+      if (!stream.isSuppressed()) {
+        stream.spillTo(rawWriter);
       }
       stream.clear();
     }
-    builder.build().writeTo(protobufWriter);
+    footer.writeTo(protobufWriter);
     protobufWriter.flush();
     writer.flush();
-    long end=rawWriter.getPos();
-    OrcProto.StripeInformation dirEntry=OrcProto.StripeInformation.newBuilder().setOffset(start).setIndexLength(indexEnd - start).setDataLength(section - indexEnd).setNumberOfRows(rowsInStripe).setFooterLength(end - section).build();
+    long footerLength=rawWriter.getPos() - start - dataSize- indexSize;
+    OrcProto.StripeInformation dirEntry=OrcProto.StripeInformation.newBuilder().setOffset(start).setNumberOfRows(rowsInStripe).setIndexLength(indexSize).setDataLength(dataSize).setFooterLength(footerLength).build();
     stripes.add(dirEntry);
     rowCount+=rowsInStripe;
     rowsInStripe=0;

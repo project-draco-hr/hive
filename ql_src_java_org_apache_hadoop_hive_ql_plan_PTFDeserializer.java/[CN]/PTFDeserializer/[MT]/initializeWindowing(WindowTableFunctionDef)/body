@@ -3,49 +3,33 @@
   TableFunctionEvaluator tEval=def.getTFunction();
   WindowingTableFunctionResolver tResolver=(WindowingTableFunctionResolver)constructResolver(def.getResolverClassName());
   tResolver.initialize(ptfDesc,def,tEval);
-  if (def.getWindowFunctions() != null) {
-    for (    WindowFunctionDef wFnDef : def.getWindowFunctions()) {
-      if (wFnDef.getArgs() != null) {
-        for (        PTFExpressionDef arg : wFnDef.getArgs()) {
-          initialize(arg,inpShape);
-        }
+  for (  WindowFunctionDef wFnDef : def.getWindowFunctions()) {
+    if (wFnDef.getArgs() != null) {
+      for (      PTFExpressionDef arg : wFnDef.getArgs()) {
+        initialize(arg,inpShape);
       }
-      if (wFnDef.getWindowFrame() != null) {
-        WindowFrameDef wFrmDef=wFnDef.getWindowFrame();
-        initialize(wFrmDef.getStart(),inpShape);
-        initialize(wFrmDef.getEnd(),inpShape);
-      }
-      setupWdwFnEvaluator(wFnDef);
     }
-    ArrayList<String> aliases=new ArrayList<String>();
-    ArrayList<ObjectInspector> fieldOIs=new ArrayList<ObjectInspector>();
-    for (    WindowFunctionDef wFnDef : def.getWindowFunctions()) {
-      aliases.add(wFnDef.getAlias());
-      if (wFnDef.isPivotResult()) {
-        fieldOIs.add(((ListObjectInspector)wFnDef.getOI()).getListElementObjectInspector());
-      }
+    if (wFnDef.getWindowFrame() != null) {
+      WindowFrameDef wFrmDef=wFnDef.getWindowFrame();
+      initialize(wFrmDef.getStart(),inpShape);
+      initialize(wFrmDef.getEnd(),inpShape);
+    }
+    setupWdwFnEvaluator(wFnDef);
+  }
+  ArrayList<String> aliases=new ArrayList<String>();
+  ArrayList<ObjectInspector> fieldOIs=new ArrayList<ObjectInspector>();
+  for (  WindowFunctionDef wFnDef : def.getWindowFunctions()) {
+    aliases.add(wFnDef.getAlias());
+    if (wFnDef.isPivotResult()) {
+      fieldOIs.add(((ListObjectInspector)wFnDef.getOI()).getListElementObjectInspector());
+    }
  else {
-        fieldOIs.add(wFnDef.getOI());
-      }
-    }
-    PTFDeserializer.addInputColumnsToList(inpShape,aliases,fieldOIs);
-    StructObjectInspector wdwOutOI=ObjectInspectorFactory.getStandardStructObjectInspector(aliases,fieldOIs);
-    tResolver.setWdwProcessingOutputOI(wdwOutOI);
-    initialize(def.getOutputFromWdwFnProcessing(),wdwOutOI);
-  }
- else {
-    def.setOutputFromWdwFnProcessing(inpShape);
-  }
-  inpShape=def.getOutputFromWdwFnProcessing();
-  if (def.getWindowExpressions() != null) {
-    for (    WindowExpressionDef wEDef : def.getWindowExpressions()) {
-      initialize(wEDef,inpShape);
+      fieldOIs.add(wFnDef.getOI());
     }
   }
+  PTFDeserializer.addInputColumnsToList(inpShape,aliases,fieldOIs);
+  StructObjectInspector wdwOutOI=ObjectInspectorFactory.getStandardStructObjectInspector(aliases,fieldOIs);
+  tResolver.setWdwProcessingOutputOI(wdwOutOI);
+  initialize(def.getOutputShape(),wdwOutOI);
   tResolver.initializeOutputOI();
-  initialize(def.getOutputShape(),tEval.getOutputOI());
-  if (def.getWindowExpressions().size() > 0) {
-    StructObjectInspector oi=(StructObjectInspector)ObjectInspectorUtils.getStandardObjectInspector(def.getOutputShape().getOI());
-    def.getOutputShape().setOI(oi);
-  }
 }
