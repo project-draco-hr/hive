@@ -15,12 +15,21 @@
       throw new HiveSQLException("Error while processing statement: " + response.getErrorMessage(),response.getSQLState(),response.getResponseCode());
     }
     mResultSchema=driver.getSchema();
-    if (mResultSchema != null && mResultSchema.isSetFieldSchemas()) {
+    if (driver.getPlan().getFetchTask() != null) {
+      if (mResultSchema == null || !mResultSchema.isSetFieldSchemas()) {
+        throw new HiveSQLException("Error running query: Schema and FieldSchema " + "should be set when query plan has a FetchTask");
+      }
       resultSchema=new TableSchema(mResultSchema);
       setHasResultSet(true);
     }
  else {
       setHasResultSet(false);
+    }
+    for (    Task<? extends Serializable> task : driver.getPlan().getRootTasks()) {
+      if (task.getClass() == ExplainTask.class) {
+        setHasResultSet(true);
+        break;
+      }
     }
   }
  catch (  HiveSQLException e) {
