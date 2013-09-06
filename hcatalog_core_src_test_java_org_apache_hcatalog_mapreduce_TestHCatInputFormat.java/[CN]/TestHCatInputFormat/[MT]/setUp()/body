@@ -1,0 +1,29 @@
+{
+  super.setUp();
+  if (setUpComplete) {
+    return;
+  }
+  Path intStringSeq=new Path(TEST_DATA_DIR + "/data/intString.seq");
+  LOG.info("Creating data file: " + intStringSeq);
+  SequenceFile.Writer seqFileWriter=SequenceFile.createWriter(intStringSeq.getFileSystem(hiveConf),hiveConf,intStringSeq,NullWritable.class,BytesWritable.class);
+  ByteArrayOutputStream out=new ByteArrayOutputStream();
+  TIOStreamTransport transport=new TIOStreamTransport(out);
+  TBinaryProtocol protocol=new TBinaryProtocol(transport);
+  for (int i=1; i <= 100; i++) {
+    if (i % 10 == 0) {
+      seqFileWriter.append(NullWritable.get(),new BytesWritable("bad record".getBytes()));
+    }
+ else {
+      out.reset();
+      IntString intString=new IntString(i,Integer.toString(i),i);
+      intString.write(protocol);
+      BytesWritable bytesWritable=new BytesWritable(out.toByteArray());
+      seqFileWriter.append(NullWritable.get(),bytesWritable);
+    }
+  }
+  seqFileWriter.close();
+  Assert.assertEquals(0,driver.run("drop table if exists test_bad_records").getResponseCode());
+  Assert.assertEquals(0,driver.run("create table test_bad_records " + "row format serde 'org.apache.hadoop.hive.serde2.thrift.ThriftDeserializer' " + "with serdeproperties ( "+ "  'serialization.class'='org.apache.hadoop.hive.serde2.thrift.test.IntString', "+ "  'serialization.format'='org.apache.thrift.protocol.TBinaryProtocol') "+ "stored as"+ "  inputformat 'org.apache.hadoop.mapred.SequenceFileInputFormat'"+ "  outputformat 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'").getResponseCode());
+  Assert.assertEquals(0,driver.run("load data local inpath '" + intStringSeq.getParent() + "' into table test_bad_records").getResponseCode());
+  setUpComplete=true;
+}
