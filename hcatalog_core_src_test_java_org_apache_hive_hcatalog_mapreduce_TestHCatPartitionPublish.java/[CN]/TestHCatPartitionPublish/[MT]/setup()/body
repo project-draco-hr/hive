@@ -1,0 +1,34 @@
+{
+  String testDir=System.getProperty("test.data.dir","./");
+  testDir=testDir + "/test_hcat_partitionpublish_" + Math.abs(new Random().nextLong())+ "/";
+  File workDir=new File(new File(testDir).getCanonicalPath());
+  FileUtil.fullyDelete(workDir);
+  workDir.mkdirs();
+  Configuration conf=new Configuration(true);
+  conf.set("yarn.scheduler.capacity.root.queues","default");
+  conf.set("yarn.scheduler.capacity.root.default.capacity","100");
+  fs=FileSystem.get(conf);
+  System.setProperty("hadoop.log.dir",new File(workDir,"/logs").getAbsolutePath());
+  mrCluster=new MiniMRCluster(1,fs.getUri().toString(),1,null,null,new JobConf(conf));
+  mrConf=mrCluster.createJobConf();
+  if (isServerRunning) {
+    return;
+  }
+  MetaStoreUtils.startMetaStore(msPort,ShimLoader.getHadoopThriftAuthBridge());
+  Thread.sleep(10000);
+  isServerRunning=true;
+  securityManager=System.getSecurityManager();
+  System.setSecurityManager(new NoExitSecurityManager());
+  hcatConf=new HiveConf(TestHCatPartitionPublish.class);
+  hcatConf.set("hive.metastore.local","false");
+  hcatConf.setVar(HiveConf.ConfVars.METASTOREURIS,"thrift://localhost:" + msPort);
+  hcatConf.setIntVar(HiveConf.ConfVars.METASTORETHRIFTCONNECTIONRETRIES,3);
+  hcatConf.setIntVar(HiveConf.ConfVars.METASTORETHRIFTFAILURERETRIES,3);
+  hcatConf.set(HiveConf.ConfVars.SEMANTIC_ANALYZER_HOOK.varname,HCatSemanticAnalyzer.class.getName());
+  hcatConf.set(HiveConf.ConfVars.PREEXECHOOKS.varname,"");
+  hcatConf.set(HiveConf.ConfVars.POSTEXECHOOKS.varname,"");
+  hcatConf.set(HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY.varname,"false");
+  msc=new HiveMetaStoreClient(hcatConf,null);
+  System.setProperty(HiveConf.ConfVars.PREEXECHOOKS.varname," ");
+  System.setProperty(HiveConf.ConfVars.POSTEXECHOOKS.varname," ");
+}

@@ -27,7 +27,6 @@
     for (int i=0; i < valueEval.length; i++) {
       cachedValues[i]=valueEval[i].evaluate(row);
     }
-    value=valueSerializer.serialize(cachedValues,valueObjectInspector);
     Object[] distributionKeys=new Object[numDistributionKeys];
     for (int i=0; i < numDistributionKeys; i++) {
       distributionKeys[i]=keyEval[i].evaluate(row);
@@ -45,6 +44,7 @@
  else {
       System.arraycopy(distributionKeys,0,cachedKeys[0],0,numDistributionKeys);
     }
+    BytesWritable value=null;
     for (int i=0; i < cachedKeys.length; i++) {
       if (keyIsText) {
         Text key=(Text)keySerializer.serialize(cachedKeys[i],keyObjectInspector);
@@ -71,22 +71,43 @@
         }
       }
       keyWritable.setHashCode(keyHashCode);
-      if (out != null) {
-        out.collect(keyWritable,value);
-        if (counterNameToEnum != null) {
-          ++outputRows;
-          if (outputRows % 1000 == 0) {
-            incrCounter(numOutputRowsCntr,outputRows);
-            outputRows=0;
+      if (reducerHash == null) {
+        if (null != out) {
+          collect(keyWritable,value=getValue(row,value));
+        }
+      }
+ else {
+        int index=reducerHash.indexOf(keyWritable);
+        if (index == TopNHash.EXCLUDED) {
+          continue;
+        }
+        value=getValue(row,value);
+        if (index >= 0) {
+          reducerHash.set(index,value);
+        }
+ else {
+          if (index == TopNHash.FORWARD) {
+            collect(keyWritable,value);
+          }
+ else           if (index == TopNHash.FLUSH) {
+            LOG.info("Top-N hash is flushed");
+            reducerHash.flush();
+            collect(keyWritable,value);
+          }
+ else           if (index == TopNHash.DISABLE) {
+            LOG.info("Top-N hash is disabled");
+            reducerHash.flush();
+            collect(keyWritable,value);
+            reducerHash=null;
           }
         }
       }
     }
   }
- catch (  SerDeException e) {
-    throw new HiveException(e);
+ catch (  HiveException e) {
+    throw e;
   }
-catch (  IOException e) {
+catch (  Exception e) {
     throw new HiveException(e);
   }
 }

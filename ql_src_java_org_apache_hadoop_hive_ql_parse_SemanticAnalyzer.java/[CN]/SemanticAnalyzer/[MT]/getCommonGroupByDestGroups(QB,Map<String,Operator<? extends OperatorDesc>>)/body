@@ -13,10 +13,12 @@
   }
   List<Operator<? extends OperatorDesc>> inputOperators=new ArrayList<Operator<? extends OperatorDesc>>(ks.size());
   List<List<ExprNodeDesc>> sprayKeyLists=new ArrayList<List<ExprNodeDesc>>(ks.size());
+  List<List<ExprNodeDesc>> distinctKeyLists=new ArrayList<List<ExprNodeDesc>>(ks.size());
   for (  String dest : ks) {
     Operator input=inputs.get(dest);
     RowResolver inputRR=opParseCtx.get(input).getRowResolver();
-    List<ExprNodeDesc> sprayKeys=getDistinctExprs(qbp,dest,inputRR);
+    List<ExprNodeDesc> distinctKeys=getDistinctExprs(qbp,dest,inputRR);
+    List<ExprNodeDesc> sprayKeys=new ArrayList<ExprNodeDesc>();
     List<ASTNode> grpByExprs=getGroupByForClause(qbp,dest);
     for (    ASTNode grpByExpr : grpByExprs) {
       ExprNodeDesc exprDesc=genExprNodeDesc(grpByExpr,inputRR);
@@ -29,8 +31,38 @@
       if (!input.equals(inputOperators.get(i))) {
         continue;
       }
-      if (!matchExprLists(sprayKeyLists.get(i),sprayKeys)) {
-        continue;
+      if (distinctKeys.isEmpty()) {
+        List<ExprNodeDesc> combinedList=new ArrayList<ExprNodeDesc>();
+        combineExprNodeLists(sprayKeyLists.get(i),distinctKeyLists.get(i),combinedList);
+        if (!matchExprLists(combinedList,sprayKeys)) {
+          continue;
+        }
+      }
+ else {
+        if (distinctKeyLists.get(i).isEmpty()) {
+          List<ExprNodeDesc> combinedList=new ArrayList<ExprNodeDesc>();
+          combineExprNodeLists(sprayKeys,distinctKeys,combinedList);
+          if (!matchExprLists(combinedList,sprayKeyLists.get(i))) {
+            continue;
+          }
+ else {
+            distinctKeyLists.remove(i);
+            sprayKeyLists.remove(i);
+            distinctKeyLists.add(i,distinctKeys);
+            sprayKeyLists.add(i,sprayKeys);
+            commonGroupByDestGroups.get(i).add(0,dest);
+            found=true;
+            break;
+          }
+        }
+ else {
+          if (!matchExprLists(distinctKeyLists.get(i),distinctKeys)) {
+            continue;
+          }
+          if (!matchExprLists(sprayKeyLists.get(i),sprayKeys)) {
+            continue;
+          }
+        }
       }
       commonGroupByDestGroups.get(i).add(dest);
       found=true;
@@ -39,6 +71,7 @@
     if (!found) {
       inputOperators.add(input);
       sprayKeyLists.add(sprayKeys);
+      distinctKeyLists.add(distinctKeys);
       List<String> destGroup=new ArrayList<String>();
       destGroup.add(dest);
       commonGroupByDestGroups.add(destGroup);

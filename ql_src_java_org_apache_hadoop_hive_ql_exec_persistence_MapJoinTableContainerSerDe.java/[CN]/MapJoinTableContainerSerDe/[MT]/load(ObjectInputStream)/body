@@ -1,0 +1,35 @@
+{
+  SerDe keySerDe=keyContext.getSerDe();
+  SerDe valueSerDe=valueContext.getSerDe();
+  MapJoinTableContainer tableContainer;
+  try {
+    String name=in.readUTF();
+    Map<String,String> metaData=(Map<String,String>)in.readObject();
+    tableContainer=create(name,metaData);
+  }
+ catch (  IOException e) {
+    throw new HiveException("IO error while trying to create table container",e);
+  }
+catch (  ClassNotFoundException e) {
+    throw new HiveException("Class Initialization error while trying to create table container",e);
+  }
+  try {
+    Writable keyContainer=keySerDe.getSerializedClass().newInstance();
+    Writable valueContainer=valueSerDe.getSerializedClass().newInstance();
+    int numKeys=in.readInt();
+    for (int keyIndex=0; keyIndex < numKeys; keyIndex++) {
+      MapJoinKey key=new MapJoinKey();
+      key.read(keyContext,in,keyContainer);
+      MapJoinRowContainer values=new MapJoinRowContainer();
+      values.read(valueContext,in,valueContainer);
+      tableContainer.put(key,values);
+    }
+    return tableContainer;
+  }
+ catch (  IOException e) {
+    throw new HiveException("IO error while trying to create table container",e);
+  }
+catch (  Exception e) {
+    throw new HiveException("Error while trying to create table container",e);
+  }
+}

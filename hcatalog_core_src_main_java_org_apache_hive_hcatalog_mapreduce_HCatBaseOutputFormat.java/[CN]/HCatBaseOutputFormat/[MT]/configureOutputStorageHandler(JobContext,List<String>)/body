@@ -1,0 +1,28 @@
+{
+  Configuration conf=jobContext.getConfiguration();
+  try {
+    OutputJobInfo jobInfo=(OutputJobInfo)HCatUtil.deserialize(conf.get(HCatConstants.HCAT_KEY_OUTPUT_INFO));
+    HCatStorageHandler storageHandler=HCatUtil.getStorageHandler(conf,jobInfo.getTableInfo().getStorerInfo());
+    Map<String,String> partitionValues=jobInfo.getPartitionValues();
+    String location=jobInfo.getLocation();
+    if (dynamicPartVals != null) {
+      List<String> dynamicPartKeys=jobInfo.getDynamicPartitioningKeys();
+      if (dynamicPartVals.size() != dynamicPartKeys.size()) {
+        throw new HCatException(ErrorType.ERROR_INVALID_PARTITION_VALUES,"Unable to configure dynamic partitioning for storage handler, mismatch between" + " number of partition values obtained[" + dynamicPartVals.size() + "] and number of partition values required["+ dynamicPartKeys.size()+ "]");
+      }
+      for (int i=0; i < dynamicPartKeys.size(); i++) {
+        partitionValues.put(dynamicPartKeys.get(i),dynamicPartVals.get(i));
+      }
+      jobInfo.setPartitionValues(partitionValues);
+    }
+    HCatUtil.configureOutputStorageHandler(storageHandler,conf,jobInfo);
+  }
+ catch (  Exception e) {
+    if (e instanceof HCatException) {
+      throw (HCatException)e;
+    }
+ else {
+      throw new HCatException(ErrorType.ERROR_INIT_STORAGE_HANDLER,e);
+    }
+  }
+}

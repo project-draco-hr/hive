@@ -1,10 +1,15 @@
 {
+  PerfLogger perfLogger=PerfLogger.getPerfLogger();
+  perfLogger.PerfLogBegin(LOG,PerfLogger.GET_SPLITS);
   init(job);
   Map<String,ArrayList<String>> pathToAliases=mrwork.getPathToAliases();
   Map<String,Operator<? extends OperatorDesc>> aliasToWork=mrwork.getAliasToWork();
   CombineFileInputFormatShim combine=ShimLoader.getHadoopShims().getCombineFileInputFormat();
+  InputSplit[] splits=null;
   if (combine == null) {
-    return super.getSplits(job,numSplits);
+    splits=super.getSplits(job,numSplits);
+    perfLogger.PerfLogEnd(LOG,PerfLogger.GET_SPLITS);
+    return splits;
   }
   if (combine.getInputPathsShim(job).length == 0) {
     throw new IOException("No input paths specified in job");
@@ -34,7 +39,9 @@
           dirs.offer(path);
         }
  else         if ((new CompressionCodecFactory(job)).getCodec(path) != null) {
-          return super.getSplits(job,numSplits);
+          splits=super.getSplits(job,numSplits);
+          perfLogger.PerfLogEnd(LOG,PerfLogger.GET_SPLITS);
+          return splits;
         }
         while (dirs.peek() != null) {
           Path tstPath=dirs.remove();
@@ -44,14 +51,18 @@
               dirs.offer(fStatus[idx].getPath());
             }
  else             if ((new CompressionCodecFactory(job)).getCodec(fStatus[idx].getPath()) != null) {
-              return super.getSplits(job,numSplits);
+              splits=super.getSplits(job,numSplits);
+              perfLogger.PerfLogEnd(LOG,PerfLogger.GET_SPLITS);
+              return splits;
             }
           }
         }
       }
     }
     if (inputFormat instanceof SymlinkTextInputFormat) {
-      return super.getSplits(job,numSplits);
+      splits=super.getSplits(job,numSplits);
+      perfLogger.PerfLogEnd(LOG,PerfLogger.GET_SPLITS);
+      return splits;
     }
     Path filterPath=path;
     CombineFilter f=null;
@@ -105,5 +116,6 @@
     result.add(csplit);
   }
   LOG.info("number of splits " + result.size());
+  perfLogger.PerfLogEnd(LOG,PerfLogger.GET_SPLITS);
   return result.toArray(new CombineHiveInputSplit[result.size()]);
 }

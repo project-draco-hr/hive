@@ -17,8 +17,40 @@ catch (  Exception ex) {
     throw new SQLException(ex.toString(),"08S01",ex);
   }
   if (!stmtHandle.isHasResultSet()) {
-    return false;
-  }
-  resultSet=new HiveQueryResultSet.Builder().setClient(client).setSessionHandle(sessHandle).setStmtHandle(stmtHandle).setMaxRows(maxRows).setFetchSize(fetchSize).build();
-  return true;
+    TGetOperationStatusReq statusReq=new TGetOperationStatusReq(stmtHandle);
+    boolean requestComplete=false;
+    while (!requestComplete) {
+      try {
+        TGetOperationStatusResp statusResp=client.GetOperationStatus(statusReq);
+        Utils.verifySuccessWithInfo(statusResp.getStatus());
+        if (statusResp.isSetOperationState()) {
+switch (statusResp.getOperationState()) {
+case CLOSED_STATE:
+case FINISHED_STATE:
+            return false;
+case CANCELED_STATE:
+          throw new SQLException("Query was cancelled","01000");
+case ERROR_STATE:
+        throw new SQLException("Query failed","HY000");
+case UKNOWN_STATE:
+      throw new SQLException("Unknown query","HY000");
+case INITIALIZED_STATE:
+case RUNNING_STATE:
+    break;
+}
+}
+}
+ catch (Exception ex) {
+throw new SQLException(ex.toString(),"08S01",ex);
+}
+try {
+Thread.sleep(100);
+}
+ catch (InterruptedException ex) {
+}
+}
+return false;
+}
+resultSet=new HiveQueryResultSet.Builder().setClient(client).setSessionHandle(sessHandle).setStmtHandle(stmtHandle).setMaxRows(maxRows).setFetchSize(fetchSize).build();
+return true;
 }
