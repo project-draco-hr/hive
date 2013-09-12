@@ -4,7 +4,7 @@
   String hbaseTableName=(databaseName + "." + tableName).toLowerCase();
   String db_dir=new Path(getTestDir(),"hbasedb").toString();
   String dbquery="CREATE DATABASE IF NOT EXISTS " + databaseName + " LOCATION '"+ db_dir+ "'";
-  String tableQuery="CREATE TABLE " + databaseName + "."+ tableName+ "(key string, testqualifier1 string, testqualifier2 string) STORED BY "+ "'org.apache.hcatalog.hbase.HBaseHCatStorageHandler'"+ "TBLPROPERTIES ('hbase.columns.mapping'=':key,testFamily:testQualifier1,testFamily:testQualifier2')";
+  String tableQuery="CREATE TABLE " + databaseName + "."+ tableName+ "(key string, testqualifier1 string, testqualifier2 string) STORED BY "+ "'org.apache.hadoop.hive.hbase.HBaseStorageHandler'"+ " WITH SERDEPROPERTIES ('hbase.columns.mapping'=':key,testFamily:testQualifier1,testFamily:testQualifier2')";
   CommandProcessorResponse responseOne=hcatDriver.run(dbquery);
   assertEquals(0,responseOne.getResponseCode());
   CommandProcessorResponse responseTwo=hcatDriver.run(tableQuery);
@@ -15,6 +15,8 @@
   populateHBaseTable(hbaseTableName,5);
   Configuration conf=new Configuration(hcatConf);
   conf.set(HCatConstants.HCAT_KEY_HIVE_CONF,HCatUtil.serialize(getHiveConf().getAllProperties()));
+  conf.set(HBaseSerDe.HBASE_TABLE_NAME,hbaseTableName);
+  conf.set(TableInputFormat.INPUT_TABLE,hbaseTableName);
   Path outputDir=new Path(getTestDir(),"mapred/testHbaseTableMRRead");
   FileSystem fs=getFileSystem();
   if (fs.exists(outputDir)) {
@@ -25,7 +27,8 @@
   job.setMapperClass(MapReadHTable.class);
   MapReadHTable.resetCounters();
   job.setInputFormatClass(HCatInputFormat.class);
-  HCatInputFormat.setInput(job.getConfiguration(),databaseName,tableName);
+  InputJobInfo inputJobInfo=InputJobInfo.create(databaseName,tableName,null);
+  HCatInputFormat.setInput(job,inputJobInfo);
   job.setOutputFormatClass(TextOutputFormat.class);
   TextOutputFormat.setOutputPath(job,outputDir);
   job.setMapOutputKeyClass(BytesWritable.class);
