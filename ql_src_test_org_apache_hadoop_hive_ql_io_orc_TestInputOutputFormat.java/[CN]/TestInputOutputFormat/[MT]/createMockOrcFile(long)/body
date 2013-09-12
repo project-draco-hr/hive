@@ -1,0 +1,22 @@
+{
+  OrcProto.Footer.Builder footer=OrcProto.Footer.newBuilder();
+  final long headerLen=3;
+  long offset=headerLen;
+  DataOutputBuffer buffer=new DataOutputBuffer();
+  for (  long stripeLength : stripeLengths) {
+    footer.addStripes(OrcProto.StripeInformation.newBuilder().setOffset(offset).setIndexLength(0).setDataLength(stripeLength - 10).setFooterLength(10).setNumberOfRows(1000));
+    offset+=stripeLength;
+  }
+  fill(buffer,offset);
+  footer.addTypes(OrcProto.Type.newBuilder().setKind(OrcProto.Type.Kind.STRUCT).addFieldNames("col1").addSubtypes(1));
+  footer.addTypes(OrcProto.Type.newBuilder().setKind(OrcProto.Type.Kind.STRING));
+  footer.setNumberOfRows(1000 * stripeLengths.length).setHeaderLength(headerLen).setContentLength(offset - headerLen);
+  footer.build().writeTo(buffer);
+  int footerEnd=buffer.getLength();
+  OrcProto.PostScript ps=OrcProto.PostScript.newBuilder().setCompression(OrcProto.CompressionKind.NONE).setFooterLength(footerEnd - offset).setMagic("ORC").build();
+  ps.writeTo(buffer);
+  buffer.write(buffer.getLength() - footerEnd);
+  byte[] result=new byte[buffer.getLength()];
+  System.arraycopy(buffer.getData(),0,result,0,buffer.getLength());
+  return result;
+}
