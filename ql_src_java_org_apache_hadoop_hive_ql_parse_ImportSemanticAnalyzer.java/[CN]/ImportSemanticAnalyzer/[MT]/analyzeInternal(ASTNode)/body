@@ -11,7 +11,7 @@
     try {
       Path metadataPath=new Path(fromPath,METADATA_NAME);
       Map.Entry<org.apache.hadoop.hive.metastore.api.Table,List<Partition>> rv=EximUtil.readMetaData(fs,metadataPath);
-      dbname=db.getCurrentDatabase();
+      dbname=SessionState.get().getCurrentDatabase();
       org.apache.hadoop.hive.metastore.api.Table table=rv.getKey();
       tblDesc=new CreateTableDesc(table.getTableName(),false,table.getSd().getCols(),table.getPartitionKeys(),table.getSd().getBucketCols(),table.getSd().getSortCols(),table.getSd().getNumBuckets(),null,null,null,null,null,null,table.getSd().getInputFormat(),table.getSd().getOutputFormat(),null,table.getSd().getSerdeInfo().getSerializationLib(),null,table.getSd().getSerdeInfo().getParameters(),table.getParameters(),false,(null == table.getSd().getSkewedInfo()) ? null : table.getSd().getSkewedInfo().getSkewedColNames(),(null == table.getSd().getSkewedInfo()) ? null : table.getSd().getSkewedInfo().getSkewedColValues());
       tblDesc.setStoredAsSubDirectories(table.getSd().isStoredAsSubDirectories());
@@ -123,7 +123,8 @@ outputs.add(new WriteEntity(table));
 LOG.debug("table " + tblDesc.getTableName() + " does not exist");
 Task<?> t=TaskFactory.get(new DDLWork(getInputs(),getOutputs(),tblDesc),conf);
 Table table=new Table(dbname,tblDesc.getTableName());
-conf.set("import.destination.dir",wh.getTablePath(db.getDatabase(db.getCurrentDatabase()),tblDesc.getTableName()).toString());
+String currentDb=SessionState.get().getCurrentDatabase();
+conf.set("import.destination.dir",wh.getTablePath(db.getDatabaseCurrent(),tblDesc.getTableName()).toString());
 if ((tblDesc.getPartCols() != null) && (tblDesc.getPartCols().size() != 0)) {
 for (AddPartitionDesc addPartitionDesc : partitionDescs) {
 t.addDependentTask(addSinglePartition(fromURI,fs,tblDesc,table,wh,addPartitionDesc));
@@ -142,7 +143,7 @@ if (tblDesc.getLocation() != null) {
 tablePath=new Path(tblDesc.getLocation());
 }
  else {
-tablePath=wh.getTablePath(db.getDatabase(db.getCurrentDatabase()),tblDesc.getTableName());
+tablePath=wh.getTablePath(db.getDatabaseCurrent(),tblDesc.getTableName());
 }
 checkTargetLocationEmpty(fs,tablePath);
 t.addDependentTask(loadTable(fromURI,table));

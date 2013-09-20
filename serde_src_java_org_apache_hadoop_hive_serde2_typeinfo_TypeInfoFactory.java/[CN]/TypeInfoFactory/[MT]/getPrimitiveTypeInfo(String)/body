@@ -1,10 +1,29 @@
 {
-  if (null == PrimitiveObjectInspectorUtils.getTypeEntryFromTypeName(typeName)) {
+  PrimitiveTypeEntry typeEntry=PrimitiveObjectInspectorUtils.getTypeEntryFromTypeName(TypeInfoUtils.getBaseName(typeName));
+  if (null == typeEntry) {
     throw new RuntimeException("Cannot getPrimitiveTypeInfo for " + typeName);
   }
   TypeInfo result=cachedPrimitiveTypeInfo.get(typeName);
   if (result == null) {
-    result=new PrimitiveTypeInfo(typeName);
+    TypeInfoUtils.PrimitiveParts parts=TypeInfoUtils.parsePrimitiveParts(typeName);
+    if (parts.typeParams != null && parts.typeParams.length > 0) {
+      try {
+        BaseTypeParams typeParams=PrimitiveTypeEntry.createTypeParams(parts.typeName,parts.typeParams);
+        result=new PrimitiveTypeInfo(typeName);
+        ((PrimitiveTypeInfo)result).setTypeParams(typeParams);
+      }
+ catch (      Exception err) {
+        LOG.error(err);
+        throw new RuntimeException("Error creating type parameters for " + typeName + ": "+ err,err);
+      }
+    }
+ else {
+      if (typeEntry.primitiveCategory == PrimitiveCategory.VARCHAR) {
+        LOG.error("varchar type used with no type params");
+        throw new RuntimeException("varchar type used with no type params");
+      }
+      result=new PrimitiveTypeInfo(parts.typeName);
+    }
     cachedPrimitiveTypeInfo.put(typeName,result);
   }
   return result;

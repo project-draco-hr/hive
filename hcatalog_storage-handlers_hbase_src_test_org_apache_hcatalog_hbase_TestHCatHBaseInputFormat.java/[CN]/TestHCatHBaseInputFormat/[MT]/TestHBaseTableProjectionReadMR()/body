@@ -1,0 +1,39 @@
+{
+  String tableName=newTableName("MyTable");
+  String hbaseTableName="MyDB_" + tableName;
+  String tableQuery="CREATE TABLE " + tableName + "(key string, testqualifier1 string, testqualifier2 string) STORED BY "+ "'org.apache.hcatalog.hbase.HBaseHCatStorageHandler'"+ "TBLPROPERTIES ('hbase.columns.mapping'="+ "':key,testFamily:testQualifier1,testFamily:testQualifier2',"+ "'hbase.table.name'='"+ hbaseTableName+ "')";
+  CommandProcessorResponse responseTwo=hcatDriver.run(tableQuery);
+  assertEquals(0,responseTwo.getResponseCode());
+  HBaseAdmin hAdmin=new HBaseAdmin(getHbaseConf());
+  boolean doesTableExist=hAdmin.tableExists(hbaseTableName);
+  assertTrue(doesTableExist);
+  populateHBaseTable(hbaseTableName,5);
+  Configuration conf=new Configuration(hcatConf);
+  conf.set(HCatConstants.HCAT_KEY_HIVE_CONF,HCatUtil.serialize(getHiveConf().getAllProperties()));
+  Path outputDir=new Path(getTestDir(),"mapred/testHBaseTableProjectionReadMR");
+  FileSystem fs=getFileSystem();
+  if (fs.exists(outputDir)) {
+    fs.delete(outputDir,true);
+  }
+  Job job=new Job(conf,"hbase-column-projection");
+  job.setJarByClass(this.getClass());
+  job.setMapperClass(MapReadProjHTable.class);
+  job.setInputFormatClass(HCatInputFormat.class);
+  HCatInputFormat.setOutputSchema(job,getProjectionSchema());
+  HCatInputFormat.setInput(job,MetaStoreUtils.DEFAULT_DATABASE_NAME,tableName);
+  job.setOutputFormatClass(TextOutputFormat.class);
+  TextOutputFormat.setOutputPath(job,outputDir);
+  job.setMapOutputKeyClass(BytesWritable.class);
+  job.setMapOutputValueClass(Text.class);
+  job.setOutputKeyClass(BytesWritable.class);
+  job.setOutputValueClass(Text.class);
+  job.setNumReduceTasks(0);
+  assertTrue(job.waitForCompletion(true));
+  assertFalse(MapReadProjHTable.error);
+  assertEquals(MapReadProjHTable.count,1);
+  String dropTableQuery="DROP TABLE " + tableName;
+  CommandProcessorResponse responseThree=hcatDriver.run(dropTableQuery);
+  assertEquals(0,responseThree.getResponseCode());
+  boolean isHbaseTableThere=hAdmin.tableExists(hbaseTableName);
+  assertFalse(isHbaseTableThere);
+}

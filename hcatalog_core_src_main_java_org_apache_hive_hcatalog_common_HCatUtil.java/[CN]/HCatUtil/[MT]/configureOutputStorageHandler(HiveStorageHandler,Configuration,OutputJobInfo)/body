@@ -1,0 +1,31 @@
+{
+  TableDesc tableDesc=new TableDesc(storageHandler.getSerDeClass(),storageHandler.getInputFormatClass(),IgnoreKeyTextOutputFormat.class,outputJobInfo.getTableInfo().getStorerInfo().getProperties());
+  if (tableDesc.getJobProperties() == null)   tableDesc.setJobProperties(new HashMap<String,String>());
+  for (  Map.Entry<String,String> el : conf) {
+    tableDesc.getJobProperties().put(el.getKey(),el.getValue());
+  }
+  Properties mytableProperties=tableDesc.getProperties();
+  mytableProperties.setProperty(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_NAME,outputJobInfo.getDatabaseName() + "." + outputJobInfo.getTableName());
+  Map<String,String> jobProperties=new HashMap<String,String>();
+  try {
+    tableDesc.getJobProperties().put(HCatConstants.HCAT_KEY_OUTPUT_INFO,HCatUtil.serialize(outputJobInfo));
+    storageHandler.configureOutputJobProperties(tableDesc,jobProperties);
+    Map<String,String> tableJobProperties=tableDesc.getJobProperties();
+    if (tableJobProperties != null) {
+      if (tableJobProperties.containsKey(HCatConstants.HCAT_KEY_OUTPUT_INFO)) {
+        String jobString=tableJobProperties.get(HCatConstants.HCAT_KEY_OUTPUT_INFO);
+        if (jobString != null) {
+          if (!jobProperties.containsKey(HCatConstants.HCAT_KEY_OUTPUT_INFO)) {
+            jobProperties.put(HCatConstants.HCAT_KEY_OUTPUT_INFO,tableJobProperties.get(HCatConstants.HCAT_KEY_OUTPUT_INFO));
+          }
+        }
+      }
+    }
+    for (    Map.Entry<String,String> el : jobProperties.entrySet()) {
+      conf.set(el.getKey(),el.getValue());
+    }
+  }
+ catch (  IOException e) {
+    throw new IllegalStateException("Failed to configure StorageHandler",e);
+  }
+}
