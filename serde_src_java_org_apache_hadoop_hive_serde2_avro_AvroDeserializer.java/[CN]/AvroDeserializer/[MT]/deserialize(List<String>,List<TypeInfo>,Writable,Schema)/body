@@ -10,12 +10,27 @@
   }
   AvroGenericRecordWritable recordWritable=(AvroGenericRecordWritable)writable;
   GenericRecord r=recordWritable.getRecord();
-  if (!r.getSchema().equals(readerSchema)) {
-    LOG.warn("Received different schemas.  Have to re-encode: " + r.getSchema().toString(false));
-    if (reEncoder == null) {
-      reEncoder=new SchemaReEncoder();
+  UID recordReaderId=recordWritable.getRecordReaderID();
+  if (!noEncodingNeeded.contains(recordReaderId)) {
+    SchemaReEncoder reEncoder=null;
+    if (reEncoderCache.containsKey(recordReaderId)) {
+      reEncoder=reEncoderCache.get(recordReaderId);
     }
-    r=reEncoder.reencode(r,readerSchema);
+ else     if (!r.getSchema().equals(readerSchema)) {
+      reEncoder=new SchemaReEncoder(r.getSchema(),readerSchema);
+      reEncoderCache.put(recordReaderId,reEncoder);
+    }
+ else {
+      LOG.info("Adding new valid RRID :" + recordReaderId);
+      noEncodingNeeded.add(recordReaderId);
+    }
+    if (reEncoder != null) {
+      if (!warnedOnce) {
+        LOG.warn("Received different schemas.  Have to re-encode: " + r.getSchema().toString(false) + "\nSIZE"+ reEncoderCache+ " ID "+ recordReaderId);
+        warnedOnce=true;
+      }
+      r=reEncoder.reencode(r);
+    }
   }
   workerBase(row,columnNames,columnTypes,r);
   return row;
