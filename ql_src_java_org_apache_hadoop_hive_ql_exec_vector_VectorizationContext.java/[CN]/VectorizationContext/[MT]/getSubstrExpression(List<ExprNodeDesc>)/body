@@ -1,0 +1,55 @@
+{
+  ExprNodeDesc childExpr=childExprList.get(0);
+  ExprNodeDesc startExpr=childExprList.get(1);
+  startExpr=foldConstantsForUnaryExpression(startExpr);
+  int start;
+  if (startExpr instanceof ExprNodeConstantDesc) {
+    ExprNodeConstantDesc constDesc=(ExprNodeConstantDesc)startExpr;
+    start=((Integer)constDesc.getValue()).intValue();
+  }
+ else {
+    throw new HiveException("Cannot vectorize non-constant start argument for SUBSTR");
+  }
+  ExprNodeDesc lengthExpr=null;
+  int length=0;
+  if (childExprList.size() == 3) {
+    lengthExpr=childExprList.get(2);
+    lengthExpr=foldConstantsForUnaryExpression(lengthExpr);
+    if (lengthExpr instanceof ExprNodeConstantDesc) {
+      ExprNodeConstantDesc constDesc=(ExprNodeConstantDesc)lengthExpr;
+      length=((Integer)constDesc.getValue()).intValue();
+    }
+ else {
+      throw new HiveException("Cannot vectorize non-constant length argument for SUBSTR");
+    }
+  }
+  int inputCol;
+  VectorExpression v1=null;
+  if (childExpr instanceof ExprNodeGenericFuncDesc) {
+    v1=getVectorExpression(childExpr);
+    inputCol=v1.getOutputColumn();
+  }
+ else   if (childExpr instanceof ExprNodeColumnDesc) {
+    ExprNodeColumnDesc colDesc=(ExprNodeColumnDesc)childExpr;
+    inputCol=getInputColumnIndex(colDesc.getColumn());
+  }
+ else {
+    throw new HiveException("Expression not supported: " + childExpr);
+  }
+  int outputCol=ocm.allocateOutputColumn("String");
+  VectorExpression expr=null;
+  if (childExprList.size() == 2) {
+    expr=new StringSubstrColStart(inputCol,start,outputCol);
+  }
+ else   if (childExprList.size() == 3) {
+    expr=new StringSubstrColStartLen(inputCol,start,length,outputCol);
+  }
+ else {
+    throw new HiveException("Invalid number of arguments for SUBSTR()");
+  }
+  if (v1 != null) {
+    expr.setChildExpressions(new VectorExpression[]{v1});
+    ocm.freeOutputColumn(v1.getOutputColumn());
+  }
+  return expr;
+}
