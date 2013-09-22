@@ -27,22 +27,24 @@
     for (int i=0; i < valueEval.length; i++) {
       cachedValues[i]=valueEval[i].evaluate(row);
     }
-    Object[] distributionKeys=new Object[numDistributionKeys];
     for (int i=0; i < numDistributionKeys; i++) {
-      distributionKeys[i]=keyEval[i].evaluate(row);
+      cachedKeys[0][i]=keyEval[i].evaluate(row);
     }
     if (numDistinctExprs > 0) {
       for (int i=0; i < numDistinctExprs; i++) {
-        System.arraycopy(distributionKeys,0,cachedKeys[i],0,numDistributionKeys);
-        Object[] distinctParameters=new Object[distinctColIndices.get(i).size()];
+        if (i > 0) {
+          System.arraycopy(cachedKeys[0],0,cachedKeys[i],0,numDistributionKeys);
+        }
+        StandardUnion union=(StandardUnion)cachedKeys[i][numDistributionKeys];
+        if (union == null) {
+          cachedKeys[i][numDistributionKeys]=union=new StandardUnion((byte)i,new Object[distinctColIndices.get(i).size()]);
+        }
+        Object[] distinctParameters=(Object[])union.getObject();
         for (int j=0; j < distinctParameters.length; j++) {
           distinctParameters[j]=keyEval[distinctColIndices.get(i).get(j)].evaluate(row);
         }
-        cachedKeys[i][numDistributionKeys]=new StandardUnion((byte)i,distinctParameters);
+        union.setTag((byte)i);
       }
-    }
- else {
-      System.arraycopy(distributionKeys,0,cachedKeys[0],0,numDistributionKeys);
     }
     BytesWritable value=null;
     for (int i=0; i < cachedKeys.length; i++) {
