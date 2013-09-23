@@ -1,0 +1,33 @@
+{
+  boolean committed=false;
+  List<MVersionTable> mVerTables=new ArrayList<MVersionTable>();
+  try {
+    openTransaction();
+    Query query=pm.newQuery(MVersionTable.class);
+    try {
+      mVerTables=(List<MVersionTable>)query.execute();
+      pm.retrieveAll(mVerTables);
+    }
+ catch (    JDODataStoreException e) {
+      if (e.getCause() instanceof MissingTableException) {
+        throw new MetaException("Version table not found. " + "The metastore is not upgraded to " + MetaStoreSchemaInfo.getHiveSchemaVersion());
+      }
+ else {
+        throw e;
+      }
+    }
+    committed=commitTransaction();
+  }
+  finally {
+    if (!committed) {
+      rollbackTransaction();
+    }
+  }
+  if (mVerTables.isEmpty()) {
+    throw new NoSuchObjectException("No matching version found");
+  }
+  if (mVerTables.size() > 1) {
+    throw new MetaException("Metastore contains multiple versions");
+  }
+  return mVerTables.get(0);
+}

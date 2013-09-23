@@ -1,18 +1,9 @@
 {
   for (  Map.Entry<String,FetchWork> entry : work.getAliasToFetchWork().entrySet()) {
     JobConf jobClone=new JobConf(job);
-    Operator<? extends OperatorDesc> tableScan=work.getAliasToWork().get(entry.getKey());
-    boolean setColumnsNeeded=false;
-    if (tableScan instanceof TableScanOperator) {
-      ArrayList<Integer> list=((TableScanOperator)tableScan).getNeededColumnIDs();
-      if (list != null) {
-        ColumnProjectionUtils.appendReadColumnIDs(jobClone,list);
-        setColumnsNeeded=true;
-      }
-    }
-    if (!setColumnsNeeded) {
-      ColumnProjectionUtils.setFullyReadColumns(jobClone);
-    }
+    TableScanOperator ts=(TableScanOperator)work.getAliasToWork().get(entry.getKey());
+    ColumnProjectionUtils.appendReadColumns(jobClone,ts.getNeededColumnIDs(),ts.getNeededColumns());
+    HiveInputFormat.pushFilters(jobClone,ts);
     FetchOperator fetchOp=new FetchOperator(entry.getValue(),jobClone);
     fetchOpJobConfMap.put(fetchOp,jobClone);
     fetchOperators.put(entry.getKey(),fetchOp);
