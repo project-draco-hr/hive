@@ -1,0 +1,37 @@
+{
+  ObjectInspector retOI=outputOI.getCategory() == Category.PRIMITIVE ? inputOI : outputOI;
+  if ((equalsCheck && inputOI.equals(outputOI)) || ObjectInspectorUtils.hasAllFieldsSettable(retOI,oiSettableProperties) == true) {
+    return retOI;
+  }
+switch (outputOI.getCategory()) {
+case PRIMITIVE:
+    PrimitiveObjectInspector primInputOI=(PrimitiveObjectInspector)inputOI;
+  return PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(primInputOI);
+case STRUCT:
+StructObjectInspector structOutputOI=(StructObjectInspector)outputOI;
+List<? extends StructField> listFields=structOutputOI.getAllStructFieldRefs();
+List<String> structFieldNames=new ArrayList<String>(listFields.size());
+List<ObjectInspector> structFieldObjectInspectors=new ArrayList<ObjectInspector>(listFields.size());
+for (StructField listField : listFields) {
+structFieldNames.add(listField.getFieldName());
+structFieldObjectInspectors.add(getConvertedOI(listField.getFieldObjectInspector(),listField.getFieldObjectInspector(),oiSettableProperties,false));
+}
+return ObjectInspectorFactory.getStandardStructObjectInspector(structFieldNames,structFieldObjectInspectors);
+case LIST:
+ListObjectInspector listOutputOI=(ListObjectInspector)outputOI;
+return ObjectInspectorFactory.getStandardListObjectInspector(getConvertedOI(listOutputOI.getListElementObjectInspector(),listOutputOI.getListElementObjectInspector(),oiSettableProperties,false));
+case MAP:
+MapObjectInspector mapOutputOI=(MapObjectInspector)outputOI;
+return ObjectInspectorFactory.getStandardMapObjectInspector(getConvertedOI(mapOutputOI.getMapKeyObjectInspector(),mapOutputOI.getMapKeyObjectInspector(),oiSettableProperties,false),getConvertedOI(mapOutputOI.getMapValueObjectInspector(),mapOutputOI.getMapValueObjectInspector(),oiSettableProperties,false));
+case UNION:
+UnionObjectInspector unionOutputOI=(UnionObjectInspector)outputOI;
+List<ObjectInspector> unionListFields=unionOutputOI.getObjectInspectors();
+List<ObjectInspector> unionFieldObjectInspectors=new ArrayList<ObjectInspector>(unionListFields.size());
+for (ObjectInspector listField : unionListFields) {
+unionFieldObjectInspectors.add(getConvertedOI(listField,listField,oiSettableProperties,false));
+}
+return ObjectInspectorFactory.getStandardUnionObjectInspector(unionFieldObjectInspectors);
+default :
+throw new RuntimeException("Hive internal error: conversion of " + inputOI.getTypeName() + " to "+ outputOI.getTypeName()+ " not supported yet.");
+}
+}
