@@ -1,3 +1,29 @@
 {
   this.pm=pm;
+  Transaction tx=pm.currentTransaction();
+  tx.begin();
+  boolean isMySql=false;
+  try {
+    trySetAnsiQuotesForMysql();
+    isMySql=true;
+  }
+ catch (  SQLException sqlEx) {
+    LOG.info("MySQL check failed, assuming we are not on mysql: " + sqlEx.getMessage());
+    tx.rollback();
+    tx=pm.currentTransaction();
+    tx.begin();
+  }
+  boolean isCompatibleDatastore=false;
+  String selfTestQuery="select \"DB_ID\" from \"DBS\"";
+  try {
+    pm.newQuery("javax.jdo.query.SQL",selfTestQuery).execute();
+    isCompatibleDatastore=true;
+    tx.commit();
+  }
+ catch (  Exception ex) {
+    LOG.error("Self-test query [" + selfTestQuery + "] failed; direct SQL is disabled",ex);
+    tx.rollback();
+  }
+  this.isCompatibleDatastore=isCompatibleDatastore;
+  this.isMySql=isMySql;
 }
