@@ -17,20 +17,29 @@
       LOG.debug("Filter " + oldFilter + " was null after compacting");
       return new PrunedPartitionList(tab,Hive.get().getAllPartitionsForPruner(tab),true);
     }
-    Set<Partition> partitions=new LinkedHashSet<Partition>();
+    LOG.debug("Filter w/ compacting: " + compactExpr.getExprString() + "; filter w/o compacting: "+ oldFilter);
+    boolean doEvalClientSide=hasUserFunctions(compactExpr);
+    List<Partition> partitions=new ArrayList<Partition>();
     boolean hasUnknownPartitions=false;
-    String message=Utilities.checkJDOPushDown(tab,compactExpr,null);
-    if (message != null) {
-      LOG.info(ErrorMsg.INVALID_JDO_FILTER_EXPRESSION.getMsg("by condition '" + message + "'"));
-      hasUnknownPartitions=pruneBySequentialScan(tab,partitions,prunerExpr,conf);
+    PerfLogger perfLogger=PerfLogger.getPerfLogger();
+    if (!doEvalClientSide) {
+      perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.PARTITION_RETRIEVING);
+      try {
+        hasUnknownPartitions=Hive.get().getPartitionsByExpr(tab,compactExpr,conf,partitions);
+      }
+ catch (      IMetaStoreClient.IncompatibleMetastoreException ime) {
+        LOG.warn("Metastore doesn't support getPartitionsByExpr",ime);
+        doEvalClientSide=true;
+      }
+ finally {
+        perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.PARTITION_RETRIEVING);
+      }
     }
- else {
-      String filter=compactExpr.getExprString();
-      LOG.debug("Filter w/ compacting: " + filter + "; filter w/o compacting: "+ oldFilter);
-      hasUnknownPartitions=!filter.equals(oldFilter);
-      partitions.addAll(Hive.get().getPartitionsByFilter(tab,filter));
+    if (doEvalClientSide) {
+      hasUnknownPartitions=pruneBySequentialScan(tab,partitions,compactExpr,conf);
     }
-    return new PrunedPartitionList(tab,partitions,hasUnknownPartitions);
+    boolean isPruningByExactFilter=oldFilter.equals(compactExpr.getExprString());
+    return new PrunedPartitionList(tab,new LinkedHashSet<Partition>(partitions),hasUnknownPartitions || !isPruningByExactFilter);
   }
  catch (  HiveException e) {
     throw e;
