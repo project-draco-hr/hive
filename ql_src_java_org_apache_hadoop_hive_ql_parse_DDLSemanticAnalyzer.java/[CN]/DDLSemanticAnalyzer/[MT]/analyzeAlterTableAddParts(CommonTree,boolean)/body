@@ -1,32 +1,29 @@
 {
   String tblName=getUnescapedName((ASTNode)ast.getChild(0));
+  boolean ifNotExists=ast.getChild(1).getType() == HiveParser.TOK_IFNOTEXISTS;
   Table tab=getTable(tblName,true);
   boolean isView=tab.isView();
   validateAlterTableType(tab,AlterTableTypes.ADDPARTITION,expectView);
   inputs.add(new ReadEntity(tab));
-  List<Map<String,String>> partSpecs=getPartitionSpecs(ast);
-  addTablePartsOutputs(tblName,partSpecs);
-  Iterator<Map<String,String>> partIter=partSpecs.iterator();
-  String currentLocation=null;
-  Map<String,String> currentPart=null;
-  boolean ifNotExists=false;
   List<AddPartitionDesc> partitionDescs=new ArrayList<AddPartitionDesc>();
   int numCh=ast.getChildCount();
-  for (int num=1; num < numCh; num++) {
-    CommonTree child=(CommonTree)ast.getChild(num);
+  int start=ifNotExists ? 2 : 1;
+  String currentLocation=null;
+  Map<String,String> currentPart=null;
+  for (int num=start; num < numCh; num++) {
+    ASTNode child=(ASTNode)ast.getChild(num);
 switch (child.getToken().getType()) {
-case HiveParser.TOK_IFNOTEXISTS:
-      ifNotExists=true;
-    break;
 case HiveParser.TOK_PARTSPEC:
-  if (currentPart != null) {
-    validatePartitionValues(currentPart);
-    AddPartitionDesc addPartitionDesc=new AddPartitionDesc(db.getCurrentDatabase(),tblName,currentPart,currentLocation,ifNotExists,expectView);
-    partitionDescs.add(addPartitionDesc);
-  }
-currentLocation=null;
-currentPart=partIter.next();
-break;
+      if (currentPart != null) {
+        Partition partition=getPartitionForOutput(tab,currentPart);
+        if (partition == null || !ifNotExists) {
+          AddPartitionDesc addPartitionDesc=new AddPartitionDesc(tab.getDbName(),tblName,currentPart,currentLocation,ifNotExists,expectView);
+          partitionDescs.add(addPartitionDesc);
+        }
+        currentLocation=null;
+      }
+    currentPart=getPartSpec(child);
+  break;
 case HiveParser.TOK_PARTITIONLOCATION:
 currentLocation=unescapeSQLString(child.getChild(0).getText());
 break;
@@ -35,9 +32,14 @@ throw new SemanticException("Unknown child: " + child);
 }
 }
 if (currentPart != null) {
-validatePartitionValues(currentPart);
-AddPartitionDesc addPartitionDesc=new AddPartitionDesc(db.getCurrentDatabase(),tblName,currentPart,currentLocation,ifNotExists,expectView);
+Partition partition=getPartitionForOutput(tab,currentPart);
+if (partition == null || !ifNotExists) {
+AddPartitionDesc addPartitionDesc=new AddPartitionDesc(tab.getDbName(),tblName,currentPart,currentLocation,ifNotExists,expectView);
 partitionDescs.add(addPartitionDesc);
+}
+}
+if (partitionDescs.isEmpty()) {
+return;
 }
 for (AddPartitionDesc addPartitionDesc : partitionDescs) {
 try {

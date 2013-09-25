@@ -1,0 +1,62 @@
+{
+  argumentOIs=arguments;
+  PrimitiveCategory currentCategory;
+  PrimitiveObjectInspector poi;
+  boolean fixedLengthReturnValue=true;
+  int returnLength=0;
+  for (int idx=0; idx < arguments.length; ++idx) {
+    if (arguments[idx].getCategory() != Category.PRIMITIVE) {
+      throw new UDFArgumentException("CONCAT only takes primitive arguments");
+    }
+    poi=(PrimitiveObjectInspector)arguments[idx];
+    currentCategory=poi.getPrimitiveCategory();
+    if (idx == 0) {
+      returnType=currentCategory;
+    }
+switch (currentCategory) {
+case BINARY:
+      fixedLengthReturnValue=false;
+    if (returnType != currentCategory) {
+      throw new UDFArgumentException("CONCAT cannot take a mix of binary and non-binary arguments");
+    }
+  break;
+case VARCHAR:
+if (returnType == PrimitiveCategory.BINARY) {
+  throw new UDFArgumentException("CONCAT cannot take a mix of binary and non-binary arguments");
+}
+break;
+default :
+if (returnType == PrimitiveCategory.BINARY) {
+throw new UDFArgumentException("CONCAT cannot take a mix of binary and non-binary arguments");
+}
+returnType=PrimitiveCategory.STRING;
+fixedLengthReturnValue=false;
+break;
+}
+if (fixedLengthReturnValue) {
+returnLength+=GenericUDFUtils.StringHelper.getFixedStringSizeForType(poi);
+if (returnType == PrimitiveCategory.VARCHAR && returnLength > HiveVarchar.MAX_VARCHAR_LENGTH) {
+returnType=PrimitiveCategory.STRING;
+fixedLengthReturnValue=false;
+}
+}
+}
+if (returnType == PrimitiveCategory.BINARY) {
+bw=new BytesWritable[arguments.length];
+return PrimitiveObjectInspectorFactory.writableBinaryObjectInspector;
+}
+ else {
+createStringConverters();
+returnHelper=new GenericUDFUtils.StringHelper(returnType);
+switch (returnType) {
+case STRING:
+return PrimitiveObjectInspectorFactory.writableStringObjectInspector;
+case VARCHAR:
+VarcharTypeParams varcharParams=new VarcharTypeParams();
+varcharParams.setLength(returnLength);
+return PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(PrimitiveObjectInspectorUtils.getTypeEntryFromTypeSpecs(returnType,varcharParams));
+default :
+throw new UDFArgumentException("Unexpected CONCAT return type of " + returnType);
+}
+}
+}

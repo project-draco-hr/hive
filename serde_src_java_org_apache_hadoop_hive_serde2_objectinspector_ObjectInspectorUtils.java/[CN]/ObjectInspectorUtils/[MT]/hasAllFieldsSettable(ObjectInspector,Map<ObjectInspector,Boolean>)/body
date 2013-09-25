@@ -1,0 +1,44 @@
+{
+  if (!(oiSettableProperties == null) && oiSettableProperties.containsKey(oi)) {
+    return oiSettableProperties.get(oi).booleanValue();
+  }
+  if (!(isInstanceOfSettableOI(oi))) {
+    return setOISettablePropertiesMap(oi,oiSettableProperties,false);
+  }
+  Boolean returnValue=true;
+switch (oi.getCategory()) {
+case PRIMITIVE:
+    break;
+case STRUCT:
+  StructObjectInspector structOutputOI=(StructObjectInspector)oi;
+List<? extends StructField> listFields=structOutputOI.getAllStructFieldRefs();
+for (StructField listField : listFields) {
+if (!hasAllFieldsSettable(listField.getFieldObjectInspector(),oiSettableProperties)) {
+  returnValue=false;
+  break;
+}
+}
+break;
+case LIST:
+ListObjectInspector listOutputOI=(ListObjectInspector)oi;
+returnValue=hasAllFieldsSettable(listOutputOI.getListElementObjectInspector(),oiSettableProperties);
+break;
+case MAP:
+MapObjectInspector mapOutputOI=(MapObjectInspector)oi;
+returnValue=hasAllFieldsSettable(mapOutputOI.getMapKeyObjectInspector(),oiSettableProperties) && hasAllFieldsSettable(mapOutputOI.getMapValueObjectInspector(),oiSettableProperties);
+break;
+case UNION:
+UnionObjectInspector unionOutputOI=(UnionObjectInspector)oi;
+List<ObjectInspector> unionListFields=unionOutputOI.getObjectInspectors();
+for (ObjectInspector listField : unionListFields) {
+if (!hasAllFieldsSettable(listField,oiSettableProperties)) {
+returnValue=false;
+break;
+}
+}
+break;
+default :
+throw new RuntimeException("Hive internal error inside hasAllFieldsSettable : " + oi.getTypeName() + " not supported yet.");
+}
+return setOISettablePropertiesMap(oi,oiSettableProperties,returnValue);
+}

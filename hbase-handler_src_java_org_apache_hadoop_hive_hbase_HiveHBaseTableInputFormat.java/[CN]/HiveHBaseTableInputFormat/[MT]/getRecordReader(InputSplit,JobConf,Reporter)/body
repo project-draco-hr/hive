@@ -16,11 +16,11 @@
   if (columnsMapping.size() < readColIDs.size()) {
     throw new IOException("Cannot read more columns than the given table contains.");
   }
-  boolean addAll=(readColIDs.size() == 0);
+  boolean readAllColumns=ColumnProjectionUtils.isReadAllColumns(jobConf);
   Scan scan=new Scan();
   boolean empty=true;
   List<String> addedFamilies=new ArrayList<String>();
-  if (!addAll) {
+  if (!readAllColumns) {
     for (    int i : readColIDs) {
       ColumnMapping colMap=columnsMapping.get(i);
       if (colMap.hbaseRowKey) {
@@ -50,7 +50,7 @@
  else {
         scan.addColumn(colMap.familyNameBytes,colMap.qualifierNameBytes);
       }
-      if (!addAll) {
+      if (!readAllColumns) {
         break;
       }
     }
@@ -67,14 +67,6 @@
   if (scanBatch != null) {
     scan.setBatch(Integer.valueOf(scanBatch));
   }
-  int iKey=-1;
-  try {
-    iKey=HBaseSerDe.getRowKeyColumnOffset(columnsMapping);
-  }
- catch (  SerDeException e) {
-    throw new IOException(e);
-  }
-  tableSplit=convertFilter(jobConf,scan,tableSplit,iKey,getStorageFormatOfKey(columnsMapping.get(iKey).mappingSpec,jobConf.get(HBaseSerDe.HBASE_TABLE_DEFAULT_STORAGE_TYPE,"string")));
   setScan(scan);
   Job job=new Job(jobConf);
   TaskAttemptContext tac=ShimLoader.getHadoopShims().newTaskAttemptContext(job.getConfiguration(),reporter);

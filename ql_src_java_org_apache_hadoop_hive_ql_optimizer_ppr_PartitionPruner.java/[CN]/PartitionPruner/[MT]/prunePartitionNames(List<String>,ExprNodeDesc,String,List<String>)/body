@@ -1,13 +1,16 @@
 {
   ObjectPair<PrimitiveObjectInspector,ExprNodeEvaluator> handle=PartExprEvalUtils.prepareExpr(prunerExpr,columnNames);
-  List<String> values=new ArrayList<String>(columnNames.size());
+  boolean inPlace=partNames instanceof AbstractSequentialList<?>;
+  List<String> partNamesSeq=inPlace ? partNames : new LinkedList<String>(partNames);
+  ArrayList<String> values=new ArrayList<String>(columnNames.size());
+  for (int i=0; i < columnNames.size(); ++i) {
+    values.add(null);
+  }
   boolean hasUnknownPartitions=false;
-  Iterator<String> partIter=partNames.iterator();
+  Iterator<String> partIter=partNamesSeq.iterator();
   while (partIter.hasNext()) {
     String partName=partIter.next();
-    LinkedHashMap<String,String> partSpec=Warehouse.makeSpecFromName(partName);
-    values.clear();
-    values.addAll(partSpec.values());
+    Warehouse.makeValsFromName(partName,values);
     Boolean isNeeded=(Boolean)PartExprEvalUtils.evaluateExprOnPart(handle,values);
     boolean isUnknown=(isNeeded == null);
     if (!isUnknown && !isNeeded) {
@@ -21,6 +24,10 @@
     }
     hasUnknownPartitions|=isUnknown;
     LOG.debug("retained " + (isUnknown ? "unknown " : "") + "partition: "+ partName);
+  }
+  if (!inPlace) {
+    partNames.clear();
+    partNames.addAll(partNamesSeq);
   }
   return hasUnknownPartitions;
 }

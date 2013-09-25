@@ -18,9 +18,26 @@
   String tableName=tableProperties.getProperty(HBaseSerDe.HBASE_TABLE_NAME);
   if (tableName == null) {
     tableName=tableProperties.getProperty(hive_metastoreConstants.META_TABLE_NAME);
+    tableName=tableName.toLowerCase();
     if (tableName.startsWith(DEFAULT_PREFIX)) {
       tableName=tableName.substring(DEFAULT_PREFIX.length());
     }
   }
   jobProperties.put(HBaseSerDe.HBASE_TABLE_NAME,tableName);
+  Configuration jobConf=getJobConf();
+  addHBaseResources(jobConf,jobProperties);
+  if (this.configureInputJobProps) {
+    try {
+      HBaseConfiguration.addHbaseResources(jobConf);
+      addHBaseDelegationToken(jobConf);
+    }
+ catch (    IOException e) {
+      throw new IllegalStateException("Error while configuring input job properties",e);
+    }
+  }
+ else {
+    Configuration copyOfConf=new Configuration(jobConf);
+    HBaseConfiguration.addHbaseResources(copyOfConf);
+    jobProperties.put(TableOutputFormat.OUTPUT_TABLE,tableName);
+  }
 }

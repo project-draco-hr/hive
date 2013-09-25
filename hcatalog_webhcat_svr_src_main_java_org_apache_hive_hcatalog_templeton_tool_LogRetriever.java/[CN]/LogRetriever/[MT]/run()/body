@@ -1,0 +1,46 @@
+{
+  String logDir=statusDir + "/logs";
+  fs.mkdirs(new Path(logDir));
+  JobIDParser jobIDParser=null;
+switch (jobType) {
+case PIG:
+    jobIDParser=new PigJobIDParser(statusDir,conf);
+  break;
+case HIVE:
+jobIDParser=new HiveJobIDParser(statusDir,conf);
+break;
+case JAR:
+case STREAMING:
+jobIDParser=new JarJobIDParser(statusDir,conf);
+break;
+default :
+System.err.println("Unknown job type:" + jobType != null ? jobType.toString() : "null" + ", only pig/hive/jar/streaming are supported, skip logs");
+return;
+}
+List<String> jobs=new ArrayList<String>();
+try {
+jobs=jobIDParser.parseJobID();
+}
+ catch (IOException e) {
+System.err.println("Cannot retrieve jobid from log file");
+e.printStackTrace();
+}
+PrintWriter listWriter=null;
+try {
+listWriter=new PrintWriter(new OutputStreamWriter(fs.create(new Path(logDir,"list.txt"))));
+for (String job : jobs) {
+try {
+logJob(logDir,job,listWriter);
+}
+ catch (IOException e) {
+System.err.println("Cannot retrieve log for " + job);
+e.printStackTrace();
+}
+}
+}
+  finally {
+if (listWriter != null) {
+listWriter.close();
+}
+}
+}

@@ -2,13 +2,31 @@
   if (null == genericUDF) {
     return null;
   }
+  GenericUDF clonedUDF=null;
   if (genericUDF instanceof GenericUDFBridge) {
     GenericUDFBridge bridge=(GenericUDFBridge)genericUDF;
-    return new GenericUDFBridge(bridge.getUdfName(),bridge.isOperator(),bridge.getUdfClass());
+    clonedUDF=new GenericUDFBridge(bridge.getUdfName(),bridge.isOperator(),bridge.getUdfClassName());
   }
  else   if (genericUDF instanceof GenericUDFMacro) {
     GenericUDFMacro bridge=(GenericUDFMacro)genericUDF;
-    return new GenericUDFMacro(bridge.getMacroName(),bridge.getBody(),bridge.getColNames(),bridge.getColTypes());
+    clonedUDF=new GenericUDFMacro(bridge.getMacroName(),bridge.getBody(),bridge.getColNames(),bridge.getColTypes());
   }
-  return (GenericUDF)ReflectionUtils.newInstance(genericUDF.getClass(),null);
+ else {
+    clonedUDF=(GenericUDF)ReflectionUtils.newInstance(genericUDF.getClass(),null);
+  }
+  if (clonedUDF != null) {
+    if (genericUDF instanceof SettableUDF) {
+      try {
+        Object settableData=((SettableUDF)genericUDF).getParams();
+        if (settableData != null) {
+          ((SettableUDF)clonedUDF).setParams(settableData);
+        }
+      }
+ catch (      UDFArgumentException err) {
+        LOG.error("Unable to add settable data to UDF " + genericUDF.getClass());
+        throw new IllegalArgumentException(err);
+      }
+    }
+  }
+  return clonedUDF;
 }

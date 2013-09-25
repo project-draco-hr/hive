@@ -1,0 +1,43 @@
+{
+  String testName="TestHiveHBaseTableOutputFormat";
+  Path methodTestDir=new Path(getTestDir(),testName);
+  String databaseName=testName;
+  String dbDir=new Path(methodTestDir,"DB_" + testName).toString();
+  String tableName=newTableName(testName);
+  String familyName="my_family";
+  byte[] familyNameBytes=Bytes.toBytes(familyName);
+  String hbaseTableName=(databaseName + "." + tableName).toLowerCase();
+  Configuration conf=new Configuration(allConf);
+  conf.set(HCatConstants.HCAT_KEY_HIVE_CONF,HCatUtil.serialize(allConf.getAllProperties()));
+  String dbquery="CREATE DATABASE IF NOT EXISTS " + databaseName + " LOCATION '"+ dbDir+ "'";
+  String tableQuery="CREATE TABLE " + databaseName + "."+ tableName+ "(key int, english string, spanish string) STORED BY "+ "'org.apache.hadoop.hive.hbase.HBaseStorageHandler'"+ " WITH  SERDEPROPERTIES ("+ "'hbase.columns.mapping'=':key,"+ familyName+ ":english,"+ familyName+ ":spanish')";
+  assertEquals(0,hcatDriver.run(dbquery).getResponseCode());
+  assertEquals(0,hcatDriver.run(tableQuery).getResponseCode());
+  String data[]={"1,english:ONE,spanish:UNO","2,english:TWO,spanish:DOS","3,english:THREE,spanish:TRES"};
+  Path inputPath=new Path(methodTestDir,"mr_input");
+  getFileSystem().mkdirs(inputPath);
+  for (int i=0; i < data.length; i++) {
+    FSDataOutputStream os=getFileSystem().create(new Path(inputPath,"inputFile" + i + ".txt"));
+    os.write(Bytes.toBytes(data[i] + "\n"));
+    os.close();
+  }
+  Path workingDir=new Path(methodTestDir,"mr_work");
+  OutputJobInfo outputJobInfo=OutputJobInfo.create(databaseName,tableName,null);
+  Job job=configureJob(testName,conf,workingDir,MapHCatWrite.class,outputJobInfo,inputPath);
+  assertTrue(job.waitForCompletion(true));
+  HTable table=new HTable(conf,hbaseTableName);
+  Scan scan=new Scan();
+  scan.addFamily(familyNameBytes);
+  ResultScanner scanner=table.getScanner(scan);
+  int index=0;
+  for (  Result result : scanner) {
+    String vals[]=data[index].toString().split(",");
+    for (int i=1; i < vals.length; i++) {
+      String pair[]=vals[i].split(":");
+      assertTrue(result.containsColumn(familyNameBytes,Bytes.toBytes(pair[0])));
+      assertEquals(pair[1],Bytes.toString(result.getValue(familyNameBytes,Bytes.toBytes(pair[0]))));
+    }
+    index++;
+  }
+  assertEquals(data.length,index);
+}

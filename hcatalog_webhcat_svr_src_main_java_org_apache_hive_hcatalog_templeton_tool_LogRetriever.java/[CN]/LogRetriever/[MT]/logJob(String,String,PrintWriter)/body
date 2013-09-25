@@ -1,0 +1,44 @@
+{
+  RunningJob rj=jobClient.getJob(JobID.forName(jobID));
+  String jobURLString=rj.getTrackingURL();
+  Path jobDir=new Path(logDir,jobID);
+  fs.mkdirs(jobDir);
+  try {
+    logJobConf(jobID,jobURLString,jobDir.toString());
+  }
+ catch (  IOException e) {
+    System.err.println("Cannot retrieve job.xml.html for " + jobID);
+    e.printStackTrace();
+  }
+  listWriter.println("job: " + jobID + "("+ "name="+ rj.getJobName()+ ","+ "status="+ JobStatus.getJobRunState(rj.getJobState())+ ")");
+  List<AttemptInfo> attempts=new ArrayList<AttemptInfo>();
+  for (  String type : new String[]{"map","reduce","setup","cleanup"}) {
+    try {
+      List<AttemptInfo> successAttempts=getCompletedAttempts(jobID,jobURLString,type);
+      attempts.addAll(successAttempts);
+    }
+ catch (    IOException e) {
+      System.err.println("Cannot retrieve " + type + " tasks for "+ jobID);
+      e.printStackTrace();
+    }
+  }
+  try {
+    List<AttemptInfo> failedAttempts=getFailedAttempts(jobID,jobURLString);
+    attempts.addAll(failedAttempts);
+  }
+ catch (  IOException e) {
+    System.err.println("Cannot retrieve failed attempts for " + jobID);
+    e.printStackTrace();
+  }
+  for (  AttemptInfo attempt : attempts) {
+    try {
+      logAttempt(jobID,attempt,jobDir.toString());
+      listWriter.println("  attempt:" + attempt.id + "("+ "type="+ attempt.type+ ","+ "status="+ attempt.status+ ","+ "starttime="+ attempt.startTime+ ","+ "endtime="+ attempt.endTime+ ")");
+    }
+ catch (    IOException e) {
+      System.err.println("Cannot log attempt " + attempt.id);
+      e.printStackTrace();
+    }
+  }
+  listWriter.println();
+}

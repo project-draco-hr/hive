@@ -1,24 +1,27 @@
 {
-  if (tasks != null) {
-    File planDir=new File(outDir,"plan");
-    String planFile=outPath(planDir.toString(),tname + ".xml");
-    File outf=null;
-    outf=new File(logDir);
-    outf=new File(outf,tname.concat(".xml"));
-    FileOutputStream ofs=new FileOutputStream(outf);
+  if (tasks == null) {
+    throw new Exception("Plan is null");
+  }
+  File planDir=new File(outDir,"plan");
+  String planFile=outPath(planDir.toString(),tname + ".xml");
+  File outf=null;
+  outf=new File(logDir);
+  outf=new File(outf,tname.concat(".xml"));
+  FileOutputStream ofs=new FileOutputStream(outf);
+  try {
+    conf.set(HiveConf.ConfVars.PLAN_SERIALIZATION.varname,"javaXML");
     for (    Task<? extends Serializable> plan : tasks) {
-      Utilities.serializeObject(plan,ofs);
+      Utilities.serializePlan(plan,ofs,conf);
     }
-    String[] patterns=new String[]{"<java version=\".*\" class=\"java.beans.XMLDecoder\">","<string>.*/tmp/.*</string>","<string>file:.*</string>","<string>pfile:.*</string>","<string>[0-9]{10}</string>","<string>/.*/warehouse/.*</string>"};
     fixXml4JDK7(outf.getPath());
-    maskPatterns(patterns,outf.getPath());
+    maskPatterns(xmlPlanMask,outf.getPath());
     int exitVal=executeDiffCommand(outf.getPath(),planFile,true,false);
     if (exitVal != 0 && overWrite) {
       exitVal=overwriteResults(outf.getPath(),planFile);
     }
     return exitVal;
   }
- else {
-    throw new Exception("Plan is null");
+  finally {
+    conf.set(HiveConf.ConfVars.PLAN_SERIALIZATION.varname,"kryo");
   }
 }

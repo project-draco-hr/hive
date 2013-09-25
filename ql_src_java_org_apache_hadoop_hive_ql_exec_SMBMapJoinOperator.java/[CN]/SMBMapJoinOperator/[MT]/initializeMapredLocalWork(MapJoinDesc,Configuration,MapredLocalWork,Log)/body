@@ -11,14 +11,16 @@
   for (  Map.Entry<String,FetchWork> entry : aliasToFetchWork.entrySet()) {
     String alias=entry.getKey();
     FetchWork fetchWork=entry.getValue();
-    Operator<? extends OperatorDesc> forwardOp=aliasToWork.get(alias);
-    forwardOp.setExecContext(getExecContext());
-    JobConf jobClone=cloneJobConf(hconf,forwardOp);
+    JobConf jobClone=new JobConf(hconf);
+    TableScanOperator ts=(TableScanOperator)aliasToWork.get(alias);
+    ColumnProjectionUtils.appendReadColumns(jobClone,ts.getNeededColumnIDs(),ts.getNeededColumns());
+    HiveInputFormat.pushFilters(jobClone,ts);
+    ts.setExecContext(getExecContext());
     FetchOperator fetchOp=new FetchOperator(fetchWork,jobClone);
-    forwardOp.initialize(jobClone,new ObjectInspector[]{fetchOp.getOutputObjectInspector()});
+    ts.initialize(jobClone,new ObjectInspector[]{fetchOp.getOutputObjectInspector()});
     fetchOp.clearFetchContext();
     DummyStoreOperator sinkOp=aliasToSinkWork.get(alias);
-    MergeQueue mergeQueue=new MergeQueue(alias,fetchWork,jobClone,forwardOp,sinkOp);
+    MergeQueue mergeQueue=new MergeQueue(alias,fetchWork,jobClone,ts,sinkOp);
     aliasToMergeQueue.put(alias,mergeQueue);
     l4j.info("fetch operators for " + alias + " initialized");
   }

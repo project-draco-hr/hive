@@ -1,0 +1,22 @@
+{
+  FileSinkOperator FS=(FileSinkOperator)nd;
+  GroupByOperator cGBY=(GroupByOperator)stack.get(stack.size() - 3);
+  ReduceSinkOperator RS=(ReduceSinkOperator)stack.get(stack.size() - 4);
+  if (RS.getConf().getNumReducers() != 1 || !RS.getConf().getKeyCols().isEmpty()) {
+    return null;
+  }
+  GroupByOperator pGBY=(GroupByOperator)stack.get(stack.size() - 5);
+  String fileName=FS.getConf().getFinalDirName();
+  TableDesc tsDesc=createIntermediateFS(pGBY,fileName);
+  for (  AggregationDesc aggregation : cGBY.getConf().getAggregators()) {
+    List<ExprNodeDesc> parameters=aggregation.getParameters();
+    aggregation.setParameters(ExprNodeDescUtils.backtrack(parameters,cGBY,pGBY));
+  }
+  pctx.setFetchTabledesc(tsDesc);
+  pctx.setFetchSource(cGBY);
+  pctx.setFetchSink(SimpleFetchOptimizer.replaceFSwithLS(FS,"NULL"));
+  RS.setParentOperators(null);
+  RS.setChildOperators(null);
+  cGBY.setParentOperators(null);
+  return null;
+}

@@ -1,35 +1,28 @@
 {
-  setState(OperationState.RUNNING);
-  String statement_trimmed=statement.trim();
-  String[] tokens=statement_trimmed.split("\\s");
-  String cmd_1=statement_trimmed.substring(tokens[0].length()).trim();
-  int ret=0;
-  String errorMessage="";
-  String SQLState=null;
-  try {
-    driver=new Driver(getParentSession().getHiveConf());
-    driver.setTryCount(Integer.MAX_VALUE);
-    String subStatement=new VariableSubstitution().substitute(getParentSession().getHiveConf(),statement);
-    response=driver.run(subStatement);
-    if (0 != response.getResponseCode()) {
-      throw new HiveSQLException("Error while processing statement: " + response.getErrorMessage(),response.getSQLState(),response.getResponseCode());
-    }
-    mResultSchema=driver.getSchema();
-    if (mResultSchema != null && mResultSchema.isSetFieldSchemas()) {
-      resultSchema=new TableSchema(mResultSchema);
-      setHasResultSet(true);
-    }
+  setState(OperationState.PENDING);
+  if (!shouldRunAsync()) {
+    runInternal();
+  }
  else {
-      setHasResultSet(false);
+    Runnable backgroundOperation=new Runnable(){
+      SessionState ss=SessionState.get();
+      @Override public void run(){
+        SessionState.start(ss);
+        try {
+          runInternal();
+        }
+ catch (        HiveSQLException e) {
+          LOG.error("Error: ",e);
+        }
+      }
+    }
+;
+    try {
+      backgroundHandle=getParentSession().getSessionManager().submitBackgroundOperation(backgroundOperation);
+    }
+ catch (    RejectedExecutionException rejected) {
+      setState(OperationState.ERROR);
+      throw new HiveSQLException(rejected);
     }
   }
- catch (  HiveSQLException e) {
-    setState(OperationState.ERROR);
-    throw e;
-  }
-catch (  Exception e) {
-    setState(OperationState.ERROR);
-    throw new HiveSQLException("Error running query: " + e.toString(),e);
-  }
-  setState(OperationState.FINISHED);
 }

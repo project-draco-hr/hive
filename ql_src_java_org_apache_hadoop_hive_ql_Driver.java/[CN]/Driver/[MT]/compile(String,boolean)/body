@@ -1,6 +1,6 @@
 {
   PerfLogger perfLogger=PerfLogger.getPerfLogger();
-  perfLogger.PerfLogBegin(LOG,PerfLogger.COMPILE);
+  perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.COMPILE);
   QueryState queryState=new QueryState();
   if (plan != null) {
     close();
@@ -16,9 +16,12 @@
     ctx.setTryCount(getTryCount());
     ctx.setCmd(command);
     ctx.setHDFSCleanup(true);
+    perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.PARSE);
     ParseDriver pd=new ParseDriver();
     ASTNode tree=pd.parse(command,ctx);
     tree=ParseUtils.findRootNonNullToken(tree);
+    perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.PARSE);
+    perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.ANALYZE);
     BaseSemanticAnalyzer sem=SemanticAnalyzerFactory.get(conf,tree);
     List<HiveSemanticAnalyzerHook> saHooks=getHooks(HiveConf.ConfVars.SEMANTIC_ANALYZER_HOOK,HiveSemanticAnalyzerHook.class);
     if (saHooks != null) {
@@ -38,16 +41,17 @@
     }
     LOG.info("Semantic Analysis Completed");
     sem.validate();
+    perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.ANALYZE);
     plan=new QueryPlan(command,sem,perfLogger.getStartTime(PerfLogger.DRIVER_RUN));
     if ("true".equalsIgnoreCase(System.getProperty("test.serialize.qplan"))) {
       String queryPlanFileName=ctx.getLocalScratchDir(true) + Path.SEPARATOR_CHAR + "queryplan.xml";
       LOG.info("query plan = " + queryPlanFileName);
       queryPlanFileName=new Path(queryPlanFileName).toUri().getPath();
       FileOutputStream fos=new FileOutputStream(queryPlanFileName);
-      Utilities.serializeObject(plan,fos);
+      Utilities.serializePlan(plan,fos,conf);
       fos.close();
       FileInputStream fis=new FileInputStream(queryPlanFileName);
-      QueryPlan newPlan=Utilities.deserializeObject(fis);
+      QueryPlan newPlan=Utilities.deserializePlan(fis,QueryPlan.class,conf);
       fis.close();
       plan=newPlan;
     }
@@ -57,7 +61,7 @@
     schema=getSchema(sem,conf);
     if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_AUTHORIZATION_ENABLED)) {
       try {
-        perfLogger.PerfLogBegin(LOG,PerfLogger.DO_AUTHORIZATION);
+        perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.DO_AUTHORIZATION);
         doAuthorization(sem);
       }
  catch (      AuthorizationException authExp) {
@@ -66,7 +70,7 @@
         return 403;
       }
  finally {
-        perfLogger.PerfLogEnd(LOG,PerfLogger.DO_AUTHORIZATION);
+        perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.DO_AUTHORIZATION);
       }
     }
     return 0;
@@ -89,7 +93,7 @@
     return error.getErrorCode();
   }
  finally {
-    perfLogger.PerfLogEnd(LOG,PerfLogger.COMPILE);
+    perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.COMPILE);
     restoreSession(queryState);
   }
 }

@@ -1,0 +1,77 @@
+{
+  CommandLineParser parser=new GnuParser();
+  CommandLine line=null;
+  String dbType=null;
+  String schemaVer=null;
+  Options cmdLineOptions=new Options();
+  initOptions(cmdLineOptions);
+  try {
+    line=parser.parse(cmdLineOptions,args);
+  }
+ catch (  ParseException e) {
+    System.err.println("HiveSchemaTool:Parsing failed.  Reason: " + e.getLocalizedMessage());
+    printAndExit(cmdLineOptions);
+  }
+  if (line.hasOption("help")) {
+    HelpFormatter formatter=new HelpFormatter();
+    formatter.printHelp("schemaTool",cmdLineOptions);
+    return;
+  }
+  if (line.hasOption("dbType")) {
+    dbType=line.getOptionValue("dbType");
+    if ((!dbType.equalsIgnoreCase(HiveSchemaHelper.DB_DERBY) && !dbType.equalsIgnoreCase(HiveSchemaHelper.DB_MYSQL) && !dbType.equalsIgnoreCase(HiveSchemaHelper.DB_POSTGRACE)&& !dbType.equalsIgnoreCase(HiveSchemaHelper.DB_ORACLE))) {
+      System.err.println("Unsupported dbType " + dbType);
+      printAndExit(cmdLineOptions);
+    }
+  }
+ else {
+    System.err.println("no dbType supplied");
+    printAndExit(cmdLineOptions);
+  }
+  System.setProperty(HiveConf.ConfVars.METASTORE_SCHEMA_VERIFICATION.varname,"true");
+  try {
+    HiveSchemaTool schemaTool=new HiveSchemaTool(dbType);
+    if (line.hasOption("userName")) {
+      schemaTool.setUserName(line.getOptionValue("userName"));
+    }
+    if (line.hasOption("passWord")) {
+      schemaTool.setPassWord(line.getOptionValue("passWord"));
+    }
+    if (line.hasOption("dryRun")) {
+      schemaTool.setDryRun(true);
+    }
+    if (line.hasOption("verbose")) {
+      schemaTool.setVerbose(true);
+    }
+    if (line.hasOption("info")) {
+      schemaTool.showInfo();
+    }
+ else     if (line.hasOption("upgradeSchema")) {
+      schemaTool.doUpgrade();
+    }
+ else     if (line.hasOption("upgradeSchemaFrom")) {
+      schemaVer=line.getOptionValue("upgradeSchemaFrom");
+      schemaTool.doUpgrade(schemaVer);
+    }
+ else     if (line.hasOption("initSchema")) {
+      schemaTool.doInit();
+    }
+ else     if (line.hasOption("initSchemaTo")) {
+      schemaVer=line.getOptionValue("initSchemaTo");
+      schemaTool.doInit(schemaVer);
+    }
+ else {
+      System.err.println("no valid option supplied");
+      printAndExit(cmdLineOptions);
+    }
+  }
+ catch (  HiveMetaException e) {
+    System.err.println(e);
+    if (line.hasOption("verbose")) {
+      e.printStackTrace();
+    }
+    System.err.println("*** schemaTool failed ***");
+    System.exit(1);
+  }
+  System.out.println("schemaTool completeted");
+}

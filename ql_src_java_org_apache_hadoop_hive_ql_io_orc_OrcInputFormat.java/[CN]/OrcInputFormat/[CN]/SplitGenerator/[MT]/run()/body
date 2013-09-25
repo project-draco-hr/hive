@@ -1,0 +1,32 @@
+{
+  try {
+    Reader orcReader=OrcFile.createReader(fs,file.getPath());
+    long currentOffset=-1;
+    long currentLength=0;
+    for (    StripeInformation stripe : orcReader.getStripes()) {
+      if (currentOffset != -1 && currentLength > context.minSize && (currentOffset / blockSize != stripe.getOffset() / blockSize)) {
+        createSplit(currentOffset,currentLength);
+        currentOffset=-1;
+      }
+      if (currentOffset == -1) {
+        currentOffset=stripe.getOffset();
+        currentLength=stripe.getLength();
+      }
+ else {
+        currentLength+=stripe.getLength();
+      }
+      if (currentLength >= context.maxSize) {
+        createSplit(currentOffset,currentLength);
+        currentOffset=-1;
+      }
+    }
+    if (currentOffset != -1) {
+      createSplit(currentOffset,currentLength);
+    }
+  }
+ catch (  Throwable th) {
+synchronized (context.errors) {
+      context.errors.add(th);
+    }
+  }
+}
