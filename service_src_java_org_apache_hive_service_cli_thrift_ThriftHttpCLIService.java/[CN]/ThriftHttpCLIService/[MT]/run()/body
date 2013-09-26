@@ -1,0 +1,50 @@
+{
+  try {
+    verifyHttpConfiguration(hiveConf);
+    String portString=System.getenv("HIVE_SERVER2_THRIFT_HTTP_PORT");
+    if (portString != null) {
+      portNum=Integer.valueOf(portString);
+    }
+ else {
+      portNum=hiveConf.getIntVar(ConfVars.HIVE_SERVER2_THRIFT_HTTP_PORT);
+    }
+    minWorkerThreads=hiveConf.getIntVar(ConfVars.HIVE_SERVER2_THRIFT_HTTP_MIN_WORKER_THREADS);
+    maxWorkerThreads=hiveConf.getIntVar(ConfVars.HIVE_SERVER2_THRIFT_HTTP_MAX_WORKER_THREADS);
+    String httpPath=hiveConf.getVar(HiveConf.ConfVars.HIVE_SERVER2_THRIFT_HTTP_PATH);
+    if (httpPath == null || httpPath.equals("")) {
+      httpPath="/*";
+    }
+ else {
+      if (!httpPath.startsWith("/")) {
+        httpPath="/" + httpPath;
+      }
+      if (httpPath.endsWith("/")) {
+        httpPath=httpPath + "*";
+      }
+      if (!httpPath.endsWith("/*")) {
+        httpPath=httpPath + "/*";
+      }
+    }
+    httpServer=new org.mortbay.jetty.Server();
+    QueuedThreadPool threadPool=new QueuedThreadPool();
+    threadPool.setMinThreads(minWorkerThreads);
+    threadPool.setMaxThreads(maxWorkerThreads);
+    httpServer.setThreadPool(threadPool);
+    SelectChannelConnector connector=new SelectChannelConnector();
+    connector.setPort(portNum);
+    connector.setReuseAddress(!Shell.WINDOWS);
+    httpServer.addConnector(connector);
+    TCLIService.Processor<ThriftCLIService> processor=new TCLIService.Processor<ThriftCLIService>(new EmbeddedThriftBinaryCLIService());
+    TProtocolFactory protocolFactory=new TBinaryProtocol.Factory();
+    TServlet thriftHttpServlet=new ThriftHttpServlet(processor,protocolFactory);
+    final Context context=new Context(httpServer,"/",Context.SESSIONS);
+    context.addServlet(new ServletHolder(thriftHttpServlet),httpPath);
+    httpServer.start();
+    String msg="Starting CLIService in Http mode on port " + portNum + " path="+ httpPath+ " with "+ minWorkerThreads+ ".."+ maxWorkerThreads+ " worker threads";
+    LOG.info(msg);
+    httpServer.join();
+  }
+ catch (  Throwable t) {
+    LOG.error("Error: ",t);
+  }
+}
