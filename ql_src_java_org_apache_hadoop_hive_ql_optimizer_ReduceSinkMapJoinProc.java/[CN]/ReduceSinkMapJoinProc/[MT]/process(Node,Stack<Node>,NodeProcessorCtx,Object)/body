@@ -1,0 +1,35 @@
+{
+  GenTezProcContext context=(GenTezProcContext)procContext;
+  context.preceedingWork=null;
+  context.currentRootOperator=null;
+  MapJoinOperator mapJoinOp=(MapJoinOperator)nd;
+  Operator<? extends OperatorDesc> childOp=mapJoinOp.getChildOperators().get(0);
+  ReduceSinkOperator parentRS=(ReduceSinkOperator)stack.get(stack.size() - 2);
+  while (childOp != null) {
+    if ((childOp instanceof ReduceSinkOperator) || (childOp instanceof FileSinkOperator)) {
+      BaseWork myWork=context.operatorWorkMap.get(childOp);
+      BaseWork parentWork=context.operatorWorkMap.get(parentRS);
+      if (myWork != null) {
+        TezWork tezWork=context.currentTask.getWork();
+        tezWork.connect(parentWork,myWork,EdgeType.BROADCAST_EDGE);
+      }
+ else {
+        List<BaseWork> linkWorkList=context.linkOpWithWorkMap.get(childOp);
+        if (linkWorkList == null) {
+          linkWorkList=new ArrayList<BaseWork>();
+        }
+        linkWorkList.add(parentWork);
+        context.linkOpWithWorkMap.put(childOp,linkWorkList);
+      }
+      break;
+    }
+    if ((childOp.getChildOperators() != null) && (childOp.getChildOperators().size() >= 1)) {
+      childOp=childOp.getChildOperators().get(0);
+    }
+ else {
+      break;
+    }
+  }
+  parentRS.removeChild(mapJoinOp);
+  return true;
+}
