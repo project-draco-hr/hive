@@ -1,0 +1,20 @@
+{
+  TOpenSessionReq openReq=new TOpenSessionReq();
+  TSessionHandle sessHandle=client.OpenSession(openReq).getSessionHandle();
+  assertNotNull(sessHandle);
+  String queryString="SET hive.lock.manager=" + "org.apache.hadoop.hive.ql.lockmgr.EmbeddedLockManager";
+  executeQuerySync(queryString,sessHandle);
+  queryString="CREATE TABLE TEST_EXEC(ID STRING)";
+  executeQuerySync(queryString,sessHandle);
+  queryString="SELECT ID FROM TEST_EXEC";
+  TExecuteStatementResp execResp=executeQuerySync(queryString,sessHandle);
+  TOperationHandle operationHandle=execResp.getOperationHandle();
+  assertNotNull(operationHandle);
+  TGetOperationStatusReq opStatusReq=new TGetOperationStatusReq();
+  opStatusReq.setOperationHandle(operationHandle);
+  assertNotNull(opStatusReq);
+  TGetOperationStatusResp opStatusResp=client.GetOperationStatus(opStatusReq);
+  assertEquals("Query should be finished",OperationState.FINISHED,OperationState.getOperationState(opStatusResp.getOperationState()));
+  TCloseSessionReq closeReq=new TCloseSessionReq(sessHandle);
+  client.CloseSession(closeReq);
+}

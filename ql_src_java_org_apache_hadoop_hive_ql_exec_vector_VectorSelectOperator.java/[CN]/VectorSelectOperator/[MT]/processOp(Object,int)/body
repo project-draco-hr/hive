@@ -1,0 +1,25 @@
+{
+  if (conf.isSelStarNoCompute()) {
+    forward(row,inputObjInspectors[tag]);
+    return;
+  }
+  VectorizedRowBatch vrg=(VectorizedRowBatch)row;
+  for (int i=0; i < vExpressions.length; i++) {
+    try {
+      vExpressions[i].evaluate(vrg);
+    }
+ catch (    RuntimeException e) {
+      throw new HiveException("Error evaluating " + conf.getColList().get(i).getExprString(),e);
+    }
+  }
+  VectorExpressionWriter[] originalValueWriters=vrg.valueWriters;
+  vrg.setValueWriters(valueWriters);
+  int[] originalProjections=vrg.projectedColumns;
+  int originalProjectionSize=vrg.projectionSize;
+  vrg.projectionSize=vExpressions.length;
+  vrg.projectedColumns=this.projectedColumns;
+  forward(vrg,outputObjInspector);
+  vrg.projectionSize=originalProjectionSize;
+  vrg.projectedColumns=originalProjections;
+  vrg.valueWriters=originalValueWriters;
+}

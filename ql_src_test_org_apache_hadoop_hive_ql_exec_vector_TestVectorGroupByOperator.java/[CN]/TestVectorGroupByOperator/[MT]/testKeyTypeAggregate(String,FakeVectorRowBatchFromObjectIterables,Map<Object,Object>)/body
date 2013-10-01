@@ -1,0 +1,96 @@
+{
+  Map<String,Integer> mapColumnNames=new HashMap<String,Integer>();
+  mapColumnNames.put("Key",0);
+  mapColumnNames.put("Value",1);
+  VectorizationContext ctx=new VectorizationContext(mapColumnNames,2);
+  Set<Object> keys=new HashSet<Object>();
+  AggregationDesc agg=buildAggregationDesc(ctx,aggregateName,"Value",TypeInfoFactory.getPrimitiveTypeInfo(data.getTypes()[1]));
+  ArrayList<AggregationDesc> aggs=new ArrayList<AggregationDesc>();
+  aggs.add(agg);
+  ArrayList<String> outputColumnNames=new ArrayList<String>();
+  outputColumnNames.add("_col0");
+  outputColumnNames.add("_col1");
+  GroupByDesc desc=new GroupByDesc();
+  desc.setOutputColumnNames(outputColumnNames);
+  desc.setAggregators(aggs);
+  ExprNodeDesc keyExp=buildColumnDesc(ctx,"Key",TypeInfoFactory.getPrimitiveTypeInfo(data.getTypes()[0]));
+  ArrayList<ExprNodeDesc> keysDesc=new ArrayList<ExprNodeDesc>();
+  keysDesc.add(keyExp);
+  desc.setKeys(keysDesc);
+  VectorGroupByOperator vgo=new VectorGroupByOperator(ctx,desc);
+  FakeCaptureOutputOperator out=FakeCaptureOutputOperator.addCaptureOutputChild(vgo);
+  vgo.initialize(null,null);
+  out.setOutputInspector(new FakeCaptureOutputOperator.OutputInspector(){
+    private int rowIndex;
+    private String aggregateName;
+    private Map<Object,Object> expected;
+    private Set<Object> keys;
+    @Override public void inspectRow(    Object row,    int tag) throws HiveException {
+      assertTrue(row instanceof Object[]);
+      Object[] fields=(Object[])row;
+      assertEquals(2,fields.length);
+      Object key=fields[0];
+      Object keyValue=null;
+      if (null == key) {
+        keyValue=null;
+      }
+ else       if (key instanceof ByteWritable) {
+        ByteWritable bwKey=(ByteWritable)key;
+        keyValue=bwKey.get();
+      }
+ else       if (key instanceof ShortWritable) {
+        ShortWritable swKey=(ShortWritable)key;
+        keyValue=swKey.get();
+      }
+ else       if (key instanceof IntWritable) {
+        IntWritable iwKey=(IntWritable)key;
+        keyValue=iwKey.get();
+      }
+ else       if (key instanceof LongWritable) {
+        LongWritable lwKey=(LongWritable)key;
+        keyValue=lwKey.get();
+      }
+ else       if (key instanceof TimestampWritable) {
+        TimestampWritable twKey=(TimestampWritable)key;
+        keyValue=twKey.getTimestamp();
+      }
+ else       if (key instanceof DoubleWritable) {
+        DoubleWritable dwKey=(DoubleWritable)key;
+        keyValue=dwKey.get();
+      }
+ else       if (key instanceof FloatWritable) {
+        FloatWritable fwKey=(FloatWritable)key;
+        keyValue=fwKey.get();
+      }
+ else       if (key instanceof BooleanWritable) {
+        BooleanWritable bwKey=(BooleanWritable)key;
+        keyValue=bwKey.get();
+      }
+ else {
+        Assert.fail(String.format("Not implemented key output type %s: %s",key.getClass().getName(),key));
+      }
+      String keyValueAsString=String.format("%s",keyValue);
+      assertTrue(expected.containsKey(keyValue));
+      Object expectedValue=expected.get(keyValue);
+      Object value=fields[1];
+      Validator validator=getValidator(aggregateName);
+      validator.validate(keyValueAsString,expectedValue,new Object[]{value});
+      keys.add(keyValue);
+    }
+    private FakeCaptureOutputOperator.OutputInspector init(    String aggregateName,    Map<Object,Object> expected,    Set<Object> keys){
+      this.aggregateName=aggregateName;
+      this.expected=expected;
+      this.keys=keys;
+      return this;
+    }
+  }
+.init(aggregateName,expected,keys));
+  for (  VectorizedRowBatch unit : data) {
+    vgo.process(unit,0);
+  }
+  vgo.close(false);
+  List<Object> outBatchList=out.getCapturedRows();
+  assertNotNull(outBatchList);
+  assertEquals(expected.size(),outBatchList.size());
+  assertEquals(expected.size(),keys.size());
+}

@@ -1,0 +1,65 @@
+{
+  if (childExpressions != null) {
+    super.evaluateChildren(batch);
+  }
+  BytesColumnVector inputColVector=(BytesColumnVector)batch.cols[colNum];
+  LongColumnVector outV=(LongColumnVector)batch.cols[outputColumn];
+  int[] sel=batch.selected;
+  int n=batch.size;
+  byte[][] vector=inputColVector.vector;
+  int[] start=inputColVector.start;
+  int[] length=inputColVector.length;
+  long[] resultLen=outV.vector;
+  if (n == 0) {
+    return;
+  }
+  if (inputColVector.noNulls) {
+    outV.noNulls=true;
+    if (inputColVector.isRepeating) {
+      outV.isRepeating=true;
+      resultLen[0]=utf8StringLength(vector[0],start[0],length[0]);
+    }
+ else     if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        resultLen[i]=utf8StringLength(vector[i],start[i],length[i]);
+      }
+      outV.isRepeating=false;
+    }
+ else {
+      for (int i=0; i != n; i++) {
+        resultLen[i]=utf8StringLength(vector[i],start[i],length[i]);
+      }
+      outV.isRepeating=false;
+    }
+  }
+ else {
+    outV.noNulls=false;
+    if (inputColVector.isRepeating) {
+      outV.isRepeating=true;
+      outV.isNull[0]=inputColVector.isNull[0];
+      if (!inputColVector.isNull[0]) {
+        resultLen[0]=utf8StringLength(vector[0],start[0],length[0]);
+      }
+    }
+ else     if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        if (!inputColVector.isNull[i]) {
+          resultLen[i]=utf8StringLength(vector[i],start[i],length[i]);
+        }
+        outV.isNull[i]=inputColVector.isNull[i];
+      }
+      outV.isRepeating=false;
+    }
+ else {
+      for (int i=0; i != n; i++) {
+        if (!inputColVector.isNull[i]) {
+          resultLen[i]=utf8StringLength(vector[i],start[i],length[i]);
+        }
+        outV.isNull[i]=inputColVector.isNull[i];
+      }
+      outV.isRepeating=false;
+    }
+  }
+}

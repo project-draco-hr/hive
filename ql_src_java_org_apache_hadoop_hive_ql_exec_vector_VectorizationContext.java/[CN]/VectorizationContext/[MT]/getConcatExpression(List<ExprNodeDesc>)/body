@@ -1,0 +1,68 @@
+{
+  ExprNodeDesc left=childExprList.get(0);
+  ExprNodeDesc right=childExprList.get(1);
+  int inputColLeft=-1;
+  int inputColRight=-1;
+  VectorExpression vLeft=null;
+  VectorExpression vRight=null;
+  VectorExpression expr=null;
+  if (left instanceof ExprNodeGenericFuncDesc) {
+    vLeft=getVectorExpression(left);
+    inputColLeft=vLeft.getOutputColumn();
+  }
+  if (right instanceof ExprNodeGenericFuncDesc) {
+    vRight=getVectorExpression(right);
+    inputColRight=vRight.getOutputColumn();
+  }
+  if ((left instanceof ExprNodeColumnDesc || inputColLeft != -1) && right instanceof ExprNodeConstantDesc) {
+    if (inputColLeft == -1) {
+      inputColLeft=getInputColumnIndex(((ExprNodeColumnDesc)left).getColumn());
+    }
+    int outputCol=ocm.allocateOutputColumn("String");
+    byte[] constant=(byte[])getScalarValue((ExprNodeConstantDesc)right);
+    expr=new StringConcatColScalar(inputColLeft,outputCol,constant);
+    if (vLeft != null) {
+      expr.setChildExpressions(new VectorExpression[]{vLeft});
+    }
+  }
+ else   if ((left instanceof ExprNodeConstantDesc) && (right instanceof ExprNodeColumnDesc || inputColRight != -1)) {
+    if (inputColRight == -1) {
+      inputColRight=getInputColumnIndex(((ExprNodeColumnDesc)right).getColumn());
+    }
+    int outputCol=ocm.allocateOutputColumn("String");
+    byte[] constant=(byte[])getScalarValue((ExprNodeConstantDesc)left);
+    expr=new StringConcatScalarCol(constant,inputColRight,outputCol);
+    if (vRight != null) {
+      expr.setChildExpressions(new VectorExpression[]{vRight});
+    }
+  }
+ else   if ((left instanceof ExprNodeColumnDesc || inputColLeft != -1) && (right instanceof ExprNodeColumnDesc || inputColRight != -1)) {
+    if (inputColLeft == -1) {
+      inputColLeft=getInputColumnIndex(((ExprNodeColumnDesc)left).getColumn());
+    }
+    if (inputColRight == -1) {
+      inputColRight=getInputColumnIndex(((ExprNodeColumnDesc)right).getColumn());
+    }
+    int outputCol=ocm.allocateOutputColumn("String");
+    expr=new StringConcatColCol(inputColLeft,inputColRight,outputCol);
+    if (vLeft == null && vRight != null) {
+      expr.setChildExpressions(new VectorExpression[]{vRight});
+    }
+ else     if (vLeft != null && vRight == null) {
+      expr.setChildExpressions(new VectorExpression[]{vLeft});
+    }
+ else     if (vLeft != null && vRight != null) {
+      expr.setChildExpressions(new VectorExpression[]{vLeft,vRight});
+    }
+  }
+ else {
+    throw new HiveException("Failed to vectorize CONCAT()");
+  }
+  if (vLeft != null) {
+    ocm.freeOutputColumn(vLeft.getOutputColumn());
+  }
+  if (vRight != null) {
+    ocm.freeOutputColumn(vRight.getOutputColumn());
+  }
+  return expr;
+}

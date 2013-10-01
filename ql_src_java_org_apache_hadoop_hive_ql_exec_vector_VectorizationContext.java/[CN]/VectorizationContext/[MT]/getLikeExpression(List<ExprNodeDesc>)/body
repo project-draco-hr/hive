@@ -1,0 +1,28 @@
+{
+  ExprNodeDesc leftExpr=childExpr.get(0);
+  ExprNodeDesc rightExpr=childExpr.get(1);
+  VectorExpression v1=null;
+  VectorExpression expr=null;
+  int inputCol;
+  ExprNodeConstantDesc constDesc;
+  if ((leftExpr instanceof ExprNodeColumnDesc) && (rightExpr instanceof ExprNodeConstantDesc)) {
+    ExprNodeColumnDesc leftColDesc=(ExprNodeColumnDesc)leftExpr;
+    constDesc=(ExprNodeConstantDesc)rightExpr;
+    inputCol=getInputColumnIndex(leftColDesc.getColumn());
+    expr=(VectorExpression)new FilterStringColLikeStringScalar(inputCol,new Text((byte[])getScalarValue(constDesc)));
+  }
+ else   if ((leftExpr instanceof ExprNodeGenericFuncDesc) && (rightExpr instanceof ExprNodeConstantDesc)) {
+    v1=getVectorExpression(leftExpr);
+    inputCol=v1.getOutputColumn();
+    constDesc=(ExprNodeConstantDesc)rightExpr;
+    expr=(VectorExpression)new FilterStringColLikeStringScalar(inputCol,new Text((byte[])getScalarValue(constDesc)));
+  }
+  if (expr == null) {
+    throw new HiveException("Vector LIKE filter expression could not be initialized");
+  }
+  if (v1 != null) {
+    expr.setChildExpressions(new VectorExpression[]{v1});
+    ocm.freeOutputColumn(v1.getOutputColumn());
+  }
+  return expr;
+}

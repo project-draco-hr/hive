@@ -1,0 +1,52 @@
+{
+  Reader vreader=OrcFile.createReader(testFilePath.getFileSystem(conf),testFilePath);
+  Reader reader=OrcFile.createReader(testFilePath.getFileSystem(conf),testFilePath);
+  RecordReaderImpl vrr=(RecordReaderImpl)vreader.rows(null);
+  RecordReaderImpl rr=(RecordReaderImpl)reader.rows(null);
+  VectorizedRowBatch batch=null;
+  OrcStruct row=null;
+  while (vrr.hasNext()) {
+    batch=vrr.nextBatch(batch);
+    for (int i=0; i < batch.size; i++) {
+      row=(OrcStruct)rr.next((Object)row);
+      for (int j=0; j < batch.cols.length; j++) {
+        Object a=(row.getFieldValue(j));
+        Object b=batch.cols[j].getWritableObject(i);
+        if (a instanceof BooleanWritable) {
+          Long temp=(long)(((BooleanWritable)a).get() ? 1 : 0);
+          Assert.assertEquals(true,temp.toString().equals(b.toString()));
+          continue;
+        }
+        if (a instanceof Timestamp) {
+          Timestamp t=((Timestamp)a);
+          Long timeInNanoSec=(t.getTime() * 1000000) + (t.getNanos() % 1000000);
+          Assert.assertEquals(true,timeInNanoSec.toString().equals(b.toString()));
+          continue;
+        }
+        if (null == a) {
+          Assert.assertEquals(true,(b == null || (b instanceof NullWritable)));
+        }
+ else {
+          Assert.assertEquals(true,b.toString().equals(a.toString()));
+        }
+      }
+    }
+    Assert.assertEquals(false,batch.cols[0].isRepeating);
+    Assert.assertEquals(false,batch.cols[1].isRepeating);
+    Assert.assertEquals(false,batch.cols[2].isRepeating);
+    Assert.assertEquals(true,batch.cols[3].isRepeating);
+    Assert.assertEquals(false,batch.cols[4].isRepeating);
+    Assert.assertEquals(false,batch.cols[5].isRepeating);
+    Assert.assertEquals(false,batch.cols[6].isRepeating);
+    Assert.assertEquals(false,batch.cols[7].isRepeating);
+    Assert.assertEquals(false,batch.cols[0].noNulls);
+    Assert.assertEquals(false,batch.cols[1].noNulls);
+    Assert.assertEquals(true,batch.cols[2].noNulls);
+    Assert.assertEquals(true,batch.cols[3].noNulls);
+    Assert.assertEquals(false,batch.cols[4].noNulls);
+    Assert.assertEquals(false,batch.cols[5].noNulls);
+    Assert.assertEquals(false,batch.cols[6].noNulls);
+    Assert.assertEquals(false,batch.cols[7].noNulls);
+  }
+  Assert.assertEquals(false,rr.hasNext());
+}
