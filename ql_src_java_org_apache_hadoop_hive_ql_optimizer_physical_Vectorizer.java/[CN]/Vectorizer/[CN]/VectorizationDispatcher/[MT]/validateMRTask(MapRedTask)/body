@@ -1,0 +1,30 @@
+{
+  MapWork mapWork=mrTask.getWork().getMapWork();
+  for (  String path : mapWork.getPathToPartitionInfo().keySet()) {
+    PartitionDesc pd=mapWork.getPathToPartitionInfo().get(path);
+    List<Class<?>> interfaceList=Arrays.asList(pd.getInputFileFormatClass().getInterfaces());
+    if (!interfaceList.contains(VectorizedInputFormatInterface.class)) {
+      LOG.debug("Input format: " + pd.getInputFileFormatClassName() + ", doesn't provide vectorized input");
+      System.err.println("Input format: " + pd.getInputFileFormatClassName() + ", doesn't provide vectorized input");
+      return false;
+    }
+  }
+  Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
+  ValidationNodeProcessor vnp=new ValidationNodeProcessor();
+  opRules.put(new RuleRegExp("R1",TableScanOperator.getOperatorName() + ".*" + FileSinkOperator.getOperatorName()),vnp);
+  opRules.put(new RuleRegExp("R2",TableScanOperator.getOperatorName() + ".*" + ReduceSinkOperator.getOperatorName()),vnp);
+  Dispatcher disp=new DefaultRuleDispatcher(vnp,opRules,null);
+  GraphWalker ogw=new DefaultGraphWalker(disp);
+  ArrayList<Node> topNodes=new ArrayList<Node>();
+  topNodes.addAll(mapWork.getAliasToWork().values());
+  HashMap<Node,Object> nodeOutput=new HashMap<Node,Object>();
+  ogw.startWalking(topNodes,nodeOutput);
+  for (  Node n : nodeOutput.keySet()) {
+    if (nodeOutput.get(n) != null) {
+      if (!((Boolean)nodeOutput.get(n)).booleanValue()) {
+        return false;
+      }
+    }
+  }
+  return true;
+}

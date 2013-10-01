@@ -1,0 +1,46 @@
+{
+  try {
+    numDistributionKeys=conf.getNumDistributionKeys();
+    distinctColIndices=conf.getDistinctColumnIndices();
+    numDistinctExprs=distinctColIndices.size();
+    TableDesc keyTableDesc=conf.getKeySerializeInfo();
+    keySerializer=(Serializer)keyTableDesc.getDeserializerClass().newInstance();
+    keySerializer.initialize(null,keyTableDesc.getProperties());
+    keyIsText=keySerializer.getSerializedClass().equals(Text.class);
+    VectorExpressionWriterFactory.processVectorExpressions(conf.getKeyCols(),conf.getOutputKeyColumnNames(),new VectorExpressionWriterFactory.Closure(){
+      @Override public void assign(      VectorExpressionWriter[] writers,      ObjectInspector objectInspector){
+        keyWriters=writers;
+        keyObjectInspector=objectInspector;
+      }
+    }
+);
+    String colNames="";
+    for (    String colName : conf.getOutputKeyColumnNames()) {
+      colNames=String.format("%s %s",colNames,colName);
+    }
+    LOG.info(String.format("keyObjectInspector [%s]%s => %s",keyObjectInspector.getClass(),keyObjectInspector,colNames));
+    partitionWriters=VectorExpressionWriterFactory.getExpressionWriters(conf.getPartitionCols());
+    TableDesc valueTableDesc=conf.getValueSerializeInfo();
+    valueSerializer=(Serializer)valueTableDesc.getDeserializerClass().newInstance();
+    valueSerializer.initialize(null,valueTableDesc.getProperties());
+    VectorExpressionWriterFactory.processVectorExpressions(conf.getValueCols(),conf.getOutputValueColumnNames(),new VectorExpressionWriterFactory.Closure(){
+      @Override public void assign(      VectorExpressionWriter[] writers,      ObjectInspector objectInspector){
+        valueWriters=writers;
+        valueObjectInspector=objectInspector;
+      }
+    }
+);
+    colNames="";
+    for (    String colName : conf.getOutputValueColumnNames()) {
+      colNames=String.format("%s %s",colNames,colName);
+    }
+    LOG.info(String.format("valueObjectInspector [%s]%s => %s",valueObjectInspector.getClass(),valueObjectInspector,colNames));
+    int numKeys=numDistinctExprs > 0 ? numDistinctExprs : 1;
+    int keyLen=numDistinctExprs > 0 ? numDistributionKeys + 1 : numDistributionKeys;
+    cachedKeys=new Object[numKeys][keyLen];
+    cachedValues=new Object[valueEval.length];
+  }
+ catch (  Exception e) {
+    throw new HiveException(e);
+  }
+}

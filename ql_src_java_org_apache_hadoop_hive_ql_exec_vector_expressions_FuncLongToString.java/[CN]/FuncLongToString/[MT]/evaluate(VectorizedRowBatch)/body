@@ -1,0 +1,63 @@
+{
+  if (childExpressions != null) {
+    super.evaluateChildren(batch);
+  }
+  LongColumnVector inputColVector=(LongColumnVector)batch.cols[inputCol];
+  int[] sel=batch.selected;
+  int n=batch.size;
+  long[] vector=inputColVector.vector;
+  BytesColumnVector outV=(BytesColumnVector)batch.cols[outputCol];
+  outV.initBuffer();
+  if (n == 0) {
+    return;
+  }
+  if (inputColVector.noNulls) {
+    outV.noNulls=true;
+    if (inputColVector.isRepeating) {
+      outV.isRepeating=true;
+      prepareResult(0,vector,outV);
+    }
+ else     if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        prepareResult(i,vector,outV);
+      }
+      outV.isRepeating=false;
+    }
+ else {
+      for (int i=0; i != n; i++) {
+        prepareResult(i,vector,outV);
+      }
+      outV.isRepeating=false;
+    }
+  }
+ else {
+    outV.noNulls=false;
+    if (inputColVector.isRepeating) {
+      outV.isRepeating=true;
+      outV.isNull[0]=inputColVector.isNull[0];
+      if (!inputColVector.isNull[0]) {
+        prepareResult(0,vector,outV);
+      }
+    }
+ else     if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        if (!inputColVector.isNull[i]) {
+          prepareResult(i,vector,outV);
+        }
+        outV.isNull[i]=inputColVector.isNull[i];
+      }
+      outV.isRepeating=false;
+    }
+ else {
+      for (int i=0; i != n; i++) {
+        if (!inputColVector.isNull[i]) {
+          prepareResult(i,vector,outV);
+        }
+        outV.isNull[i]=inputColVector.isNull[i];
+      }
+      outV.isRepeating=false;
+    }
+  }
+}
