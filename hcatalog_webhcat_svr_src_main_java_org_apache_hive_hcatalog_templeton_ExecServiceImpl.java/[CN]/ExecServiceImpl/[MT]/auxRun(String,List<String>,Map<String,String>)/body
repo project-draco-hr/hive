@@ -11,7 +11,34 @@
   CommandLine cmd=makeCommandLine(program,args);
   LOG.info("Running: " + cmd);
   ExecBean res=new ExecBean();
-  res.exitcode=executor.execute(cmd,execEnv(env));
+  if (Shell.WINDOWS) {
+    env=execEnv(env);
+    String[] envVals=new String[env.size()];
+    int i=0;
+    for (    Entry<String,String> kv : env.entrySet()) {
+      envVals[i++]=kv.getKey() + "=" + kv.getValue();
+      LOG.info("Setting " + kv.getKey() + "="+ kv.getValue());
+    }
+    Process proc;
+synchronized (WindowsProcessLaunchLock) {
+      proc=Runtime.getRuntime().exec(cmd.toStrings(),envVals);
+    }
+    StreamOutputWriter errorGobbler=new StreamOutputWriter(proc.getErrorStream(),"ERROR",errStream);
+    StreamOutputWriter outputGobbler=new StreamOutputWriter(proc.getInputStream(),"OUTPUT",outStream);
+    errorGobbler.start();
+    outputGobbler.start();
+    try {
+      res.exitcode=proc.waitFor();
+    }
+ catch (    InterruptedException e) {
+      throw new IOException(e);
+    }
+    errorGobbler.out.flush();
+    outputGobbler.out.flush();
+  }
+ else {
+    res.exitcode=executor.execute(cmd,execEnv(env));
+  }
   String enc=appConf.get(AppConfig.EXEC_ENCODING_NAME);
   res.stdout=outStream.toString(enc);
   res.stderr=errStream.toString(enc);
