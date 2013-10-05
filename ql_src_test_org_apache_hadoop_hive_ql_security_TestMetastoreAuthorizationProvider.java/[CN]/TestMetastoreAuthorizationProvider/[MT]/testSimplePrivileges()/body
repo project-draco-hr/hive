@@ -1,0 +1,86 @@
+{
+  String dbName="smpdb";
+  String tblName="smptbl";
+  String userName=ugi.getUserName();
+  CommandProcessorResponse ret=driver.run("create database " + dbName);
+  assertEquals(0,ret.getResponseCode());
+  Database db=msc.getDatabase(dbName);
+  String dbLocn=db.getLocationUri();
+  validateCreateDb(db,dbName);
+  disallowCreateInDb(dbName,userName,dbLocn);
+  driver.run("use " + dbName);
+  ret=driver.run(String.format("create table %s (a string) partitioned by (b string)",tblName));
+  assertEquals(1,ret.getResponseCode());
+  ArrayList<FieldSchema> fields=new ArrayList<FieldSchema>(2);
+  fields.add(new FieldSchema("a",serdeConstants.STRING_TYPE_NAME,""));
+  Table ttbl=new Table();
+  ttbl.setDbName(dbName);
+  ttbl.setTableName(tblName);
+  StorageDescriptor sd=new StorageDescriptor();
+  ttbl.setSd(sd);
+  sd.setCols(fields);
+  sd.setParameters(new HashMap<String,String>());
+  sd.getParameters().put("test_param_1","Use this for comments etc");
+  sd.setSerdeInfo(new SerDeInfo());
+  sd.getSerdeInfo().setName(ttbl.getTableName());
+  sd.getSerdeInfo().setParameters(new HashMap<String,String>());
+  sd.getSerdeInfo().getParameters().put(org.apache.hadoop.hive.serde.serdeConstants.SERIALIZATION_FORMAT,"1");
+  sd.getSerdeInfo().setSerializationLib(org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe.class.getName());
+  ttbl.setPartitionKeys(new ArrayList<FieldSchema>());
+  MetaException me=null;
+  try {
+    msc.createTable(ttbl);
+  }
+ catch (  MetaException e) {
+    me=e;
+  }
+  assertNoPrivileges(me);
+  allowCreateInDb(dbName,userName,dbLocn);
+  driver.run("use " + dbName);
+  ret=driver.run(String.format("create table %s (a string) partitioned by (b string)",tblName));
+  assertEquals(0,ret.getResponseCode());
+  Table tbl=msc.getTable(dbName,tblName);
+  validateCreateTable(tbl,tblName,dbName);
+  String fakeUser="mal";
+  List<String> fakeGroupNames=new ArrayList<String>();
+  fakeGroupNames.add("groupygroup");
+  InjectableDummyAuthenticator.injectUserName(fakeUser);
+  InjectableDummyAuthenticator.injectGroupNames(fakeGroupNames);
+  InjectableDummyAuthenticator.injectMode(true);
+  ret=driver.run(String.format("create table %s (a string) partitioned by (b string)",tblName + "mal"));
+  assertEquals(1,ret.getResponseCode());
+  ttbl.setTableName(tblName + "mal");
+  me=null;
+  try {
+    msc.createTable(ttbl);
+  }
+ catch (  MetaException e) {
+    me=e;
+  }
+  assertNoPrivileges(me);
+  disallowCreateInTbl(tbl.getTableName(),userName,tbl.getSd().getLocation());
+  ret=driver.run("alter table " + tblName + " add partition (b='2011')");
+  assertEquals(1,ret.getResponseCode());
+  List<String> ptnVals=new ArrayList<String>();
+  ptnVals.add("b=2011");
+  Partition tpart=new Partition();
+  tpart.setDbName(dbName);
+  tpart.setTableName(tblName);
+  tpart.setValues(ptnVals);
+  tpart.setParameters(new HashMap<String,String>());
+  tpart.setSd(tbl.getSd().deepCopy());
+  tpart.getSd().setSerdeInfo(tbl.getSd().getSerdeInfo().deepCopy());
+  tpart.getSd().setLocation(tbl.getSd().getLocation() + "/tpart");
+  me=null;
+  try {
+    msc.add_partition(tpart);
+  }
+ catch (  MetaException e) {
+    me=e;
+  }
+  assertNoPrivileges(me);
+  InjectableDummyAuthenticator.injectMode(false);
+  allowCreateInTbl(tbl.getTableName(),userName,tbl.getSd().getLocation());
+  ret=driver.run("alter table " + tblName + " add partition (b='2011')");
+  assertEquals(0,ret.getResponseCode());
+}
