@@ -6,9 +6,22 @@
   int partColCount=table.getPartitionKeys().size();
   int partColIndex=node.getPartColIndexForFilter(table,filterBuffer);
   if (filterBuffer.hasError())   return;
-  String valueAsString=node.getFilterPushdownParam(table,partColIndex,filterBuffer);
-  if (filterBuffer.hasError())   return;
-  params.add(valueAsString);
+  String colType=table.getPartitionKeys().get(partColIndex).getType();
+  boolean isStringCol=colType.equals(serdeConstants.STRING_TYPE_NAME);
+  if (!isStringCol && !serdeConstants.IntegralTypes.contains(colType)) {
+    filterBuffer.setError("Filter pushdown is only supported for string or integral columns");
+    return;
+  }
+  boolean isStringVal=node.value instanceof String;
+  if (!isStringVal && !(node.value instanceof Long)) {
+    filterBuffer.setError("Filter pushdown is only supported for string or integral values");
+    return;
+  }
+ else   if (isStringCol != isStringVal) {
+    filterBuffer.setError("Cannot push down filter for " + (isStringCol ? "string" : "integral") + " column and value "+ node.value);
+    return;
+  }
+  boolean forceStringEq=!isStringCol && node.canJdoUseStringsWithIntegral();
   if (joins.isEmpty()) {
     for (int i=0; i < partColCount; ++i) {
       joins.add(null);
@@ -18,5 +31,12 @@
     joins.set(partColIndex,"inner join \"PARTITION_KEY_VALS\" as \"FILTER" + partColIndex + "\" on \"FILTER"+ partColIndex+ "\".\"PART_ID\" = \"PARTITIONS\".\"PART_ID\""+ " and \"FILTER"+ partColIndex+ "\".\"INTEGER_IDX\" = "+ partColIndex);
   }
   String tableValue="\"FILTER" + partColIndex + "\".\"PART_KEY_VAL\"";
+  if (!isStringCol && !forceStringEq) {
+    tableValue="cast(" + tableValue + " as decimal(21,0))";
+    tableValue="(case when \"TBLS\".\"TBL_NAME\" = ? and \"DBS\".\"NAME\" = ? then " + tableValue + " else null end)";
+    params.add(table.getTableName().toLowerCase());
+    params.add(table.getDbName().toLowerCase());
+  }
+  params.add(forceStringEq ? node.value.toString() : node.value);
   filterBuffer.append(node.isReverseOrder ? "(? " + node.operator.getSqlOp() + " "+ tableValue+ ")" : "(" + tableValue + " "+ node.operator.getSqlOp()+ " ?)");
 }
