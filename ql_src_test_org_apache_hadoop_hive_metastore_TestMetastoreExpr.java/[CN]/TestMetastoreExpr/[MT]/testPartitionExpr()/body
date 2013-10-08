@@ -1,0 +1,48 @@
+{
+  String dbName="filterdb";
+  String tblName="filtertbl";
+  silentDropDatabase(dbName);
+  Database db=new Database();
+  db.setName(dbName);
+  client.createDatabase(db);
+  ArrayList<FieldSchema> cols=new ArrayList<FieldSchema>(2);
+  cols.add(new FieldSchema("c1",serdeConstants.STRING_TYPE_NAME,""));
+  cols.add(new FieldSchema("c2",serdeConstants.INT_TYPE_NAME,""));
+  ArrayList<FieldSchema> partCols=Lists.newArrayList(new FieldSchema("p1",serdeConstants.STRING_TYPE_NAME,""),new FieldSchema("p2",serdeConstants.INT_TYPE_NAME,""));
+  Table tbl=new Table();
+  tbl.setDbName(dbName);
+  tbl.setTableName(tblName);
+  addSd(cols,tbl);
+  tbl.setPartitionKeys(partCols);
+  client.createTable(tbl);
+  tbl=client.getTable(dbName,tblName);
+  addPartition(client,tbl,Lists.newArrayList("p11","32"),"part1");
+  addPartition(client,tbl,Lists.newArrayList("p12","32"),"part2");
+  addPartition(client,tbl,Lists.newArrayList("p13","31"),"part3");
+  addPartition(client,tbl,Lists.newArrayList("p14","-33"),"part4");
+  ExprBuilder e=new ExprBuilder(tblName);
+  checkExpr(3,dbName,tblName,e.val(0).intCol("p2").pred(">",2).build());
+  checkExpr(3,dbName,tblName,e.intCol("p2").val(0).pred("<",2).build());
+  checkExpr(1,dbName,tblName,e.intCol("p2").val(0).pred(">",2).build());
+  checkExpr(2,dbName,tblName,e.val(31).intCol("p2").pred("<=",2).build());
+  checkExpr(3,dbName,tblName,e.val("p11").strCol("p1").pred(">",2).build());
+  checkExpr(1,dbName,tblName,e.val("p11").strCol("p1").pred(">",2).intCol("p2").val(31).pred("<",2).pred("and",2).build());
+  checkExpr(3,dbName,tblName,e.val(32).val(31).intCol("p2").val(false).pred("between",4).build());
+  checkExpr(4,dbName,tblName,e.val("p").strCol("p1").fn("instr",TypeInfoFactory.intTypeInfo,2).val(0).pred("<=",2).build());
+  checkExpr(0,dbName,tblName,e.intCol("p2").pred("isnull",1).build());
+  try {
+    client.listPartitionsByExpr(dbName,tblName,new byte[]{'f','o','o'},null,(short)-1,new ArrayList<Partition>());
+    fail("Should have thrown IncompatibleMetastoreException");
+  }
+ catch (  IMetaStoreClient.IncompatibleMetastoreException ex) {
+  }
+  try {
+    checkExpr(-1,dbName,tblName,e.val(31).intCol("p3").pred(">",2).build());
+    fail("Should have thrown");
+  }
+ catch (  IMetaStoreClient.IncompatibleMetastoreException ex) {
+    fail("Should not have thrown IncompatibleMetastoreException");
+  }
+catch (  Exception ex) {
+  }
+}
