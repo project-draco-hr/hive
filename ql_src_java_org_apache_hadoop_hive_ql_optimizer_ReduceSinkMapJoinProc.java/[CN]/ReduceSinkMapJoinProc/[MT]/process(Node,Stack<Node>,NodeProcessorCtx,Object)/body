@@ -9,9 +9,10 @@
     List<Operator<?>> parents=new ArrayList(mapJoinOp.getParentOperators());
     context.mapJoinParentMap.put(mapJoinOp,parents);
   }
+  BaseWork myWork=null;
   while (childOp != null) {
     if ((childOp instanceof ReduceSinkOperator) || (childOp instanceof FileSinkOperator)) {
-      BaseWork myWork=context.operatorWorkMap.get(childOp);
+      myWork=context.operatorWorkMap.get(childOp);
       BaseWork parentWork=context.operatorWorkMap.get(parentRS);
       int pos=context.mapJoinParentMap.get(mapJoinOp).indexOf(parentRS);
       if (pos == -1) {
@@ -40,6 +41,39 @@
       break;
     }
   }
-  parentRS.removeChild(mapJoinOp);
+  List<Operator<? extends OperatorDesc>> dummyOperators=new ArrayList<Operator<? extends OperatorDesc>>();
+  HashTableDummyDesc desc=new HashTableDummyDesc();
+  @SuppressWarnings("unchecked") HashTableDummyOperator dummyOp=(HashTableDummyOperator)OperatorFactory.get(desc);
+  TableDesc tbl;
+  RowSchema rowSchema=parentRS.getParentOperators().get(0).getSchema();
+  tbl=PlanUtils.getReduceValueTableDesc(PlanUtils.getFieldSchemasFromRowSchema(rowSchema,""));
+  dummyOp.getConf().setTbl(tbl);
+  Map<Byte,List<ExprNodeDesc>> keyExprMap=mapJoinOp.getConf().getKeys();
+  List<ExprNodeDesc> keyCols=keyExprMap.get(Byte.valueOf((byte)0));
+  StringBuffer keyOrder=new StringBuffer();
+  for (  ExprNodeDesc k : keyCols) {
+    keyOrder.append("+");
+  }
+  TableDesc keyTableDesc=PlanUtils.getReduceKeyTableDesc(PlanUtils.getFieldSchemasFromColumnList(keyCols,"mapjoinkey"),keyOrder.toString());
+  mapJoinOp.getConf().setKeyTableDesc(keyTableDesc);
+  mapJoinOp.replaceParent(parentRS,dummyOp);
+  List<Operator<? extends OperatorDesc>> dummyChildren=new ArrayList<Operator<? extends OperatorDesc>>();
+  dummyChildren.add(mapJoinOp);
+  dummyOp.setChildOperators(dummyChildren);
+  dummyOperators.add(dummyOp);
+  List<Operator<? extends OperatorDesc>> childOperators=parentRS.getChildOperators();
+  int childIndex=childOperators.indexOf(mapJoinOp);
+  childOperators.remove(childIndex);
+  if (myWork != null) {
+    myWork.addDummyOp(dummyOp);
+  }
+ else {
+    List<Operator<?>> dummyList=dummyOperators;
+    if (context.linkChildOpWithDummyOp.containsKey(childOp)) {
+      dummyList=context.linkChildOpWithDummyOp.get(childOp);
+    }
+    dummyList.add(dummyOp);
+    context.linkChildOpWithDummyOp.put(childOp,dummyList);
+  }
   return true;
 }

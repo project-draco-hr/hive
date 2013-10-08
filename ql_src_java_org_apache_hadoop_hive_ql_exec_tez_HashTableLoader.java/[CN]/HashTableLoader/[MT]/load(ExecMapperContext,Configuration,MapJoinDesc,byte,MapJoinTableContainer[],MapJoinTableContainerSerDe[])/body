@@ -1,4 +1,33 @@
 {
   TezContext tezContext=(TezContext)MapredContext.get();
   Map<Integer,String> parentToInput=desc.getParentToInput();
+  int hashTableThreshold=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVEHASHTABLETHRESHOLD);
+  float hashTableLoadFactor=HiveConf.getFloatVar(hconf,HiveConf.ConfVars.HIVEHASHTABLELOADFACTOR);
+  for (int pos=0; pos < mapJoinTables.length; pos++) {
+    if (pos == posBigTable) {
+      continue;
+    }
+    LogicalInput input=tezContext.getInput(parentToInput.get(pos));
+    try {
+      KeyValueReader kvReader=(KeyValueReader)input.getReader();
+      MapJoinTableContainer tableContainer=new HashMapWrapper(hashTableThreshold,hashTableLoadFactor);
+      while (kvReader.next()) {
+        MapJoinKey key=new MapJoinKey();
+        key.read(mapJoinTableSerdes[pos].getKeyContext(),(Writable)kvReader.getCurrentKey());
+        MapJoinRowContainer values=new MapJoinRowContainer();
+        values.read(mapJoinTableSerdes[pos].getValueContext(),(Writable)kvReader.getCurrentValue());
+        tableContainer.put(key,values);
+      }
+      mapJoinTables[pos]=tableContainer;
+    }
+ catch (    IOException e) {
+      throw new HiveException(e);
+    }
+catch (    SerDeException e) {
+      throw new HiveException(e);
+    }
+catch (    Exception e) {
+      throw new HiveException(e);
+    }
+  }
 }
