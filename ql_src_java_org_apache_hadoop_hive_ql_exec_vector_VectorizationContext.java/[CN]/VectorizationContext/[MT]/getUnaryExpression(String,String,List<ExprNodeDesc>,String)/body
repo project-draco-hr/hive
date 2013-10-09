@@ -1,0 +1,31 @@
+{
+  ExprNodeDesc childExpr=childExprList.get(0);
+  int inputCol;
+  VectorExpression v1=null;
+  if (childExpr instanceof ExprNodeGenericFuncDesc) {
+    v1=getVectorExpression(childExpr);
+    inputCol=v1.getOutputColumn();
+  }
+ else   if (childExpr instanceof ExprNodeColumnDesc) {
+    ExprNodeColumnDesc colDesc=(ExprNodeColumnDesc)childExpr;
+    inputCol=getInputColumnIndex(colDesc.getColumn());
+  }
+ else {
+    throw new HiveException("Expression not supported: " + childExpr);
+  }
+  String outputColumnType=getNormalizedTypeName(resultType);
+  int outputCol=ocm.allocateOutputColumn(outputColumnType);
+  String className=packagePathPrefix + "." + vectorExprClassName;
+  VectorExpression expr;
+  try {
+    expr=(VectorExpression)getConstructor(className).newInstance(inputCol,outputCol);
+  }
+ catch (  Exception ex) {
+    throw new HiveException(ex);
+  }
+  if (v1 != null) {
+    expr.setChildExpressions(new VectorExpression[]{v1});
+    ocm.freeOutputColumn(v1.getOutputColumn());
+  }
+  return expr;
+}
