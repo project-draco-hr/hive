@@ -1,6 +1,19 @@
 {
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_SUBMIT_DAG);
-  DAGClient dagClient=session.submitDAG(dag);
+  DAGClient dagClient=null;
+  try {
+    dagClient=session.submitDAG(dag);
+  }
+ catch (  SessionNotRunning nr) {
+    console.printInfo("Tez session was closed. Reopening...");
+    SessionState ss=SessionState.get();
+    TezSessionState tezSession=ss.getTezSession();
+    tezSession.close(true);
+    tezSession.open(ss.getSessionId(),this.conf);
+    session=tezSession.getSession();
+    console.printInfo("Session re-established.");
+    dagClient=session.submitDAG(dag);
+  }
   perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.TEZ_SUBMIT_DAG);
   return dagClient;
 }
