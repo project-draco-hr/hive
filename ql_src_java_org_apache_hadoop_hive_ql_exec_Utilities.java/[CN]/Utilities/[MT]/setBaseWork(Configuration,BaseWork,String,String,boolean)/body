@@ -2,17 +2,26 @@
   try {
     setPlanPath(conf,hiveScratchDir);
     Path planPath=getPlanPath(conf,name);
-    FileSystem fs=planPath.getFileSystem(conf);
-    FSDataOutputStream out=fs.create(planPath);
-    serializePlan(w,out,conf);
-    if (useCache && !ShimLoader.getHadoopShims().isLocalMode(conf)) {
-      if (!DistributedCache.getSymlink(conf)) {
-        DistributedCache.createSymlink(conf);
+    OutputStream out;
+    if (HiveConf.getBoolVar(conf,ConfVars.HIVE_RPC_QUERY_PLAN)) {
+      out=new ByteArrayOutputStream();
+      serializePlan(w,out,conf);
+      LOG.info("Setting plan: " + planPath.toUri().getPath());
+      conf.set(planPath.toUri().getPath(),Base64.encodeBase64String(((ByteArrayOutputStream)out).toByteArray()));
+    }
+ else {
+      FileSystem fs=planPath.getFileSystem(conf);
+      out=fs.create(planPath);
+      serializePlan(w,out,conf);
+      if (useCache && !ShimLoader.getHadoopShims().isLocalMode(conf)) {
+        if (!DistributedCache.getSymlink(conf)) {
+          DistributedCache.createSymlink(conf);
+        }
+        String uriWithLink=planPath.toUri().toString() + "#" + name;
+        DistributedCache.addCacheFile(new URI(uriWithLink),conf);
+        short replication=(short)conf.getInt("mapred.submit.replication",10);
+        fs.setReplication(planPath,replication);
       }
-      String uriWithLink=planPath.toUri().toString() + "#" + name;
-      DistributedCache.addCacheFile(new URI(uriWithLink),conf);
-      short replication=(short)conf.getInt("mapred.submit.replication",10);
-      fs.setReplication(planPath,replication);
     }
     gWorkMap.put(planPath,w);
     return planPath;
