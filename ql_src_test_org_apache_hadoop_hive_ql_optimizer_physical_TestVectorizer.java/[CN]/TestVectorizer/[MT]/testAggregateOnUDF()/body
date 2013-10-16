@@ -1,0 +1,34 @@
+{
+  AggregationDesc aggDesc=new AggregationDesc();
+  aggDesc.setGenericUDAFName("sum");
+  ExprNodeGenericFuncDesc exprNodeDesc=new ExprNodeGenericFuncDesc();
+  exprNodeDesc.setTypeInfo(TypeInfoFactory.intTypeInfo);
+  ArrayList<ExprNodeDesc> params=new ArrayList<ExprNodeDesc>();
+  params.add(exprNodeDesc);
+  aggDesc.setParameters(params);
+  GenericUDFAbs absUdf=new GenericUDFAbs();
+  exprNodeDesc.setGenericUDF(absUdf);
+  List<ExprNodeDesc> children=new ArrayList<ExprNodeDesc>();
+  ExprNodeColumnDesc colExprA=new ExprNodeColumnDesc(Integer.class,"col1","T",false);
+  ExprNodeColumnDesc colExprB=new ExprNodeColumnDesc(Integer.class,"col2","T",false);
+  children.add(colExprA);
+  exprNodeDesc.setChildExprs(children);
+  ArrayList<String> outputColumnNames=new ArrayList<String>();
+  outputColumnNames.add("_col0");
+  GroupByDesc desc=new GroupByDesc();
+  desc.setOutputColumnNames(outputColumnNames);
+  ArrayList<AggregationDesc> aggDescList=new ArrayList<AggregationDesc>();
+  aggDescList.add(aggDesc);
+  desc.setAggregators(aggDescList);
+  ArrayList<ExprNodeDesc> grpByKeys=new ArrayList<ExprNodeDesc>();
+  grpByKeys.add(colExprB);
+  desc.setKeys(grpByKeys);
+  GroupByOperator gbyOp=new GroupByOperator();
+  gbyOp.setConf(desc);
+  Vectorizer v=new Vectorizer();
+  Assert.assertTrue(v.validateOperator(gbyOp));
+  VectorGroupByOperator vectorOp=(VectorGroupByOperator)v.vectorizeOperator(gbyOp,vContext);
+  Assert.assertEquals(VectorUDAFSumLong.class,vectorOp.getAggregators()[0].getClass());
+  VectorUDAFSumLong udaf=(VectorUDAFSumLong)vectorOp.getAggregators()[0];
+  Assert.assertEquals(FuncAbsLongToLong.class,udaf.getInputExpression().getClass());
+}

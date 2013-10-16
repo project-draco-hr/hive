@@ -1,0 +1,67 @@
+{
+  Project proj=new Project();
+  String ioTempDir=System.getProperty(IO_TMP_DIR);
+  File ioTempFile=new File(ioTempDir);
+  if (!ioTempFile.exists()) {
+    throw new CompileProcessorException(ioTempDir + " does not exists");
+  }
+  if (!ioTempFile.isDirectory() || !ioTempFile.canWrite()) {
+    throw new CompileProcessorException(ioTempDir + " is not a writable directory");
+  }
+  Groovyc g=new Groovyc();
+  long runStamp=System.currentTimeMillis();
+  String jarId=myId + "_" + runStamp;
+  g.setProject(proj);
+  Path sourcePath=new Path(proj);
+  File destination=new File(ioTempFile,jarId + "out");
+  g.setDestdir(destination);
+  File input=new File(ioTempFile,jarId + "in");
+  sourcePath.setLocation(input);
+  g.setSrcdir(sourcePath);
+  input.mkdir();
+  File fileToWrite=new File(input,this.named);
+  try {
+    Files.write(this.code,fileToWrite,Charset.forName("UTF-8"));
+  }
+ catch (  IOException e1) {
+    throw new CompileProcessorException("writing file",e1);
+  }
+  destination.mkdir();
+  try {
+    g.execute();
+  }
+ catch (  BuildException ex) {
+    throw new CompileProcessorException("Problem compiling",ex);
+  }
+  File testArchive=new File(ioTempFile,jarId + ".jar");
+  JarArchiveOutputStream out=null;
+  try {
+    out=new JarArchiveOutputStream(new FileOutputStream(testArchive));
+    for (    File f : destination.listFiles()) {
+      JarArchiveEntry jentry=new JarArchiveEntry(f.getName());
+      FileInputStream fis=new FileInputStream(f);
+      out.putArchiveEntry(jentry);
+      IOUtils.copy(fis,out);
+      fis.close();
+      out.closeArchiveEntry();
+    }
+    out.finish();
+  }
+ catch (  IOException e) {
+    throw new CompileProcessorException("Exception while writing jar",e);
+  }
+ finally {
+    if (out != null) {
+      try {
+        out.close();
+      }
+ catch (      IOException WhatCanYouDo) {
+      }
+    }
+  }
+  if (ss != null) {
+    ss.add_resource(ResourceType.JAR,testArchive.getAbsolutePath());
+  }
+  CommandProcessorResponse good=new CommandProcessorResponse(0,testArchive.getAbsolutePath(),null);
+  return good;
+}
