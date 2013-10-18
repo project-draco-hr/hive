@@ -1,7 +1,8 @@
 {
   Configuration conf=getConf();
   conf.set(JAR_ARGS_NAME,TempletonUtils.encodeArray(args));
-  conf.set("user.name",UserGroupInformation.getCurrentUser().getShortUserName());
+  String user=UserGroupInformation.getCurrentUser().getShortUserName();
+  conf.set("user.name",user);
   Job job=new Job(conf);
   job.setJarByClass(TempletonControllerJob.class);
   job.setJobName("TempletonControllerJob");
@@ -15,7 +16,12 @@
   JobClient jc=new JobClient(new JobConf(job.getConfiguration()));
   Token<DelegationTokenIdentifier> mrdt=jc.getDelegationToken(new Text("mr token"));
   job.getCredentials().addToken(new Text("mr token"),mrdt);
+  String metastoreTokenStrForm=addHMSToken(job,user);
   job.submit();
   submittedJobId=job.getJobID();
+  if (metastoreTokenStrForm != null) {
+    DelegationTokenCache.getStringFormTokenCache().storeDelegationToken(submittedJobId.toString(),metastoreTokenStrForm);
+    LOG.debug("Added metastore delegation token for jobId=" + submittedJobId.toString() + " "+ "user="+ user);
+  }
   return 0;
 }
