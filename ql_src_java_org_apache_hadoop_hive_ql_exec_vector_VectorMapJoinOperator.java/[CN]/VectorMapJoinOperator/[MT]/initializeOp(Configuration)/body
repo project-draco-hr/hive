@@ -1,0 +1,60 @@
+{
+  super.initializeOp(hconf);
+  Map<String,Map<Integer,String>> allTypeMaps=Utilities.getMapRedWork(hconf).getMapWork().getScratchColumnVectorTypes();
+  Map<Integer,String> typeMap=allTypeMaps.get(fileKey);
+  Map<String,Map<String,Integer>> allColumnMaps=Utilities.getMapRedWork(hconf).getMapWork().getScratchColumnMap();
+  Map<String,Integer> columnMap=allColumnMaps.get(fileKey);
+  outputBatch=VectorizedRowBatch.buildBatch(typeMap,columnMap);
+  keyWrapperBatch=VectorHashKeyWrapperBatch.compileKeyWrapperBatch(keyExpressions);
+  keyEvaluator=new MapJoinKeyEvaluator(){
+    private MapJoinKey key;
+    public MapJoinKeyEvaluator init(){
+      key=new MapJoinKey(new Object[keyExpressions.length]);
+      return this;
+    }
+    @Override public MapJoinKey evaluate(    VectorHashKeyWrapper kw) throws HiveException {
+      Object[] keyValues=key.getKey();
+      for (int i=0; i < keyExpressions.length; ++i) {
+        keyValues[i]=keyWrapperBatch.getWritableKeyValue(kw,i,keyOutputWriters[i]);
+      }
+      return key;
+    }
+  }
+.init();
+  Map<Byte,List<ExprNodeDesc>> valueExpressions=conf.getExprs();
+  List<ExprNodeDesc> bigTableExpressions=valueExpressions.get(posBigTable);
+  VectorExpressionWriterFactory.processVectorExpressions(bigTableExpressions,new VectorExpressionWriterFactory.ListOIDClosure(){
+    @Override public void assign(    VectorExpressionWriter[] writers,    List<ObjectInspector> oids){
+      valueWriters=writers;
+      joinValuesObjectInspectors[posBigTable]=oids;
+    }
+  }
+);
+  List<ExprNodeEvaluator> vectorNodeEvaluators=new ArrayList<ExprNodeEvaluator>(bigTableExpressions.size());
+  for (int i=0; i < bigTableExpressions.size(); ++i) {
+    ExprNodeDesc desc=bigTableExpressions.get(i);
+    VectorExpression vectorExpr=bigTableValueExpressions[i];
+    ExprNodeEvaluator eval=new ExprNodeEvaluator<ExprNodeDesc>(desc){
+      int columnIndex;
+      int writerIndex;
+      public ExprNodeEvaluator initVectorExpr(      int columnIndex,      int writerIndex){
+        this.columnIndex=columnIndex;
+        this.writerIndex=writerIndex;
+        return this;
+      }
+      @Override public ObjectInspector initialize(      ObjectInspector rowInspector) throws HiveException {
+        throw new HiveException("should never reach here");
+      }
+      @Override protected Object _evaluate(      Object row,      int version) throws HiveException {
+        VectorizedRowBatch inBatch=(VectorizedRowBatch)row;
+        int rowIndex=inBatch.selectedInUse ? inBatch.selected[batchIndex] : batchIndex;
+        return valueWriters[writerIndex].writeValue(inBatch.cols[columnIndex],rowIndex);
+      }
+    }
+.initVectorExpr(vectorExpr.getOutputColumn(),i);
+    vectorNodeEvaluators.add(eval);
+  }
+  joinValues[posBigTable]=vectorNodeEvaluators;
+  filterMaps[posBigTable]=null;
+  outputVectorAssigners=new HashMap<ObjectInspector,VectorColumnAssign[]>();
+}
