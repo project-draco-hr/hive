@@ -1,0 +1,87 @@
+{
+  QBJoinTree joinTree=new QBJoinTree();
+  JoinCond[] condn=new JoinCond[1];
+switch (subQuery.getJoinType()) {
+case LEFTOUTER:
+    joinTree.setNoOuterJoin(false);
+  condn[0]=new JoinCond(0,1,JoinType.LEFTOUTER);
+break;
+case RIGHTOUTER:
+joinTree.setNoOuterJoin(false);
+condn[0]=new JoinCond(0,1,JoinType.RIGHTOUTER);
+break;
+case FULLOUTER:
+joinTree.setNoOuterJoin(false);
+condn[0]=new JoinCond(0,1,JoinType.FULLOUTER);
+break;
+case LEFTSEMI:
+joinTree.setNoSemiJoin(false);
+condn[0]=new JoinCond(0,1,JoinType.LEFTSEMI);
+break;
+default :
+condn[0]=new JoinCond(0,1,JoinType.INNER);
+joinTree.setNoOuterJoin(true);
+break;
+}
+joinTree.setJoinCond(condn);
+if (joiningOp instanceof JoinOperator) {
+QBJoinTree leftTree=joinContext.get(joiningOp);
+joinTree.setJoinSrc(leftTree);
+String[] leftChildAliases=leftTree.getLeftAliases();
+String leftAliases[]=new String[leftChildAliases.length + 1];
+for (int i=0; i < leftChildAliases.length; i++) {
+leftAliases[i]=leftChildAliases[i];
+}
+leftAliases[leftChildAliases.length]=leftTree.getRightAliases()[0];
+joinTree.setLeftAliases(leftAliases);
+}
+ else {
+String alias=unescapeIdentifier(SubQueryUtils.getAlias(joiningOp,aliasToOpInfo).toLowerCase());
+joinTree.setLeftAlias(alias);
+String[] leftAliases=new String[1];
+leftAliases[0]=alias;
+joinTree.setLeftAliases(leftAliases);
+String[] children=new String[2];
+children[0]=alias;
+joinTree.setBaseSrc(children);
+joinTree.setId(qb.getId());
+joinTree.getAliasToOpInfo().put(getModifiedAlias(qb,alias),aliasToOpInfo.get(alias));
+}
+String rightalias=unescapeIdentifier(subQuery.getAlias().toLowerCase());
+String[] rightAliases=new String[1];
+rightAliases[0]=rightalias;
+joinTree.setRightAliases(rightAliases);
+String[] children=joinTree.getBaseSrc();
+if (children == null) {
+children=new String[2];
+}
+children[1]=rightalias;
+joinTree.setBaseSrc(children);
+joinTree.setId(qb.getId());
+joinTree.getAliasToOpInfo().put(getModifiedAlias(qb,rightalias),aliasToOpInfo.get(rightalias));
+if (joinTree.getNoSemiJoin() == false) {
+joinTree.addRHSSemijoin(rightalias);
+}
+ArrayList<ArrayList<ASTNode>> expressions=new ArrayList<ArrayList<ASTNode>>();
+expressions.add(new ArrayList<ASTNode>());
+expressions.add(new ArrayList<ASTNode>());
+joinTree.setExpressions(expressions);
+ArrayList<Boolean> nullsafes=new ArrayList<Boolean>();
+joinTree.setNullSafes(nullsafes);
+ArrayList<ArrayList<ASTNode>> filters=new ArrayList<ArrayList<ASTNode>>();
+filters.add(new ArrayList<ASTNode>());
+filters.add(new ArrayList<ASTNode>());
+joinTree.setFilters(filters);
+joinTree.setFilterMap(new int[2][]);
+ArrayList<ArrayList<ASTNode>> filtersForPushing=new ArrayList<ArrayList<ASTNode>>();
+filtersForPushing.add(new ArrayList<ASTNode>());
+filtersForPushing.add(new ArrayList<ASTNode>());
+joinTree.setFiltersForPushing(filtersForPushing);
+ASTNode joinCond=subQuery.getJoinConditionAST();
+ArrayList<String> leftSrc=new ArrayList<String>();
+parseJoinCondition(joinTree,joinCond,leftSrc);
+if (leftSrc.size() == 1) {
+joinTree.setLeftAlias(leftSrc.get(0));
+}
+return joinTree;
+}

@@ -1,0 +1,55 @@
+{
+  QBParseInfo parseInfo=qb.getParseInfo();
+  ExprNodeDesc previous=null;
+  Operator selectInput=input;
+  List<ExprNodeDesc.ExprNodeDescEqualityWrapper> whereExpressions=new ArrayList<ExprNodeDesc.ExprNodeDescEqualityWrapper>();
+  for (  String dest : dests) {
+    ASTNode whereExpr=parseInfo.getWhrForClause(dest);
+    if (whereExpr != null) {
+      OpParseContext inputCtx=opParseCtx.get(input);
+      RowResolver inputRR=inputCtx.getRowResolver();
+      ExprNodeDesc current=genExprNodeDesc((ASTNode)whereExpr.getChild(0),inputRR);
+      ExprNodeDesc.ExprNodeDescEqualityWrapper currentWrapped=new ExprNodeDesc.ExprNodeDescEqualityWrapper(current);
+      if (!whereExpressions.contains(currentWrapped)) {
+        whereExpressions.add(currentWrapped);
+      }
+ else {
+        continue;
+      }
+      if (previous == null) {
+        previous=current;
+        continue;
+      }
+      GenericUDFOPOr or=new GenericUDFOPOr();
+      List<ExprNodeDesc> expressions=new ArrayList<ExprNodeDesc>(2);
+      expressions.add(previous);
+      expressions.add(current);
+      ExprNodeDesc orExpr=new ExprNodeGenericFuncDesc(TypeInfoFactory.booleanTypeInfo,or,expressions);
+      previous=orExpr;
+    }
+ else {
+      previous=null;
+      break;
+    }
+  }
+  if (previous != null) {
+    OpParseContext inputCtx=opParseCtx.get(input);
+    RowResolver inputRR=inputCtx.getRowResolver();
+    FilterDesc orFilterDesc=new FilterDesc(previous,false);
+    selectInput=putOpInsertMap(OperatorFactory.getAndMakeChild(orFilterDesc,new RowSchema(inputRR.getColumnInfos()),input),inputRR);
+  }
+  Operator select=insertSelectAllPlanForGroupBy(selectInput);
+  ReduceSinkOperator reduceSinkOperatorInfo=genCommonGroupByPlanReduceSinkOperator(qb,dests,select);
+  RowResolver reduceSinkOperatorInfoRR=opParseCtx.get(reduceSinkOperatorInfo).getRowResolver();
+  Operator forwardOp=putOpInsertMap(OperatorFactory.getAndMakeChild(new ForwardDesc(),new RowSchema(reduceSinkOperatorInfoRR.getColumnInfos()),reduceSinkOperatorInfo),reduceSinkOperatorInfoRR);
+  Operator curr=forwardOp;
+  for (  String dest : dests) {
+    curr=forwardOp;
+    if (parseInfo.getWhrForClause(dest) != null) {
+      curr=genFilterPlan(dest,qb,forwardOp,aliasToOpInfo);
+    }
+    Operator groupByOperatorInfo=genGroupByPlanGroupByOperator(parseInfo,dest,curr,reduceSinkOperatorInfo,GroupByDesc.Mode.COMPLETE,null);
+    curr=genPostGroupByBodyPlan(groupByOperatorInfo,dest,qb);
+  }
+  return curr;
+}

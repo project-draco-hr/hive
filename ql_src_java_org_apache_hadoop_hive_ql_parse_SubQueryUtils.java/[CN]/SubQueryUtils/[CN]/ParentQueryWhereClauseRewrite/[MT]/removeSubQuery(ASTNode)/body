@@ -1,0 +1,58 @@
+{
+  if (node.getType() == HiveParser.KW_AND) {
+    boolean r=removeSubQuery((ASTNode)node.getChild(0));
+    if (!r) {
+      r=removeSubQuery((ASTNode)node.getChild(1));
+    }
+    return r;
+  }
+ else   if (node.getType() == HiveParser.KW_NOT) {
+    ASTNode child=(ASTNode)node.getChild(0);
+    if (child == subQuery) {
+      ASTNode sqOpType=(ASTNode)subQuery.getChild(0).getChild(0);
+      if (sqOpType.getType() == HiveParser.KW_EXISTS) {
+        sqOpType.getToken().setType(HiveParser.TOK_SUBQUERY_OP_NOTEXISTS);
+      }
+ else {
+        sqOpType.getToken().setType(HiveParser.TOK_SUBQUERY_OP_NOTIN);
+      }
+      ASTNode parent=getParentInWhereClause(node);
+      if (parent == null) {
+        root=subQuery;
+      }
+ else {
+        int nodeIdx=node.getChildIndex();
+        parent.setChild(nodeIdx,subQuery);
+      }
+      return removeSubQuery(subQuery);
+    }
+    return false;
+  }
+ else   if (node == subQuery) {
+    ASTNode parent=getParentInWhereClause(node);
+    ASTNode gParent=getParentInWhereClause(parent);
+    ASTNode sibling=null;
+    if (parent != null) {
+      if (subQuery.getChildIndex() == 0) {
+        sibling=(ASTNode)parent.getChild(1);
+      }
+ else {
+        sibling=(ASTNode)parent.getChild(0);
+      }
+    }
+    if (sibling == null) {
+      root=constructTrueCond();
+    }
+ else     if (gParent == null) {
+      root=sibling;
+    }
+ else {
+      int pIdx=parent.getChildIndex();
+      gParent.setChild(pIdx,sibling);
+    }
+    return true;
+  }
+ else {
+    return false;
+  }
+}
