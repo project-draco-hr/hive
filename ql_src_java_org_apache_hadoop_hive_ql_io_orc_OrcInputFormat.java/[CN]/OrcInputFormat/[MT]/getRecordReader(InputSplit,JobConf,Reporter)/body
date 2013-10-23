@@ -3,9 +3,18 @@
     RecordReader<NullWritable,VectorizedRowBatch> vorr=voif.getRecordReader(inputSplit,conf,reporter);
     return (RecordReader)vorr;
   }
-  FileSplit fileSplit=(FileSplit)inputSplit;
-  Path path=fileSplit.getPath();
+  FileSplit fSplit=(FileSplit)inputSplit;
+  reporter.setStatus(fSplit.toString());
+  Path path=fSplit.getPath();
   FileSystem fs=path.getFileSystem(conf);
-  reporter.setStatus(fileSplit.toString());
-  return new OrcRecordReader(OrcFile.createReader(fs,path),conf,fileSplit.getStart(),fileSplit.getLength());
+  Reader reader=null;
+  if (!(fSplit instanceof OrcSplit)) {
+    reader=OrcFile.createReader(fs,path);
+  }
+ else {
+    OrcSplit orcSplit=(OrcSplit)fSplit;
+    FileMetaInfo fMetaInfo=orcSplit.getFileMetaInfo();
+    reader=OrcFile.createReader(fs,path,fMetaInfo);
+  }
+  return new OrcRecordReader(reader,conf,fSplit.getStart(),fSplit.getLength());
 }
