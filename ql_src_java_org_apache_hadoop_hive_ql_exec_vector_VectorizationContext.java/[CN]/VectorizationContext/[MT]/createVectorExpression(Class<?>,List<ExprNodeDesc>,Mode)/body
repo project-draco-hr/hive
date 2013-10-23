@@ -1,0 +1,41 @@
+{
+  int numChildren=childExpr == null ? 0 : childExpr.size();
+  List<VectorExpression> children=new ArrayList<VectorExpression>();
+  Object[] arguments=new Object[numChildren];
+  try {
+    for (int i=0; i < numChildren; i++) {
+      ExprNodeDesc child=childExpr.get(i);
+      if (child instanceof ExprNodeGenericFuncDesc) {
+        VectorExpression vChild=getVectorExpression(child,childrenMode);
+        children.add(vChild);
+        arguments[i]=vChild.getOutputColumn();
+      }
+ else       if (child instanceof ExprNodeColumnDesc) {
+        int colIndex=getInputColumnIndex((ExprNodeColumnDesc)child);
+        if (childrenMode == Mode.FILTER) {
+          children.add(new SelectColumnIsTrue(colIndex));
+        }
+        arguments[i]=colIndex;
+      }
+ else       if (child instanceof ExprNodeConstantDesc) {
+        arguments[i]=getScalarValue((ExprNodeConstantDesc)child);
+      }
+ else {
+        throw new HiveException("Cannot handle expression type: " + child.getClass().getSimpleName());
+      }
+    }
+    VectorExpression vectorExpression=instantiateExpression(vectorClass,arguments);
+    if ((vectorExpression != null) && !children.isEmpty()) {
+      vectorExpression.setChildExpressions(children.toArray(new VectorExpression[0]));
+    }
+    return vectorExpression;
+  }
+ catch (  Exception ex) {
+    throw new HiveException(ex);
+  }
+ finally {
+    for (    VectorExpression ve : children) {
+      ocm.freeOutputColumn(ve.getOutputColumn());
+    }
+  }
+}
