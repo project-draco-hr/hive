@@ -1,0 +1,34 @@
+{
+  ExprNodeGenericFuncDesc stringUnary=new ExprNodeGenericFuncDesc();
+  stringUnary.setTypeInfo(TypeInfoFactory.stringTypeInfo);
+  ExprNodeColumnDesc colDesc=new ExprNodeColumnDesc(String.class,"a","table",false);
+  List<ExprNodeDesc> children=new ArrayList<ExprNodeDesc>();
+  children.add(colDesc);
+  stringUnary.setChildren(children);
+  Map<String,Integer> columnMap=new HashMap<String,Integer>();
+  columnMap.put("b",0);
+  columnMap.put("a",1);
+  VectorizationContext vc=new VectorizationContext(columnMap,2);
+  GenericUDF stringLower=new GenericUDFLower();
+  stringUnary.setGenericUDF(stringLower);
+  VectorExpression ve=vc.getVectorExpression(stringUnary);
+  assertEquals(StringLower.class,ve.getClass());
+  assertEquals(1,((StringLower)ve).getColNum());
+  assertEquals(2,((StringLower)ve).getOutputColumn());
+  vc=new VectorizationContext(columnMap,2);
+  ExprNodeGenericFuncDesc anotherUnary=new ExprNodeGenericFuncDesc();
+  anotherUnary.setTypeInfo(TypeInfoFactory.stringTypeInfo);
+  List<ExprNodeDesc> children2=new ArrayList<ExprNodeDesc>();
+  children2.add(stringUnary);
+  anotherUnary.setChildren(children2);
+  GenericUDFBridge udfbridge=new GenericUDFBridge("ltrim",false,UDFLTrim.class.getName());
+  anotherUnary.setGenericUDF(udfbridge);
+  ve=vc.getVectorExpression(anotherUnary);
+  VectorExpression childVe=ve.getChildExpressions()[0];
+  assertEquals(StringLower.class,childVe.getClass());
+  assertEquals(1,((StringLower)childVe).getColNum());
+  assertEquals(2,((StringLower)childVe).getOutputColumn());
+  assertEquals(StringLTrim.class,ve.getClass());
+  assertEquals(2,((StringLTrim)ve).getInputColumn());
+  assertEquals(3,((StringLTrim)ve).getOutputColumn());
+}

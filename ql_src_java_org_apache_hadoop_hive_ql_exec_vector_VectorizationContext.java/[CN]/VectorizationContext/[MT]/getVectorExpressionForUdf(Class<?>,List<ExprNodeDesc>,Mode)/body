@@ -1,0 +1,28 @@
+{
+  int numChildren=(childExpr == null) ? 0 : childExpr.size();
+  VectorExpressionDescriptor.Builder builder=new VectorExpressionDescriptor.Builder();
+  builder.setNumArguments(numChildren);
+  builder.setMode(mode);
+  for (int i=0; i < numChildren; i++) {
+    ExprNodeDesc child=childExpr.get(i);
+    builder.setArgumentType(i,child.getTypeString());
+    if ((child instanceof ExprNodeGenericFuncDesc) || (child instanceof ExprNodeColumnDesc)) {
+      builder.setInputExpressionType(i,InputExpressionType.COLUMN);
+    }
+ else     if (child instanceof ExprNodeConstantDesc) {
+      builder.setInputExpressionType(i,InputExpressionType.SCALAR);
+    }
+ else {
+      throw new HiveException("Cannot handle expression type: " + child.getClass().getSimpleName());
+    }
+  }
+  Class<?> vclass=this.vMap.getVectorExpressionClass(udf,builder.build());
+  if (vclass == null) {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("No vector udf found for " + udf.getSimpleName());
+    }
+    return null;
+  }
+  Mode childrenMode=getChildrenMode(mode,udf);
+  return createVectorExpression(vclass,childExpr,childrenMode);
+}

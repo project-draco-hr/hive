@@ -1,0 +1,32 @@
+{
+  ASTNode selectClause=(ASTNode)subQueryAST.getChild(1).getChild(1);
+  int selectExprStart=0;
+  if (selectClause.getChild(0).getType() == HiveParser.TOK_HINTLIST) {
+    selectExprStart=1;
+  }
+  if (operator.getType() != SubQueryType.EXISTS && operator.getType() != SubQueryType.NOT_EXISTS && selectClause.getChildCount() - selectExprStart > 1) {
+    throw new SemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(subQueryAST,"SubQuery can contain only 1 item in Select List."));
+  }
+  containsAggregationExprs=false;
+  boolean containsWindowing=false;
+  for (int i=selectExprStart; i < selectClause.getChildCount(); i++) {
+    ASTNode selectItem=(ASTNode)selectClause.getChild(i);
+    int r=SubQueryUtils.checkAggOrWindowing(selectItem);
+    containsWindowing=containsWindowing | (r == 2);
+    containsAggregationExprs=containsAggregationExprs | (r == 1);
+  }
+  rewrite(outerQueryRR);
+  SubQueryUtils.setOriginDeep(subQueryAST,originalSQASTOrigin);
+  if (operator.getType() == SubQueryType.EXISTS && containsAggregationExprs && groupbyAddedToSQ) {
+    throw new SemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(subQueryAST,"An Exists predicate on SubQuery with implicit Aggregation(no Group By clause) " + "cannot be rewritten. (predicate will always return true)."));
+  }
+  if (operator.getType() == SubQueryType.NOT_EXISTS && containsAggregationExprs && groupbyAddedToSQ) {
+    throw new SemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(subQueryAST,"A Not Exists predicate on SubQuery with implicit Aggregation(no Group By clause) " + "cannot be rewritten. (predicate will always return false)."));
+  }
+  if (containsWindowing && hasCorrelation) {
+    throw new SemanticException(ErrorMsg.UNSUPPORTED_SUBQUERY_EXPRESSION.getMsg(subQueryAST,"Correlated Sub Queries cannot contain Windowing clauses."));
+  }
+  if ((operator.getType() == SubQueryType.EXISTS || operator.getType() == SubQueryType.NOT_EXISTS) && !hasCorrelation) {
+    throw new SemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(subQueryAST,"For Exists/Not Exists operator SubQuery must be Correlated."));
+  }
+}
