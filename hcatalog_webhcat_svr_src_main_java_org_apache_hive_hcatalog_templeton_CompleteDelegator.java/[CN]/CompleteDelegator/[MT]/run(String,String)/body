@@ -1,0 +1,49 @@
+{
+  if (id == null)   acceptWithError("No jobid given");
+  JobState state=null;
+  boolean cancelMetastoreToken=false;
+  try {
+    state=new JobState(id,Main.getAppConfigInstance());
+    if (state.getCompleteStatus() == null)     failed("Job not yet complete. jobId=" + id + " Status from JT="+ jobStatus,null);
+    Long notified=state.getNotifiedTime();
+    if (notified != null) {
+      cancelMetastoreToken=true;
+      return acceptWithError("Callback already run for jobId=" + id + " at "+ new Date(notified));
+    }
+    String callback=state.getCallback();
+    if (callback == null) {
+      cancelMetastoreToken=true;
+      return new CompleteBean("No callback registered");
+    }
+    try {
+      doCallback(state.getId(),callback);
+      cancelMetastoreToken=true;
+    }
+ catch (    Exception e) {
+      failed("Callback failed " + callback + " for "+ id,e);
+    }
+    state.setNotifiedTime(System.currentTimeMillis());
+    return new CompleteBean("Callback sent");
+  }
+  finally {
+    state.close();
+    HiveMetaStoreClient client=null;
+    try {
+      if (cancelMetastoreToken) {
+        String metastoreTokenStrForm=DelegationTokenCache.getStringFormTokenCache().getDelegationToken(id);
+        if (metastoreTokenStrForm != null) {
+          client=HCatUtil.getHiveClient(new HiveConf());
+          client.cancelDelegationToken(metastoreTokenStrForm);
+          LOG.debug("Cancelled token for jobId=" + id + " status from JT="+ jobStatus);
+          DelegationTokenCache.getStringFormTokenCache().removeDelegationToken(id);
+        }
+      }
+    }
+ catch (    Exception ex) {
+      LOG.warn("Failed to cancel metastore delegation token for jobId=" + id,ex);
+    }
+ finally {
+      HCatUtil.closeHiveClientQuietly(client);
+    }
+  }
+}
