@@ -1,5 +1,14 @@
 {
-  this.conf=conf;
   minSize=conf.getLong(MIN_SPLIT_SIZE,DEFAULT_MIN_SPLIT_SIZE);
   maxSize=conf.getLong(MAX_SPLIT_SIZE,DEFAULT_MAX_SPLIT_SIZE);
+  footerInSplits=HiveConf.getBoolVar(conf,ConfVars.HIVE_ORC_INCLUDE_FILE_FOOTER_IN_SPLITS);
+  int cacheStripeDetailsSize=HiveConf.getIntVar(conf,ConfVars.HIVE_ORC_CACHE_STRIPE_DETAILS_SIZE);
+  int numThreads=HiveConf.getIntVar(conf,ConfVars.HIVE_ORC_COMPUTE_SPLITS_NUM_THREADS);
+  cacheStripeDetails=(cacheStripeDetailsSize > 0);
+  threadPool=Executors.newFixedThreadPool(numThreads,new ThreadFactoryBuilder().setDaemon(true).setNameFormat("ORC_GET_SPLITS #%d").build());
+synchronized (Context.class) {
+    if (footerCache == null && cacheStripeDetails) {
+      footerCache=CacheBuilder.newBuilder().concurrencyLevel(numThreads).initialCapacity(cacheStripeDetailsSize).softValues().build();
+    }
+  }
 }
