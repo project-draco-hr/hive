@@ -1,0 +1,42 @@
+{
+  Configuration conf=context.getConfiguration();
+  copyLocal(COPY_NAME,conf);
+  String[] jarArgs=TempletonUtils.decodeArray(conf.get(JAR_ARGS_NAME));
+  ArrayList<String> removeEnv=new ArrayList<String>();
+  removeEnv.add("HADOOP_ROOT_LOGGER");
+  removeEnv.add("hadoop-command");
+  removeEnv.add("CLASS");
+  removeEnv.add("mapredcommand");
+  Map<String,String> env=TempletonUtils.hadoopUserEnv(user,overrideClasspath);
+  List<String> jarArgsList=new LinkedList<String>(Arrays.asList(jarArgs));
+  String tokenFile=System.getenv("HADOOP_TOKEN_FILE_LOCATION");
+  if (tokenFile != null) {
+    tokenFile=tokenFile.replaceAll("\"","");
+    String tokenArg="mapreduce.job.credentials.binary=" + tokenFile;
+    if (Shell.WINDOWS) {
+      try {
+        tokenArg=TempletonUtils.quoteForWindows(tokenArg);
+      }
+ catch (      BadParam e) {
+        String msg="cannot pass " + tokenFile + " to mapreduce.job.credentials.binary";
+        LOG.error(msg,e);
+        throw new IOException(msg,e);
+      }
+    }
+    for (int i=0; i < jarArgsList.size(); i++) {
+      String newArg=jarArgsList.get(i).replace(TOKEN_FILE_ARG_PLACEHOLDER,tokenArg);
+      jarArgsList.set(i,newArg);
+    }
+  }
+ else {
+    Iterator<String> it=jarArgsList.iterator();
+    while (it.hasNext()) {
+      String arg=it.next();
+      if (arg.contains(TOKEN_FILE_ARG_PLACEHOLDER)) {
+        it.remove();
+      }
+    }
+  }
+  boolean overrideLog4jProps=conf.get(OVERRIDE_CONTAINER_LOG4J_PROPS) == null ? false : Boolean.valueOf(conf.get(OVERRIDE_CONTAINER_LOG4J_PROPS));
+  return TrivialExecService.getInstance().run(jarArgsList,removeEnv,env,overrideLog4jProps);
+}

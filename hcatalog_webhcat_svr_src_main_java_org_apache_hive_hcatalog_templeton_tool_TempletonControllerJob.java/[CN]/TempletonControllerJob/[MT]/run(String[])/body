@@ -3,13 +3,26 @@
   conf.set(JAR_ARGS_NAME,TempletonUtils.encodeArray(args));
   String user=UserGroupInformation.getCurrentUser().getShortUserName();
   conf.set("user.name",user);
+  if (overrideContainerLog4jProps && overrideLog4jURI != null) {
+    conf.set(OVERRIDE_CONTAINER_LOG4J_PROPS,Boolean.TRUE.toString());
+  }
   Job job=new Job(conf);
-  job.setJarByClass(TempletonControllerJob.class);
-  job.setJobName("TempletonControllerJob");
+  job.setJarByClass(LaunchMapper.class);
+  job.setJobName(TempletonControllerJob.class.getSimpleName());
   job.setMapperClass(LaunchMapper.class);
   job.setMapOutputKeyClass(Text.class);
   job.setMapOutputValueClass(Text.class);
   job.setInputFormatClass(SingleInputFormat.class);
+  if (overrideContainerLog4jProps && overrideLog4jURI != null) {
+    FileSystem fs=FileSystem.get(conf);
+    if (fs.exists(new Path(overrideLog4jURI))) {
+      ShimLoader.getHadoopShims().getWebHCatShim(conf,UgiFactory.getUgi(user)).addCacheFile(overrideLog4jURI,job);
+      LOG.debug("added " + overrideLog4jURI + " to Dist Cache");
+    }
+ else {
+      LOG.warn("Cannot find " + overrideLog4jURI + " which is created on WebHCat startup/job "+ "submission.  "+ affectedMsg);
+    }
+  }
   NullOutputFormat<NullWritable,NullWritable> of=new NullOutputFormat<NullWritable,NullWritable>();
   job.setOutputFormatClass(of.getClass());
   job.setNumReduceTasks(0);
@@ -21,7 +34,10 @@
   submittedJobId=job.getJobID();
   if (metastoreTokenStrForm != null) {
     DelegationTokenCache.getStringFormTokenCache().storeDelegationToken(submittedJobId.toString(),metastoreTokenStrForm);
-    LOG.debug("Added metastore delegation token for jobId=" + submittedJobId.toString() + " "+ "user="+ user);
+    LOG.debug("Added metastore delegation token for jobId=" + submittedJobId.toString() + " user="+ user);
+  }
+  if (overrideContainerLog4jProps && overrideLog4jURI == null) {
+    LOG.warn("Could not override container log4j properties for " + submittedJobId);
   }
   return 0;
 }

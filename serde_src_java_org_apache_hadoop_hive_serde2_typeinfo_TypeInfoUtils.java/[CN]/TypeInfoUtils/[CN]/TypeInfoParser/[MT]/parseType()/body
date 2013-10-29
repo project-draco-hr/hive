@@ -3,78 +3,93 @@
   PrimitiveTypeEntry typeEntry=PrimitiveObjectInspectorUtils.getTypeEntryFromTypeName(t.text);
   if (typeEntry != null && typeEntry.primitiveCategory != PrimitiveCategory.UNKNOWN) {
     String qualifiedTypeName=typeEntry.typeName;
-    if (typeEntry.primitiveCategory == PrimitiveCategory.VARCHAR) {
-      int length=HiveVarchar.MAX_VARCHAR_LENGTH;
-      String[] params=parseParams();
+    String[] params=parseParams();
+switch (typeEntry.primitiveCategory) {
+case VARCHAR:
       if (params == null || params.length == 0) {
-        throw new RuntimeException("Varchar type is specified without length: " + typeInfoString);
+        throw new IllegalArgumentException("Varchar type is specified without length: " + typeInfoString);
       }
-      if (params.length == 1) {
-        length=Integer.valueOf(params[0]);
-        VarcharUtils.validateParameter(length);
-      }
- else       if (params.length > 1) {
-        throw new RuntimeException("Type varchar only takes one parameter, but " + params.length + " is seen");
-      }
+    if (params.length == 1) {
+      int length=Integer.valueOf(params[0]);
+      VarcharUtils.validateParameter(length);
       qualifiedTypeName=BaseCharTypeInfo.getQualifiedName(typeEntry.typeName,length);
     }
-    return TypeInfoFactory.getPrimitiveTypeInfo(qualifiedTypeName);
-  }
-  if (serdeConstants.LIST_TYPE_NAME.equals(t.text)) {
-    expect("<");
-    TypeInfo listElementType=parseType();
-    expect(">");
-    return TypeInfoFactory.getListTypeInfo(listElementType);
-  }
-  if (serdeConstants.MAP_TYPE_NAME.equals(t.text)) {
-    expect("<");
-    TypeInfo mapKeyType=parseType();
-    expect(",");
-    TypeInfo mapValueType=parseType();
-    expect(">");
-    return TypeInfoFactory.getMapTypeInfo(mapKeyType,mapValueType);
-  }
-  if (serdeConstants.STRUCT_TYPE_NAME.equals(t.text)) {
-    ArrayList<String> fieldNames=new ArrayList<String>();
-    ArrayList<TypeInfo> fieldTypeInfos=new ArrayList<TypeInfo>();
-    boolean first=true;
-    do {
-      if (first) {
-        expect("<");
-        first=false;
-      }
- else {
-        Token separator=expect(">",",");
-        if (separator.text.equals(">")) {
-          break;
-        }
-      }
-      Token name=expect("name");
-      fieldNames.add(name.text);
-      expect(":");
-      fieldTypeInfos.add(parseType());
+ else     if (params.length > 1) {
+      throw new IllegalArgumentException("Type varchar only takes one parameter, but " + params.length + " is seen");
     }
- while (true);
-    return TypeInfoFactory.getStructTypeInfo(fieldNames,fieldTypeInfos);
-  }
-  if (serdeConstants.UNION_TYPE_NAME.equals(t.text)) {
-    List<TypeInfo> objectTypeInfos=new ArrayList<TypeInfo>();
-    boolean first=true;
-    do {
-      if (first) {
-        expect("<");
-        first=false;
-      }
+  break;
+case DECIMAL:
+if (params == null || params.length == 0) {
+  throw new IllegalArgumentException("Decimal type is specified without length: " + typeInfoString);
+}
+if (params.length == 2) {
+int precision=Integer.valueOf(params[0]);
+int scale=Integer.valueOf(params[1]);
+HiveDecimalUtils.validateParameter(precision,scale);
+qualifiedTypeName=DecimalTypeInfo.getQualifiedName(precision,scale);
+}
+ else if (params.length > 1) {
+throw new IllegalArgumentException("Type varchar only takes one parameter, but " + params.length + " is seen");
+}
+break;
+}
+return TypeInfoFactory.getPrimitiveTypeInfo(qualifiedTypeName);
+}
+if (serdeConstants.LIST_TYPE_NAME.equals(t.text)) {
+expect("<");
+TypeInfo listElementType=parseType();
+expect(">");
+return TypeInfoFactory.getListTypeInfo(listElementType);
+}
+if (serdeConstants.MAP_TYPE_NAME.equals(t.text)) {
+expect("<");
+TypeInfo mapKeyType=parseType();
+expect(",");
+TypeInfo mapValueType=parseType();
+expect(">");
+return TypeInfoFactory.getMapTypeInfo(mapKeyType,mapValueType);
+}
+if (serdeConstants.STRUCT_TYPE_NAME.equals(t.text)) {
+ArrayList<String> fieldNames=new ArrayList<String>();
+ArrayList<TypeInfo> fieldTypeInfos=new ArrayList<TypeInfo>();
+boolean first=true;
+do {
+if (first) {
+expect("<");
+first=false;
+}
  else {
-        Token separator=expect(">",",");
-        if (separator.text.equals(">")) {
-          break;
-        }
-      }
-      objectTypeInfos.add(parseType());
-    }
+Token separator=expect(">",",");
+if (separator.text.equals(">")) {
+break;
+}
+}
+Token name=expect("name");
+fieldNames.add(name.text);
+expect(":");
+fieldTypeInfos.add(parseType());
+}
  while (true);
-    return TypeInfoFactory.getUnionTypeInfo(objectTypeInfos);
-  }
-  throw new RuntimeException("Internal error parsing position " + t.position + " of '"+ typeInfoString+ "'");
+return TypeInfoFactory.getStructTypeInfo(fieldNames,fieldTypeInfos);
+}
+if (serdeConstants.UNION_TYPE_NAME.equals(t.text)) {
+List<TypeInfo> objectTypeInfos=new ArrayList<TypeInfo>();
+boolean first=true;
+do {
+if (first) {
+expect("<");
+first=false;
+}
+ else {
+Token separator=expect(">",",");
+if (separator.text.equals(">")) {
+break;
+}
+}
+objectTypeInfos.add(parseType());
+}
+ while (true);
+return TypeInfoFactory.getUnionTypeInfo(objectTypeInfos);
+}
+throw new RuntimeException("Internal error parsing position " + t.position + " of '"+ typeInfoString+ "'");
 }

@@ -1,0 +1,45 @@
+{
+  setState(OperationState.RUNNING);
+  String statement_trimmed=statement.trim();
+  String[] tokens=statement_trimmed.split("\\s");
+  String cmd_1=statement_trimmed.substring(tokens[0].length()).trim();
+  int ret=0;
+  String errorMessage="";
+  String SQLState=null;
+  try {
+    driver=new Driver(sqlOperationConf,getParentSession().getUserName());
+    driver.setTryCount(Integer.MAX_VALUE);
+    String subStatement=new VariableSubstitution().substitute(sqlOperationConf,statement);
+    response=driver.run(subStatement);
+    if (0 != response.getResponseCode()) {
+      throw new HiveSQLException("Error while processing statement: " + response.getErrorMessage(),response.getSQLState(),response.getResponseCode());
+    }
+    mResultSchema=driver.getSchema();
+    if (driver.getPlan().getFetchTask() != null) {
+      if (mResultSchema == null || !mResultSchema.isSetFieldSchemas()) {
+        throw new HiveSQLException("Error running query: Schema and FieldSchema " + "should be set when query plan has a FetchTask");
+      }
+      resultSchema=new TableSchema(mResultSchema);
+      setHasResultSet(true);
+    }
+ else {
+      setHasResultSet(false);
+    }
+    for (    Task<? extends Serializable> task : driver.getPlan().getRootTasks()) {
+      if (task.getClass() == ExplainTask.class) {
+        resultSchema=new TableSchema(mResultSchema);
+        setHasResultSet(true);
+        break;
+      }
+    }
+  }
+ catch (  HiveSQLException e) {
+    setState(OperationState.ERROR);
+    throw e;
+  }
+catch (  Exception e) {
+    setState(OperationState.ERROR);
+    throw new HiveSQLException("Error running query: " + e.toString(),e);
+  }
+  setState(OperationState.FINISHED);
+}
