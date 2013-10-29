@@ -1,0 +1,39 @@
+{
+  this.outDir=outDir;
+  this.logDir=logDir;
+  conf=new HiveConf(Driver.class);
+  this.miniMr=miniMr.equals("miniMr");
+  this.miniTez=miniMr.equals("tez");
+  this.hadoopVer=getHadoopMainVersion(hadoopVer);
+  qMap=new TreeMap<String,String>();
+  qSkipSet=new HashSet<String>();
+  qSortSet=new HashSet<String>();
+  HadoopShims shims=null;
+  MiniClusterType clusterType=MiniClusterType.valueOf(miniMr);
+switch (clusterType) {
+case miniMr:
+    shims=ShimLoader.getHadoopShims();
+  break;
+case tez:
+if (!hadoopVer.equals("23")) {
+  throw new Exception("Unsupported version of hadoop for tez. Please use " + "-Dhadoop.mr.rev=23 on the command line");
+}
+shims=(HadoopShims)new TezShims();
+break;
+default :
+throw new Exception("Unknown cluster type");
+}
+dfs=shims.getMiniDfs(conf,4,true,null);
+FileSystem fs=dfs.getFileSystem();
+mr=shims.getMiniMrCluster(conf,4,getHdfsUriString(fs.getUri().toString()),1);
+initConf();
+String dataDir=conf.get("test.data.files");
+if (dataDir == null) {
+dataDir=new File(".").getAbsolutePath() + "/data/files";
+}
+testFiles=dataDir;
+overWrite="true".equalsIgnoreCase(System.getProperty("test.output.overwrite"));
+setup=new QTestSetup();
+setup.preTest(conf);
+init();
+}
