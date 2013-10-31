@@ -1,0 +1,27 @@
+{
+  if (!(expr instanceof ExprNodeConstantDesc)) {
+    throw new HiveException("Constant timestamp value expected for expression argument. " + "Non-constant argument not supported for vectorization.");
+  }
+  ExprNodeConstantDesc constExpr=(ExprNodeConstantDesc)expr;
+  if (constExpr.getTypeString().equals("string")) {
+    ExprNodeGenericFuncDesc expr2=new ExprNodeGenericFuncDesc();
+    GenericUDFTimestamp f=new GenericUDFTimestamp();
+    expr2.setGenericUDF(f);
+    ArrayList<ExprNodeDesc> children=new ArrayList<ExprNodeDesc>();
+    children.add(expr);
+    expr2.setChildren(children);
+    ExprNodeEvaluator evaluator=ExprNodeEvaluatorFactory.get(expr2);
+    ObjectInspector output=evaluator.initialize(null);
+    Object constant=evaluator.evaluate(null);
+    Object java=ObjectInspectorUtils.copyToStandardJavaObject(constant,output);
+    if (!(java instanceof Timestamp)) {
+      throw new HiveException("Udf: failed to convert from string to timestamp");
+    }
+    Timestamp ts=(Timestamp)java;
+    long result=ts.getTime();
+    result*=1000000;
+    result+=ts.getNanos() % 1000000;
+    return result;
+  }
+  throw new HiveException("Udf: unhandled constant type for scalar argument. " + "Expecting string.");
+}
