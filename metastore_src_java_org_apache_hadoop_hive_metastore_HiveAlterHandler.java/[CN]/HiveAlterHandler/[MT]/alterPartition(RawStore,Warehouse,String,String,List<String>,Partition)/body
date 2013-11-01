@@ -4,16 +4,19 @@
   Path destPath=null;
   FileSystem srcFs=null;
   FileSystem destFs=null;
-  Table tbl=null;
   Partition oldPart=null;
   String oldPartLoc=null;
   String newPartLoc=null;
   if (new_part.getParameters() == null || new_part.getParameters().get(hive_metastoreConstants.DDL_TIME) == null || Integer.parseInt(new_part.getParameters().get(hive_metastoreConstants.DDL_TIME)) == 0) {
     new_part.putToParameters(hive_metastoreConstants.DDL_TIME,Long.toString(System.currentTimeMillis() / 1000));
   }
+  Table tbl=msdb.getTable(dbname,name);
   if (part_vals == null || part_vals.size() == 0) {
     try {
       oldPart=msdb.getPartition(dbname,name,new_part.getValues());
+      if (MetaStoreUtils.requireCalStats(hiveConf,oldPart,new_part,tbl)) {
+        MetaStoreUtils.updatePartitionStatsFast(new_part,wh,false,true);
+      }
       msdb.alterPartition(dbname,name,new_part.getValues(),new_part);
     }
  catch (    InvalidObjectException e) {
@@ -42,7 +45,6 @@ catch (    NoSuchObjectException e) {
     if (check_part != null) {
       throw new AlreadyExistsException("Partition already exists:" + dbname + "."+ name+ "."+ new_part.getValues());
     }
-    tbl=msdb.getTable(dbname,name);
     if (tbl == null) {
       throw new InvalidObjectException("Unable to rename partition because table or database do not exist");
     }
@@ -82,6 +84,9 @@ catch (    NoSuchObjectException e) {
           throw new InvalidOperationException("Unable to access new location " + destPath + " for partition "+ tbl.getDbName()+ "."+ tbl.getTableName()+ " "+ new_part.getValues());
         }
         new_part.getSd().setLocation(newPartLoc);
+        if (MetaStoreUtils.requireCalStats(hiveConf,oldPart,new_part,tbl)) {
+          MetaStoreUtils.updatePartitionStatsFast(new_part,wh,false,true);
+        }
         msdb.alterPartition(dbname,name,part_vals,new_part);
       }
     }
