@@ -1,5 +1,7 @@
 {
   GenMRProcContext ctx=(GenMRProcContext)opProcCtx;
+  Task<? extends Serializable> currTask=ctx.getCurrTask();
+  String dest=null;
   List<FileSinkOperator> seenFSOps=ctx.getSeenFileSinkOps();
   if (seenFSOps == null) {
     seenFSOps=new ArrayList<FileSinkOperator>();
@@ -8,35 +10,10 @@
     seenFSOps.add(fsOp);
   }
   ctx.setSeenFileSinkOps(seenFSOps);
-  Task<? extends Serializable> currTask=ctx.getCurrTask();
-  String dest=null;
-  if (chDir) {
-    dest=fsOp.getConf().getFinalDirName();
-    ParseContext parseCtx=ctx.getParseCtx();
-    Context baseCtx=parseCtx.getContext();
-    String tmpDir=baseCtx.getExternalTmpFileURI((new Path(dest)).toUri());
-    FileSinkDesc fileSinkDesc=fsOp.getConf();
-    if (fileSinkDesc.isLinkedFileSink()) {
-      for (      FileSinkDesc fsConf : fileSinkDesc.getLinkedFileSinkDesc()) {
-        String fileName=Utilities.getFileNameFromDirName(fsConf.getDirName());
-        fsConf.setParentDir(tmpDir);
-        fsConf.setDirName(tmpDir + Path.SEPARATOR + fileName);
-      }
-    }
- else {
-      fileSinkDesc.setDirName(tmpDir);
-    }
-  }
-  Task<MoveWork> mvTask=null;
-  if (!chDir) {
-    mvTask=findMoveTask(ctx.getMvTask(),fsOp);
-  }
+  dest=GenMapRedUtils.createMoveTask(ctx.getCurrTask(),chDir,fsOp,ctx.getParseCtx(),ctx.getMvTask(),ctx.getConf(),ctx.getDependencyTaskForMultiInsert());
   Operator<? extends OperatorDesc> currTopOp=ctx.getCurrTopOp();
   String currAliasId=ctx.getCurrAliasId();
   HashMap<Operator<? extends OperatorDesc>,Task<? extends Serializable>> opTaskMap=ctx.getOpTaskMap();
-  if (mvTask != null) {
-    addDependentMoveTasks(ctx,mvTask,currTask);
-  }
   if (currTopOp != null) {
     Task<? extends Serializable> mapTask=opTaskMap.get(null);
     if (mapTask == null) {
