@@ -1,0 +1,72 @@
+{
+  if (arguments.length < 1 || arguments.length > 2) {
+    throw new UDFArgumentLengthException("ROUND requires one or two argument, got " + arguments.length);
+  }
+  inputOI=(PrimitiveObjectInspector)arguments[0];
+  if (inputOI.getCategory() != Category.PRIMITIVE) {
+    throw new UDFArgumentException("ROUND input only takes primitive types, got " + inputOI.getTypeName());
+  }
+  if (arguments.length == 2) {
+    PrimitiveObjectInspector scaleOI=(PrimitiveObjectInspector)arguments[1];
+switch (scaleOI.getPrimitiveCategory()) {
+case VOID:
+      break;
+case BYTE:
+    if (!(scaleOI instanceof WritableConstantByteObjectInspector)) {
+      throw new UDFArgumentException("ROUND second argument only takes constant");
+    }
+  scale=((WritableConstantByteObjectInspector)scaleOI).getWritableConstantValue().get();
+break;
+case SHORT:
+if (!(scaleOI instanceof WritableConstantShortObjectInspector)) {
+throw new UDFArgumentException("ROUND second argument only takes constant");
+}
+scale=((WritableConstantShortObjectInspector)scaleOI).getWritableConstantValue().get();
+break;
+case INT:
+if (!(scaleOI instanceof WritableConstantIntObjectInspector)) {
+throw new UDFArgumentException("ROUND second argument only takes constant");
+}
+scale=((WritableConstantIntObjectInspector)scaleOI).getWritableConstantValue().get();
+break;
+case LONG:
+if (!(scaleOI instanceof WritableConstantLongObjectInspector)) {
+throw new UDFArgumentException("ROUND second argument only takes constant");
+}
+long l=((WritableConstantLongObjectInspector)scaleOI).getWritableConstantValue().get();
+if (l < Integer.MIN_VALUE || l > Integer.MAX_VALUE) {
+throw new UDFArgumentException("ROUND scale argument out of allowed range");
+}
+scale=(int)l;
+break;
+default :
+throw new UDFArgumentException("ROUND second argument only takes integer constant");
+}
+}
+inputType=inputOI.getPrimitiveCategory();
+ObjectInspector outputOI=null;
+switch (inputType) {
+case DECIMAL:
+DecimalTypeInfo inputTypeInfo=(DecimalTypeInfo)inputOI.getTypeInfo();
+DecimalTypeInfo typeInfo=getOutputTypeInfo(inputTypeInfo,scale);
+outputOI=PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(typeInfo);
+break;
+case VOID:
+case BYTE:
+case SHORT:
+case INT:
+case LONG:
+case FLOAT:
+case DOUBLE:
+outputOI=PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(inputType);
+break;
+case STRING:
+case VARCHAR:
+outputOI=PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(PrimitiveCategory.DOUBLE);
+converterFromString=ObjectInspectorConverters.getConverter(inputOI,outputOI);
+break;
+default :
+throw new UDFArgumentException("Only numeric data types are allowed for ROUND function. Got " + inputType.name());
+}
+return outputOI;
+}
