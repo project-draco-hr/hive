@@ -19,7 +19,7 @@
         throw new HiveException("StatsAggregator connect failed " + statsImplementationClass);
       }
     }
-    TableStatistics tblStats=new TableStatistics();
+    Statistics tblStats=new Statistics();
     org.apache.hadoop.hive.metastore.api.Table tTable=table.getTTable();
     Map<String,String> parameters=tTable.getParameters();
     boolean tableStatsExist=this.existStats(parameters);
@@ -28,9 +28,6 @@
         tblStats.setStat(statType,Long.parseLong(parameters.get(statType)));
       }
     }
-    if (parameters.containsKey(StatsSetupConst.NUM_PARTITIONS)) {
-      tblStats.setNumPartitions(Integer.parseInt(parameters.get(StatsSetupConst.NUM_PARTITIONS)));
-    }
     List<Partition> partitions=getPartitionsList();
     boolean atomic=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_STATS_ATOMIC);
     int maxPrefixLength=HiveConf.getIntVar(conf,HiveConf.ConfVars.HIVE_STATS_KEY_PREFIX_MAX_LENGTH);
@@ -38,9 +35,6 @@
       if (!tableStatsExist && atomic) {
         return 0;
       }
-      long[] summary=summary(conf,table);
-      tblStats.setStat(StatsSetupConst.NUM_FILES,summary[0]);
-      tblStats.setStat(StatsSetupConst.TOTAL_SIZE,summary[1]);
       if (statsAggregator != null) {
         String aggKey=Utilities.getHashedStatsPrefix(work.getAggKey(),maxPrefixLength);
         updateStats(collectableStats,tblStats,statsAggregator,parameters,aggKey,atomic);
@@ -53,6 +47,14 @@
           }
         }
       }
+      parameters=tTable.getParameters();
+      for (      String statType : collectableStats) {
+        parameters.put(statType,Long.toString(tblStats.getStat(statType)));
+      }
+      tTable.setParameters(parameters);
+      String tableFullName=table.getDbName() + "." + table.getTableName();
+      db.alterTable(tableFullName,new Table(tTable));
+      console.printInfo("Table " + tableFullName + " stats: ["+ tblStats.toString()+ ']');
     }
  else {
       for (      Partition partn : partitions) {
@@ -67,7 +69,7 @@
           Long val=parameters.containsKey(statType) ? Long.parseLong(parameters.get(statType)) : 0L;
           currentValues.put(statType,val);
         }
-        PartitionStatistics newPartStats=new PartitionStatistics();
+        Statistics newPartStats=new Statistics();
         String partitionID=Utilities.getHashedStatsPrefix(work.getAggKey() + Warehouse.makePartPath(partn.getSpec()),maxPrefixLength);
         LOG.info("Stats aggregator : " + partitionID);
         if (statsAggregator != null) {
@@ -86,16 +88,13 @@
             }
           }
         }
-        long[] summary=summary(conf,partn);
-        newPartStats.setStat(StatsSetupConst.NUM_FILES,summary[0]);
-        newPartStats.setStat(StatsSetupConst.TOTAL_SIZE,summary[1]);
-        if (hasStats) {
-          PartitionStatistics oldPartStats=new PartitionStatistics(currentValues);
-          tblStats.updateStats(oldPartStats,newPartStats);
+        FileStatus[] partfileStatus=wh.getFileStatusesForPartition(tPart);
+        newPartStats.setStat(StatsSetupConst.NUM_FILES,partfileStatus.length);
+        long partSize=0L;
+        for (int i=0; i < partfileStatus.length; i++) {
+          partSize+=partfileStatus[i].getLen();
         }
- else {
-          tblStats.addPartitionStats(newPartStats);
-        }
+        newPartStats.setStat(StatsSetupConst.TOTAL_SIZE,partSize);
         for (        String statType : supportedStats) {
           long statValue=newPartStats.getStat(statType);
           if (statValue >= 0) {
@@ -108,15 +107,6 @@
         console.printInfo("Partition " + tableFullName + partn.getSpec()+ " stats: ["+ newPartStats.toString()+ ']');
       }
     }
-    parameters=tTable.getParameters();
-    for (    String statType : supportedStats) {
-      parameters.put(statType,Long.toString(tblStats.getStat(statType)));
-    }
-    parameters.put(StatsSetupConst.NUM_PARTITIONS,Integer.toString(tblStats.getNumPartitions()));
-    tTable.setParameters(parameters);
-    String tableFullName=table.getDbName() + "." + table.getTableName();
-    db.alterTable(tableFullName,new Table(tTable));
-    console.printInfo("Table " + tableFullName + " stats: ["+ tblStats.toString()+ ']');
   }
  catch (  Exception e) {
     console.printInfo("[Warning] could not update stats.","Failed with exception " + e.getMessage() + "\n"+ StringUtils.stringifyException(e));

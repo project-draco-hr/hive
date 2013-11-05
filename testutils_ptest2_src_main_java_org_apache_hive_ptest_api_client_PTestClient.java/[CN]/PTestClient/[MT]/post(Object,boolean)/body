@@ -1,0 +1,35 @@
+{
+  EndPointResponsePair endPointResponse=Preconditions.checkNotNull(REQUEST_TO_ENDPOINT.get(payload.getClass()),payload.getClass().getName());
+  HttpPost request=new HttpPost(mApiEndPoint + endPointResponse.getEndpoint());
+  try {
+    String payloadString=mMapper.writeValueAsString(payload);
+    StringEntity params=new StringEntity(payloadString);
+    request.addHeader("content-type","application/json");
+    request.setEntity(params);
+    if (agressiveRetry) {
+      mHttpClient.setHttpRequestRetryHandler(new PTestHttpRequestRetryHandler());
+    }
+    HttpResponse httpResponse=mHttpClient.execute(request);
+    StatusLine statusLine=httpResponse.getStatusLine();
+    if (statusLine.getStatusCode() != 200) {
+      throw new IllegalStateException(statusLine.getStatusCode() + " " + statusLine.getReasonPhrase());
+    }
+    String response=EntityUtils.toString(httpResponse.getEntity(),"UTF-8");
+    @SuppressWarnings("unchecked") S result=(S)endPointResponse.getResponseClass().cast(mMapper.readValue(response,endPointResponse.getResponseClass()));
+    Status.assertOK(result.getStatus());
+    if (System.getProperty("DEBUG_PTEST_CLIENT") != null) {
+      System.err.println("payload " + payloadString);
+      if (result instanceof TestLogResponse) {
+        System.err.println("response " + ((TestLogResponse)result).getOffset() + " "+ ((TestLogResponse)result).getStatus());
+      }
+ else {
+        System.err.println("response " + response);
+      }
+    }
+    Thread.sleep(1000);
+    return result;
+  }
+  finally {
+    request.abort();
+  }
+}

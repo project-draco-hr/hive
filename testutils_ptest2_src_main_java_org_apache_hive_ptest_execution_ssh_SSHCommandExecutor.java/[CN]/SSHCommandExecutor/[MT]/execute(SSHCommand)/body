@@ -7,14 +7,20 @@
     LocalCommand cmd;
     do {
       retry=false;
-      cmd=new LocalCommand(mLogger,collector,commandText);
+      cmd=mLocalCommandFactory.create(collector,commandText);
+      if (mShutdown) {
+        mLogger.warn("Shutting down command " + command);
+        cmd.kill();
+        command.setExitCode(Constants.EXIT_CODE_UNKNOWN);
+        return;
+      }
       if (attempts++ <= 3 && cmd.getExitCode() == Constants.EXIT_CODE_UNKNOWN) {
         mLogger.warn("Command exited with " + cmd.getExitCode() + ", will retry: "+ command);
         retry=true;
         TimeUnit.SECONDS.sleep(5);
       }
     }
- while (retry);
+ while (!mShutdown && retry);
     command.setExitCode(cmd.getExitCode());
   }
  catch (  Exception e) {

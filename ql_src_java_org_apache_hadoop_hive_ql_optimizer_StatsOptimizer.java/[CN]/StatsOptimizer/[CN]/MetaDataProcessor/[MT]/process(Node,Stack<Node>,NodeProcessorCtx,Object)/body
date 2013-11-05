@@ -1,0 +1,216 @@
+{
+  TableScanOperator tsOp=(TableScanOperator)stack.get(0);
+  if (tsOp.getParentOperators() != null && tsOp.getParentOperators().size() > 0) {
+    return null;
+  }
+  SelectOperator selOp=(SelectOperator)tsOp.getChildren().get(0);
+  for (  ExprNodeDesc desc : selOp.getConf().getColList()) {
+    if (!(desc instanceof ExprNodeColumnDesc)) {
+      return null;
+    }
+  }
+  GroupByOperator gbyOp=(GroupByOperator)selOp.getChildren().get(0);
+  FileSinkOperator fsOp=(FileSinkOperator)(gbyOp.getChildren().get(0).getChildren().get(0).getChildren().get(0).getChildren().get(0));
+  if (fsOp.getChildOperators() != null && fsOp.getChildOperators().size() > 0) {
+    return null;
+  }
+  List<AggregationDesc> aggrs=gbyOp.getConf().getAggregators();
+  Table tbl=pctx.getTopToTable().get(tsOp);
+  List<Object> oneRow=new ArrayList<Object>();
+  List<ObjectInspector> ois=new ArrayList<ObjectInspector>();
+  try {
+    Hive hive=Hive.get(pctx.getConf());
+    for (    AggregationDesc aggr : aggrs) {
+      if (aggr.getGenericUDAFName().equals(GenericUDAFCount.class.getAnnotation(Description.class).name())) {
+        long rowCnt=0;
+        if ((aggr.getParameters().isEmpty() || aggr.getParameters().get(0) instanceof ExprNodeConstantDesc)) {
+          if (tbl.isPartitioned()) {
+            for (            Partition part : hive.getAllPartitionsOf(tbl)) {
+              long partRowCnt=Long.parseLong(part.getParameters().get(StatsSetupConst.ROW_COUNT));
+              if (partRowCnt < 1) {
+                Log.debug("Partition doesn't have upto date stats " + part.getSpec());
+                return null;
+              }
+              rowCnt+=partRowCnt;
+            }
+          }
+ else {
+            rowCnt=Long.parseLong(tbl.getProperty(StatsSetupConst.ROW_COUNT));
+            if (rowCnt < 1) {
+              Log.debug("Table doesn't have upto date stats " + tbl.getTableName());
+              return null;
+            }
+          }
+        }
+ else {
+          if (!(aggr.getParameters().get(0) instanceof ExprNodeColumnDesc)) {
+            Log.debug("Unexpected expression : " + aggr.getParameters().get(0));
+            return null;
+          }
+          ExprNodeColumnDesc desc=(ExprNodeColumnDesc)aggr.getParameters().get(0);
+          String colName=desc.getColumn();
+          StatType type=getType(desc.getTypeString());
+          if (!tbl.isPartitioned()) {
+            rowCnt=Long.parseLong(tbl.getProperty(StatsSetupConst.ROW_COUNT));
+            if (rowCnt < 1) {
+              Log.debug("Table doesn't have upto date stats " + tbl.getTableName());
+              return null;
+            }
+            ColumnStatisticsData statData=hive.getMSC().getTableColumnStatistics(tbl.getDbName(),tbl.getTableName(),colName).getStatsObjIterator().next().getStatsData();
+            Long nullCnt=getNullcountFor(type,statData);
+            if (null == nullCnt) {
+              Log.debug("Unsupported type: " + desc.getTypeString() + " encountered in "+ "metadata optimizer for column : "+ colName);
+              return null;
+            }
+ else {
+              rowCnt-=nullCnt;
+            }
+          }
+ else {
+            for (            Partition part : hive.getAllPartitionsOf(tbl)) {
+              Long partRowCnt=Long.parseLong(part.getParameters().get(StatsSetupConst.ROW_COUNT));
+              if (partRowCnt < 1) {
+                Log.debug("Partition doesn't have upto date stats " + part.getSpec());
+                return null;
+              }
+              rowCnt+=partRowCnt;
+              ColumnStatisticsData statData=hive.getMSC().getPartitionColumnStatistics(tbl.getDbName(),tbl.getTableName(),part.getName(),colName).getStatsObjIterator().next().getStatsData();
+              Long nullCnt=getNullcountFor(type,statData);
+              if (nullCnt == null) {
+                Log.debug("Unsupported type: " + desc.getTypeString() + " encountered in "+ "metadata optimizer for column : "+ colName);
+                return null;
+              }
+ else {
+                rowCnt-=nullCnt;
+              }
+            }
+          }
+        }
+        oneRow.add(rowCnt);
+        ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.LONG));
+      }
+ else       if (aggr.getGenericUDAFName().equals(GenericUDAFMax.class.getAnnotation(Description.class).name())) {
+        ExprNodeColumnDesc colDesc=(ExprNodeColumnDesc)aggr.getParameters().get(0);
+        String colName=colDesc.getColumn();
+        StatType type=getType(colDesc.getTypeString());
+        if (!tbl.isPartitioned()) {
+          ColumnStatisticsData statData=hive.getMSC().getTableColumnStatistics(tbl.getDbName(),tbl.getTableName(),colName).getStatsObjIterator().next().getStatsData();
+switch (type) {
+case Integeral:
+            oneRow.add(statData.getLongStats().getHighValue());
+          ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.LONG));
+        break;
+case Double:
+      oneRow.add(statData.getDoubleStats().getHighValue());
+    ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.DOUBLE));
+  break;
+default :
+Log.debug("Unsupported type: " + colDesc.getTypeString() + " encountered in "+ "metadata optimizer for column : "+ colName);
+return null;
+}
+}
+ else {
+List<String> parts=hive.getMSC().listPartitionNames(tbl.getDbName(),tbl.getTableName(),(short)-1);
+switch (type) {
+case Integeral:
+{
+long maxVal=Long.MIN_VALUE;
+for (String part : parts) {
+ColumnStatisticsData statData=hive.getMSC().getPartitionColumnStatistics(tbl.getDbName(),tbl.getTableName(),part,colName).getStatsObjIterator().next().getStatsData();
+maxVal=Math.max(maxVal,statData.getLongStats().getHighValue());
+}
+oneRow.add(maxVal);
+ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.LONG));
+break;
+}
+case Double:
+{
+double maxVal=Double.MIN_VALUE;
+for (String part : parts) {
+ColumnStatisticsData statData=hive.getMSC().getPartitionColumnStatistics(tbl.getDbName(),tbl.getTableName(),part,colName).getStatsObjIterator().next().getStatsData();
+maxVal=Math.max(maxVal,statData.getDoubleStats().getHighValue());
+}
+oneRow.add(maxVal);
+ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.DOUBLE));
+break;
+}
+default :
+Log.debug("Unsupported type: " + colDesc.getTypeString() + " encountered in "+ "metadata optimizer for column : "+ colName);
+return null;
+}
+}
+}
+ else if (aggr.getGenericUDAFName().equals(GenericUDAFMin.class.getAnnotation(Description.class).name())) {
+ExprNodeColumnDesc colDesc=(ExprNodeColumnDesc)aggr.getParameters().get(0);
+String colName=colDesc.getColumn();
+StatType type=getType(colDesc.getTypeString());
+if (!tbl.isPartitioned()) {
+ColumnStatisticsData statData=hive.getMSC().getTableColumnStatistics(tbl.getDbName(),tbl.getTableName(),colName).getStatsObjIterator().next().getStatsData();
+switch (type) {
+case Integeral:
+oneRow.add(statData.getLongStats().getLowValue());
+ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.LONG));
+break;
+case Double:
+oneRow.add(statData.getDoubleStats().getLowValue());
+ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.DOUBLE));
+break;
+default :
+Log.debug("Unsupported type: " + colDesc.getTypeString() + " encountered in "+ "metadata optimizer for column : "+ colName);
+return null;
+}
+}
+ else {
+List<String> parts=hive.getMSC().listPartitionNames(tbl.getDbName(),tbl.getTableName(),(short)-1);
+switch (type) {
+case Integeral:
+{
+long minVal=Long.MAX_VALUE;
+for (String part : parts) {
+ColumnStatisticsData statData=hive.getMSC().getPartitionColumnStatistics(tbl.getDbName(),tbl.getTableName(),part,colName).getStatsObjIterator().next().getStatsData();
+minVal=Math.min(minVal,statData.getLongStats().getLowValue());
+}
+oneRow.add(minVal);
+ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.LONG));
+break;
+}
+case Double:
+{
+double minVal=Double.MAX_VALUE;
+for (String part : parts) {
+ColumnStatisticsData statData=hive.getMSC().getPartitionColumnStatistics(tbl.getDbName(),tbl.getTableName(),part,colName).getStatsObjIterator().next().getStatsData();
+minVal=Math.min(minVal,statData.getDoubleStats().getLowValue());
+}
+oneRow.add(minVal);
+ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.DOUBLE));
+break;
+}
+default :
+Log.debug("Unsupported type: " + colDesc.getTypeString() + " encountered in "+ "metadata optimizer for column : "+ colName);
+return null;
+}
+}
+}
+ else {
+Log.debug("Unsupported aggregation for metadata optimizer: " + aggr.getGenericUDAFName());
+return null;
+}
+}
+}
+ catch (Exception e) {
+Log.debug("Failed to optimize using metadata optimizer",e);
+return null;
+}
+List<List<Object>> allRows=new ArrayList<List<Object>>();
+allRows.add(oneRow);
+List<String> colNames=new ArrayList<String>();
+for (ColumnInfo colInfo : gbyOp.getSchema().getSignature()) {
+colNames.add(colInfo.getInternalName());
+}
+StandardStructObjectInspector sOI=ObjectInspectorFactory.getStandardStructObjectInspector(colNames,ois);
+FetchWork fWork=new FetchWork(allRows,sOI);
+FetchTask fTask=(FetchTask)TaskFactory.get(fWork,pctx.getConf());
+fWork.setLimit(allRows.size());
+pctx.setFetchTask(fTask);
+return null;
+}

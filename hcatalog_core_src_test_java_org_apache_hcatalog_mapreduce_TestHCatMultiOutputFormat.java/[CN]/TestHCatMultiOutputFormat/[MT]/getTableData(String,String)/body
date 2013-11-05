@@ -1,12 +1,13 @@
 {
-  HiveConf conf=new HiveConf();
-  conf.addResource("hive-site.xml");
   ArrayList<String> results=new ArrayList<String>();
   ArrayList<String> temp=new ArrayList<String>();
-  Hive hive=Hive.get(conf);
+  Hive hive=Hive.get(hiveConf);
   org.apache.hadoop.hive.ql.metadata.Table tbl=hive.getTable(database,table);
   FetchWork work;
-  if (!tbl.getPartCols().isEmpty()) {
+  if (tbl.getPartCols().isEmpty()) {
+    work=new FetchWork(tbl.getDataLocation().toString(),Utilities.getTableDesc(tbl));
+  }
+ else {
     List<Partition> partitions=hive.getPartitions(tbl);
     List<PartitionDesc> partDesc=new ArrayList<PartitionDesc>();
     List<String> partLocs=new ArrayList<String>();
@@ -17,12 +18,9 @@
     work=new FetchWork(partLocs,partDesc,Utilities.getTableDesc(tbl));
     work.setLimit(100);
   }
- else {
-    work=new FetchWork(tbl.getDataLocation().toString(),Utilities.getTableDesc(tbl));
-  }
   FetchTask task=new FetchTask();
   task.setWork(work);
-  task.initialize(conf,null,null);
+  task.initialize(hiveConf,null,null);
   task.fetch(temp);
   for (  String str : temp) {
     results.add(str.replace("\t",","));

@@ -1,0 +1,114 @@
+{
+  if (leftCondAl1.size() != 0) {
+    if ((rightCondAl1.size() != 0) || ((rightCondAl1.size() == 0) && (rightCondAl2.size() == 0))) {
+      if (type.equals(JoinType.LEFTOUTER) || type.equals(JoinType.FULLOUTER)) {
+        if (conf.getBoolVar(HiveConf.ConfVars.HIVEOUTERJOINSUPPORTSFILTERS)) {
+          joinTree.getFilters().get(0).add(joinCond);
+        }
+ else {
+          LOG.warn(ErrorMsg.OUTERJOIN_USES_FILTERS);
+          joinTree.getFiltersForPushing().get(0).add(joinCond);
+        }
+      }
+ else {
+        if (rightCondAl1.size() != 0) {
+          QBJoinTree leftTree=joinTree.getJoinSrc();
+          List<String> leftTreeLeftSrc=new ArrayList<String>();
+          if (leftTree != null) {
+            String leftTreeRightSource=leftTree.getRightAliases() != null && leftTree.getRightAliases().length > 0 ? leftTree.getRightAliases()[0] : null;
+            boolean leftHasRightReference=false;
+            for (            String r : leftCondAl1) {
+              if (r.equals(leftTreeRightSource)) {
+                leftHasRightReference=true;
+                break;
+              }
+            }
+            boolean rightHasRightReference=false;
+            for (            String r : rightCondAl1) {
+              if (r.equals(leftTreeRightSource)) {
+                rightHasRightReference=true;
+                break;
+              }
+            }
+            boolean pushedDown=false;
+            if (!leftHasRightReference && !rightHasRightReference) {
+              applyEqualityPredicateToQBJoinTree(leftTree,type,leftTreeLeftSrc,joinCond,leftCondn,rightCondn,leftCondAl1,leftCondAl2,rightCondAl1,rightCondAl2);
+              pushedDown=true;
+            }
+ else             if (!leftHasRightReference && rightHasRightReference && rightCondAl1.size() == 1) {
+              applyEqualityPredicateToQBJoinTree(leftTree,type,leftTreeLeftSrc,joinCond,leftCondn,rightCondn,leftCondAl1,leftCondAl2,rightCondAl2,rightCondAl1);
+              pushedDown=true;
+            }
+ else             if (leftHasRightReference && !rightHasRightReference && leftCondAl1.size() == 1) {
+              applyEqualityPredicateToQBJoinTree(leftTree,type,leftTreeLeftSrc,joinCond,leftCondn,rightCondn,leftCondAl2,leftCondAl1,rightCondAl1,rightCondAl2);
+              pushedDown=true;
+            }
+            if (leftTreeLeftSrc.size() == 1) {
+              leftTree.setLeftAlias(leftTreeLeftSrc.get(0));
+            }
+            if (pushedDown) {
+              return;
+            }
+          }
+        }
+        joinTree.getFiltersForPushing().get(0).add(joinCond);
+      }
+    }
+ else     if (rightCondAl2.size() != 0) {
+      populateAliases(leftCondAl1,leftCondAl2,leftCondn,joinTree,leftSrc);
+      populateAliases(rightCondAl1,rightCondAl2,rightCondn,joinTree,leftSrc);
+      boolean nullsafe=joinCond.getToken().getType() == HiveParser.EQUAL_NS;
+      joinTree.getNullSafes().add(nullsafe);
+    }
+  }
+ else   if (leftCondAl2.size() != 0) {
+    if ((rightCondAl2.size() != 0) || ((rightCondAl1.size() == 0) && (rightCondAl2.size() == 0))) {
+      if (type.equals(JoinType.RIGHTOUTER) || type.equals(JoinType.FULLOUTER)) {
+        if (conf.getBoolVar(HiveConf.ConfVars.HIVEOUTERJOINSUPPORTSFILTERS)) {
+          joinTree.getFilters().get(1).add(joinCond);
+        }
+ else {
+          LOG.warn(ErrorMsg.OUTERJOIN_USES_FILTERS);
+          joinTree.getFiltersForPushing().get(1).add(joinCond);
+        }
+      }
+ else {
+        joinTree.getFiltersForPushing().get(1).add(joinCond);
+      }
+    }
+ else     if (rightCondAl1.size() != 0) {
+      populateAliases(leftCondAl1,leftCondAl2,leftCondn,joinTree,leftSrc);
+      populateAliases(rightCondAl1,rightCondAl2,rightCondn,joinTree,leftSrc);
+      boolean nullsafe=joinCond.getToken().getType() == HiveParser.EQUAL_NS;
+      joinTree.getNullSafes().add(nullsafe);
+    }
+  }
+ else   if (rightCondAl1.size() != 0) {
+    if (type.equals(JoinType.LEFTOUTER) || type.equals(JoinType.FULLOUTER)) {
+      if (conf.getBoolVar(HiveConf.ConfVars.HIVEOUTERJOINSUPPORTSFILTERS)) {
+        joinTree.getFilters().get(0).add(joinCond);
+      }
+ else {
+        LOG.warn(ErrorMsg.OUTERJOIN_USES_FILTERS);
+        joinTree.getFiltersForPushing().get(0).add(joinCond);
+      }
+    }
+ else {
+      joinTree.getFiltersForPushing().get(0).add(joinCond);
+    }
+  }
+ else {
+    if (type.equals(JoinType.RIGHTOUTER) || type.equals(JoinType.FULLOUTER)) {
+      if (conf.getBoolVar(HiveConf.ConfVars.HIVEOUTERJOINSUPPORTSFILTERS)) {
+        joinTree.getFilters().get(1).add(joinCond);
+      }
+ else {
+        LOG.warn(ErrorMsg.OUTERJOIN_USES_FILTERS);
+        joinTree.getFiltersForPushing().get(1).add(joinCond);
+      }
+    }
+ else {
+      joinTree.getFiltersForPushing().get(1).add(joinCond);
+    }
+  }
+}

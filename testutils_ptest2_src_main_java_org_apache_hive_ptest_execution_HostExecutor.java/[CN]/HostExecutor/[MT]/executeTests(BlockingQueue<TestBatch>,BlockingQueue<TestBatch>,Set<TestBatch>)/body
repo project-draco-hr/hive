@@ -1,4 +1,8 @@
 {
+  if (mShutdown) {
+    mLogger.warn("Shutting down host " + mHost.getName());
+    return;
+  }
   mLogger.info("Starting parallel execution on " + mHost.getName());
   List<ListenableFuture<Void>> droneResults=Lists.newArrayList();
   for (  final Drone drone : ImmutableList.copyOf(mDrones)) {
@@ -8,13 +12,17 @@
         try {
           do {
             batch=parallelWorkQueue.poll(mNumPollSeconds,TimeUnit.SECONDS);
+            if (mShutdown) {
+              mLogger.warn("Shutting down host " + mHost.getName());
+              return null;
+            }
             if (batch != null) {
               if (!executeTestBatch(drone,batch,failedTestResults)) {
                 failedTestResults.add(batch);
               }
             }
           }
- while (!parallelWorkQueue.isEmpty());
+ while (!mShutdown && !parallelWorkQueue.isEmpty());
         }
  catch (        AbortDroneException ex) {
           mDrones.remove(drone);
@@ -27,6 +35,10 @@
       }
     }
 ));
+  }
+  if (mShutdown) {
+    mLogger.warn("Shutting down host " + mHost.getName());
+    return;
   }
   Futures.allAsList(droneResults).get();
   mLogger.info("Starting isolated execution on " + mHost.getName());
@@ -41,7 +53,7 @@
           }
         }
       }
- while (!isolatedWorkQueue.isEmpty());
+ while (!mShutdown && !isolatedWorkQueue.isEmpty());
     }
  catch (    AbortDroneException ex) {
       mDrones.remove(drone);
