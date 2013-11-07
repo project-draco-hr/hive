@@ -20,9 +20,13 @@ case BINARY:
       returnType=PrimitiveCategory.STRING;
     }
   break;
+case CHAR:
 case VARCHAR:
 if (!fixedLengthReturnValue) {
   returnType=PrimitiveCategory.STRING;
+}
+if (fixedLengthReturnValue && currentCategory == PrimitiveCategory.VARCHAR) {
+returnType=PrimitiveCategory.VARCHAR;
 }
 break;
 default :
@@ -32,7 +36,7 @@ break;
 }
 if (fixedLengthReturnValue) {
 returnLength+=GenericUDFUtils.StringHelper.getFixedStringSizeForType(poi);
-if (returnType == PrimitiveCategory.VARCHAR && returnLength > HiveVarchar.MAX_VARCHAR_LENGTH) {
+if ((returnType == PrimitiveCategory.VARCHAR && returnLength > HiveVarchar.MAX_VARCHAR_LENGTH) || (returnType == PrimitiveCategory.CHAR && returnLength > HiveChar.MAX_CHAR_LENGTH)) {
 returnType=PrimitiveCategory.STRING;
 fixedLengthReturnValue=false;
 }
@@ -45,11 +49,15 @@ return PrimitiveObjectInspectorFactory.writableBinaryObjectInspector;
  else {
 createStringConverters();
 returnHelper=new GenericUDFUtils.StringHelper(returnType);
+BaseCharTypeInfo typeInfo;
 switch (returnType) {
 case STRING:
 return PrimitiveObjectInspectorFactory.writableStringObjectInspector;
+case CHAR:
+typeInfo=TypeInfoFactory.getCharTypeInfo(returnLength);
+return PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(typeInfo);
 case VARCHAR:
-VarcharTypeInfo typeInfo=TypeInfoFactory.getVarcharTypeInfo(returnLength);
+typeInfo=TypeInfoFactory.getVarcharTypeInfo(returnLength);
 return PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(typeInfo);
 default :
 throw new UDFArgumentException("Unexpected CONCAT return type of " + returnType);
