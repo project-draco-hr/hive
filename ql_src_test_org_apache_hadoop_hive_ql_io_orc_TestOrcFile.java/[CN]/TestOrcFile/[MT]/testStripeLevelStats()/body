@@ -1,0 +1,55 @@
+{
+  ObjectInspector inspector;
+synchronized (TestOrcFile.class) {
+    inspector=ObjectInspectorFactory.getReflectionObjectInspector(InnerStruct.class,ObjectInspectorFactory.ObjectInspectorOptions.JAVA);
+  }
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).inspector(inspector).stripeSize(100000).bufferSize(10000));
+  for (int i=0; i < 11000; i++) {
+    if (i >= 5000) {
+      if (i >= 10000) {
+        writer.addRow(new InnerStruct(3,"three"));
+      }
+ else {
+        writer.addRow(new InnerStruct(2,"two"));
+      }
+    }
+ else {
+      writer.addRow(new InnerStruct(1,"one"));
+    }
+  }
+  writer.close();
+  Reader reader=OrcFile.createReader(fs,testFilePath);
+  Metadata metadata=reader.getMetadata();
+  int numStripes=metadata.getStripeStatistics().size();
+  assertEquals(3,numStripes);
+  StripeStatistics ss1=metadata.getStripeStatistics().get(0);
+  StripeStatistics ss2=metadata.getStripeStatistics().get(1);
+  StripeStatistics ss3=metadata.getStripeStatistics().get(2);
+  assertEquals(4996,ss1.getColumnStatistics()[0].getNumberOfValues());
+  assertEquals(5000,ss2.getColumnStatistics()[0].getNumberOfValues());
+  assertEquals(1004,ss3.getColumnStatistics()[0].getNumberOfValues());
+  assertEquals(4996,((IntegerColumnStatistics)ss1.getColumnStatistics()[1]).getNumberOfValues());
+  assertEquals(5000,((IntegerColumnStatistics)ss2.getColumnStatistics()[1]).getNumberOfValues());
+  assertEquals(1004,((IntegerColumnStatistics)ss3.getColumnStatistics()[1]).getNumberOfValues());
+  assertEquals(1,((IntegerColumnStatistics)ss1.getColumnStatistics()[1]).getMinimum());
+  assertEquals(1,((IntegerColumnStatistics)ss2.getColumnStatistics()[1]).getMinimum());
+  assertEquals(2,((IntegerColumnStatistics)ss3.getColumnStatistics()[1]).getMinimum());
+  assertEquals(1,((IntegerColumnStatistics)ss1.getColumnStatistics()[1]).getMaximum());
+  assertEquals(2,((IntegerColumnStatistics)ss2.getColumnStatistics()[1]).getMaximum());
+  assertEquals(3,((IntegerColumnStatistics)ss3.getColumnStatistics()[1]).getMaximum());
+  assertEquals(4996,((IntegerColumnStatistics)ss1.getColumnStatistics()[1]).getSum());
+  assertEquals(9996,((IntegerColumnStatistics)ss2.getColumnStatistics()[1]).getSum());
+  assertEquals(3008,((IntegerColumnStatistics)ss3.getColumnStatistics()[1]).getSum());
+  assertEquals(4996,((StringColumnStatistics)ss1.getColumnStatistics()[2]).getNumberOfValues());
+  assertEquals(5000,((StringColumnStatistics)ss2.getColumnStatistics()[2]).getNumberOfValues());
+  assertEquals(1004,((StringColumnStatistics)ss3.getColumnStatistics()[2]).getNumberOfValues());
+  assertEquals("one",((StringColumnStatistics)ss1.getColumnStatistics()[2]).getMinimum());
+  assertEquals("one",((StringColumnStatistics)ss2.getColumnStatistics()[2]).getMinimum());
+  assertEquals("three",((StringColumnStatistics)ss3.getColumnStatistics()[2]).getMinimum());
+  assertEquals("one",((StringColumnStatistics)ss1.getColumnStatistics()[2]).getMaximum());
+  assertEquals("two",((StringColumnStatistics)ss2.getColumnStatistics()[2]).getMaximum());
+  assertEquals("two",((StringColumnStatistics)ss3.getColumnStatistics()[2]).getMaximum());
+  assertEquals(14988,((StringColumnStatistics)ss1.getColumnStatistics()[2]).getSum());
+  assertEquals(15000,((StringColumnStatistics)ss2.getColumnStatistics()[2]).getSum());
+  assertEquals(5012,((StringColumnStatistics)ss3.getColumnStatistics()[2]).getSum());
+}
