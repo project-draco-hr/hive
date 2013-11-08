@@ -23,7 +23,7 @@
     org.apache.hadoop.hive.metastore.api.Table tTable=table.getTTable();
     Map<String,String> parameters=tTable.getParameters();
     boolean tableStatsExist=this.existStats(parameters);
-    for (    String statType : supportedStats) {
+    for (    String statType : StatsSetupConst.supportedStats) {
       if (parameters.containsKey(statType)) {
         tblStats.setStat(statType,Long.parseLong(parameters.get(statType)));
       }
@@ -37,20 +37,21 @@
       }
       if (statsAggregator != null) {
         String aggKey=Utilities.getHashedStatsPrefix(work.getAggKey(),maxPrefixLength);
-        updateStats(collectableStats,tblStats,statsAggregator,parameters,aggKey,atomic);
+        updateStats(StatsSetupConst.statsRequireCompute,tblStats,statsAggregator,parameters,aggKey,atomic);
         statsAggregator.cleanUp(aggKey);
       }
  else       if (work.isClearAggregatorStats()) {
-        for (        String statType : collectableStats) {
+        for (        String statType : StatsSetupConst.statsRequireCompute) {
           if (parameters.containsKey(statType)) {
             tblStats.setStat(statType,0L);
           }
         }
       }
       parameters=tTable.getParameters();
-      for (      String statType : collectableStats) {
+      for (      String statType : StatsSetupConst.statsRequireCompute) {
         parameters.put(statType,Long.toString(tblStats.getStat(statType)));
       }
+      parameters.put(StatsSetupConst.STATS_GENERATED_VIA_STATS_TASK,StatsSetupConst.TRUE);
       tTable.setParameters(parameters);
       String tableFullName=table.getDbName() + "." + table.getTableName();
       db.alterTable(tableFullName,new Table(tTable));
@@ -65,7 +66,7 @@
           continue;
         }
         Map<String,Long> currentValues=new HashMap<String,Long>();
-        for (        String statType : supportedStats) {
+        for (        String statType : StatsSetupConst.supportedStats) {
           Long val=parameters.containsKey(statType) ? Long.parseLong(parameters.get(statType)) : 0L;
           currentValues.put(statType,val);
         }
@@ -73,11 +74,11 @@
         String partitionID=Utilities.getHashedStatsPrefix(work.getAggKey() + Warehouse.makePartPath(partn.getSpec()),maxPrefixLength);
         LOG.info("Stats aggregator : " + partitionID);
         if (statsAggregator != null) {
-          updateStats(collectableStats,newPartStats,statsAggregator,parameters,partitionID,atomic);
+          updateStats(StatsSetupConst.statsRequireCompute,newPartStats,statsAggregator,parameters,partitionID,atomic);
           statsAggregator.cleanUp(partitionID);
         }
  else {
-          for (          String statType : collectableStats) {
+          for (          String statType : StatsSetupConst.statsRequireCompute) {
             if (work.isClearAggregatorStats()) {
               if (parameters.containsKey(statType)) {
                 newPartStats.setStat(statType,0L);
@@ -95,12 +96,13 @@
           partSize+=partfileStatus[i].getLen();
         }
         newPartStats.setStat(StatsSetupConst.TOTAL_SIZE,partSize);
-        for (        String statType : supportedStats) {
+        for (        String statType : StatsSetupConst.supportedStats) {
           long statValue=newPartStats.getStat(statType);
           if (statValue >= 0) {
             parameters.put(statType,Long.toString(newPartStats.getStat(statType)));
           }
         }
+        parameters.put(StatsSetupConst.STATS_GENERATED_VIA_STATS_TASK,StatsSetupConst.TRUE);
         tPart.setParameters(parameters);
         String tableFullName=table.getDbName() + "." + table.getTableName();
         db.alterPartition(tableFullName,new Partition(table,tPart));
