@@ -1,2 +1,75 @@
 {
+  VectorizedRowBatch vrg=(VectorizedRowBatch)row;
+  LOG.info(String.format("sinking %d rows, %d values, %d keys, %d parts",vrg.size,valueEval.length,keyEval.length,partitionEval.length));
+  try {
+    for (int i=0; i < keyEval.length; i++) {
+      keyEval[i].evaluate(vrg);
+    }
+    int startResult=reducerHash.startVectorizedBatch(vrg.size);
+    if (startResult == TopNHash.EXCLUDE) {
+      return;
+    }
+    for (int i=0; i < partitionEval.length; i++) {
+      partitionEval[i].evaluate(vrg);
+    }
+    for (int i=0; i < valueEval.length; i++) {
+      valueEval[i].evaluate(vrg);
+    }
+    boolean useTopN=startResult != TopNHash.FORWARD;
+    for (int batchIndex=0; batchIndex < vrg.size; ++batchIndex) {
+      int rowIndex=batchIndex;
+      if (vrg.selectedInUse) {
+        rowIndex=vrg.selected[batchIndex];
+      }
+      populatedCachedDistributionKeys(vrg,rowIndex,0);
+      HiveKey firstKey=toHiveKey(cachedKeys[0],tag,null);
+      int distKeyLength=firstKey.getDistKeyLength();
+      if (numDistinctExprs > 0) {
+        populateCachedDistinctKeys(vrg,rowIndex,0);
+        firstKey=toHiveKey(cachedKeys[0],tag,distKeyLength);
+      }
+      if (useTopN) {
+        reducerHash.tryStoreVectorizedKey(firstKey,batchIndex);
+      }
+ else {
+        int hashCode=computeHashCode(vrg,rowIndex);
+        firstKey.setHashCode(hashCode);
+        BytesWritable value=makeValueWritable(vrg,rowIndex);
+        collect(firstKey,value);
+        forwardExtraDistinctRows(vrg,rowIndex,hashCode,value,distKeyLength,tag,0);
+      }
+    }
+    if (!useTopN)     return;
+    for (int batchIndex=0; batchIndex < vrg.size; ++batchIndex) {
+      int result=reducerHash.getVectorizedBatchResult(batchIndex);
+      if (result == TopNHash.EXCLUDE)       continue;
+      int rowIndex=batchIndex;
+      if (vrg.selectedInUse) {
+        rowIndex=vrg.selected[batchIndex];
+      }
+      int hashCode=computeHashCode(vrg,rowIndex);
+      BytesWritable value=makeValueWritable(vrg,rowIndex);
+      int distKeyLength=-1;
+      if (result == TopNHash.FORWARD) {
+        HiveKey firstKey=reducerHash.getVectorizedKeyToForward(batchIndex);
+        firstKey.setHashCode(hashCode);
+        distKeyLength=firstKey.getDistKeyLength();
+        collect(firstKey,value);
+      }
+ else {
+        reducerHash.storeValue(result,value,hashCode,true);
+        distKeyLength=reducerHash.getVectorizedKeyDistLength(batchIndex);
+      }
+      if (numDistinctExprs > 1) {
+        populatedCachedDistributionKeys(vrg,rowIndex,1);
+        forwardExtraDistinctRows(vrg,rowIndex,hashCode,value,distKeyLength,tag,1);
+      }
+    }
+  }
+ catch (  SerDeException e) {
+    throw new HiveException(e);
+  }
+catch (  IOException e) {
+    throw new HiveException(e);
+  }
 }

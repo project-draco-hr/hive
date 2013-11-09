@@ -1,10 +1,16 @@
 {
   if (usage > threshold) {
-    return excluded == 0 ? DISABLE : FLUSH;
+    flushInternal();
+    if (excluded == 0) {
+      LOG.info("Top-N hash is disabled");
+      isEnabled=false;
+    }
+    return FORWARD;
   }
   int size=indexes.size();
   int index=size < topN ? size : evicted;
   keys[index]=Arrays.copyOf(key.getBytes(),key.getLength());
+  distKeyLengths[index]=key.getDistKeyLength();
   if (null != indexes.store(index)) {
     return FORWARD;
   }
@@ -12,7 +18,7 @@
     evicted=indexes.removeBiggest();
     if (index == evicted) {
       excluded++;
-      return EXCLUDED;
+      return EXCLUDE;
     }
     removed(evicted);
   }
