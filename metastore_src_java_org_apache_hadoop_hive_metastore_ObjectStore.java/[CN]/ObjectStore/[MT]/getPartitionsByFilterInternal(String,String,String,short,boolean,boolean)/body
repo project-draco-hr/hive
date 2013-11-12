@@ -1,2 +1,26 @@
 {
+  ExpressionTree tree=(filter != null && !filter.isEmpty()) ? getFilterParser(filter).tree : ExpressionTree.EMPTY_TREE;
+  dbName=dbName.toLowerCase();
+  tblName=tblName.toLowerCase();
+  GetPartsHelper ctx=new GetPartsHelper(dbName,tblName,allowSql,allowJdo);
+  try {
+    ctx.start(true);
+    if (ctx.canUseDirectSql()) {
+      try {
+        if (!ctx.setResult(directSql.getPartitionsViaSqlFilter(ctx.getTable(),tree,(maxParts < 0) ? null : (int)maxParts))) {
+          ctx.disableDirectSql();
+        }
+      }
+ catch (      Exception ex) {
+        ctx.handleDirectSqlError(ex);
+      }
+    }
+    if (!ctx.canUseDirectSql()) {
+      ctx.setResult(getPartitionsViaOrmFilter(ctx.getTable(),tree,maxParts,true));
+    }
+    return ctx.commit();
+  }
+  finally {
+    ctx.close();
+  }
 }

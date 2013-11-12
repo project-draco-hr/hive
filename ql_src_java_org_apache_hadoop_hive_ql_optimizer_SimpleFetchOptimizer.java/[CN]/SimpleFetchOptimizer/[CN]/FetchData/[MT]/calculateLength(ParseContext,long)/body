@@ -1,0 +1,25 @@
+{
+  JobConf jobConf=new JobConf(pctx.getConf());
+  Utilities.setColumnNameList(jobConf,scanOp,true);
+  Utilities.setColumnTypeList(jobConf,scanOp,true);
+  HiveStorageHandler handler=table.getStorageHandler();
+  if (handler instanceof InputEstimator) {
+    InputEstimator estimator=(InputEstimator)handler;
+    TableDesc tableDesc=Utilities.getTableDesc(table);
+    PlanUtils.configureInputJobPropertiesForStorageHandler(tableDesc);
+    Utilities.copyTableJobPropertiesToConf(tableDesc,jobConf);
+    return estimator.estimate(jobConf,scanOp,remaining).getTotalLength();
+  }
+  if (table.isNonNative()) {
+    return 0;
+  }
+  if (!table.isPartitioned()) {
+    return getFileLength(jobConf,table.getPath(),table.getInputFormatClass());
+  }
+  long total=0;
+  for (  Partition partition : partsList.getNotDeniedPartns()) {
+    Path path=partition.getPartitionPath();
+    total+=getFileLength(jobConf,path,partition.getInputFormatClass());
+  }
+  return total;
+}

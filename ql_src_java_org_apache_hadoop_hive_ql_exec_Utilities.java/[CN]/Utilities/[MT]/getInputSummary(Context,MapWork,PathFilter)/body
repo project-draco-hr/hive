@@ -50,23 +50,42 @@ synchronized (INPUT_SUMMARY_LOCK) {
         final String pathStr=path;
         final Configuration myConf=conf;
         final JobConf myJobConf=jobConf;
+        final Map<String,Operator<?>> aliasToWork=work.getAliasToWork();
+        final Map<String,ArrayList<String>> pathToAlias=work.getPathToAliases();
         final PartitionDesc partDesc=work.getPathToPartitionInfo().get(p.toString());
         Runnable r=new Runnable(){
           public void run(){
             try {
-              ContentSummary resultCs;
               Class<? extends InputFormat> inputFormatCls=partDesc.getInputFileFormatClass();
               InputFormat inputFormatObj=HiveInputFormat.getInputFormatFromCache(inputFormatCls,myJobConf);
               if (inputFormatObj instanceof ContentSummaryInputFormat) {
-                resultCs=((ContentSummaryInputFormat)inputFormatObj).getContentSummary(p,myJobConf);
+                ContentSummaryInputFormat cs=(ContentSummaryInputFormat)inputFormatObj;
+                resultMap.put(pathStr,cs.getContentSummary(p,myJobConf));
+                return;
               }
- else {
+              HiveStorageHandler handler=HiveUtils.getStorageHandler(myConf,partDesc.getOverlayedProperties().getProperty(hive_metastoreConstants.META_TABLE_STORAGE));
+              if (handler == null) {
                 FileSystem fs=p.getFileSystem(myConf);
-                resultCs=fs.getContentSummary(p);
+                resultMap.put(pathStr,fs.getContentSummary(p));
+                return;
               }
-              resultMap.put(pathStr,resultCs);
+              if (handler instanceof InputEstimator) {
+                long total=0;
+                TableDesc tableDesc=partDesc.getTableDesc();
+                InputEstimator estimator=(InputEstimator)handler;
+                for (                String alias : HiveFileFormatUtils.doGetAliasesFromPath(pathToAlias,p)) {
+                  JobConf jobConf=new JobConf(myJobConf);
+                  TableScanOperator scanOp=(TableScanOperator)aliasToWork.get(alias);
+                  Utilities.setColumnNameList(jobConf,scanOp,true);
+                  Utilities.setColumnTypeList(jobConf,scanOp,true);
+                  PlanUtils.configureInputJobPropertiesForStorageHandler(tableDesc);
+                  Utilities.copyTableJobPropertiesToConf(tableDesc,jobConf);
+                  total+=estimator.estimate(myJobConf,scanOp,-1).getTotalLength();
+                }
+                resultMap.put(pathStr,new ContentSummary(total,-1,-1));
+              }
             }
- catch (            IOException e) {
+ catch (            Exception e) {
               LOG.info("Cannot get size of " + pathStr + ". Safely ignored.");
             }
           }

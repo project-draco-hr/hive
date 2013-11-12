@@ -1,0 +1,35 @@
+{
+  int size=indexes.size();
+  int index=size < topN ? size : evicted;
+  keys[index]=Arrays.copyOf(key.getBytes(),key.getLength());
+  distKeyLengths[index]=key.getDistKeyLength();
+  Integer collisionIndex=indexes.store(index);
+  if (null != collisionIndex) {
+    ++batchNumForwards;
+    batchIndexToResult[batchIndex]=MAY_FORWARD - collisionIndex;
+    return;
+  }
+  indexToBatchIndex[index]=batchIndex;
+  batchIndexToResult[batchIndex]=index;
+  if (size != topN)   return;
+  evicted=indexes.removeBiggest();
+  if (index == evicted) {
+    excluded++;
+    batchIndexToResult[batchIndex]=EXCLUDE;
+    indexToBatchIndex[index]=-1;
+    return;
+  }
+  removed(evicted);
+  int evictedBatchIndex=indexToBatchIndex[evicted];
+  if (evictedBatchIndex >= 0) {
+    batchIndexToResult[evictedBatchIndex]=EXCLUDE;
+    indexToBatchIndex[evicted]=-1;
+  }
+  int evictedForward=(MAY_FORWARD - evicted);
+  for (int i=evictedBatchIndex + 1; i < batchIndex && (batchNumForwards > 0); ++i) {
+    if (batchIndexToResult[i] == evictedForward) {
+      batchIndexToResult[i]=EXCLUDE;
+      --batchNumForwards;
+    }
+  }
+}
