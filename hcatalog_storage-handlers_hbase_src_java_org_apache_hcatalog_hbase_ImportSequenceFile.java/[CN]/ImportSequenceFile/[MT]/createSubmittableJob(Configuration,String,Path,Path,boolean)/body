@@ -1,4 +1,5 @@
 {
+  HBaseHCatStorageHandler.setHBaseSerializers(conf);
   Job job=new Job(conf,NAME + "_" + tableName);
   job.setJarByClass(SequenceFileImporter.class);
   FileInputFormat.setInputPaths(job,inputDir);
@@ -10,14 +11,30 @@
   job.setMapOutputKeyClass(ImmutableBytesWritable.class);
   job.setMapOutputValueClass(Put.class);
   HFileOutputFormat.configureIncrementalLoad(job,table);
+  URI partitionURI;
+  try {
+    partitionURI=new URI(TotalOrderPartitioner.getPartitionFile(job.getConfiguration()) + "#" + TotalOrderPartitioner.DEFAULT_PATH);
+  }
+ catch (  URISyntaxException e) {
+    throw new IOException(e);
+  }
+  DistributedCache.addCacheFile(partitionURI,job.getConfiguration());
+  DistributedCache.createSymlink(job.getConfiguration());
   job.setOutputFormatClass(ImporterOutputFormat.class);
   if (localMode) {
     String partitionFile=null;
-    for (    URI uri : DistributedCache.getCacheFiles(job.getConfiguration())) {
-      if (DEFAULT_PATH.equals(uri.getFragment())) {
+    URI[] uris=DistributedCache.getCacheFiles(job.getConfiguration());
+    if (uris == null) {
+      throw new IllegalStateException("No cache file existed in job configuration");
+    }
+    for (    URI uri : uris) {
+      if (TotalOrderPartitioner.DEFAULT_PATH.equals(uri.getFragment())) {
         partitionFile=uri.toString();
         break;
       }
+    }
+    if (partitionFile == null) {
+      throw new IllegalStateException("Unable to find " + TotalOrderPartitioner.DEFAULT_PATH + " in cache");
     }
     partitionFile=partitionFile.substring(0,partitionFile.lastIndexOf("#"));
     job.getConfiguration().set(TotalOrderPartitioner.PARTITIONER_PATH,partitionFile.toString());
