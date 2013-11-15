@@ -1,40 +1,37 @@
 {
-  persistHostnamesToLog(hosts);
   final Set<NodeMetadata> result=Collections.synchronizedSet(new HashSet<NodeMetadata>());
-  ExecutorService executorService=Executors.newFixedThreadPool(Math.min(hosts.size(),25));
-  try {
-    for (    final NodeMetadata node : hosts) {
-      executorService.submit(new Runnable(){
-        @Override public void run(){
-          SSHCommand command=new SSHCommand(mSSHCommandExecutor,mPrivateKey,mUser,node.getHostname(),0,"pkill -f java");
-          mSSHCommandExecutor.execute(command);
-          if (command.getExitCode() == Constants.EXIT_CODE_UNKNOWN || command.getException() != null) {
-            if (command.getException() == null) {
-              LOG.error("Node " + node.getHostname() + " is bad on startup");
+  if (!hosts.isEmpty()) {
+    persistHostnamesToLog(hosts);
+    ExecutorService executorService=Executors.newFixedThreadPool(Math.min(hosts.size(),25));
+    try {
+      for (      final NodeMetadata node : hosts) {
+        executorService.submit(new Runnable(){
+          @Override public void run(){
+            SSHCommand command=new SSHCommand(mSSHCommandExecutor,mPrivateKey,mUser,node.getHostname(),0,"pkill -f java");
+            mSSHCommandExecutor.execute(command);
+            if (command.getExitCode() == Constants.EXIT_CODE_UNKNOWN || command.getException() != null) {
+              LOG.error("Node " + node + " is bad on startup",command.getException());
+              terminateInternal(node);
             }
  else {
-              LOG.error("Node " + node.getHostname() + " is bad on startup",command.getException());
+              result.add(node);
             }
-            terminateInternal(node);
-          }
- else {
-            result.add(node);
           }
         }
-      }
 );
+      }
+      executorService.shutdown();
+      if (!executorService.awaitTermination(10,TimeUnit.MINUTES)) {
+        LOG.error("Verify command still executing on a host after 10 minutes");
+      }
     }
-    executorService.shutdown();
-    if (!executorService.awaitTermination(10,TimeUnit.MINUTES)) {
-      LOG.error("Verify command still executing on a host after 10 minutes");
+ catch (    InterruptedException e) {
+      throw new CreateHostsFailedException("Interrupted while trying to create hosts",e);
     }
-  }
- catch (  InterruptedException e) {
-    throw new CreateHostsFailedException("Interrupted while trying to create hosts",e);
-  }
  finally {
-    if (!executorService.isShutdown()) {
-      executorService.shutdownNow();
+      if (!executorService.isShutdown()) {
+        executorService.shutdownNow();
+      }
     }
   }
   return result;
