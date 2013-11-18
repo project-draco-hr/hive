@@ -1,0 +1,63 @@
+{
+  long numRows=stats.getNumRows();
+  if (child instanceof ExprNodeGenericFuncDesc) {
+    ExprNodeGenericFuncDesc genFunc=(ExprNodeGenericFuncDesc)child;
+    GenericUDF udf=genFunc.getGenericUDF();
+    if (udf instanceof GenericUDFOPEqual || udf instanceof GenericUDFOPEqualNS) {
+      String colName=null;
+      String tabAlias=null;
+      boolean isConst=false;
+      for (      ExprNodeDesc leaf : genFunc.getChildren()) {
+        if (leaf instanceof ExprNodeConstantDesc) {
+          if (colName == null) {
+            isConst=true;
+            continue;
+          }
+          ColStatistics cs=stats.getColumnStatisticsForColumn(tabAlias,colName);
+          if (cs != null) {
+            long dvs=cs.getCountDistint();
+            if (cs.getNumNulls() > 0) {
+              dvs+=1;
+            }
+            if (dvs != 0) {
+              return numRows / dvs;
+            }
+ else {
+              return numRows;
+            }
+          }
+        }
+ else         if (leaf instanceof ExprNodeColumnDesc) {
+          ExprNodeColumnDesc colDesc=(ExprNodeColumnDesc)leaf;
+          colName=colDesc.getColumn();
+          tabAlias=colDesc.getTabAlias();
+          if (isConst) {
+            ColStatistics cs=stats.getColumnStatisticsForColumn(tabAlias,colName);
+            if (cs != null) {
+              long dvs=cs.getCountDistint();
+              if (cs.getNumNulls() > 0) {
+                dvs+=1;
+              }
+              if (dvs != 0) {
+                return numRows / dvs;
+              }
+ else {
+                return numRows;
+              }
+            }
+          }
+        }
+      }
+    }
+ else     if (udf instanceof GenericUDFOPNotEqual) {
+      return numRows;
+    }
+ else     if (udf instanceof GenericUDFOPEqualOrGreaterThan || udf instanceof GenericUDFOPEqualOrLessThan || udf instanceof GenericUDFOPGreaterThan|| udf instanceof GenericUDFOPLessThan) {
+      return numRows / 3;
+    }
+ else {
+      return evaluateExpression(stats,genFunc,aspCtx);
+    }
+  }
+  return numRows;
+}

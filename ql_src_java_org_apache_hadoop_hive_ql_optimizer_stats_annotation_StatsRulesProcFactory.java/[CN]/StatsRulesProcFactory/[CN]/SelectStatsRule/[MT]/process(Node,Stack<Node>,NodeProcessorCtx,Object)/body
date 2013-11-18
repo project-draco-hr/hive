@@ -1,0 +1,37 @@
+{
+  SelectOperator sop=(SelectOperator)nd;
+  Operator<? extends OperatorDesc> parent=sop.getParentOperators().get(0);
+  Statistics parentStats=parent.getStatistics();
+  AnnotateStatsProcCtx aspCtx=(AnnotateStatsProcCtx)procCtx;
+  HiveConf conf=aspCtx.getConf();
+  if (sop.getConf().isSelectStar()) {
+    try {
+      if (parentStats != null) {
+        sop.setStatistics(parentStats.clone());
+      }
+    }
+ catch (    CloneNotSupportedException e) {
+      throw new SemanticException(ErrorMsg.STATISTICS_CLONING_FAILED.getMsg());
+    }
+    return null;
+  }
+  try {
+    if (satisfyPrecondition(parentStats)) {
+      Statistics stats=parentStats.clone();
+      List<ColStatistics> colStats=StatsUtils.getColStatisticsFromExprMap(conf,parentStats,sop.getColumnExprMap(),sop.getSchema());
+      long dataSize=StatsUtils.getDataSizeFromColumnStats(stats.getNumRows(),colStats);
+      stats.setColumnStats(colStats);
+      stats.setDataSize(dataSize);
+      sop.setStatistics(stats);
+    }
+ else {
+      if (parentStats != null) {
+        sop.setStatistics(parentStats.clone());
+      }
+    }
+  }
+ catch (  CloneNotSupportedException e) {
+    throw new SemanticException(ErrorMsg.STATISTICS_CLONING_FAILED.getMsg());
+  }
+  return null;
+}
