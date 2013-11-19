@@ -5,18 +5,20 @@
     Warehouse wh=new Warehouse(conf);
     if (!this.getWork().getNoStatsAggregator()) {
       String statsImplementationClass=HiveConf.getVar(conf,HiveConf.ConfVars.HIVESTATSDBCLASS);
-      StatsFactory.setImplementation(statsImplementationClass,conf);
-      if (work.isNoScanAnalyzeCommand()) {
-        StatsPublisher statsPublisher=StatsFactory.getStatsPublisher();
+      StatsFactory factory=StatsFactory.newFactory(statsImplementationClass,conf);
+      if (factory != null && work.isNoScanAnalyzeCommand()) {
+        StatsPublisher statsPublisher=factory.getStatsPublisher();
         if (!statsPublisher.init(conf)) {
           if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_STATS_RELIABLE)) {
             throw new HiveException(ErrorMsg.STATSPUBLISHER_INITIALIZATION_ERROR.getErrorCodedMsg());
           }
         }
       }
-      statsAggregator=StatsFactory.getStatsAggregator();
-      if (!statsAggregator.connect(conf)) {
-        throw new HiveException("StatsAggregator connect failed " + statsImplementationClass);
+      if (factory != null) {
+        statsAggregator=factory.getStatsAggregator();
+        if (!statsAggregator.connect(conf,getWork().getSourceTask())) {
+          throw new HiveException("StatsAggregator connect failed " + statsImplementationClass);
+        }
       }
     }
     Statistics tblStats=new Statistics();
