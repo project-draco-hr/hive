@@ -1,0 +1,35 @@
+{
+  int len=chunkLength;
+  final long oldOffset=currentOffset;
+  ByteBuffer slice;
+  if (compressed.remaining() >= len) {
+    slice=compressed.slice();
+    slice.limit(len);
+    currentOffset+=len;
+    compressed.position(compressed.position() + len);
+    return slice;
+  }
+ else   if (currentRange >= (bytes.length - 1)) {
+    throw new IOException("EOF in " + this + " while trying to read "+ chunkLength+ " bytes");
+  }
+  ByteBuffer copy=allocateBuffer(chunkLength);
+  currentOffset+=compressed.remaining();
+  len-=compressed.remaining();
+  copy.put(compressed);
+  while (len > 0 && (++currentRange) < bytes.length) {
+    compressed=bytes[currentRange].duplicate();
+    if (compressed.remaining() >= len) {
+      slice=compressed.slice();
+      slice.limit(len);
+      copy.put(slice);
+      currentOffset+=len;
+      compressed.position(compressed.position() + len);
+      return copy;
+    }
+    currentOffset+=compressed.remaining();
+    len-=compressed.remaining();
+    copy.put(compressed);
+  }
+  seek(oldOffset);
+  throw new IOException("EOF in " + this + " while trying to read "+ chunkLength+ " bytes");
+}
