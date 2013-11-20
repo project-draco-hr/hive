@@ -1,12 +1,13 @@
 {
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_RUN_PROCESSOR);
   LOG.info("Running map: " + processorContext.getUniqueIdentifier());
-  if (outputs.size() > 1) {
-    throw new IOException("Cannot handle more than one output" + ", outputCount=" + outputs.size());
+  Map<String,OutputCollector> outMap=new HashMap<String,OutputCollector>();
+  for (  String outputName : outputs.keySet()) {
+    LOG.info("Handling output: " + outputName);
+    KeyValueWriter kvWriter=(KeyValueWriter)outputs.get(outputName).getWriter();
+    OutputCollector collector=new KVOutputCollector(kvWriter);
+    outMap.put(outputName,collector);
   }
-  LogicalOutput out=outputs.values().iterator().next();
-  KeyValueWriter kvWriter=(KeyValueWriter)out.getWriter();
-  OutputCollector collector=new KVOutputCollector(kvWriter);
   if (isMap) {
     rproc=new MapRecordProcessor();
   }
@@ -14,7 +15,7 @@
     rproc=new ReduceRecordProcessor();
   }
   MRTaskReporter mrReporter=new MRTaskReporter(processorContext);
-  rproc.init(jobConf,mrReporter,inputs,collector);
+  rproc.init(jobConf,mrReporter,inputs,outMap);
   rproc.run();
   perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.TEZ_RUN_PROCESSOR);
 }
