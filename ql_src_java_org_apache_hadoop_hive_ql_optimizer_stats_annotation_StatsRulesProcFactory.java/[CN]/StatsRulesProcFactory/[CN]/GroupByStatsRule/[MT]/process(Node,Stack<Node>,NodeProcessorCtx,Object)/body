@@ -1,0 +1,95 @@
+{
+  GroupByOperator gop=(GroupByOperator)nd;
+  Operator<? extends OperatorDesc> parent=gop.getParentOperators().get(0);
+  Statistics parentStats=parent.getStatistics();
+  AnnotateStatsProcCtx aspCtx=(AnnotateStatsProcCtx)procCtx;
+  HiveConf conf=aspCtx.getConf();
+  int mapSideParallelism=HiveConf.getIntVar(conf,HiveConf.ConfVars.HIVE_STATS_MAP_SIDE_PARALLELISM);
+  List<AggregationDesc> aggDesc=gop.getConf().getAggregators();
+  Map<String,ExprNodeDesc> colExprMap=gop.getColumnExprMap();
+  RowSchema rs=gop.getSchema();
+  Statistics stats=null;
+  try {
+    if (satisfyPrecondition(parentStats)) {
+      stats=parentStats.clone();
+      List<ColStatistics> colStats=StatsUtils.getColStatisticsFromExprMap(conf,parentStats,colExprMap,rs);
+      stats.setColumnStats(colStats);
+      long dvProd=1;
+      long newNumRows=0;
+      for (      ColStatistics cs : colStats) {
+        if (cs != null) {
+          long dv=cs.getCountDistint();
+          if (cs.getNumNulls() > 0) {
+            dv+=1;
+          }
+          dvProd*=dv;
+        }
+ else {
+          dvProd=0;
+          break;
+        }
+      }
+      if (gop.getChildOperators().get(0) instanceof ReduceSinkOperator) {
+        if (gop.getConf().isGroupingSetsPresent()) {
+          int multiplier=gop.getConf().getListGroupingSets().size();
+          multiplier*=mapSideParallelism;
+          newNumRows=multiplier * stats.getNumRows();
+          long dataSize=multiplier * stats.getDataSize();
+          stats.setNumRows(newNumRows);
+          stats.setDataSize(dataSize);
+          for (          ColStatistics cs : colStats) {
+            if (cs != null) {
+              long oldNumNulls=cs.getNumNulls();
+              long newNumNulls=multiplier * oldNumNulls;
+              cs.setNumNulls(newNumNulls);
+            }
+          }
+        }
+ else {
+          newNumRows=stats.getNumRows() * mapSideParallelism;
+          updateStats(stats,newNumRows);
+        }
+      }
+ else {
+        newNumRows=applyGBYRule(stats.getNumRows(),dvProd);
+        updateStats(stats,newNumRows);
+      }
+    }
+ else {
+      if (parentStats != null) {
+        if (gop.getChildOperators().get(0) instanceof ReduceSinkOperator) {
+          stats=parentStats.clone();
+        }
+ else {
+          stats=getWorstCaseStats(parentStats);
+        }
+      }
+    }
+    if (!aggDesc.isEmpty() && stats != null) {
+      List<ColStatistics> aggColStats=Lists.newArrayList();
+      for (      ColumnInfo ci : rs.getSignature()) {
+        if (!colExprMap.containsKey(ci.getInternalName())) {
+          String colName=ci.getInternalName();
+          colName=StatsUtils.stripPrefixFromColumnName(colName);
+          String tabAlias=ci.getTabAlias();
+          String colType=ci.getTypeName();
+          ColStatistics cs=new ColStatistics(tabAlias,colName,colType);
+          cs.setCountDistint(stats.getNumRows());
+          cs.setNumNulls(0);
+          cs.setAvgColLen(StatsUtils.getAvgColLenOfFixedLengthTypes(colType));
+          aggColStats.add(cs);
+        }
+      }
+      stats.addToColumnStats(aggColStats);
+      if (colExprMap.isEmpty()) {
+        stats.setNumRows(1);
+        updateStats(stats,1);
+      }
+    }
+    gop.setStatistics(stats);
+  }
+ catch (  CloneNotSupportedException e) {
+    throw new SemanticException(ErrorMsg.STATISTICS_CLONING_FAILED.getMsg());
+  }
+  return null;
+}

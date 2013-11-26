@@ -1,0 +1,33 @@
+{
+  LimitOperator lop=(LimitOperator)nd;
+  Operator<? extends OperatorDesc> parent=lop.getParentOperators().get(0);
+  Statistics parentStats=parent.getStatistics();
+  try {
+    long limit=-1;
+    limit=lop.getConf().getLimit();
+    if (satisfyPrecondition(parentStats)) {
+      Statistics stats=parentStats.clone();
+      if (limit <= parentStats.getNumRows()) {
+        updateStats(stats,limit);
+      }
+      lop.setStatistics(stats);
+    }
+ else {
+      if (parentStats != null) {
+        Statistics wcStats=parentStats.clone();
+        if (limit <= parentStats.getNumRows()) {
+          long numRows=limit;
+          long avgRowSize=parentStats.getAvgRowSize();
+          long dataSize=avgRowSize * limit;
+          wcStats.setNumRows(numRows);
+          wcStats.setDataSize(dataSize);
+        }
+        lop.setStatistics(wcStats);
+      }
+    }
+  }
+ catch (  CloneNotSupportedException e) {
+    throw new SemanticException(ErrorMsg.STATISTICS_CLONING_FAILED.getMsg());
+  }
+  return null;
+}

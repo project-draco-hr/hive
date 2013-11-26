@@ -1,0 +1,74 @@
+{
+  if (end == null) {
+    return null;
+  }
+  String colName=null;
+  String colType=null;
+  double avgColSize=0;
+  long countDistincts=0;
+  long numNulls=0;
+  ObjectInspector oi=null;
+  long numRows=parentStats.getNumRows();
+  String tabAlias=null;
+  if (end instanceof ExprNodeColumnDesc) {
+    ExprNodeColumnDesc encd=(ExprNodeColumnDesc)end;
+    colName=encd.getColumn();
+    tabAlias=encd.getTabAlias();
+    colName=stripPrefixFromColumnName(colName);
+    if (encd.getIsPartitionColOrVirtualCol()) {
+      colType=encd.getTypeInfo().getTypeName();
+      countDistincts=numRows;
+      oi=encd.getWritableObjectInspector();
+    }
+ else {
+      ColStatistics result=parentStats.getColumnStatisticsForColumn(tabAlias,colName);
+      if (result != null) {
+        try {
+          return result.clone();
+        }
+ catch (        CloneNotSupportedException e) {
+          return null;
+        }
+      }
+      return null;
+    }
+  }
+ else   if (end instanceof ExprNodeConstantDesc) {
+    ExprNodeConstantDesc encd=(ExprNodeConstantDesc)end;
+    if (encd.getValue() == null) {
+      colName=encd.getName();
+      colType="null";
+      numNulls=numRows;
+    }
+ else {
+      colName=encd.getName();
+      colType=encd.getTypeString();
+      countDistincts=1;
+      oi=encd.getWritableObjectInspector();
+    }
+  }
+ else   if (end instanceof ExprNodeGenericFuncDesc) {
+    ExprNodeGenericFuncDesc engfd=(ExprNodeGenericFuncDesc)end;
+    colName=engfd.getName();
+    colType=engfd.getTypeString();
+    countDistincts=numRows;
+    oi=engfd.getWritableObjectInspector();
+  }
+ else   if (end instanceof ExprNodeNullDesc) {
+    ExprNodeNullDesc ennd=(ExprNodeNullDesc)end;
+    colName=ennd.getName();
+    colType="null";
+    numNulls=numRows;
+  }
+  if (colType.equalsIgnoreCase(serdeConstants.STRING_TYPE_NAME) || colType.equalsIgnoreCase(serdeConstants.BINARY_TYPE_NAME) || colType.startsWith(serdeConstants.VARCHAR_TYPE_NAME)|| colType.startsWith(serdeConstants.CHAR_TYPE_NAME)|| colType.startsWith(serdeConstants.LIST_TYPE_NAME)|| colType.startsWith(serdeConstants.MAP_TYPE_NAME)|| colType.startsWith(serdeConstants.STRUCT_TYPE_NAME)|| colType.startsWith(serdeConstants.UNION_TYPE_NAME)) {
+    avgColSize=getAvgColLenOfVariableLengthTypes(conf,oi,colType);
+  }
+ else {
+    avgColSize=getAvgColLenOfFixedLengthTypes(colType);
+  }
+  ColStatistics colStats=new ColStatistics(tabAlias,colName,colType);
+  colStats.setAvgColLen(avgColSize);
+  colStats.setCountDistint(countDistincts);
+  colStats.setNumNulls(numNulls);
+  return colStats;
+}

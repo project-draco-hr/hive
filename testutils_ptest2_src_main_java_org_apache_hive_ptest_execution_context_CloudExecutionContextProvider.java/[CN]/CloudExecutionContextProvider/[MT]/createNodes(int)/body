@@ -2,32 +2,29 @@
   Set<NodeMetadata> result=Sets.newHashSet();
   int attempts=0;
   int numRequired=numHosts;
-  RunNodesException exception=null;
   do {
     LOG.info("Attempting to create " + numRequired + " nodes");
     try {
-      result.addAll(verifyHosts(mCloudComputeService.createNodes(numRequired)));
+      result.addAll(mCloudComputeService.createNodes(numRequired));
     }
  catch (    RunNodesException e) {
-      exception=e;
       LOG.warn("Error creating nodes",e);
       terminateInternal(e.getNodeErrors().keySet());
-      result.addAll(verifyHosts(e.getSuccessfulNodes()));
+      result.addAll(e.getSuccessfulNodes());
     }
+    result=verifyHosts(result);
     LOG.info("Successfully created " + result.size() + " nodes");
     numRequired=numHosts - result.size();
     if (numRequired > 0) {
       try {
-        TimeUnit.SECONDS.sleep(mRetrySleepInterval);
+        TimeUnit.SECONDS.sleep(++attempts * mRetrySleepInterval);
       }
  catch (      InterruptedException e) {
         throw new CreateHostsFailedException("Interrupted while trying to create hosts",e);
       }
     }
   }
- while (attempts++ < mNumRetries && numRequired > 0);
-  if (result.size() < numHosts) {
-    throw new CreateHostsFailedException("Error creating nodes",exception);
-  }
+ while (numRequired > 0);
+  Preconditions.checkState(result.size() >= numHosts,"Results should always be >= numHosts " + numHosts + " => "+ result.size());
   return result;
 }

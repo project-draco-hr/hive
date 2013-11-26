@@ -1,0 +1,88 @@
+{
+  Statistics stats=new Statistics();
+  List<ColumnInfo> schema=tableScanOperator.getSchema().getSignature();
+  List<String> neededColumns=tableScanOperator.getNeededColumns();
+  String dbName=table.getDbName();
+  String tabName=table.getTableName();
+  if (!table.isPartitioned()) {
+    long nr=getNumRows(dbName,tabName);
+    long rds=getRawDataSize(dbName,tabName);
+    if (rds <= 0) {
+      rds=getTotalSize(dbName,tabName);
+      if (rds <= 0) {
+        rds=getFileSizeForTable(conf,table);
+      }
+    }
+    if (nr <= 0) {
+      nr=0;
+    }
+    stats.setNumRows(nr);
+    stats.setDataSize(rds);
+    List<ColStatistics> colStats=getTableColumnStats(table,schema,neededColumns);
+    if (checkIfColStatsAvailable(colStats) && colStats.contains(null)) {
+      stats.setColumnStatsState(Statistics.State.PARTIAL);
+    }
+    if (checkIfColStatsAvailable(colStats) && !colStats.contains(null)) {
+      stats.setColumnStatsState(Statistics.State.COMPLETE);
+    }
+    if (!checkIfColStatsAvailable(colStats)) {
+      if (!neededColumns.isEmpty()) {
+        stats.setColumnStatsState(Statistics.State.NONE);
+      }
+ else {
+        stats.setColumnStatsState(Statistics.State.COMPLETE);
+      }
+      stats.addToColumnStats(null);
+    }
+ else {
+      stats.addToColumnStats(colStats);
+    }
+  }
+ else {
+    if (partList != null) {
+      List<String> partNames=Lists.newArrayList();
+      for (      Partition part : partList.getNotDeniedPartns()) {
+        partNames.add(part.getName());
+      }
+      List<Long> rowCounts=getBasicStatForPartitions(table,partNames,StatsSetupConst.ROW_COUNT);
+      List<Long> dataSizes=getBasicStatForPartitions(table,partNames,StatsSetupConst.RAW_DATA_SIZE);
+      long nr=getSumIgnoreNegatives(rowCounts);
+      long rds=getSumIgnoreNegatives(dataSizes);
+      if (rds <= 0) {
+        dataSizes=getBasicStatForPartitions(table,partNames,StatsSetupConst.TOTAL_SIZE);
+        rds=getSumIgnoreNegatives(dataSizes);
+        if (rds <= 0) {
+          dataSizes=getFileSizeForPartitions(conf,partList.getNotDeniedPartns());
+        }
+        rds=getSumIgnoreNegatives(dataSizes);
+      }
+      if (nr <= 0) {
+        nr=0;
+      }
+      stats.addToNumRows(nr);
+      stats.addToDataSize(rds);
+      if (containsNonPositives(rowCounts)) {
+        stats.setBasicStatsState(State.PARTIAL);
+      }
+      for (      Partition part : partList.getNotDeniedPartns()) {
+        List<ColStatistics> colStats=getPartitionColumnStats(table,part,schema,neededColumns);
+        if (checkIfColStatsAvailable(colStats) && colStats.contains(null)) {
+          stats.updateColumnStatsState(Statistics.State.PARTIAL);
+        }
+ else         if (checkIfColStatsAvailable(colStats) && !colStats.contains(null)) {
+          stats.updateColumnStatsState(Statistics.State.COMPLETE);
+        }
+ else {
+          if (!neededColumns.isEmpty()) {
+            stats.updateColumnStatsState(Statistics.State.NONE);
+          }
+ else {
+            stats.updateColumnStatsState(Statistics.State.COMPLETE);
+          }
+        }
+        stats.addToColumnStats(colStats);
+      }
+    }
+  }
+  return stats;
+}

@@ -1,0 +1,26 @@
+{
+  AnnotateStatsProcCtx aspCtx=(AnnotateStatsProcCtx)procCtx;
+  FilterOperator fop=(FilterOperator)nd;
+  Operator<? extends OperatorDesc> parent=fop.getParentOperators().get(0);
+  Statistics parentStats=parent.getStatistics();
+  try {
+    if (satisfyPrecondition(parentStats)) {
+      ExprNodeDesc pred=fop.getConf().getPredicate();
+      long newNumRows=evaluateExpression(parentStats,pred,aspCtx);
+      Statistics st=parentStats.clone();
+      updateStats(st,newNumRows);
+      fop.setStatistics(st);
+    }
+ else {
+      if (parentStats != null) {
+        Statistics wcStats=getWorstCaseStats(parentStats.clone());
+        fop.setStatistics(wcStats);
+      }
+    }
+    aspCtx.setAndExprStats(null);
+  }
+ catch (  CloneNotSupportedException e) {
+    throw new SemanticException(ErrorMsg.STATISTICS_CLONING_FAILED.getMsg());
+  }
+  return null;
+}

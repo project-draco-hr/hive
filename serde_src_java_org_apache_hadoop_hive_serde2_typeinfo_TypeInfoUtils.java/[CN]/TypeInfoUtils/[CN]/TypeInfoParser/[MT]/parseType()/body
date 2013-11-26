@@ -2,7 +2,6 @@
   Token t=expect("type");
   PrimitiveTypeEntry typeEntry=PrimitiveObjectInspectorUtils.getTypeEntryFromTypeName(t.text);
   if (typeEntry != null && typeEntry.primitiveCategory != PrimitiveCategory.UNKNOWN) {
-    String qualifiedTypeName=typeEntry.typeName;
     String[] params=parseParams();
 switch (typeEntry.primitiveCategory) {
 case CHAR:
@@ -10,36 +9,38 @@ case VARCHAR:
       if (params == null || params.length == 0) {
         throw new IllegalArgumentException(typeEntry.typeName + " type is specified without length: " + typeInfoString);
       }
-    if (params.length == 1) {
-      int length=Integer.valueOf(params[0]);
-      if (typeEntry.primitiveCategory == PrimitiveCategory.VARCHAR) {
-        BaseCharUtils.validateVarcharParameter(length);
-      }
+    int length=1;
+  if (params.length == 1) {
+    length=Integer.valueOf(params[0]);
+    if (typeEntry.primitiveCategory == PrimitiveCategory.VARCHAR) {
+      BaseCharUtils.validateVarcharParameter(length);
+      return TypeInfoFactory.getVarcharTypeInfo(length);
+    }
  else {
-        BaseCharUtils.validateCharParameter(length);
-      }
-      qualifiedTypeName=BaseCharTypeInfo.getQualifiedName(typeEntry.typeName,length);
+      BaseCharUtils.validateCharParameter(length);
+      return TypeInfoFactory.getCharTypeInfo(length);
     }
- else     if (params.length > 1) {
-      throw new IllegalArgumentException("Type " + typeEntry.typeName + " only takes one parameter, but "+ params.length+ " is seen");
-    }
-  break;
+  }
+ else   if (params.length > 1) {
+    throw new IllegalArgumentException("Type " + typeEntry.typeName + " only takes one parameter, but "+ params.length+ " is seen");
+  }
 case DECIMAL:
+int precision=HiveDecimal.USER_DEFAULT_PRECISION;
+int scale=HiveDecimal.USER_DEFAULT_SCALE;
 if (params == null || params.length == 0) {
-  throw new IllegalArgumentException("Decimal type is specified without length: " + typeInfoString);
 }
-if (params.length == 2) {
-int precision=Integer.valueOf(params[0]);
-int scale=Integer.valueOf(params[1]);
+ else if (params.length == 2) {
+precision=Integer.valueOf(params[0]);
+scale=Integer.valueOf(params[1]);
 HiveDecimalUtils.validateParameter(precision,scale);
-qualifiedTypeName=DecimalTypeInfo.getQualifiedName(precision,scale);
 }
- else if (params.length > 1) {
-throw new IllegalArgumentException("Type varchar only takes one parameter, but " + params.length + " is seen");
+ else if (params.length > 2) {
+throw new IllegalArgumentException("Type decimal only takes two parameter, but " + params.length + " is seen");
 }
-break;
+return TypeInfoFactory.getDecimalTypeInfo(precision,scale);
+default :
+return TypeInfoFactory.getPrimitiveTypeInfo(typeEntry.typeName);
 }
-return TypeInfoFactory.getPrimitiveTypeInfo(qualifiedTypeName);
 }
 if (serdeConstants.LIST_TYPE_NAME.equals(t.text)) {
 expect("<");
