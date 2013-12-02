@@ -1,0 +1,37 @@
+{
+  CommandProcessorResponse cpr=runInternal(command,alreadyCompiled);
+  if (cpr.getResponseCode() == 0) {
+    return cpr;
+  }
+  SessionState ss=SessionState.get();
+  if (ss == null) {
+    return cpr;
+  }
+  MetaDataFormatter mdf=MetaDataFormatUtils.getFormatter(ss.getConf());
+  if (!(mdf instanceof JsonMetaDataFormatter)) {
+    return cpr;
+  }
+  try {
+    if (downstreamError == null) {
+      mdf.error(ss.out,errorMessage,cpr.getResponseCode(),SQLState);
+      return cpr;
+    }
+    ErrorMsg canonicalErr=ErrorMsg.getErrorMsg(cpr.getResponseCode());
+    if (canonicalErr != null && canonicalErr != ErrorMsg.GENERIC_ERROR) {
+      mdf.error(ss.out,errorMessage,cpr.getResponseCode(),SQLState,null);
+      return cpr;
+    }
+    if (downstreamError instanceof HiveException) {
+      HiveException rc=(HiveException)downstreamError;
+      mdf.error(ss.out,errorMessage,rc.getCanonicalErrorMsg().getErrorCode(),SQLState,rc.getCanonicalErrorMsg() == ErrorMsg.GENERIC_ERROR ? org.apache.hadoop.util.StringUtils.stringifyException(rc) : null);
+    }
+ else {
+      ErrorMsg canonicalMsg=ErrorMsg.getErrorMsg(downstreamError.getMessage());
+      mdf.error(ss.out,errorMessage,canonicalMsg.getErrorCode(),SQLState,org.apache.hadoop.util.StringUtils.stringifyException(downstreamError));
+    }
+  }
+ catch (  HiveException ex) {
+    console.printError("Unable to JSON-encode the error",org.apache.hadoop.util.StringUtils.stringifyException(ex));
+  }
+  return cpr;
+}

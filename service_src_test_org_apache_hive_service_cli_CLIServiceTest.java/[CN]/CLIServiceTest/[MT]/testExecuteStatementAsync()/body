@@ -4,15 +4,22 @@
   long pollTimeout=System.currentTimeMillis() + 100000;
   assertNotNull(sessionHandle);
   OperationState state=null;
-  OperationHandle ophandle;
+  OperationHandle ophandle=null;
   String queryString="SET hive.lock.manager=" + "org.apache.hadoop.hive.ql.lockmgr.EmbeddedLockManager";
   client.executeStatement(sessionHandle,queryString,confOverlay);
   queryString="DROP TABLE IF EXISTS TEST_EXEC_ASYNC";
   client.executeStatement(sessionHandle,queryString,confOverlay);
   queryString="CREATE TABLE TEST_EXEC_ASYNC(ID STRING)";
   client.executeStatement(sessionHandle,queryString,confOverlay);
-  String wrongQueryString="SELECT NAME FROM TEST_EXEC";
-  ophandle=client.executeStatementAsync(sessionHandle,wrongQueryString,confOverlay);
+  String wrongQuery="SELECT NAME FROM TEST_EXEC";
+  try {
+    ophandle=client.executeStatementAsync(sessionHandle,wrongQuery,confOverlay);
+    fail("Async syntax excution should fail");
+  }
+ catch (  HiveSQLException e) {
+  }
+  wrongQuery="CREATE TABLE NON_EXISTING_TAB (ID STRING) location 'hdfs://fooNN:10000/a/b/c'";
+  ophandle=client.executeStatementAsync(sessionHandle,wrongQuery,confOverlay);
   int count=0;
   while (true) {
     if (System.currentTimeMillis() > pollTimeout) {
@@ -29,6 +36,7 @@
   assertEquals("Query should return an error state",OperationState.ERROR,client.getOperationStatus(ophandle));
   queryString="SELECT ID FROM TEST_EXEC_ASYNC";
   ophandle=client.executeStatementAsync(sessionHandle,queryString,confOverlay);
+  assertTrue(ophandle.hasResultSet());
   count=0;
   while (true) {
     if (System.currentTimeMillis() > pollTimeout) {
