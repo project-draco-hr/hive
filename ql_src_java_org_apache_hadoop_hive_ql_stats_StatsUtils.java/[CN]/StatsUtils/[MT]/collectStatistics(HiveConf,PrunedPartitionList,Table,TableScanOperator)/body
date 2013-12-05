@@ -4,6 +4,7 @@
   List<String> neededColumns=tableScanOperator.getNeededColumns();
   String dbName=table.getDbName();
   String tabName=table.getTableName();
+  boolean fetchColStats=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_STATS_FETCH_COLUMN_STATS);
   if (!table.isPartitioned()) {
     long nr=getNumRows(dbName,tabName);
     long rds=getRawDataSize(dbName,tabName);
@@ -18,7 +19,10 @@
     }
     stats.setNumRows(nr);
     stats.setDataSize(rds);
-    List<ColStatistics> colStats=getTableColumnStats(table,schema,neededColumns);
+    List<ColStatistics> colStats=Lists.newArrayList();
+    if (fetchColStats) {
+      colStats=getTableColumnStats(table,schema,neededColumns);
+    }
     if (checkIfColStatsAvailable(colStats) && colStats.contains(null)) {
       stats.setColumnStatsState(Statistics.State.PARTIAL);
     }
@@ -32,11 +36,8 @@
  else {
         stats.setColumnStatsState(Statistics.State.COMPLETE);
       }
-      stats.addToColumnStats(null);
     }
- else {
-      stats.addToColumnStats(colStats);
-    }
+    stats.addToColumnStats(colStats);
   }
  else {
     if (partList != null) {
@@ -65,7 +66,10 @@
         stats.setBasicStatsState(State.PARTIAL);
       }
       for (      Partition part : partList.getNotDeniedPartns()) {
-        List<ColStatistics> colStats=getPartitionColumnStats(table,part,schema,neededColumns);
+        List<ColStatistics> colStats=Lists.newArrayList();
+        if (fetchColStats) {
+          colStats=getPartitionColumnStats(table,part,schema,neededColumns);
+        }
         if (checkIfColStatsAvailable(colStats) && colStats.contains(null)) {
           stats.updateColumnStatsState(Statistics.State.PARTIAL);
         }

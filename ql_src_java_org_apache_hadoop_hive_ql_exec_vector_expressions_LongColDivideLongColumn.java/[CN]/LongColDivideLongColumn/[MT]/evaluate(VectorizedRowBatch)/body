@@ -15,24 +15,36 @@
   }
   outputColVector.isRepeating=inputColVector1.isRepeating && inputColVector2.isRepeating;
   NullUtil.propagateNullsColCol(inputColVector1,inputColVector2,outputColVector,sel,n,batch.selectedInUse);
+  boolean hasDivBy0=false;
   if (inputColVector1.isRepeating && inputColVector2.isRepeating) {
-    outputVector[0]=vector1[0] / (double)vector2[0];
+    long denom=vector2[0];
+    outputVector[0]=vector1[0] / (double)denom;
+    hasDivBy0=hasDivBy0 || (denom == 0);
   }
  else   if (inputColVector1.isRepeating) {
     if (batch.selectedInUse) {
       for (int j=0; j != n; j++) {
         int i=sel[j];
-        outputVector[i]=vector1[0] / (double)vector2[i];
+        long denom=vector2[i];
+        outputVector[i]=vector1[0] / (double)denom;
+        hasDivBy0=hasDivBy0 || (denom == 0);
       }
     }
  else {
       for (int i=0; i != n; i++) {
-        outputVector[i]=vector1[0] / (double)vector2[i];
+        long denom=vector2[i];
+        outputVector[i]=vector1[0] / (double)denom;
+        hasDivBy0=hasDivBy0 || (denom == 0);
       }
     }
   }
  else   if (inputColVector2.isRepeating) {
-    if (batch.selectedInUse) {
+    if (vector2[0] == 0) {
+      outputColVector.noNulls=false;
+      outputColVector.isRepeating=true;
+      outputColVector.isNull[0]=true;
+    }
+ else     if (batch.selectedInUse) {
       for (int j=0; j != n; j++) {
         int i=sel[j];
         outputVector[i]=vector1[i] / (double)vector2[0];
@@ -48,14 +60,23 @@
     if (batch.selectedInUse) {
       for (int j=0; j != n; j++) {
         int i=sel[j];
-        outputVector[i]=vector1[i] / (double)vector2[i];
+        long denom=vector2[i];
+        outputVector[i]=vector1[i] / (double)denom;
+        hasDivBy0=hasDivBy0 || (denom == 0);
       }
     }
  else {
       for (int i=0; i != n; i++) {
-        outputVector[i]=vector1[i] / (double)vector2[i];
+        long denom=vector2[i];
+        outputVector[i]=vector1[i] / (double)denom;
+        hasDivBy0=hasDivBy0 || (denom == 0);
       }
     }
   }
-  NullUtil.setNullDataEntriesDouble(outputColVector,batch.selectedInUse,sel,n);
+  if (!hasDivBy0) {
+    NullUtil.setNullDataEntriesDouble(outputColVector,batch.selectedInUse,sel,n);
+  }
+ else {
+    NullUtil.setNullAndDivBy0DataEntriesDouble(outputColVector,batch.selectedInUse,sel,n,inputColVector2);
+  }
 }
