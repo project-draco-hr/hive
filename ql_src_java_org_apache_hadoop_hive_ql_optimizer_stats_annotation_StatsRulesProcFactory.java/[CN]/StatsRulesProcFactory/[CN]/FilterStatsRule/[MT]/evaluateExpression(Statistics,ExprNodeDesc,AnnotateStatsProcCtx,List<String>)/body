@@ -1,0 +1,46 @@
+{
+  long newNumRows=0;
+  Statistics andStats=null;
+  if (pred instanceof ExprNodeGenericFuncDesc) {
+    ExprNodeGenericFuncDesc genFunc=(ExprNodeGenericFuncDesc)pred;
+    GenericUDF udf=genFunc.getGenericUDF();
+    if (udf instanceof GenericUDFOPAnd) {
+      andStats=stats.clone();
+      aspCtx.setAndExprStats(andStats);
+      for (      ExprNodeDesc child : genFunc.getChildren()) {
+        newNumRows=evaluateChildExpr(aspCtx.getAndExprStats(),child,aspCtx,neededCols);
+        if (satisfyPrecondition(aspCtx.getAndExprStats())) {
+          updateStats(aspCtx.getAndExprStats(),newNumRows,true);
+        }
+ else {
+          updateStats(aspCtx.getAndExprStats(),newNumRows,false);
+        }
+      }
+    }
+ else     if (udf instanceof GenericUDFOPOr) {
+      for (      ExprNodeDesc child : genFunc.getChildren()) {
+        newNumRows+=evaluateChildExpr(stats,child,aspCtx,neededCols);
+      }
+    }
+ else     if (udf instanceof GenericUDFOPNot) {
+      newNumRows=evaluateNotExpr(stats,pred,aspCtx,neededCols);
+    }
+ else {
+      newNumRows=evaluateChildExpr(stats,pred,aspCtx,neededCols);
+    }
+  }
+ else   if (pred instanceof ExprNodeColumnDesc) {
+    ExprNodeColumnDesc encd=(ExprNodeColumnDesc)pred;
+    String colName=encd.getColumn();
+    String tabAlias=encd.getTabAlias();
+    String colType=encd.getTypeString();
+    if (colType.equalsIgnoreCase(serdeConstants.BOOLEAN_TYPE_NAME)) {
+      ColStatistics cs=stats.getColumnStatisticsForColumn(tabAlias,colName);
+      if (cs != null) {
+        return cs.getNumTrues();
+      }
+    }
+    return stats.getNumRows() / 2;
+  }
+  return newNumRows;
+}
