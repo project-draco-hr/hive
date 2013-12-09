@@ -1,0 +1,27 @@
+{
+  ASTNode sqSelect=(ASTNode)subQueryAST.getChild(1).getChild(1);
+  ASTNode selExpr=(ASTNode)sqSelect.getChild(0);
+  String colAlias=null;
+  if (selExpr.getChildCount() == 2) {
+    colAlias=selExpr.getChild(1).getText();
+  }
+ else   if (selExpr.getChild(0).getType() != HiveParser.TOK_ALLCOLREF) {
+    colAlias=sqAlias + "_ninc_col0";
+    selExpr.addChild((ASTNode)ParseDriver.adaptor.create(HiveParser.Identifier,colAlias));
+  }
+ else {
+    List<ColumnInfo> signature=sqRR.getRowSchema().getSignature();
+    ColumnInfo joinColumn=signature.get(0);
+    String[] joinColName=sqRR.reverseLookup(joinColumn.getInternalName());
+    colAlias=joinColName[1];
+  }
+  ASTNode searchCond=isNull(createColRefAST(sqAlias,colAlias));
+  for (  ASTNode e : corrExprs) {
+    ASTNode p=(ASTNode)ParseDriver.adaptor.dupTree(e);
+    p=isNull(p);
+    searchCond=orAST(searchCond,p);
+  }
+  ASTNode where=(ASTNode)ParseDriver.adaptor.create(HiveParser.TOK_WHERE,"TOK_WHERE");
+  where.addChild(searchCond);
+  return where;
+}
