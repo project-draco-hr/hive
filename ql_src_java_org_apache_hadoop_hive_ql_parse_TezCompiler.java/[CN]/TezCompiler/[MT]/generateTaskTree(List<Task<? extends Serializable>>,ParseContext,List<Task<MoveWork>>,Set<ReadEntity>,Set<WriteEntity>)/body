@@ -1,9 +1,7 @@
 {
   ParseContext tempParseContext=getParseContext(pCtx,rootTasks);
   GenTezWork genTezWork=new GenTezWork();
-  Deque<Operator<?>> deque=new LinkedList<Operator<?>>();
-  deque.addAll(pCtx.getTopOps().values());
-  GenTezProcContext procCtx=new GenTezProcContext(conf,tempParseContext,mvTask,rootTasks,inputs,outputs,deque);
+  GenTezProcContext procCtx=new GenTezProcContext(conf,tempParseContext,mvTask,rootTasks,inputs,outputs);
   Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
   opRules.put(new RuleRegExp("Split Work - ReduceSink",ReduceSinkOperator.getOperatorName() + "%"),genTezWork);
   opRules.put(new RuleRegExp("No more walking on ReduceSink-MapJoin",ReduceSinkOperator.getOperatorName() + "%" + MapJoinOperator.getOperatorName()+ "%"),new ReduceSinkMapJoinProc());
@@ -14,33 +12,9 @@
     }
   }
 );
-  opRules.put(new RuleRegExp("Setup table scan",TableScanOperator.getOperatorName() + "%"),new NodeProcessor(){
-    @Override public Object process(    Node n,    Stack<Node> s,    NodeProcessorCtx procCtx,    Object... os) throws SemanticException {
-      GenTezProcContext context=(GenTezProcContext)procCtx;
-      TableScanOperator tableScan=(TableScanOperator)n;
-      LOG.debug("TableScan operator (" + tableScan + "). Number of branches: "+ tableScan.getNumChild());
-      context.lastRootOfMultiChildOperator.push(tableScan);
-      context.currentBranchCount.push(tableScan.getNumChild());
-      context.lastWorkForMultiChildOperator.push(null);
-      return null;
-    }
-  }
-);
-  opRules.put(new RuleRegExp("Handle Forward opertor",ForwardOperator.getOperatorName() + "%"),new NodeProcessor(){
-    @Override public Object process(    Node n,    Stack<Node> s,    NodeProcessorCtx procCtx,    Object... os) throws SemanticException {
-      GenTezProcContext context=(GenTezProcContext)procCtx;
-      ForwardOperator forward=(ForwardOperator)n;
-      LOG.debug("Forward operator (" + forward + "). Number of branches: "+ forward.getNumChild());
-      context.lastRootOfMultiChildOperator.push(context.currentRootOperator);
-      context.currentBranchCount.push(forward.getNumChild());
-      context.lastWorkForMultiChildOperator.push(null);
-      return null;
-    }
-  }
-);
   Dispatcher disp=new DefaultRuleDispatcher(null,opRules,procCtx);
   List<Node> topNodes=new ArrayList<Node>();
   topNodes.addAll(pCtx.getTopOps().values());
-  GraphWalker ogw=new TezWalker(disp);
+  GraphWalker ogw=new GenTezWorkWalker(disp,procCtx);
   ogw.startWalking(topNodes,null);
 }
