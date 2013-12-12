@@ -1,0 +1,87 @@
+{
+  if (childExpressions != null) {
+    super.evaluateChildren(batch);
+  }
+  LongColumnVector arg1ColVector=(LongColumnVector)batch.cols[arg1Column];
+  BytesColumnVector arg3ColVector=(BytesColumnVector)batch.cols[arg3Column];
+  BytesColumnVector outputColVector=(BytesColumnVector)batch.cols[outputColumn];
+  int[] sel=batch.selected;
+  boolean[] outputIsNull=outputColVector.isNull;
+  outputColVector.noNulls=arg3ColVector.noNulls;
+  outputColVector.isRepeating=false;
+  int n=batch.size;
+  long[] vector1=arg1ColVector.vector;
+  if (n == 0) {
+    return;
+  }
+  outputColVector.initBuffer();
+  if (arg1ColVector.isRepeating) {
+    if (vector1[0] == 1) {
+      outputColVector.fill(arg2Scalar);
+    }
+ else {
+      arg3ColVector.copySelected(batch.selectedInUse,sel,n,outputColVector);
+    }
+    return;
+  }
+  arg3ColVector.flatten(batch.selectedInUse,sel,n);
+  if (arg1ColVector.noNulls) {
+    if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        if (vector1[i] == 1) {
+          outputColVector.setRef(i,arg2Scalar,0,arg2Scalar.length);
+        }
+ else {
+          if (!arg3ColVector.isNull[i]) {
+            outputColVector.setVal(i,arg3ColVector.vector[i],arg3ColVector.start[i],arg3ColVector.length[i]);
+          }
+        }
+        outputIsNull[i]=(vector1[i] == 1 ? false : arg3ColVector.isNull[i]);
+      }
+    }
+ else {
+      for (int i=0; i != n; i++) {
+        if (vector1[i] == 1) {
+          outputColVector.setRef(i,arg2Scalar,0,arg2Scalar.length);
+        }
+ else {
+          if (!arg3ColVector.isNull[i]) {
+            outputColVector.setVal(i,arg3ColVector.vector[i],arg3ColVector.start[i],arg3ColVector.length[i]);
+          }
+        }
+        outputIsNull[i]=(vector1[i] == 1 ? false : arg3ColVector.isNull[i]);
+      }
+    }
+  }
+ else {
+    if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        if (!arg1ColVector.isNull[i] && vector1[i] == 1) {
+          outputColVector.setRef(i,arg2Scalar,0,arg2Scalar.length);
+        }
+ else {
+          if (!arg3ColVector.isNull[i]) {
+            outputColVector.setVal(i,arg3ColVector.vector[i],arg3ColVector.start[i],arg3ColVector.length[i]);
+          }
+        }
+        outputIsNull[i]=(!arg1ColVector.isNull[i] && vector1[i] == 1 ? false : arg3ColVector.isNull[i]);
+      }
+    }
+ else {
+      for (int i=0; i != n; i++) {
+        if (!arg1ColVector.isNull[i] && vector1[i] == 1) {
+          outputColVector.setRef(i,arg2Scalar,0,arg2Scalar.length);
+        }
+ else {
+          if (!arg3ColVector.isNull[i]) {
+            outputColVector.setVal(i,arg3ColVector.vector[i],arg3ColVector.start[i],arg3ColVector.length[i]);
+          }
+        }
+        outputIsNull[i]=(!arg1ColVector.isNull[i] && vector1[i] == 1 ? false : arg3ColVector.isNull[i]);
+      }
+    }
+  }
+  arg3ColVector.unFlatten();
+}
