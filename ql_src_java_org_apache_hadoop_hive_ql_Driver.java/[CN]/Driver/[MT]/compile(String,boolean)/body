@@ -44,18 +44,12 @@
     sem.validate();
     perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.ANALYZE);
     plan=new QueryPlan(command,sem,perfLogger.getStartTime(PerfLogger.DRIVER_RUN));
-    if ("true".equalsIgnoreCase(System.getProperty("test.serialize.qplan"))) {
-      String queryPlanFileName=ctx.getLocalScratchDir(true) + Path.SEPARATOR_CHAR + "queryplan.xml";
-      LOG.info("query plan = " + queryPlanFileName);
-      queryPlanFileName=new Path(queryPlanFileName).toUri().getPath();
-      FileOutputStream fos=new FileOutputStream(queryPlanFileName);
-      Utilities.serializePlan(plan,fos,conf);
-      fos.close();
-      FileInputStream fis=new FileInputStream(queryPlanFileName);
-      QueryPlan newPlan=Utilities.deserializePlan(fis,QueryPlan.class,conf);
-      fis.close();
-      plan=newPlan;
-    }
+    String queryId=plan.getQueryId();
+    String queryStr=plan.getQueryStr();
+    conf.setVar(HiveConf.ConfVars.HIVEQUERYID,queryId);
+    conf.setVar(HiveConf.ConfVars.HIVEQUERYSTRING,queryStr);
+    conf.set("mapreduce.workflow.id","hive_" + queryId);
+    conf.set("mapreduce.workflow.name",queryStr);
     if (plan.getFetchTask() != null) {
       plan.getFetchTask().initialize(conf,plan,null);
     }
@@ -66,8 +60,9 @@
         doAuthorization(sem);
       }
  catch (      AuthorizationException authExp) {
-        errorMessage="Authorization failed:" + authExp.getMessage() + ". Use show grant to get more details.";
-        console.printError(errorMessage);
+        console.printError("Authorization failed:" + authExp.getMessage() + ". Use SHOW GRANT to get more details.");
+        errorMessage=authExp.getMessage();
+        SQLState="42000";
         return 403;
       }
  finally {

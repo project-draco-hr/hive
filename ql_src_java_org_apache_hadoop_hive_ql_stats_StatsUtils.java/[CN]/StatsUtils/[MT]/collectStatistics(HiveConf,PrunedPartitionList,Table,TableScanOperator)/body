@@ -5,20 +5,28 @@
   String dbName=table.getDbName();
   String tabName=table.getTableName();
   boolean fetchColStats=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_STATS_FETCH_COLUMN_STATS);
+  float deserFactor=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVE_STATS_DESERIALIZATION_FACTOR);
   if (!table.isPartitioned()) {
     long nr=getNumRows(dbName,tabName);
-    long rds=getRawDataSize(dbName,tabName);
-    if (rds <= 0) {
-      rds=getTotalSize(dbName,tabName);
-      if (rds <= 0) {
-        rds=getFileSizeForTable(conf,table);
+    long ds=getRawDataSize(dbName,tabName);
+    if (ds <= 0) {
+      ds=getTotalSize(dbName,tabName);
+      if (ds <= 0) {
+        ds=getFileSizeForTable(conf,table);
       }
+      ds=(long)(ds * deserFactor);
     }
     if (nr <= 0) {
-      nr=0;
+      int avgRowSize=estimateRowSizeFromSchema(conf,schema,neededColumns);
+      if (avgRowSize > 0) {
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("Estimated average row size: " + avgRowSize);
+        }
+        nr=ds / avgRowSize;
+      }
     }
     stats.setNumRows(nr);
-    stats.setDataSize(rds);
+    stats.setDataSize(ds);
     List<ColStatistics> colStats=Lists.newArrayList();
     if (fetchColStats) {
       colStats=getTableColumnStats(table,schema,neededColumns);
@@ -48,20 +56,41 @@
       List<Long> rowCounts=getBasicStatForPartitions(table,partNames,StatsSetupConst.ROW_COUNT);
       List<Long> dataSizes=getBasicStatForPartitions(table,partNames,StatsSetupConst.RAW_DATA_SIZE);
       long nr=getSumIgnoreNegatives(rowCounts);
-      long rds=getSumIgnoreNegatives(dataSizes);
-      if (rds <= 0) {
+      long ds=getSumIgnoreNegatives(dataSizes);
+      if (ds <= 0) {
         dataSizes=getBasicStatForPartitions(table,partNames,StatsSetupConst.TOTAL_SIZE);
-        rds=getSumIgnoreNegatives(dataSizes);
-        if (rds <= 0) {
+        ds=getSumIgnoreNegatives(dataSizes);
+        if (ds <= 0) {
           dataSizes=getFileSizeForPartitions(conf,partList.getNotDeniedPartns());
         }
-        rds=getSumIgnoreNegatives(dataSizes);
+        ds=getSumIgnoreNegatives(dataSizes);
+        ds=(long)(ds * deserFactor);
       }
-      if (nr <= 0) {
-        nr=0;
+      int avgRowSize=estimateRowSizeFromSchema(conf,schema,neededColumns);
+      if (avgRowSize > 0) {
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("Estimated average row size: " + avgRowSize);
+        }
+        for (int i=0; i < rowCounts.size(); i++) {
+          long rc=rowCounts.get(i);
+          long s=dataSizes.get(i);
+          if (rc <= 0 && s > 0) {
+            rc=s / avgRowSize;
+            rowCounts.set(i,rc);
+          }
+          if (s <= 0 && rc > 0) {
+            s=rc * avgRowSize;
+            dataSizes.set(i,s);
+          }
+        }
+        nr=getSumIgnoreNegatives(rowCounts);
+        ds=getSumIgnoreNegatives(dataSizes);
+        if (nr <= 0) {
+          nr=ds / avgRowSize;
+        }
       }
       stats.addToNumRows(nr);
-      stats.addToDataSize(rds);
+      stats.addToDataSize(ds);
       if (containsNonPositives(rowCounts)) {
         stats.setBasicStatsState(State.PARTIAL);
       }

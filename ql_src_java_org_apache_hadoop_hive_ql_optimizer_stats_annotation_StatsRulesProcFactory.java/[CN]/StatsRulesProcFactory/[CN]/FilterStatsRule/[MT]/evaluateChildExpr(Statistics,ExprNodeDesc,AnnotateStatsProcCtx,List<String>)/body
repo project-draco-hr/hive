@@ -1,0 +1,62 @@
+{
+  long numRows=stats.getNumRows();
+  if (child instanceof ExprNodeGenericFuncDesc) {
+    ExprNodeGenericFuncDesc genFunc=(ExprNodeGenericFuncDesc)child;
+    GenericUDF udf=genFunc.getGenericUDF();
+    if (udf instanceof GenericUDFOPEqual || udf instanceof GenericUDFOPEqualNS) {
+      String colName=null;
+      String tabAlias=null;
+      boolean isConst=false;
+      for (      ExprNodeDesc leaf : genFunc.getChildren()) {
+        if (leaf instanceof ExprNodeConstantDesc) {
+          if (colName == null) {
+            isConst=true;
+            continue;
+          }
+          if (neededCols != null && !neededCols.contains(colName)) {
+            return numRows;
+          }
+          ColStatistics cs=stats.getColumnStatisticsForColumn(tabAlias,colName);
+          if (cs != null) {
+            long dvs=cs.getCountDistint();
+            numRows=dvs == 0 ? numRows / 2 : numRows / dvs;
+            return numRows;
+          }
+        }
+ else         if (leaf instanceof ExprNodeColumnDesc) {
+          ExprNodeColumnDesc colDesc=(ExprNodeColumnDesc)leaf;
+          colName=colDesc.getColumn();
+          tabAlias=colDesc.getTabAlias();
+          if (isConst) {
+            if (neededCols != null && neededCols.indexOf(colName) == -1) {
+              return numRows;
+            }
+            ColStatistics cs=stats.getColumnStatisticsForColumn(tabAlias,colName);
+            if (cs != null) {
+              long dvs=cs.getCountDistint();
+              numRows=dvs == 0 ? numRows / 2 : numRows / dvs;
+              return numRows;
+            }
+          }
+        }
+      }
+    }
+ else     if (udf instanceof GenericUDFOPNotEqual) {
+      return numRows;
+    }
+ else     if (udf instanceof GenericUDFOPEqualOrGreaterThan || udf instanceof GenericUDFOPEqualOrLessThan || udf instanceof GenericUDFOPGreaterThan|| udf instanceof GenericUDFOPLessThan) {
+      return numRows / 3;
+    }
+ else     if (udf instanceof GenericUDFOPNotNull) {
+      long newNumRows=evaluateColEqualsNullExpr(stats,genFunc,aspCtx);
+      return stats.getNumRows() - newNumRows;
+    }
+ else     if (udf instanceof GenericUDFOPNull) {
+      return evaluateColEqualsNullExpr(stats,genFunc,aspCtx);
+    }
+ else     if (udf instanceof GenericUDFOPAnd || udf instanceof GenericUDFOPOr || udf instanceof GenericUDFOPNot) {
+      return evaluateExpression(stats,genFunc,aspCtx,neededCols);
+    }
+  }
+  return numRows / 2;
+}

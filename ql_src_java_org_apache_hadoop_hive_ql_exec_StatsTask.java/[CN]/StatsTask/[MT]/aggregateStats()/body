@@ -3,8 +3,8 @@
   int ret=0;
   try {
     Warehouse wh=new Warehouse(conf);
+    String statsImplementationClass=HiveConf.getVar(conf,HiveConf.ConfVars.HIVESTATSDBCLASS);
     if (!this.getWork().getNoStatsAggregator()) {
-      String statsImplementationClass=HiveConf.getVar(conf,HiveConf.ConfVars.HIVESTATSDBCLASS);
       StatsFactory factory=StatsFactory.newFactory(statsImplementationClass,conf);
       if (factory != null && work.isNoScanAnalyzeCommand()) {
         StatsPublisher statsPublisher=factory.getStatsPublisher();
@@ -33,12 +33,19 @@
     List<Partition> partitions=getPartitionsList();
     boolean atomic=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_STATS_ATOMIC);
     int maxPrefixLength=HiveConf.getIntVar(conf,HiveConf.ConfVars.HIVE_STATS_KEY_PREFIX_MAX_LENGTH);
+    String tableFullName=table.getDbName() + "." + table.getTableName();
     if (partitions == null) {
       if (!tableStatsExist && atomic) {
         return 0;
       }
       if (statsAggregator != null) {
-        String aggKey=Utilities.getHashedStatsPrefix(work.getAggKey(),maxPrefixLength);
+        String aggKey;
+        if (statsImplementationClass.equals("counter")) {
+          aggKey=tableFullName + Path.SEPARATOR;
+        }
+ else {
+          aggKey=Utilities.getHashedStatsPrefix(work.getAggKey(),maxPrefixLength);
+        }
         updateStats(StatsSetupConst.statsRequireCompute,tblStats,statsAggregator,parameters,aggKey,atomic);
         statsAggregator.cleanUp(aggKey);
       }
@@ -55,7 +62,6 @@
       }
       parameters.put(StatsSetupConst.STATS_GENERATED_VIA_STATS_TASK,StatsSetupConst.TRUE);
       tTable.setParameters(parameters);
-      String tableFullName=table.getDbName() + "." + table.getTableName();
       db.alterTable(tableFullName,new Table(tTable));
       console.printInfo("Table " + tableFullName + " stats: ["+ tblStats.toString()+ ']');
     }
@@ -73,7 +79,13 @@
           currentValues.put(statType,val);
         }
         Statistics newPartStats=new Statistics();
-        String partitionID=Utilities.getHashedStatsPrefix(work.getAggKey() + Warehouse.makePartPath(partn.getSpec()),maxPrefixLength);
+        String partitionID;
+        if (statsImplementationClass.equals("counter")) {
+          partitionID=Utilities.appendPathSeparator(tableFullName + Path.SEPARATOR + Warehouse.makePartPath(partn.getSpec()));
+        }
+ else {
+          partitionID=Utilities.getHashedStatsPrefix(work.getAggKey() + Warehouse.makePartPath(partn.getSpec()),maxPrefixLength);
+        }
         LOG.info("Stats aggregator : " + partitionID);
         if (statsAggregator != null) {
           updateStats(StatsSetupConst.statsRequireCompute,newPartStats,statsAggregator,parameters,partitionID,atomic);
@@ -106,7 +118,6 @@
         }
         parameters.put(StatsSetupConst.STATS_GENERATED_VIA_STATS_TASK,StatsSetupConst.TRUE);
         tPart.setParameters(parameters);
-        String tableFullName=table.getDbName() + "." + table.getTableName();
         db.alterPartition(tableFullName,new Partition(table,tPart));
         console.printInfo("Partition " + tableFullName + partn.getSpec()+ " stats: ["+ newPartStats.toString()+ ']');
       }

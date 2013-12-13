@@ -2,15 +2,20 @@
   LimitOperator lop=(LimitOperator)nd;
   Operator<? extends OperatorDesc> parent=lop.getParentOperators().get(0);
   Statistics parentStats=parent.getStatistics();
+  AnnotateStatsProcCtx aspCtx=(AnnotateStatsProcCtx)procCtx;
+  HiveConf conf=aspCtx.getConf();
   try {
     long limit=-1;
     limit=lop.getConf().getLimit();
     if (satisfyPrecondition(parentStats)) {
       Statistics stats=parentStats.clone();
       if (limit <= parentStats.getNumRows()) {
-        updateStats(stats,limit);
+        updateStats(stats,limit,true);
       }
       lop.setStatistics(stats);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("[0] STATS-" + lop.toString() + ": "+ stats.extendedToString());
+      }
     }
  else {
       if (parentStats != null) {
@@ -18,11 +23,17 @@
         if (limit <= parentStats.getNumRows()) {
           long numRows=limit;
           long avgRowSize=parentStats.getAvgRowSize();
+          if (avgRowSize <= 0) {
+            avgRowSize=HiveConf.getIntVar(conf,HiveConf.ConfVars.HIVE_STATS_AVG_ROW_SIZE);
+          }
           long dataSize=avgRowSize * limit;
           wcStats.setNumRows(numRows);
           wcStats.setDataSize(dataSize);
         }
         lop.setStatistics(wcStats);
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("[1] STATS-" + lop.toString() + ": "+ wcStats.extendedToString());
+        }
       }
     }
   }

@@ -16,114 +16,123 @@
         allSatisfyPreCondition=false;
       }
     }
-    try {
-      if (allSatisfyPreCondition) {
-        Statistics stats=new Statistics();
-        long prodRows=1;
-        List<Long> distinctVals=Lists.newArrayList();
-        boolean multiAttr=false;
-        Map<String,ColStatistics> joinedColStats=Maps.newHashMap();
-        Map<Integer,List<String>> joinKeys=Maps.newHashMap();
-        for (int pos=0; pos < parents.size(); pos++) {
-          ReduceSinkOperator parent=(ReduceSinkOperator)jop.getParentOperators().get(pos);
-          Statistics parentStats=parent.getStatistics();
-          prodRows*=parentStats.getNumRows();
-          List<ExprNodeDesc> keyExprs=parent.getConf().getKeyCols();
-          if (keyExprs.size() > 1) {
-            multiAttr=true;
-          }
-          List<String> fqCols=StatsUtils.getFullQualifedColNameFromExprs(keyExprs,parent.getColumnExprMap());
-          joinKeys.put(pos,fqCols);
-          Map<String,ExprNodeDesc> colExprMap=parent.getColumnExprMap();
-          RowSchema rs=parent.getSchema();
-          List<ColStatistics> cs=StatsUtils.getColStatisticsFromExprMap(conf,parentStats,colExprMap,rs);
-          for (          ColStatistics c : cs) {
-            if (c != null) {
-              joinedColStats.put(c.getFullyQualifiedColName(),c);
-            }
-          }
-          stats.updateColumnStatsState(parentStats.getColumnStatsState());
+    if (allSatisfyPreCondition) {
+      Statistics stats=new Statistics();
+      long prodRows=1;
+      List<Long> distinctVals=Lists.newArrayList();
+      boolean multiAttr=false;
+      Map<String,ColStatistics> joinedColStats=Maps.newHashMap();
+      Map<Integer,List<String>> joinKeys=Maps.newHashMap();
+      for (int pos=0; pos < parents.size(); pos++) {
+        ReduceSinkOperator parent=(ReduceSinkOperator)jop.getParentOperators().get(pos);
+        Statistics parentStats=parent.getStatistics();
+        prodRows*=parentStats.getNumRows();
+        List<ExprNodeDesc> keyExprs=parent.getConf().getKeyCols();
+        if (keyExprs.size() > 1) {
+          multiAttr=true;
         }
-        long denom=1;
-        if (multiAttr) {
-          List<Long> perAttrDVs=Lists.newArrayList();
-          int numAttr=joinKeys.get(0).size();
-          for (int idx=0; idx < numAttr; idx++) {
-            for (            Integer i : joinKeys.keySet()) {
-              String col=joinKeys.get(i).get(idx);
-              ColStatistics cs=joinedColStats.get(col);
-              if (cs != null) {
-                perAttrDVs.add(cs.getCountDistint());
-              }
-            }
-            distinctVals.add(getDenominator(perAttrDVs));
-            perAttrDVs.clear();
-          }
-          for (          Long l : distinctVals) {
-            denom*=l;
+        List<String> fqCols=StatsUtils.getFullQualifedColNameFromExprs(keyExprs,parent.getColumnExprMap());
+        joinKeys.put(pos,fqCols);
+        Map<String,ExprNodeDesc> colExprMap=parent.getColumnExprMap();
+        RowSchema rs=parent.getSchema();
+        List<ColStatistics> cs=StatsUtils.getColStatisticsFromExprMap(conf,parentStats,colExprMap,rs);
+        for (        ColStatistics c : cs) {
+          if (c != null) {
+            joinedColStats.put(c.getFullyQualifiedColName(),c);
           }
         }
- else {
-          for (          List<String> jkeys : joinKeys.values()) {
-            for (            String jk : jkeys) {
-              ColStatistics cs=joinedColStats.get(jk);
-              if (cs != null) {
-                distinctVals.add(cs.getCountDistint());
-              }
-            }
-          }
-          denom=getDenominator(distinctVals);
-        }
-        Map<String,ExprNodeDesc> colExprMap=jop.getColumnExprMap();
-        RowSchema rs=jop.getSchema();
-        List<ColStatistics> outColStats=Lists.newArrayList();
-        for (        ColumnInfo ci : rs.getSignature()) {
-          String key=ci.getInternalName();
-          ExprNodeDesc end=colExprMap.get(key);
-          if (end instanceof ExprNodeColumnDesc) {
-            String colName=((ExprNodeColumnDesc)end).getColumn();
-            colName=StatsUtils.stripPrefixFromColumnName(colName);
-            String tabAlias=((ExprNodeColumnDesc)end).getTabAlias();
-            String fqColName=StatsUtils.getFullyQualifiedColumnName(tabAlias,colName);
-            ColStatistics cs=joinedColStats.get(fqColName);
-            String outColName=key;
-            String outTabAlias=ci.getTabAlias();
-            outColName=StatsUtils.stripPrefixFromColumnName(outColName);
+        stats.updateColumnStatsState(parentStats.getColumnStatsState());
+      }
+      long denom=1;
+      if (multiAttr) {
+        List<Long> perAttrDVs=Lists.newArrayList();
+        int numAttr=joinKeys.get(0).size();
+        for (int idx=0; idx < numAttr; idx++) {
+          for (          Integer i : joinKeys.keySet()) {
+            String col=joinKeys.get(i).get(idx);
+            ColStatistics cs=joinedColStats.get(col);
             if (cs != null) {
-              cs.setColumnName(outColName);
-              cs.setTableAlias(outTabAlias);
+              perAttrDVs.add(cs.getCountDistint());
             }
-            outColStats.add(cs);
           }
+          distinctVals.add(getDenominator(perAttrDVs));
+          perAttrDVs.clear();
         }
-        stats.setColumnStats(outColStats);
-        long newRowCount=prodRows / denom;
-        stats.setNumRows(newRowCount);
-        stats.setDataSize(StatsUtils.getDataSizeFromColumnStats(newRowCount,outColStats));
-        jop.setStatistics(stats);
+        for (        Long l : distinctVals) {
+          denom*=l;
+        }
       }
  else {
-        if (parents.size() > 1) {
-          Statistics wcStats=new Statistics();
-          Statistics stp1=parents.get(0).getStatistics();
-          long numRows=stp1.getNumRows();
-          long avgRowSize=stp1.getAvgRowSize();
-          for (int i=1; i < parents.size(); i++) {
-            stp1=parents.get(i).getStatistics();
-            numRows=(numRows * stp1.getNumRows()) / 2;
-            avgRowSize+=stp1.getAvgRowSize();
+        for (        List<String> jkeys : joinKeys.values()) {
+          for (          String jk : jkeys) {
+            ColStatistics cs=joinedColStats.get(jk);
+            if (cs != null) {
+              distinctVals.add(cs.getCountDistint());
+            }
           }
-          wcStats.setNumRows(numRows);
-          wcStats.setDataSize(numRows * avgRowSize);
-          jop.setStatistics(wcStats);
         }
- else {
-          jop.setStatistics(parents.get(0).getStatistics().clone());
+        denom=getDenominator(distinctVals);
+      }
+      Map<String,ExprNodeDesc> colExprMap=jop.getColumnExprMap();
+      RowSchema rs=jop.getSchema();
+      List<ColStatistics> outColStats=Lists.newArrayList();
+      for (      ColumnInfo ci : rs.getSignature()) {
+        String key=ci.getInternalName();
+        ExprNodeDesc end=colExprMap.get(key);
+        if (end instanceof ExprNodeColumnDesc) {
+          String colName=((ExprNodeColumnDesc)end).getColumn();
+          colName=StatsUtils.stripPrefixFromColumnName(colName);
+          String tabAlias=((ExprNodeColumnDesc)end).getTabAlias();
+          String fqColName=StatsUtils.getFullyQualifiedColumnName(tabAlias,colName);
+          ColStatistics cs=joinedColStats.get(fqColName);
+          String outColName=key;
+          String outTabAlias=ci.getTabAlias();
+          outColName=StatsUtils.stripPrefixFromColumnName(outColName);
+          if (cs != null) {
+            cs.setColumnName(outColName);
+            cs.setTableAlias(outTabAlias);
+          }
+          outColStats.add(cs);
         }
+      }
+      stats.setColumnStats(outColStats);
+      long newRowCount=prodRows / denom;
+      stats.setNumRows(newRowCount);
+      stats.setDataSize(StatsUtils.getDataSizeFromColumnStats(newRowCount,outColStats));
+      jop.setStatistics(stats);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("[0] STATS-" + jop.toString() + ": "+ stats.extendedToString());
       }
     }
- catch (    CloneNotSupportedException e) {
-      throw new SemanticException(ErrorMsg.STATISTICS_CLONING_FAILED.getMsg());
+ else {
+      float joinFactor=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVE_STATS_JOIN_FACTOR);
+      int numParents=parents.size();
+      List<Long> parentRows=Lists.newArrayList();
+      List<Long> parentSizes=Lists.newArrayList();
+      int maxRowIdx=0;
+      long maxRowCount=0;
+      int idx=0;
+      for (      Operator<? extends OperatorDesc> op : parents) {
+        Statistics ps=op.getStatistics();
+        long rowCount=ps.getNumRows();
+        if (rowCount > maxRowCount) {
+          maxRowCount=rowCount;
+          maxRowIdx=idx;
+        }
+        parentRows.add(rowCount);
+        parentSizes.add(ps.getDataSize());
+        idx++;
+      }
+      long maxDataSize=parentSizes.get(maxRowIdx);
+      long newNumRows=(long)(joinFactor * maxRowCount * (numParents - 1));
+      long newDataSize=(long)(joinFactor * maxDataSize * (numParents - 1));
+      Statistics wcStats=new Statistics();
+      wcStats.setNumRows(newNumRows);
+      wcStats.setDataSize(newDataSize);
+      jop.setStatistics(wcStats);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("[1] STATS-" + jop.toString() + ": "+ wcStats.extendedToString());
+      }
     }
   }
   return null;

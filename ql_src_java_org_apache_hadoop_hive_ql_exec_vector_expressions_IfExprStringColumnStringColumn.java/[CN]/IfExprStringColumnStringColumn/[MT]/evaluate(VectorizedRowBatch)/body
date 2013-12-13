@@ -1,0 +1,98 @@
+{
+  if (childExpressions != null) {
+    super.evaluateChildren(batch);
+  }
+  LongColumnVector arg1ColVector=(LongColumnVector)batch.cols[arg1Column];
+  BytesColumnVector arg2ColVector=(BytesColumnVector)batch.cols[arg2Column];
+  BytesColumnVector arg3ColVector=(BytesColumnVector)batch.cols[arg3Column];
+  BytesColumnVector outputColVector=(BytesColumnVector)batch.cols[outputColumn];
+  int[] sel=batch.selected;
+  boolean[] outputIsNull=outputColVector.isNull;
+  outputColVector.noNulls=arg2ColVector.noNulls && arg3ColVector.noNulls;
+  outputColVector.isRepeating=false;
+  int n=batch.size;
+  long[] vector1=arg1ColVector.vector;
+  if (n == 0) {
+    return;
+  }
+  outputColVector.initBuffer();
+  if (arg1ColVector.isRepeating) {
+    if (vector1[0] == 1) {
+      arg2ColVector.copySelected(batch.selectedInUse,sel,n,outputColVector);
+    }
+ else {
+      arg3ColVector.copySelected(batch.selectedInUse,sel,n,outputColVector);
+    }
+    return;
+  }
+  arg2ColVector.flatten(batch.selectedInUse,sel,n);
+  arg3ColVector.flatten(batch.selectedInUse,sel,n);
+  if (arg1ColVector.noNulls) {
+    if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        if (vector1[i] == 1) {
+          if (!arg2ColVector.isNull[i]) {
+            outputColVector.setVal(i,arg2ColVector.vector[i],arg2ColVector.start[i],arg2ColVector.length[i]);
+          }
+        }
+ else {
+          if (!arg3ColVector.isNull[i]) {
+            outputColVector.setVal(i,arg3ColVector.vector[i],arg3ColVector.start[i],arg3ColVector.length[i]);
+          }
+        }
+        outputIsNull[i]=(vector1[i] == 1 ? arg2ColVector.isNull[i] : arg3ColVector.isNull[i]);
+      }
+    }
+ else {
+      for (int i=0; i != n; i++) {
+        if (vector1[i] == 1) {
+          if (!arg2ColVector.isNull[i]) {
+            outputColVector.setVal(i,arg2ColVector.vector[i],arg2ColVector.start[i],arg2ColVector.length[i]);
+          }
+        }
+ else {
+          if (!arg3ColVector.isNull[i]) {
+            outputColVector.setVal(i,arg3ColVector.vector[i],arg3ColVector.start[i],arg3ColVector.length[i]);
+          }
+        }
+        outputIsNull[i]=(vector1[i] == 1 ? arg2ColVector.isNull[i] : arg3ColVector.isNull[i]);
+      }
+    }
+  }
+ else {
+    if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        if (!arg1ColVector.isNull[i] && vector1[i] == 1) {
+          if (!arg2ColVector.isNull[i]) {
+            outputColVector.setVal(i,arg2ColVector.vector[i],arg2ColVector.start[i],arg2ColVector.length[i]);
+          }
+        }
+ else {
+          if (!arg3ColVector.isNull[i]) {
+            outputColVector.setVal(i,arg3ColVector.vector[i],arg3ColVector.start[i],arg3ColVector.length[i]);
+          }
+        }
+        outputIsNull[i]=(!arg1ColVector.isNull[i] && vector1[i] == 1 ? arg2ColVector.isNull[i] : arg3ColVector.isNull[i]);
+      }
+    }
+ else {
+      for (int i=0; i != n; i++) {
+        if (!arg1ColVector.isNull[i] && vector1[i] == 1) {
+          if (!arg2ColVector.isNull[i]) {
+            outputColVector.setVal(i,arg2ColVector.vector[i],arg2ColVector.start[i],arg2ColVector.length[i]);
+          }
+        }
+ else {
+          if (!arg3ColVector.isNull[i]) {
+            outputColVector.setVal(i,arg3ColVector.vector[i],arg3ColVector.start[i],arg3ColVector.length[i]);
+          }
+        }
+        outputIsNull[i]=(!arg1ColVector.isNull[i] && vector1[i] == 1 ? arg2ColVector.isNull[i] : arg3ColVector.isNull[i]);
+      }
+    }
+  }
+  arg2ColVector.unFlatten();
+  arg3ColVector.unFlatten();
+}

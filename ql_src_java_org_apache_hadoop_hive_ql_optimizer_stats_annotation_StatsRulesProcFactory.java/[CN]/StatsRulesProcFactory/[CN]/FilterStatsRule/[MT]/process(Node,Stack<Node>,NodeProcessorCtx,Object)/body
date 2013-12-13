@@ -3,21 +3,35 @@
   FilterOperator fop=(FilterOperator)nd;
   Operator<? extends OperatorDesc> parent=fop.getParentOperators().get(0);
   Statistics parentStats=parent.getStatistics();
+  List<String> neededCols=null;
+  if (parent instanceof TableScanOperator) {
+    TableScanOperator tsop=(TableScanOperator)parent;
+    neededCols=tsop.getNeededColumns();
+  }
   try {
-    if (satisfyPrecondition(parentStats)) {
+    if (parentStats != null) {
       ExprNodeDesc pred=fop.getConf().getPredicate();
-      long newNumRows=evaluateExpression(parentStats,pred,aspCtx);
+      long newNumRows=evaluateExpression(parentStats,pred,aspCtx,neededCols);
       Statistics st=parentStats.clone();
-      updateStats(st,newNumRows);
-      fop.setStatistics(st);
-    }
- else {
-      if (parentStats != null) {
-        Statistics wcStats=getWorstCaseStats(parentStats.clone());
-        fop.setStatistics(wcStats);
+      if (satisfyPrecondition(parentStats)) {
+        if (newNumRows <= parentStats.getNumRows()) {
+          updateStats(st,newNumRows,true);
+        }
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("[0] STATS-" + fop.toString() + ": "+ st.extendedToString());
+        }
       }
+ else {
+        if (newNumRows <= parentStats.getNumRows()) {
+          updateStats(st,newNumRows,false);
+        }
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("[1] STATS-" + fop.toString() + ": "+ st.extendedToString());
+        }
+      }
+      fop.setStatistics(st);
+      aspCtx.setAndExprStats(null);
     }
-    aspCtx.setAndExprStats(null);
   }
  catch (  CloneNotSupportedException e) {
     throw new SemanticException(ErrorMsg.STATISTICS_CLONING_FAILED.getMsg());
