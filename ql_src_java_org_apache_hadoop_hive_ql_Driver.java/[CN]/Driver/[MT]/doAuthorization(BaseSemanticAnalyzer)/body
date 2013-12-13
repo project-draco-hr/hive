@@ -5,7 +5,10 @@
   HiveOperation op=ss.getHiveOperation();
   Hive db=sem.getDb();
   if (op != null) {
-    if (op.equals(HiveOperation.CREATETABLE_AS_SELECT) || op.equals(HiveOperation.CREATETABLE)) {
+    if (op.equals(HiveOperation.CREATEDATABASE)) {
+      ss.getAuthorizer().authorize(op.getInputRequiredPrivileges(),op.getOutputRequiredPrivileges());
+    }
+ else     if (op.equals(HiveOperation.CREATETABLE_AS_SELECT) || op.equals(HiveOperation.CREATETABLE)) {
       ss.getAuthorizer().authorize(db.getDatabase(SessionState.get().getCurrentDatabase()),null,HiveOperation.CREATETABLE_AS_SELECT.getOutputRequiredPrivileges());
     }
  else {
@@ -18,6 +21,10 @@
     }
     if (outputs != null && outputs.size() > 0) {
       for (      WriteEntity write : outputs) {
+        if (write.getType() == Entity.Type.DATABASE) {
+          ss.getAuthorizer().authorize(write.getDatabase(),null,op.getOutputRequiredPrivileges());
+          continue;
+        }
         if (write.getType() == WriteEntity.Type.PARTITION) {
           Partition part=db.getPartition(write.getTable(),write.getPartition().getSpec(),false);
           if (part != null) {
@@ -36,6 +43,9 @@
     Map<Partition,List<String>> part2Cols=new HashMap<Partition,List<String>>();
     Map<String,Boolean> tableUsePartLevelAuth=new HashMap<String,Boolean>();
     for (    ReadEntity read : inputs) {
+      if (read.getType() == Entity.Type.DATABASE) {
+        continue;
+      }
       Table tbl=read.getTable();
       if ((read.getPartition() != null) || (tbl.isPartitioned())) {
         String tblName=tbl.getTableName();
@@ -91,6 +101,10 @@
     }
     Set<String> tableAuthChecked=new HashSet<String>();
     for (    ReadEntity read : inputs) {
+      if (read.getType() == Entity.Type.DATABASE) {
+        ss.getAuthorizer().authorize(read.getDatabase(),op.getInputRequiredPrivileges(),null);
+        continue;
+      }
       Table tbl=read.getTable();
       if (read.getPartition() != null) {
         Partition partition=read.getPartition();
