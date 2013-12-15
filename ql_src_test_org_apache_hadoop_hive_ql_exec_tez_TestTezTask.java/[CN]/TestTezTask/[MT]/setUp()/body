@@ -1,0 +1,52 @@
+{
+  utils=mock(DagUtils.class);
+  when(utils.getTezDir(any(Path.class))).thenReturn(new Path("hdfs://localhost:9000/tez/"));
+  when(utils.createVertex(any(JobConf.class),any(BaseWork.class),any(Path.class),any(LocalResource.class),any(List.class),any(FileSystem.class),any(Context.class),anyBoolean())).thenAnswer(new Answer<Vertex>(){
+    @Override public Vertex answer(    InvocationOnMock invocation) throws Throwable {
+      Object[] args=invocation.getArguments();
+      return new Vertex(((BaseWork)args[1]).getName(),mock(ProcessorDescriptor.class),0,mock(Resource.class));
+    }
+  }
+);
+  when(utils.createEdge(any(JobConf.class),any(Vertex.class),any(JobConf.class),any(Vertex.class),any(EdgeType.class))).thenAnswer(new Answer<Edge>(){
+    @Override public Edge answer(    InvocationOnMock invocation) throws Throwable {
+      Object[] args=invocation.getArguments();
+      return new Edge((Vertex)args[1],(Vertex)args[3],mock(EdgeProperty.class));
+    }
+  }
+);
+  work=new TezWork();
+  mws=new MapWork[]{new MapWork(),new MapWork()};
+  rws=new ReduceWork[]{new ReduceWork(),new ReduceWork()};
+  work.addAll(mws);
+  work.addAll(rws);
+  int i=0;
+  for (  BaseWork w : work.getAllWork()) {
+    w.setName("Work " + (++i));
+  }
+  op=mock(Operator.class);
+  LinkedHashMap<String,Operator<? extends OperatorDesc>> map=new LinkedHashMap<String,Operator<? extends OperatorDesc>>();
+  map.put("foo",op);
+  mws[0].setAliasToWork(map);
+  mws[1].setAliasToWork(map);
+  LinkedHashMap<String,ArrayList<String>> pathMap=new LinkedHashMap<String,ArrayList<String>>();
+  ArrayList<String> aliasList=new ArrayList<String>();
+  aliasList.add("foo");
+  pathMap.put("foo",aliasList);
+  mws[0].setPathToAliases(pathMap);
+  mws[1].setPathToAliases(pathMap);
+  rws[0].setReducer(op);
+  rws[1].setReducer(op);
+  work.connect(mws[0],rws[0],EdgeType.SIMPLE_EDGE);
+  work.connect(mws[1],rws[0],EdgeType.SIMPLE_EDGE);
+  work.connect(rws[0],rws[1],EdgeType.SIMPLE_EDGE);
+  task=new TezTask(utils);
+  task.setWork(work);
+  task.setConsole(mock(LogHelper.class));
+  conf=new JobConf();
+  appLr=mock(LocalResource.class);
+  session=mock(TezSession.class);
+  sessionState=mock(TezSessionState.class);
+  when(sessionState.getSession()).thenReturn(session);
+  when(session.submitDAG(any(DAG.class))).thenThrow(new SessionNotRunning("")).thenReturn(mock(DAGClient.class));
+}
