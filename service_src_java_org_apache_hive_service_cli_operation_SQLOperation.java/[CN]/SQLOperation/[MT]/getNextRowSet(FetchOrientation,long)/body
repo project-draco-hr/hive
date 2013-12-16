@@ -1,31 +1,16 @@
 {
-  assertState(OperationState.FINISHED);
   validateDefaultFetchOrientation(orientation);
-  ArrayList<String> rows=new ArrayList<String>();
-  driver.setMaxRows((int)maxRows);
+  assertState(OperationState.FINISHED);
   try {
     if (orientation.equals(FetchOrientation.FETCH_FIRST) && fetchStarted) {
       driver.resetFetch();
     }
     fetchStarted=true;
-    driver.getResults(rows);
-    getSerDe();
-    StructObjectInspector soi=(StructObjectInspector)serde.getObjectInspector();
-    List<? extends StructField> fieldRefs=soi.getAllStructFieldRefs();
-    RowSet rowSet=new RowSet();
-    Object[] deserializedFields=new Object[fieldRefs.size()];
-    Object rowObj;
-    ObjectInspector fieldOI;
-    for (    String rowString : rows) {
-      rowObj=serde.deserialize(new BytesWritable(rowString.getBytes()));
-      for (int i=0; i < fieldRefs.size(); i++) {
-        StructField fieldRef=fieldRefs.get(i);
-        fieldOI=fieldRef.getFieldObjectInspector();
-        deserializedFields[i]=convertLazyToJava(soi.getStructFieldData(rowObj,fieldRef),fieldOI);
-      }
-      rowSet.addRow(resultSchema,deserializedFields);
+    driver.setMaxRows((int)maxRows);
+    if (driver.getResults(convey)) {
+      return decode(convey);
     }
-    return rowSet;
+    return new RowSet();
   }
  catch (  IOException e) {
     throw new HiveSQLException(e);
@@ -35,5 +20,8 @@ catch (  CommandNeedRetryException e) {
   }
 catch (  Exception e) {
     throw new HiveSQLException(e);
+  }
+ finally {
+    convey.clear();
   }
 }
