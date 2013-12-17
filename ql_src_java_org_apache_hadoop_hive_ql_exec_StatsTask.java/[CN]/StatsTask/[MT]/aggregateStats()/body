@@ -3,123 +3,66 @@
   int ret=0;
   try {
     Warehouse wh=new Warehouse(conf);
-    String statsImplementationClass=HiveConf.getVar(conf,HiveConf.ConfVars.HIVESTATSDBCLASS);
-    if (!this.getWork().getNoStatsAggregator()) {
-      StatsFactory factory=StatsFactory.newFactory(statsImplementationClass,conf);
-      if (factory != null && work.isNoScanAnalyzeCommand()) {
-        StatsPublisher statsPublisher=factory.getStatsPublisher();
-        if (!statsPublisher.init(conf)) {
-          if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_STATS_RELIABLE)) {
-            throw new HiveException(ErrorMsg.STATSPUBLISHER_INITIALIZATION_ERROR.getErrorCodedMsg());
-          }
-        }
+    if (!getWork().getNoStatsAggregator() && !getWork().isNoScanAnalyzeCommand()) {
+      try {
+        statsAggregator=createStatsAggregator(conf);
       }
-      if (factory != null) {
-        statsAggregator=factory.getStatsAggregator();
-        if (!statsAggregator.connect(conf,getWork().getSourceTask())) {
-          throw new HiveException("StatsAggregator connect failed " + statsImplementationClass);
+ catch (      HiveException e) {
+        if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_STATS_RELIABLE)) {
+          throw e;
         }
-      }
-    }
-    Statistics tblStats=new Statistics();
-    org.apache.hadoop.hive.metastore.api.Table tTable=table.getTTable();
-    Map<String,String> parameters=tTable.getParameters();
-    boolean tableStatsExist=this.existStats(parameters);
-    for (    String statType : StatsSetupConst.supportedStats) {
-      if (parameters.containsKey(statType)) {
-        tblStats.setStat(statType,Long.parseLong(parameters.get(statType)));
+        console.printError(ErrorMsg.STATS_SKIPPING_BY_ERROR.getErrorCodedMsg(e.toString()));
       }
     }
     List<Partition> partitions=getPartitionsList();
     boolean atomic=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_STATS_ATOMIC);
-    int maxPrefixLength=HiveConf.getIntVar(conf,HiveConf.ConfVars.HIVE_STATS_KEY_PREFIX_MAX_LENGTH);
     String tableFullName=table.getDbName() + "." + table.getTableName();
+    int maxPrefixLength=StatsFactory.getMaxPrefixLength(conf);
+    boolean counterStat=statsAggregator instanceof CounterStatsAggregator;
     if (partitions == null) {
-      if (!tableStatsExist && atomic) {
+      org.apache.hadoop.hive.metastore.api.Table tTable=table.getTTable();
+      Map<String,String> parameters=tTable.getParameters();
+      if (!existStats(parameters) && atomic) {
         return 0;
       }
+      if (work.isClearAggregatorStats()) {
+        clearStats(parameters);
+      }
       if (statsAggregator != null) {
-        String aggKey;
-        if (statsImplementationClass.equals("counter")) {
-          aggKey=tableFullName + Path.SEPARATOR;
-        }
- else {
-          aggKey=Utilities.getHashedStatsPrefix(work.getAggKey(),maxPrefixLength);
-        }
-        updateStats(StatsSetupConst.statsRequireCompute,tblStats,statsAggregator,parameters,aggKey,atomic);
+        String prefix=getAggregationPrefix(counterStat,table,null);
+        String aggKey=Utilities.getHashedStatsPrefix(prefix,maxPrefixLength,0);
+        updateStats(statsAggregator,parameters,aggKey,atomic);
         statsAggregator.cleanUp(aggKey);
       }
- else       if (work.isClearAggregatorStats()) {
-        for (        String statType : StatsSetupConst.statsRequireCompute) {
-          if (parameters.containsKey(statType)) {
-            tblStats.setStat(statType,0L);
-          }
-        }
-      }
-      parameters=tTable.getParameters();
-      for (      String statType : StatsSetupConst.statsRequireCompute) {
-        parameters.put(statType,Long.toString(tblStats.getStat(statType)));
-      }
+      updateQuickStats(wh,parameters,tTable.getSd());
       parameters.put(StatsSetupConst.STATS_GENERATED_VIA_STATS_TASK,StatsSetupConst.TRUE);
-      tTable.setParameters(parameters);
       db.alterTable(tableFullName,new Table(tTable));
-      console.printInfo("Table " + tableFullName + " stats: ["+ tblStats.toString()+ ']');
+      console.printInfo("Table " + tableFullName + " stats: ["+ toString(parameters)+ ']');
     }
  else {
+      List<Partition> updates=new ArrayList<Partition>();
       for (      Partition partn : partitions) {
         org.apache.hadoop.hive.metastore.api.Partition tPart=partn.getTPartition();
-        parameters=tPart.getParameters();
-        boolean hasStats=this.existStats(parameters);
-        if (!hasStats && atomic) {
+        Map<String,String> parameters=tPart.getParameters();
+        if (!existStats(parameters) && atomic) {
           continue;
         }
-        Map<String,Long> currentValues=new HashMap<String,Long>();
-        for (        String statType : StatsSetupConst.supportedStats) {
-          Long val=parameters.containsKey(statType) ? Long.parseLong(parameters.get(statType)) : 0L;
-          currentValues.put(statType,val);
+        if (work.isClearAggregatorStats()) {
+          clearStats(parameters);
         }
-        Statistics newPartStats=new Statistics();
-        String partitionID;
-        if (statsImplementationClass.equals("counter")) {
-          partitionID=Utilities.appendPathSeparator(tableFullName + Path.SEPARATOR + Warehouse.makePartPath(partn.getSpec()));
-        }
- else {
-          partitionID=Utilities.getHashedStatsPrefix(work.getAggKey() + Warehouse.makePartPath(partn.getSpec()),maxPrefixLength);
-        }
-        LOG.info("Stats aggregator : " + partitionID);
         if (statsAggregator != null) {
-          updateStats(StatsSetupConst.statsRequireCompute,newPartStats,statsAggregator,parameters,partitionID,atomic);
-          statsAggregator.cleanUp(partitionID);
+          String prefix=getAggregationPrefix(counterStat,table,partn);
+          String aggKey=Utilities.getHashedStatsPrefix(prefix,maxPrefixLength,0);
+          updateStats(statsAggregator,parameters,aggKey,atomic);
+          statsAggregator.cleanUp(aggKey);
         }
- else {
-          for (          String statType : StatsSetupConst.statsRequireCompute) {
-            if (work.isClearAggregatorStats()) {
-              if (parameters.containsKey(statType)) {
-                newPartStats.setStat(statType,0L);
-              }
-            }
- else {
-              newPartStats.setStat(statType,currentValues.get(statType));
-            }
-          }
-        }
-        FileStatus[] partfileStatus=wh.getFileStatusesForPartition(tPart);
-        newPartStats.setStat(StatsSetupConst.NUM_FILES,partfileStatus.length);
-        long partSize=0L;
-        for (int i=0; i < partfileStatus.length; i++) {
-          partSize+=partfileStatus[i].getLen();
-        }
-        newPartStats.setStat(StatsSetupConst.TOTAL_SIZE,partSize);
-        for (        String statType : StatsSetupConst.supportedStats) {
-          long statValue=newPartStats.getStat(statType);
-          if (statValue >= 0) {
-            parameters.put(statType,Long.toString(newPartStats.getStat(statType)));
-          }
-        }
+        updateQuickStats(wh,parameters,tPart.getSd());
         parameters.put(StatsSetupConst.STATS_GENERATED_VIA_STATS_TASK,StatsSetupConst.TRUE);
-        tPart.setParameters(parameters);
-        db.alterPartition(tableFullName,new Partition(table,tPart));
-        console.printInfo("Partition " + tableFullName + partn.getSpec()+ " stats: ["+ newPartStats.toString()+ ']');
+        updates.add(new Partition(table,tPart));
+        console.printInfo("Partition " + tableFullName + partn.getSpec()+ " stats: ["+ toString(parameters)+ ']');
+      }
+      if (!updates.isEmpty()) {
+        db.alterPartitions(tableFullName,updates);
       }
     }
   }
