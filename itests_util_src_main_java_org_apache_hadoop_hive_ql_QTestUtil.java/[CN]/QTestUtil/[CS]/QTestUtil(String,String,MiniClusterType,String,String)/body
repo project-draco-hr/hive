@@ -1,0 +1,44 @@
+{
+  this.outDir=outDir;
+  this.logDir=logDir;
+  if (confDir != null && !confDir.isEmpty()) {
+    HiveConf.setHiveSiteLocation(new URL("file://" + confDir + "/hive-site.xml"));
+    System.out.println("Setting hive-site: " + HiveConf.getHiveSiteLocation());
+  }
+  conf=new HiveConf(Driver.class);
+  this.miniMr=(clusterType == MiniClusterType.mr);
+  this.hadoopVer=getHadoopMainVersion(hadoopVer);
+  qMap=new TreeMap<String,String>();
+  qSkipSet=new HashSet<String>();
+  qSortSet=new HashSet<String>();
+  this.clusterType=clusterType;
+  HadoopShims shims=ShimLoader.getHadoopShims();
+  int numberOfDataNodes=4;
+  if (clusterType == MiniClusterType.tez) {
+    Assume.assumeTrue(ShimLoader.getMajorVersion().equals("0.23"));
+    numberOfDataNodes=1;
+  }
+  if (clusterType != MiniClusterType.none) {
+    dfs=shims.getMiniDfs(conf,numberOfDataNodes,true,null);
+    FileSystem fs=dfs.getFileSystem();
+    if (clusterType == MiniClusterType.tez) {
+      if (!(shims instanceof Hadoop23Shims)) {
+        throw new Exception("Cannot run tez on hadoop-1, Version: " + this.hadoopVer);
+      }
+      mr=((Hadoop23Shims)shims).getMiniTezCluster(conf,4,getHdfsUriString(fs.getUri().toString()),1);
+    }
+ else {
+      mr=shims.getMiniMrCluster(conf,4,getHdfsUriString(fs.getUri().toString()),1);
+    }
+  }
+  initConf();
+  String dataDir=conf.get("test.data.files");
+  if (dataDir == null) {
+    dataDir=new File(".").getAbsolutePath() + "/data/files";
+  }
+  testFiles=dataDir;
+  overWrite="true".equalsIgnoreCase(System.getProperty("test.output.overwrite"));
+  setup=new QTestSetup();
+  setup.preTest(conf);
+  init();
+}
