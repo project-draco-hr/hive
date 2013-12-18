@@ -16,27 +16,28 @@
     return;
   }
   String taskID=Utilities.getTaskIdFromFilename(Utilities.getTaskId(hconf));
-  String spSpec=conf.getStaticSpec() != null ? conf.getStaticSpec() : "";
-  for (  String fspKey : valToPaths.keySet()) {
-    FSPaths fspValue=valToPaths.get(fspKey);
-    String key;
-    if (fspKey == "") {
-      if (statsPublisher instanceof CounterStatsPublisher) {
-        key=Utilities.appendPathSeparator(conf.getTableInfo().getTableName() + Path.SEPARATOR + spSpec);
-      }
- else {
-        String keyPrefix=Utilities.getHashedStatsPrefix(conf.getStatsAggPrefix() + spSpec,conf.getMaxStatsKeyPrefixLength());
-        key=keyPrefix + taskID;
-      }
+  String spSpec=conf.getStaticSpec();
+  int maxKeyLength=conf.getMaxStatsKeyPrefixLength();
+  boolean counterStats=statsPublisher instanceof CounterStatsPublisher;
+  for (  Map.Entry<String,FSPaths> entry : valToPaths.entrySet()) {
+    String fspKey=entry.getKey();
+    FSPaths fspValue=entry.getValue();
+    String[] split=splitKey(fspKey);
+    String dpSpec=split[0];
+    String lbSpec=split[1];
+    String prefix;
+    String postfix;
+    if (counterStats) {
+      prefix=conf.getTableInfo().getTableName();
+      postfix=Utilities.join(lbSpec);
     }
  else {
-      if (statsPublisher instanceof CounterStatsPublisher) {
-        key=Utilities.appendPathSeparator(Utilities.appendPathSeparator(conf.getTableInfo().getTableName() + Path.SEPARATOR + spSpec) + fspKey);
-      }
- else {
-        key=createKeyForStatsPublisher(taskID,spSpec,fspKey);
-      }
+      prefix=conf.getStatsAggPrefix();
+      postfix=Utilities.join(lbSpec,taskID);
     }
+    prefix=Utilities.join(prefix,spSpec,dpSpec);
+    prefix=Utilities.getHashedStatsPrefix(prefix,maxKeyLength,postfix.length());
+    String key=Utilities.join(prefix,postfix);
     Map<String,String> statsToPublish=new HashMap<String,String>();
     for (    String statType : fspValue.stat.getStoredStats()) {
       statsToPublish.put(statType,Long.toString(fspValue.stat.getStat(statType)));

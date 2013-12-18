@@ -1,0 +1,49 @@
+{
+  if (isFetchingTable()) {
+    FetchTask ft=plan.getFetchTask();
+    ft.setMaxRows(maxRows);
+    return ft.fetch(res);
+  }
+  if (resStream == null) {
+    resStream=ctx.getStream();
+  }
+  if (resStream == null) {
+    return false;
+  }
+  int numRows=0;
+  String row=null;
+  while (numRows < maxRows) {
+    if (resStream == null) {
+      if (numRows > 0) {
+        return true;
+      }
+ else {
+        return false;
+      }
+    }
+    bos.reset();
+    Utilities.StreamStatus ss;
+    try {
+      ss=Utilities.readColumn(resStream,bos);
+      if (bos.getCount() > 0) {
+        row=new String(bos.getData(),0,bos.getCount(),"UTF-8");
+      }
+ else       if (ss == Utilities.StreamStatus.TERMINATED) {
+        row=new String();
+      }
+      if (row != null) {
+        numRows++;
+        res.add(row);
+      }
+      row=null;
+    }
+ catch (    IOException e) {
+      console.printError("FAILED: Unexpected IO exception : " + e.getMessage());
+      return false;
+    }
+    if (ss == Utilities.StreamStatus.EOF) {
+      resStream=ctx.getStream();
+    }
+  }
+  return true;
+}
