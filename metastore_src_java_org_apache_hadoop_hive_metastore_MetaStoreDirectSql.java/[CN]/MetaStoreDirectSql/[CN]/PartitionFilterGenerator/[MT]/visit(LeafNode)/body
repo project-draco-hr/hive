@@ -21,7 +21,6 @@
     filterBuffer.setError("Cannot push down filter for " + (isStringCol ? "string" : "integral") + " column and value "+ node.value);
     return;
   }
-  boolean forceStringEq=!isStringCol && node.canJdoUseStringsWithIntegral();
   if (joins.isEmpty()) {
     for (int i=0; i < partColCount; ++i) {
       joins.add(null);
@@ -31,12 +30,17 @@
     joins.set(partColIndex,"inner join \"PARTITION_KEY_VALS\" \"FILTER" + partColIndex + "\" on \"FILTER"+ partColIndex+ "\".\"PART_ID\" = \"PARTITIONS\".\"PART_ID\""+ " and \"FILTER"+ partColIndex+ "\".\"INTEGER_IDX\" = "+ partColIndex);
   }
   String tableValue="\"FILTER" + partColIndex + "\".\"PART_KEY_VAL\"";
-  if (!isStringCol && !forceStringEq) {
+  if (node.isReverseOrder) {
+    params.add(node.value);
+  }
+  if (!isStringCol) {
     tableValue="cast(" + tableValue + " as decimal(21,0))";
     tableValue="(case when \"TBLS\".\"TBL_NAME\" = ? and \"DBS\".\"NAME\" = ? then " + tableValue + " else null end)";
     params.add(table.getTableName().toLowerCase());
     params.add(table.getDbName().toLowerCase());
   }
-  params.add(forceStringEq ? node.value.toString() : node.value);
+  if (!node.isReverseOrder) {
+    params.add(node.value);
+  }
   filterBuffer.append(node.isReverseOrder ? "(? " + node.operator.getSqlOp() + " "+ tableValue+ ")" : "(" + tableValue + " "+ node.operator.getSqlOp()+ " ?)");
 }
