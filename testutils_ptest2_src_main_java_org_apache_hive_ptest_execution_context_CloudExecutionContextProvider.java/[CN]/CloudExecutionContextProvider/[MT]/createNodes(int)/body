@@ -2,12 +2,20 @@
   Set<NodeMetadata> result=Sets.newHashSet();
   int attempts=0;
   int numRequired=numHosts;
+  try {
+    TimeUnit.SECONDS.sleep(mRetrySleepInterval);
+  }
+ catch (  InterruptedException e) {
+    Thread.currentThread().interrupt();
+  }
   do {
+    boolean error=false;
     LOG.info("Attempting to create " + numRequired + " nodes");
     try {
-      result.addAll(mCloudComputeService.createNodes(numRequired));
+      result.addAll(mCloudComputeService.createNodes(Math.min(2,numRequired)));
     }
  catch (    RunNodesException e) {
+      error=true;
       LOG.warn("Error creating nodes",e);
       terminateInternal(e.getNodeErrors().keySet());
       result.addAll(e.getSuccessfulNodes());
@@ -16,8 +24,13 @@
     LOG.info("Successfully created " + result.size() + " nodes");
     numRequired=numHosts - result.size();
     if (numRequired > 0) {
+      long sleepTime=mRetrySleepInterval;
+      if (error) {
+        sleepTime*=++attempts;
+      }
+      LOG.info("Pausing creation process for " + sleepTime + " seconds");
       try {
-        TimeUnit.SECONDS.sleep(++attempts * mRetrySleepInterval);
+        TimeUnit.SECONDS.sleep(sleepTime);
       }
  catch (      InterruptedException e) {
         throw new CreateHostsFailedException("Interrupted while trying to create hosts",e);
