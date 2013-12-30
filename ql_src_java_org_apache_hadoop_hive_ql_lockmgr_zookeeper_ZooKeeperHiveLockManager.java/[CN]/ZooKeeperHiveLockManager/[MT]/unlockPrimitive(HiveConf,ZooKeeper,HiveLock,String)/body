@@ -1,20 +1,21 @@
 {
   ZooKeeperHiveLock zLock=(ZooKeeperHiveLock)hiveLock;
+  HiveLockObject obj=zLock.getHiveLockObject();
+  String name=getLastObjectName(parent,obj);
   try {
     zkpClient.delete(zLock.getPath(),-1);
-    HiveLockObject obj=zLock.getHiveLockObject();
-    String name=getLastObjectName(parent,obj);
-    try {
-      List<String> children=zkpClient.getChildren(name,false);
-      if (children == null || children.isEmpty()) {
-        zkpClient.delete(name,-1);
-      }
-    }
- catch (    KeeperException.NoNodeException e) {
-      LOG.debug("Node " + name + " previously deleted when attempting to delete.");
+    List<String> children=zkpClient.getChildren(name,false);
+    if (children == null || children.isEmpty()) {
+      zkpClient.delete(name,-1);
     }
   }
- catch (  Exception e) {
+ catch (  KeeperException.NoNodeException nne) {
+    LOG.debug("Node " + zLock.getPath() + " or its parent has already been deleted.");
+  }
+catch (  KeeperException.NotEmptyException nee) {
+    LOG.debug("Node " + name + " to be deleted is not empty.");
+  }
+catch (  Exception e) {
     LOG.error("Failed to release ZooKeeper lock: ",e);
     throw new LockException(e);
   }
