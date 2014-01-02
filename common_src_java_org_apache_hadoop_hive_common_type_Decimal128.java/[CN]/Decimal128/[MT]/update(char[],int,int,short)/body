@@ -1,0 +1,86 @@
+{
+  final int end=offset + length;
+  assert(end <= str.length);
+  int cursor=offset;
+  boolean negative=false;
+  if (str[cursor] == '+') {
+    ++cursor;
+  }
+ else   if (str[cursor] == '-') {
+    negative=true;
+    ++cursor;
+  }
+  while (cursor < end && str[cursor] == '0') {
+    ++cursor;
+  }
+  this.scale=scale;
+  zeroClear();
+  if (cursor == end) {
+    return;
+  }
+  int accumulated=0;
+  int accumulatedCount=0;
+  boolean fractional=false;
+  int fractionalDigits=0;
+  int exponent=0;
+  while (cursor < end) {
+    if (str[cursor] == '.') {
+      if (fractional) {
+        throw new NumberFormatException("Invalid string:" + new String(str,offset,length));
+      }
+      fractional=true;
+    }
+ else     if (str[cursor] >= '0' && str[cursor] <= '9') {
+      if (accumulatedCount == 9) {
+        this.unscaledValue.scaleUpTenDestructive((short)accumulatedCount);
+        this.unscaledValue.addDestructive(accumulated);
+        accumulated=0;
+        accumulatedCount=0;
+      }
+      int digit=str[cursor] - '0';
+      accumulated=accumulated * 10 + digit;
+      ++accumulatedCount;
+      if (fractional) {
+        ++fractionalDigits;
+      }
+    }
+ else     if (str[cursor] == 'e' || str[cursor] == 'E') {
+      ++cursor;
+      boolean exponentNagative=false;
+      if (str[cursor] == '+') {
+        ++cursor;
+      }
+ else       if (str[cursor] == '-') {
+        exponentNagative=true;
+        ++cursor;
+      }
+      while (cursor < end) {
+        if (str[cursor] >= '0' && str[cursor] <= '9') {
+          int exponentDigit=str[cursor] - '0';
+          exponent*=10;
+          exponent+=exponentDigit;
+        }
+        ++cursor;
+      }
+      if (exponentNagative) {
+        exponent=-exponent;
+      }
+    }
+ else {
+      throw new NumberFormatException("Invalid string:" + new String(str,offset,length));
+    }
+    ++cursor;
+  }
+  if (accumulatedCount > 0) {
+    this.unscaledValue.scaleUpTenDestructive((short)accumulatedCount);
+    this.unscaledValue.addDestructive(accumulated);
+  }
+  int scaleAdjust=scale - fractionalDigits + exponent;
+  if (scaleAdjust > 0) {
+    this.unscaledValue.scaleUpTenDestructive((short)scaleAdjust);
+  }
+ else   if (scaleAdjust < 0) {
+    this.unscaledValue.scaleDownTenDestructive((short)-scaleAdjust);
+  }
+  this.signum=(byte)(this.unscaledValue.isZero() ? 0 : (negative ? -1 : 1));
+}

@@ -1,0 +1,77 @@
+{
+  final int dividendLength=arrayValidLength(dividend);
+  final int divisorLength=arrayValidLength(divisor);
+  Arrays.fill(quotient,0);
+  int[] remainder=new int[dividend.length + 1];
+  System.arraycopy(dividend,0,remainder,0,dividend.length);
+  remainder[remainder.length - 1]=0;
+  if (divisorLength == 0) {
+    throwZeroDivisionException();
+  }
+  if (dividendLength < divisorLength) {
+    return remainder;
+  }
+  if (divisorLength == 1) {
+    int rem=divideMultiPrecision(remainder,divisor[0]);
+    System.arraycopy(remainder,0,quotient,0,quotient.length);
+    Arrays.fill(remainder,0);
+    remainder[0]=rem;
+    return remainder;
+  }
+  int d1=(int)(BASE / ((divisor[divisorLength - 1] & LONG_MASK) + 1L));
+  if (d1 > 1) {
+    int[] newDivisor=new int[divisorLength];
+    System.arraycopy(divisor,0,newDivisor,0,divisorLength);
+    multiplyMultiPrecision(newDivisor,d1);
+    divisor=newDivisor;
+    multiplyMultiPrecision(remainder,d1);
+  }
+  long dHigh=(divisor[divisorLength - 1] & LONG_MASK);
+  long dLow=(divisor[divisorLength - 2] & LONG_MASK);
+  for (int rIndex=remainder.length - 1; rIndex >= divisorLength; --rIndex) {
+    long accum=combineInts(remainder[rIndex - 1],remainder[rIndex]);
+    int qhat;
+    if (dHigh == (remainder[rIndex] & LONG_MASK)) {
+      qhat=(int)(BASE - 1);
+    }
+ else {
+      qhat=(int)divideUnsignedLong(accum,dHigh);
+    }
+    int rhat=(int)(accum - (qhat & LONG_MASK) * dHigh);
+    while (compareUnsignedLong(dLow * (qhat & LONG_MASK),combineInts(remainder[rIndex - 2],rhat)) > 0) {
+      qhat--;
+      if ((rhat & LONG_MASK) >= -((int)dHigh)) {
+        break;
+      }
+      rhat+=dHigh;
+    }
+    long dwlMulAccum=0;
+    accum=BASE;
+    int iulRwork=rIndex - divisorLength;
+    for (int dIndex=0; dIndex < divisorLength; dIndex++, iulRwork++) {
+      dwlMulAccum+=(qhat & LONG_MASK) * (divisor[dIndex] & LONG_MASK);
+      accum+=(remainder[iulRwork] & LONG_MASK) - (extractLowInt(dwlMulAccum) & LONG_MASK);
+      dwlMulAccum=(extractHiInt(dwlMulAccum) & LONG_MASK);
+      remainder[iulRwork]=extractLowInt(accum);
+      accum=(extractHiInt(accum) & LONG_MASK) + BASE - 1;
+    }
+    accum+=(remainder[iulRwork] & LONG_MASK) - dwlMulAccum;
+    remainder[iulRwork]=extractLowInt(accum);
+    quotient[rIndex - divisorLength]=qhat;
+    if (extractHiInt(accum) == 0) {
+      quotient[rIndex - divisorLength]=qhat - 1;
+      int carry=0;
+      int dIndex=0;
+      for (iulRwork=rIndex - divisorLength; dIndex < divisorLength; dIndex++, iulRwork++) {
+        long accum2=(divisor[dIndex] & LONG_MASK) + (remainder[iulRwork] & LONG_MASK) + (carry & LONG_MASK);
+        carry=extractHiInt(accum2);
+        remainder[iulRwork]=extractLowInt(accum2);
+      }
+      remainder[iulRwork]+=carry;
+    }
+  }
+  if (d1 > 1) {
+    divideMultiPrecision(remainder,d1);
+  }
+  return remainder;
+}
