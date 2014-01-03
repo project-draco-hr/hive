@@ -1,6 +1,7 @@
 {
   try {
     while (true) {
+      boolean opNotEOF=true;
       if (context != null) {
         context.resetRow();
       }
@@ -9,9 +10,34 @@
         if (currRecReader == null) {
           return null;
         }
+        headerCount=0;
+        footerCount=0;
+        TableDesc table=null;
+        if (currTbl != null) {
+          table=currTbl;
+        }
+ else         if (currPart != null) {
+          table=currPart.getTableDesc();
+        }
+        if (table != null) {
+          headerCount=Utilities.getHeaderCount(table);
+          footerCount=Utilities.getFooterCount(table,job);
+        }
+        opNotEOF=Utilities.skipHeader(currRecReader,headerCount,key,value);
+        if (opNotEOF) {
+          if (footerCount > 0) {
+            footerBuffer=new FooterBuffer();
+            opNotEOF=footerBuffer.initializeBuffer(job,currRecReader,footerCount,key,value);
+          }
+        }
       }
-      boolean ret=currRecReader.next(key,value);
-      if (ret) {
+      if (opNotEOF && footerBuffer == null) {
+        opNotEOF=currRecReader.next(key,value);
+      }
+      if (opNotEOF && footerBuffer != null) {
+        opNotEOF=footerBuffer.updateBuffer(job,currRecReader,key,value);
+      }
+      if (opNotEOF) {
         if (operator != null && context != null && context.inputFileChanged()) {
           try {
             operator.cleanUpInputFileChanged();
