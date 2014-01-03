@@ -1,0 +1,36 @@
+{
+  if (Double.isInfinite(val) || Double.isNaN(val)) {
+    throw new NumberFormatException("Infinite or NaN");
+  }
+  checkScaleRange(scale);
+  this.scale=scale;
+  long valBits=Double.doubleToLongBits(val);
+  byte sign=((valBits >> 63) == 0 ? (byte)1 : (byte)-1);
+  short exponent=(short)((valBits >> 52) & 0x7ffL);
+  long significand=(exponent == 0 ? (valBits & ((1L << 52) - 1)) << 1 : (valBits & ((1L << 52) - 1)) | (1L << 52));
+  exponent-=1075;
+  if (significand == 0) {
+    zeroClear();
+    return;
+  }
+  this.signum=sign;
+  while ((significand & 1) == 0) {
+    significand>>=1;
+    exponent++;
+  }
+  this.unscaledValue.update(significand);
+  if (exponent >= 0) {
+    this.unscaledValue.shiftLeftDestructiveCheckOverflow(exponent);
+    this.unscaledValue.scaleUpTenDestructive(scale);
+  }
+ else {
+    short twoScaleDown=(short)-exponent;
+    if (scale >= twoScaleDown) {
+      this.unscaledValue.shiftLeftDestructiveCheckOverflow(scale - twoScaleDown);
+      this.unscaledValue.scaleUpFiveDestructive(scale);
+    }
+ else {
+      this.unscaledValue.multiplyShiftDestructive(SqlMathUtil.POWER_FIVES_INT128[scale],(short)(twoScaleDown - scale));
+    }
+  }
+}

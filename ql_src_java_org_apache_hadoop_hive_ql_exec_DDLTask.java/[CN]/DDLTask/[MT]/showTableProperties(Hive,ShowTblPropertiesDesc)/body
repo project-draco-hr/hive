@@ -1,39 +1,33 @@
 {
   String tableName=showTblPrpt.getTableName();
   Table tbl=db.getTable(tableName,false);
-  DataOutput outStream=null;
   try {
-    Path resFile=new Path(showTblPrpt.getResFile());
-    FileSystem fs=resFile.getFileSystem(conf);
-    outStream=fs.create(resFile);
     if (tbl == null) {
       String errMsg="Table " + tableName + " does not exist";
-      outStream.write(errMsg.getBytes("UTF-8"));
-      ((FSDataOutputStream)outStream).close();
-      outStream=null;
+      writeToFile(errMsg,showTblPrpt.getResFile());
       return 0;
     }
     LOG.info("DDLTask: show properties for " + tbl.getTableName());
+    StringBuilder builder=new StringBuilder();
     String propertyName=showTblPrpt.getPropertyName();
     if (propertyName != null) {
       String propertyValue=tbl.getProperty(propertyName);
       if (propertyValue == null) {
         String errMsg="Table " + tableName + " does not have property: "+ propertyName;
-        outStream.write(errMsg.getBytes("UTF-8"));
+        builder.append(errMsg);
       }
  else {
-        outStream.writeBytes(propertyValue);
+        builder.append(propertyValue);
       }
     }
  else {
       Map<String,String> properties=tbl.getParameters();
       for (      String key : properties.keySet()) {
-        writeKeyValuePair(outStream,key,properties.get(key));
+        writeKeyValuePair(builder,key,properties.get(key));
       }
     }
     LOG.info("DDLTask: written data for showing properties of " + tbl.getTableName());
-    ((FSDataOutputStream)outStream).close();
-    outStream=null;
+    writeToFile(builder.toString(),showTblPrpt.getResFile());
   }
  catch (  FileNotFoundException e) {
     LOG.info("show table properties: " + stringifyException(e));
@@ -45,9 +39,6 @@ catch (  IOException e) {
   }
 catch (  Exception e) {
     throw new HiveException(e);
-  }
- finally {
-    IOUtils.closeStream((FSDataOutputStream)outStream);
   }
   return 0;
 }

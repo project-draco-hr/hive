@@ -1,0 +1,53 @@
+{
+  assert(rightShifts >= 0);
+  if (rightShifts == 0) {
+    for (int i=0; i < INT_COUNT; ++i) {
+      if (z[i + INT_COUNT] != 0) {
+        SqlMathUtil.throwOverflowException();
+      }
+    }
+    result[0]=z[0];
+    result[1]=z[1];
+    result[2]=z[2];
+    result[3]=z[3];
+  }
+ else {
+    final int wordShifts=rightShifts / 32;
+    final int bitShiftsInWord=rightShifts % 32;
+    final int shiftRestore=32 - bitShiftsInWord;
+    final boolean noRestore=bitShiftsInWord == 0;
+    if (z.length > INT_COUNT) {
+      if (wordShifts + INT_COUNT < z.length && (z[wordShifts + INT_COUNT] >>> bitShiftsInWord) != 0) {
+        SqlMathUtil.throwOverflowException();
+      }
+      for (int i=1; i < INT_COUNT; ++i) {
+        if (i + wordShifts < z.length - INT_COUNT && z[i + wordShifts + INT_COUNT] != 0) {
+          SqlMathUtil.throwOverflowException();
+        }
+      }
+    }
+    boolean roundCarry=false;
+    if (round) {
+      if (bitShiftsInWord == 0) {
+        assert(wordShifts > 0);
+        roundCarry=z[wordShifts - 1] < 0;
+      }
+ else {
+        roundCarry=(z[wordShifts] & (1 << (bitShiftsInWord - 1))) != 0;
+      }
+    }
+    for (int i=0; i < INT_COUNT; ++i) {
+      int val=0;
+      if (!noRestore && i + wordShifts + 1 < z.length) {
+        val=z[i + wordShifts + 1] << shiftRestore;
+      }
+      if (i + wordShifts < z.length) {
+        val|=(z[i + wordShifts] >>> bitShiftsInWord);
+      }
+      result[i]=val;
+    }
+    if (roundCarry) {
+      incrementArray(result);
+    }
+  }
+}
