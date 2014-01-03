@@ -38,7 +38,42 @@ return false;
 }
 }
 try {
+if (this.ioCxtRef.getCurrentBlockStart() == 0) {
+Path filePath=this.ioCxtRef.getInputPath();
+PartitionDesc part=null;
+try {
+Map<String,PartitionDesc> pathToPartitionInfo=Utilities.getMapWork(jobConf).getPathToPartitionInfo();
+part=HiveFileFormatUtils.getPartitionDescFromPathRecursively(pathToPartitionInfo,filePath,IOPrepareCache.get().getPartitionDescMap());
+}
+ catch (AssertionError ae) {
+LOG.info("Cannot get partition description from " + this.ioCxtRef.getInputPath() + "because "+ ae.getMessage());
+part=null;
+}
+catch (Exception e) {
+LOG.info("Cannot get partition description from " + this.ioCxtRef.getInputPath() + "because "+ e.getMessage());
+part=null;
+}
+TableDesc table=(part == null) ? null : part.getTableDesc();
+if (table != null) {
+headerCount=Utilities.getHeaderCount(table);
+footerCount=Utilities.getFooterCount(table,jobConf);
+}
+if (!Utilities.skipHeader(recordReader,headerCount,(WritableComparable)key,(Writable)value)) {
+return false;
+}
+if (footerCount > 0) {
+footerBuffer=new FooterBuffer();
+if (!footerBuffer.initializeBuffer(jobConf,recordReader,footerCount,(WritableComparable)key,(Writable)value)) {
+return false;
+}
+}
+}
+if (footerBuffer == null) {
 return recordReader.next(key,value);
+}
+ else {
+return footerBuffer.updateBuffer(jobConf,recordReader,(WritableComparable)key,(Writable)value);
+}
 }
  catch (Exception e) {
 return HiveIOExceptionHandlerUtil.handleRecordReaderNextException(e,jobConf);
