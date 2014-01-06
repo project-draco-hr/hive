@@ -1,0 +1,24 @@
+{
+  String inputDir=fsInputDesc.getFinalDirName();
+  TableDesc tblDesc=fsInputDesc.getTableInfo();
+  if (tblDesc.getInputFileFormatClass().equals(RCFileInputFormat.class)) {
+    ArrayList<Path> inputDirs=new ArrayList<Path>(1);
+    ArrayList<String> inputDirstr=new ArrayList<String>(1);
+    if (!hasDynamicPartitions && !GenMapRedUtils.isSkewedStoredAsDirs(fsInputDesc)) {
+      inputDirs.add(new Path(inputDir));
+      inputDirstr.add(inputDir);
+    }
+    MergeWork work=new MergeWork(inputDirs,finalName,hasDynamicPartitions,fsInputDesc.getDynPartCtx());
+    LinkedHashMap<String,ArrayList<String>> pathToAliases=new LinkedHashMap<String,ArrayList<String>>();
+    pathToAliases.put(inputDir,(ArrayList<String>)inputDirstr.clone());
+    work.setMapperCannotSpanPartns(true);
+    work.setPathToAliases(pathToAliases);
+    work.setAliasToWork(new LinkedHashMap<String,Operator<? extends OperatorDesc>>());
+    if (hasDynamicPartitions || GenMapRedUtils.isSkewedStoredAsDirs(fsInputDesc)) {
+      work.getPathToPartitionInfo().put(inputDir,new PartitionDesc(tblDesc,null));
+    }
+    work.setListBucketingCtx(fsInputDesc.getLbCtx());
+    return work;
+  }
+  throw new SemanticException("createRCFileMergeTask called on non-RCFile table");
+}

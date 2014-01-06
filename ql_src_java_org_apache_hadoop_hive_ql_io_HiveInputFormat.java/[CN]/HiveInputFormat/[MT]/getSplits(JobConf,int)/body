@@ -7,38 +7,41 @@
     throw new IOException("No input paths specified in job");
   }
   JobConf newjob=new JobConf(job);
-  ArrayList<InputSplit> result=new ArrayList<InputSplit>();
+  List<InputSplit> result=new ArrayList<InputSplit>();
+  List<Path> currentDirs=new ArrayList<Path>();
+  Class<? extends InputFormat> currentInputFormatClass=null;
+  TableDesc currentTable=null;
+  TableScanOperator currentTableScan=null;
   for (  Path dir : dirs) {
     PartitionDesc part=getPartitionDescFromPath(pathToPartitionInfo,dir);
-    Class inputFormatClass=part.getInputFileFormatClass();
-    InputFormat inputFormat=getInputFormatFromCache(inputFormatClass,job);
-    Utilities.copyTableJobPropertiesToConf(part.getTableDesc(),newjob);
-    ArrayList<String> aliases=mrwork.getPathToAliases().get(dir.toUri().toString());
+    Class<? extends InputFormat> inputFormatClass=part.getInputFileFormatClass();
+    TableDesc table=part.getTableDesc();
+    TableScanOperator tableScan=null;
+    List<String> aliases=mrwork.getPathToAliases().get(dir.toUri().toString());
     if ((aliases != null) && (aliases.size() == 1)) {
       Operator op=mrwork.getAliasToWork().get(aliases.get(0));
       if ((op != null) && (op instanceof TableScanOperator)) {
-        TableScanOperator tableScan=(TableScanOperator)op;
+        tableScan=(TableScanOperator)op;
         ColumnProjectionUtils.appendReadColumns(newjob,tableScan.getNeededColumnIDs(),tableScan.getNeededColumns());
         pushFilters(newjob,tableScan);
       }
     }
-    FileInputFormat.setInputPaths(newjob,dir);
-    newjob.setInputFormat(inputFormat.getClass());
-    TableDesc tableDesc=part.getTableDesc();
-    int headerCount=0;
-    int footerCount=0;
-    if (tableDesc != null) {
-      headerCount=Utilities.getHeaderCount(tableDesc);
-      footerCount=Utilities.getFooterCount(tableDesc,newjob);
-      if (headerCount != 0 || footerCount != 0) {
-        newjob.setLong("mapred.min.split.size",Long.MAX_VALUE);
-      }
+    if (!currentDirs.isEmpty() && inputFormatClass.equals(currentInputFormatClass) && table.equals(currentTable)&& tableScan == currentTableScan) {
+      currentDirs.add(dir);
+      continue;
     }
-    InputSplit[] iss=inputFormat.getSplits(newjob,numSplits / dirs.length);
-    for (    InputSplit is : iss) {
-      result.add(new HiveInputSplit(is,inputFormatClass.getName()));
+    if (!currentDirs.isEmpty()) {
+      LOG.info("Generating splits");
+      addSplitsForGroup(currentDirs,currentTableScan,newjob,getInputFormatFromCache(currentInputFormatClass,job),currentInputFormatClass,currentDirs.size() * (numSplits / dirs.length),currentTable,result);
     }
+    currentDirs.clear();
+    currentDirs.add(dir);
+    currentTableScan=tableScan;
+    currentTable=table;
+    currentInputFormatClass=inputFormatClass;
   }
+  LOG.info("Generating splits");
+  addSplitsForGroup(currentDirs,currentTableScan,newjob,getInputFormatFromCache(currentInputFormatClass,job),currentInputFormatClass,currentDirs.size() * (numSplits / dirs.length),currentTable,result);
   LOG.info("number of splits " + result.size());
   perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.GET_SPLITS);
   return result.toArray(new HiveInputSplit[result.size()]);

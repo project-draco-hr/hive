@@ -1,62 +1,14 @@
 {
   this.fileSystem=fs;
   this.path=path;
-  FSDataInputStream file=fs.open(path);
-  long size=fs.getFileStatus(path).getLen();
-  int readSize=(int)Math.min(size,DIRECTORY_SIZE_GUESS);
-  file.seek(size - readSize);
-  ByteBuffer buffer=ByteBuffer.allocate(readSize);
-  file.readFully(buffer.array(),buffer.arrayOffset() + buffer.position(),buffer.remaining());
-  int psLen=buffer.get(readSize - 1) & 0xff;
-  ensureOrcFooter(file,path,psLen,buffer);
-  int psOffset=readSize - 1 - psLen;
-  CodedInputStream in=CodedInputStream.newInstance(buffer.array(),buffer.arrayOffset() + psOffset,psLen);
-  OrcProto.PostScript ps=OrcProto.PostScript.parseFrom(in);
-  checkOrcVersion(LOG,path,ps.getVersionList());
-  int footerSize=(int)ps.getFooterLength();
-  metadataSize=(int)ps.getMetadataLength();
-  footerOffset=(int)(size - (psLen + 1 + footerSize));
-  bufferSize=(int)ps.getCompressionBlockSize();
-switch (ps.getCompression()) {
-case NONE:
-    compressionKind=CompressionKind.NONE;
-  break;
-case ZLIB:
-compressionKind=CompressionKind.ZLIB;
-break;
-case SNAPPY:
-compressionKind=CompressionKind.SNAPPY;
-break;
-case LZO:
-compressionKind=CompressionKind.LZO;
-break;
-default :
-throw new IllegalArgumentException("Unknown compression");
-}
-codec=WriterImpl.createCodec(compressionKind);
-int extra=Math.max(0,psLen + 1 + footerSize - readSize);
-if (extra > 0) {
-file.seek(size - readSize - extra);
-ByteBuffer extraBuf=ByteBuffer.allocate(extra + readSize);
-file.readFully(extraBuf.array(),extraBuf.arrayOffset() + extraBuf.position(),extra);
-extraBuf.position(extra);
-extraBuf.put(buffer);
-buffer=extraBuf;
-buffer.position(0);
-buffer.limit(footerSize);
-}
- else {
-buffer.position(psOffset - footerSize);
-buffer.limit(psOffset);
-}
-InputStream instream=InStream.create("footer",new ByteBuffer[]{buffer},new long[]{0L},footerSize,codec,bufferSize);
-footer=OrcProto.Footer.parseFrom(instream);
-inspector=OrcStruct.createObjectInspector(0,footer.getTypesList());
-if (extra == 0) {
-buffer.position(psOffset - (footerSize + metadataSize));
-buffer.limit(psOffset - footerSize);
-instream=InStream.create("metadata",new ByteBuffer[]{buffer},new long[]{0L},metadataSize,codec,bufferSize);
-metadata=OrcProto.Metadata.parseFrom(instream);
-}
-file.close();
+  FileMetaInfo footerMetaData=extractMetaInfoFromFooter(fs,path);
+  MetaInfoObjExtractor rInfo=new MetaInfoObjExtractor(footerMetaData.compressionType,footerMetaData.bufferSize,footerMetaData.metadataSize,footerMetaData.footerBuffer);
+  this.footerByteBuffer=footerMetaData.footerBuffer;
+  this.compressionKind=rInfo.compressionKind;
+  this.codec=rInfo.codec;
+  this.bufferSize=rInfo.bufferSize;
+  this.metadataSize=rInfo.metadataSize;
+  this.metadata=rInfo.metadata;
+  this.footer=rInfo.footer;
+  this.inspector=rInfo.inspector;
 }

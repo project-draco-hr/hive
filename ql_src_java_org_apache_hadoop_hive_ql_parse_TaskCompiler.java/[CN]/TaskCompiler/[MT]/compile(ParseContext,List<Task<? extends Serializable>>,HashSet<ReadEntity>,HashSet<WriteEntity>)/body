@@ -1,0 +1,133 @@
+{
+  Context ctx=pCtx.getContext();
+  GlobalLimitCtx globalLimitCtx=pCtx.getGlobalLimitCtx();
+  QB qb=pCtx.getQB();
+  List<Task<MoveWork>> mvTask=new ArrayList<Task<MoveWork>>();
+  List<LoadTableDesc> loadTableWork=pCtx.getLoadTableWork();
+  List<LoadFileDesc> loadFileWork=pCtx.getLoadFileWork();
+  boolean isCStats=qb.isAnalyzeRewrite();
+  if (pCtx.getFetchTask() != null) {
+    return;
+  }
+  optimizeOperatorPlan(pCtx,inputs,outputs);
+  if (pCtx.getQB().getIsQuery() && !isCStats) {
+    if ((!loadTableWork.isEmpty()) || (loadFileWork.size() != 1)) {
+      throw new SemanticException(ErrorMsg.GENERIC_ERROR.getMsg());
+    }
+    LoadFileDesc loadFileDesc=loadFileWork.get(0);
+    String cols=loadFileDesc.getColumns();
+    String colTypes=loadFileDesc.getColumnTypes();
+    TableDesc resultTab=pCtx.getFetchTabledesc();
+    if (resultTab == null) {
+      String resFileFormat=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEQUERYRESULTFILEFORMAT);
+      resultTab=PlanUtils.getDefaultQueryOutputTableDesc(cols,colTypes,resFileFormat);
+    }
+    FetchWork fetch=new FetchWork(loadFileDesc.getSourcePath(),resultTab,qb.getParseInfo().getOuterQueryLimit());
+    fetch.setSource(pCtx.getFetchSource());
+    fetch.setSink(pCtx.getFetchSink());
+    pCtx.setFetchTask((FetchTask)TaskFactory.get(fetch,conf));
+    int fetchLimit=HiveConf.getIntVar(conf,HiveConf.ConfVars.HIVELIMITOPTMAXFETCH);
+    if (globalLimitCtx.isEnable() && globalLimitCtx.getGlobalLimit() > fetchLimit) {
+      LOG.info("For FetchTask, LIMIT " + globalLimitCtx.getGlobalLimit() + " > "+ fetchLimit+ ". Doesn't qualify limit optimiztion.");
+      globalLimitCtx.disableOpt();
+    }
+  }
+ else   if (!isCStats) {
+    for (    LoadTableDesc ltd : loadTableWork) {
+      Task<MoveWork> tsk=TaskFactory.get(new MoveWork(null,null,ltd,null,false),conf);
+      mvTask.add(tsk);
+      if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVEINDEXAUTOUPDATE)) {
+        IndexUpdater indexUpdater=new IndexUpdater(loadTableWork,inputs,conf);
+        try {
+          List<Task<? extends Serializable>> indexUpdateTasks=indexUpdater.generateUpdateTasks();
+          for (          Task<? extends Serializable> updateTask : indexUpdateTasks) {
+            tsk.addDependentTask(updateTask);
+          }
+        }
+ catch (        HiveException e) {
+          console.printInfo("WARNING: could not auto-update stale indexes, which are not in sync");
+        }
+      }
+    }
+    boolean oneLoadFile=true;
+    for (    LoadFileDesc lfd : loadFileWork) {
+      if (qb.isCTAS()) {
+        assert(oneLoadFile);
+        Path location;
+        String loc=qb.getTableDesc().getLocation();
+        if (loc == null) {
+          Table dumpTable;
+          Path targetPath;
+          try {
+            dumpTable=db.newTable(qb.getTableDesc().getTableName());
+            if (!db.databaseExists(dumpTable.getDbName())) {
+              throw new SemanticException("ERROR: The database " + dumpTable.getDbName() + " does not exist.");
+            }
+            Warehouse wh=new Warehouse(conf);
+            targetPath=wh.getTablePath(db.getDatabase(dumpTable.getDbName()),dumpTable.getTableName());
+          }
+ catch (          HiveException e) {
+            throw new SemanticException(e);
+          }
+catch (          MetaException e) {
+            throw new SemanticException(e);
+          }
+          location=targetPath;
+        }
+ else {
+          location=new Path(loc);
+        }
+        lfd.setTargetDir(location);
+        oneLoadFile=false;
+      }
+      mvTask.add(TaskFactory.get(new MoveWork(null,null,null,lfd,false),conf));
+    }
+  }
+  generateTaskTree(rootTasks,pCtx,mvTask,inputs,outputs);
+  if (isCStats) {
+    genColumnStatsTask(qb,loadTableWork,loadFileWork,rootTasks);
+  }
+  for (  Task<? extends Serializable> rootTask : rootTasks) {
+    GenMapRedUtils.setKeyAndValueDescForTaskTree(rootTask);
+  }
+  for (  Task<? extends Serializable> rootTask : rootTasks) {
+    setInputFormat(rootTask);
+  }
+  optimizeTaskPlan(rootTasks,pCtx,ctx);
+  decideExecMode(rootTasks,ctx,globalLimitCtx);
+  if (qb.isCTAS()) {
+    CreateTableDesc crtTblDesc=qb.getTableDesc();
+    crtTblDesc.validate();
+    outputs.clear();
+    Task<? extends Serializable> crtTblTask=TaskFactory.get(new DDLWork(inputs,outputs,crtTblDesc),conf);
+    HashSet<Task<? extends Serializable>> leaves=new LinkedHashSet<Task<? extends Serializable>>();
+    getLeafTasks(rootTasks,leaves);
+    assert(leaves.size() > 0);
+    for (    Task<? extends Serializable> task : leaves) {
+      if (task instanceof StatsTask) {
+        for (        Task<? extends Serializable> parentOfStatsTask : task.getParentTasks()) {
+          parentOfStatsTask.addDependentTask(crtTblTask);
+        }
+        for (        Task<? extends Serializable> parentOfCrtTblTask : crtTblTask.getParentTasks()) {
+          parentOfCrtTblTask.removeDependentTask(task);
+        }
+        crtTblTask.addDependentTask(task);
+      }
+ else {
+        task.addDependentTask(crtTblTask);
+      }
+    }
+  }
+  if (globalLimitCtx.isEnable() && pCtx.getFetchTask() != null) {
+    LOG.info("set least row check for FetchTask: " + globalLimitCtx.getGlobalLimit());
+    pCtx.getFetchTask().getWork().setLeastNumRows(globalLimitCtx.getGlobalLimit());
+  }
+  if (globalLimitCtx.isEnable() && globalLimitCtx.getLastReduceLimitDesc() != null) {
+    LOG.info("set least row check for LimitDesc: " + globalLimitCtx.getGlobalLimit());
+    globalLimitCtx.getLastReduceLimitDesc().setLeastRows(globalLimitCtx.getGlobalLimit());
+    List<ExecDriver> mrTasks=Utilities.getMRTasks(rootTasks);
+    for (    ExecDriver tsk : mrTasks) {
+      tsk.setRetryCmdWhenFail(true);
+    }
+  }
+}

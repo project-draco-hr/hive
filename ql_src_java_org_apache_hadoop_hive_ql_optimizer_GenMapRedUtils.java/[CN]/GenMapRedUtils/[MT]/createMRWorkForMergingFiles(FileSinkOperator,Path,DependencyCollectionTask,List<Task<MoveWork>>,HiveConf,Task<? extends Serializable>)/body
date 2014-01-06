@@ -1,0 +1,57 @@
+{
+  FileSinkDesc fsInputDesc=fsInput.getConf();
+  RowSchema inputRS=fsInput.getSchema();
+  Operator<? extends OperatorDesc> tsMerge=GenMapRedUtils.createTemporaryTableScanOperator(inputRS);
+  TableDesc ts=(TableDesc)fsInputDesc.getTableInfo().clone();
+  FileSinkDesc fsOutputDesc=new FileSinkDesc(finalName.toUri().toString(),ts,conf.getBoolVar(ConfVars.COMPRESSRESULT));
+  FileSinkOperator fsOutput=(FileSinkOperator)OperatorFactory.getAndMakeChild(fsOutputDesc,inputRS,tsMerge);
+  DynamicPartitionCtx dpCtx=fsInputDesc.getDynPartCtx();
+  if (dpCtx != null && dpCtx.getNumDPCols() > 0) {
+    ArrayList<ColumnInfo> signature=inputRS.getSignature();
+    String tblAlias=fsInputDesc.getTableInfo().getTableName();
+    LinkedHashMap<String,String> colMap=new LinkedHashMap<String,String>();
+    StringBuilder partCols=new StringBuilder();
+    for (    String dpCol : dpCtx.getDPColNames()) {
+      ColumnInfo colInfo=new ColumnInfo(dpCol,TypeInfoFactory.stringTypeInfo,tblAlias,true);
+      signature.add(colInfo);
+      colMap.put(dpCol,dpCol);
+      partCols.append(dpCol).append('/');
+    }
+    partCols.setLength(partCols.length() - 1);
+    inputRS.setSignature(signature);
+    DynamicPartitionCtx dpCtx2=new DynamicPartitionCtx(dpCtx);
+    dpCtx2.setInputToDPCols(colMap);
+    fsOutputDesc.setDynPartCtx(dpCtx2);
+    fsInputDesc.getTableInfo().getProperties().setProperty(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS,partCols.toString());
+  }
+ else {
+    fsInputDesc.getTableInfo().getProperties().remove(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS);
+  }
+  MoveWork dummyMv=new MoveWork(null,null,null,new LoadFileDesc(new Path(fsInputDesc.getFinalDirName()),finalName,true,null,null),false);
+  MapWork cplan;
+  Serializable work;
+  if (conf.getBoolVar(ConfVars.HIVEMERGERCFILEBLOCKLEVEL) && fsInputDesc.getTableInfo().getInputFileFormatClass().equals(RCFileInputFormat.class)) {
+    String inputFormatClass=conf.getVar(ConfVars.HIVEMERGEINPUTFORMATBLOCKLEVEL);
+    try {
+      Class c=(Class<? extends InputFormat>)Class.forName(inputFormatClass);
+      LOG.info("RCFile format- Using block level merge");
+      cplan=GenMapRedUtils.createRCFileMergeTask(fsInputDesc,finalName,dpCtx != null && dpCtx.getNumDPCols() > 0);
+      work=cplan;
+    }
+ catch (    ClassNotFoundException e) {
+      String msg="Illegal input format class: " + inputFormatClass;
+      throw new SemanticException(msg);
+    }
+  }
+ else {
+    cplan=createMRWorkForMergingFiles(conf,tsMerge,fsInputDesc);
+    work=new MapredWork();
+    ((MapredWork)work).setMapWork(cplan);
+  }
+  cplan.setInputformat("org.apache.hadoop.hive.ql.io.CombineHiveInputFormat");
+  ConditionalTask cndTsk=GenMapRedUtils.createCondTask(conf,currTask,dummyMv,work,fsInputDesc.getFinalDirName());
+  ConditionalResolverMergeFilesCtx mrCtx=(ConditionalResolverMergeFilesCtx)cndTsk.getResolverCtx();
+  mrCtx.setDPCtx(fsInputDesc.getDynPartCtx());
+  mrCtx.setLbCtx(fsInputDesc.getLbCtx());
+  linkMoveTask(fsOutput,cndTsk,mvTasks,conf,dependencyTask);
+}

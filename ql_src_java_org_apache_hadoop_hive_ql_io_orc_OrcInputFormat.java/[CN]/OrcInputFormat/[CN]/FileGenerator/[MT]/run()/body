@@ -4,15 +4,27 @@
     while (itr.hasNext()) {
       FileStatus file=itr.next();
       if (!file.isDir()) {
-        context.schedule(new SplitGenerator(context,fs,file));
+        FileInfo fileInfo=null;
+        if (context.cacheStripeDetails) {
+          fileInfo=verifyCachedFileInfo(file);
+        }
+        SplitGenerator spgen=new SplitGenerator(context,fs,file,fileInfo);
+        spgen.schedule();
       }
     }
-    context.decrementSchedulers();
   }
  catch (  Throwable th) {
-    context.decrementSchedulers();
+    if (!(th instanceof IOException)) {
+      LOG.error("Unexpected Exception",th);
+    }
 synchronized (context.errors) {
       context.errors.add(th);
     }
+    if (!(th instanceof IOException)) {
+      context.notifyOnNonIOException(th);
+    }
+  }
+ finally {
+    context.decrementSchedulers();
   }
 }

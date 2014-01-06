@@ -5,7 +5,7 @@
   Task<? extends Serializable> currTask=ctx.getCurrTask();
   ctx.addRootIfPossible(currTask);
   FileSinkOperator fsOp=(FileSinkOperator)nd;
-  boolean isInsertTable=fsOp.getConf().getTableInfo().getTableName() != null && parseCtx.getQB().getParseInfo().isInsertToTable();
+  boolean isInsertTable=GenMapRedUtils.isInsertInto(parseCtx,fsOp);
   HiveConf hconf=parseCtx.getConf();
   ((MapredWork)currTask.getWork()).setFinalMapRed(true);
   Map<FileSinkDesc,Task<? extends Serializable>> fileSinkDescs=ctx.getLinkedFileDescTasks();
@@ -14,34 +14,13 @@
     processLinkedFileDesc(ctx,childTask);
     return true;
   }
-  if ((ctx.getMvTask() != null) && (!ctx.getMvTask().isEmpty())) {
-    List<Task<MoveWork>> mvTasks=ctx.getMvTask();
-    if ((ctx.getSeenFileSinkOps() == null) || (!ctx.getSeenFileSinkOps().contains(nd))) {
-      MoveTask mvTask=(MoveTask)findMoveTask(mvTasks,fsOp);
-      if (mvTask != null && isInsertTable && hconf.getBoolVar(ConfVars.HIVESTATSAUTOGATHER)) {
-        addStatsTask(fsOp,mvTask,currTask,parseCtx.getConf());
-      }
-      if ((mvTask != null) && !mvTask.isLocal() && fsOp.getConf().canBeMerged()) {
-        if (fsOp.getConf().isLinkedFileSink()) {
-          if (hconf.getBoolVar(ConfVars.HIVEMERGEMAPFILES) || hconf.getBoolVar(ConfVars.HIVEMERGEMAPREDFILES)) {
-            chDir=true;
-          }
-        }
- else {
-          MapredWork currWork=(MapredWork)currTask.getWork();
-          boolean mergeMapOnly=hconf.getBoolVar(ConfVars.HIVEMERGEMAPFILES) && currWork.getReduceWork() == null;
-          boolean mergeMapRed=hconf.getBoolVar(ConfVars.HIVEMERGEMAPREDFILES) && currWork.getReduceWork() != null;
-          if (mergeMapOnly || mergeMapRed) {
-            chDir=true;
-          }
-        }
-      }
-    }
+  if ((ctx.getSeenFileSinkOps() == null) || (!ctx.getSeenFileSinkOps().contains(nd))) {
+    chDir=GenMapRedUtils.isMergeRequired(ctx.getMvTask(),hconf,fsOp,currTask,isInsertTable);
   }
   Path finalName=processFS(fsOp,stack,opProcCtx,chDir);
   if (chDir) {
     LOG.info("using CombineHiveInputformat for the merge job");
-    createMRWorkForMergingFiles(fsOp,ctx,finalName);
+    GenMapRedUtils.createMRWorkForMergingFiles(fsOp,finalName,ctx.getDependencyTaskForMultiInsert(),ctx.getMvTask(),hconf,currTask);
   }
   FileSinkDesc fileSinkDesc=fsOp.getConf();
   if (fileSinkDesc.isLinkedFileSink()) {

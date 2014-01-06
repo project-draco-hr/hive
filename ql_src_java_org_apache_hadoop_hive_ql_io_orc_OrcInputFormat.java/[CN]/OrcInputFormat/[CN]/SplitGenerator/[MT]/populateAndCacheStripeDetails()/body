@@ -1,0 +1,40 @@
+{
+  try {
+    Reader orcReader;
+    boolean found=false;
+    if (fileInfo != null) {
+      found=true;
+      stripes=fileInfo.stripeInfos;
+      fileMetaInfo=fileInfo.fileMetaInfo;
+      metadata=fileInfo.metadata;
+      types=fileInfo.types;
+      if (fileMetaInfo == null && context.footerInSplits) {
+        orcReader=OrcFile.createReader(fs,file.getPath());
+        fileInfo.fileMetaInfo=orcReader.getFileMetaInfo();
+        fileInfo.metadata=orcReader.getMetadata();
+        fileInfo.types=orcReader.getTypes();
+      }
+    }
+    if (!found) {
+      orcReader=OrcFile.createReader(fs,file.getPath());
+      stripes=orcReader.getStripes();
+      metadata=orcReader.getMetadata();
+      types=orcReader.getTypes();
+      fileMetaInfo=context.footerInSplits ? orcReader.getFileMetaInfo() : null;
+      if (context.cacheStripeDetails) {
+        Context.footerCache.put(file.getPath(),new FileInfo(file.getModificationTime(),file.getLen(),stripes,metadata,types,fileMetaInfo));
+      }
+    }
+  }
+ catch (  Throwable th) {
+    if (!(th instanceof IOException)) {
+      LOG.error("Unexpected Exception",th);
+    }
+synchronized (context.errors) {
+      context.errors.add(th);
+    }
+    if (!(th instanceof IOException)) {
+      context.notifyOnNonIOException(th);
+    }
+  }
+}

@@ -1,8 +1,7 @@
 {
   try {
-    Reader orcReader=OrcFile.createReader(fs,file.getPath());
+    populateAndCacheStripeDetails();
     Configuration conf=context.conf;
-    List<OrcProto.Type> types=orcReader.getTypes();
     SearchArgument sarg=createSarg(types,conf);
     List<StripeStatistics> stripeStats=null;
     int[] filterColumns=null;
@@ -21,26 +20,25 @@
           filterColumns[i]=-1;
         }
       }
-      Metadata metadata=orcReader.getMetadata();
       stripeStats=metadata.getStripeStatistics();
     }
     long currentOffset=-1;
     long currentLength=0;
     int idx=-1;
-    for (    StripeInformation stripe : orcReader.getStripes()) {
+    for (    StripeInformation stripe : stripes) {
       idx++;
       if (sarg != null && !isStripeSatisfyPredicate(stripeStats.get(idx),sarg,filterColumns)) {
         if (LOG.isDebugEnabled()) {
           LOG.debug("Eliminating ORC stripe-" + idx + " of file '"+ file.getPath()+ "'  as it did not satisfy predicate condition.");
         }
         if (currentOffset != -1) {
-          createSplit(currentOffset,currentLength);
+          createSplit(currentOffset,currentLength,fileMetaInfo);
           currentOffset=-1;
         }
         continue;
       }
       if (currentOffset != -1 && currentLength > context.minSize && (currentOffset / blockSize != stripe.getOffset() / blockSize)) {
-        createSplit(currentOffset,currentLength);
+        createSplit(currentOffset,currentLength,fileMetaInfo);
         currentOffset=-1;
       }
       if (currentOffset == -1) {
@@ -51,17 +49,26 @@
         currentLength+=stripe.getLength();
       }
       if (currentLength >= context.maxSize) {
-        createSplit(currentOffset,currentLength);
+        createSplit(currentOffset,currentLength,fileMetaInfo);
         currentOffset=-1;
       }
     }
     if (currentOffset != -1) {
-      createSplit(currentOffset,currentLength);
+      createSplit(currentOffset,currentLength,fileMetaInfo);
     }
   }
  catch (  Throwable th) {
+    if (!(th instanceof IOException)) {
+      LOG.error("Unexpected Exception",th);
+    }
 synchronized (context.errors) {
       context.errors.add(th);
     }
+    if (!(th instanceof IOException)) {
+      context.notifyOnNonIOException(th);
+    }
+  }
+ finally {
+    context.decrementSchedulers();
   }
 }
