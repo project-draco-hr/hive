@@ -1,0 +1,23 @@
+{
+  List<PrivilegeDesc> privilegeDesc=analyzePrivilegeListDef((ASTNode)ast.getChild(0));
+  List<PrincipalDesc> principalDesc=analyzePrincipalListDef((ASTNode)ast.getChild(1));
+  boolean grantOption=false;
+  PrivilegeObjectDesc privilegeObj=null;
+  if (ast.getChildCount() > 2) {
+    for (int i=2; i < ast.getChildCount(); i++) {
+      ASTNode astChild=(ASTNode)ast.getChild(i);
+      if (astChild.getType() == HiveParser.TOK_GRANT_WITH_OPTION) {
+        grantOption=true;
+      }
+ else       if (astChild.getType() == HiveParser.TOK_PRIV_OBJECT) {
+        privilegeObj=analyzePrivilegeObject(astChild,outputs);
+      }
+    }
+  }
+  String userName=null;
+  if (SessionState.get() != null && SessionState.get().getAuthenticator() != null) {
+    userName=SessionState.get().getAuthenticator().getUserName();
+  }
+  GrantDesc grantDesc=new GrantDesc(privilegeObj,privilegeDesc,principalDesc,userName,PrincipalType.USER,grantOption);
+  return TaskFactory.get(new DDLWork(inputs,outputs,grantDesc),conf);
+}

@@ -1,45 +1,7 @@
 {
-  PrivilegeObjectDesc privHiveObj=null;
-  ASTNode principal=(ASTNode)ast.getChild(0);
-  PrincipalType type=PrincipalType.USER;
-switch (principal.getType()) {
-case HiveParser.TOK_USER:
-    type=PrincipalType.USER;
-  break;
-case HiveParser.TOK_GROUP:
-type=PrincipalType.GROUP;
-break;
-case HiveParser.TOK_ROLE:
-type=PrincipalType.ROLE;
-break;
-}
-String principalName=unescapeIdentifier(principal.getChild(0).getText());
-PrincipalDesc principalDesc=new PrincipalDesc(principalName,type);
-List<String> cols=null;
-if (ast.getChildCount() > 1) {
-ASTNode child=(ASTNode)ast.getChild(1);
-if (child.getToken().getType() == HiveParser.TOK_PRIV_OBJECT_COL) {
-privHiveObj=new PrivilegeObjectDesc();
-privHiveObj.setObject(unescapeIdentifier(child.getChild(0).getText()));
-ASTNode objTypeNode=(ASTNode)child.getChild(1);
-privHiveObj.setTable(objTypeNode.getToken().getType() == HiveParser.TOK_TABLE_TYPE);
-if (child.getChildCount() > 2) {
-for (int i=2; i < child.getChildCount(); i++) {
-ASTNode grandChild=(ASTNode)child.getChild(i);
-if (grandChild.getToken().getType() == HiveParser.TOK_PARTSPEC) {
-privHiveObj.setPartSpec(DDLSemanticAnalyzer.getPartSpec(grandChild));
-}
- else if (grandChild.getToken().getType() == HiveParser.TOK_TABCOLNAME) {
-cols=getColumnNames((ASTNode)grandChild);
-}
-}
-}
-}
-}
-if (privHiveObj == null && cols != null) {
-throw new SemanticException("For user-level privileges, column sets should be null. columns=" + cols.toString());
-}
-ShowGrantDesc showGrant=new ShowGrantDesc(ctx.getResFile().toString(),principalDesc,privHiveObj,cols);
-rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),showGrant),conf));
-setFetchTask(createFetchTask(ShowGrantDesc.getSchema()));
+  Task<? extends Serializable> task=hiveAuthorizationTaskFactory.createShowGrantTask(ast,ctx.getResFile(),getInputs(),getOutputs());
+  if (task != null) {
+    rootTasks.add(task);
+    setFetchTask(createFetchTask(ShowGrantDesc.getSchema()));
+  }
 }
