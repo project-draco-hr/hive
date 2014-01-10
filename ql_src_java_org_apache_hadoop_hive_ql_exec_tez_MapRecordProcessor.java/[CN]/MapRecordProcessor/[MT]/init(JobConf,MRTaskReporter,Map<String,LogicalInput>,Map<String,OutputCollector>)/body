@@ -1,0 +1,67 @@
+{
+  perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_INIT_OPERATORS);
+  super.init(jconf,mrReporter,inputs,outMap);
+  MRInputLegacy mrInput=getMRInput(inputs);
+  try {
+    mrInput.init();
+  }
+ catch (  IOException e) {
+    throw new RuntimeException("Failed while initializing MRInput",e);
+  }
+  Configuration updatedConf=mrInput.getConfigUpdates();
+  if (updatedConf != null) {
+    for (    Entry<String,String> entry : updatedConf) {
+      jconf.set(entry.getKey(),entry.getValue());
+    }
+  }
+  ObjectCache cache=ObjectCacheFactory.getCache(jconf);
+  try {
+    execContext.setJc(jconf);
+    mapWork=(MapWork)cache.retrieve(MAP_PLAN_KEY);
+    if (mapWork == null) {
+      mapWork=Utilities.getMapWork(jconf);
+      cache.cache(MAP_PLAN_KEY,mapWork);
+      l4j.info("Plan: " + mapWork);
+      for (      String s : mapWork.getAliases()) {
+        l4j.info("Alias: " + s);
+      }
+    }
+ else {
+      Utilities.setMapWork(jconf,mapWork);
+    }
+    if (mapWork.getVectorMode()) {
+      mapOp=new VectorMapOperator();
+    }
+ else {
+      mapOp=new MapOperator();
+    }
+    mapOp.setConf(mapWork);
+    mapOp.setChildren(jconf);
+    l4j.info(mapOp.dump(0));
+    MapredContext.init(true,new JobConf(jconf));
+    ((TezContext)MapredContext.get()).setInputs(inputs);
+    mapOp.setExecContext(execContext);
+    mapOp.initializeLocalWork(jconf);
+    mapOp.initialize(jconf,null);
+    List<HashTableDummyOperator> dummyOps=mapWork.getDummyOps();
+    if (dummyOps != null) {
+      for (      Operator<? extends OperatorDesc> dummyOp : dummyOps) {
+        dummyOp.setExecContext(execContext);
+        dummyOp.initialize(jconf,null);
+      }
+    }
+    OperatorUtils.setChildrenCollector(mapOp.getChildOperators(),outMap);
+    mapOp.setReporter(reporter);
+    MapredContext.get().setReporter(reporter);
+  }
+ catch (  Throwable e) {
+    abort=true;
+    if (e instanceof OutOfMemoryError) {
+      throw (OutOfMemoryError)e;
+    }
+ else {
+      throw new RuntimeException("Map operator initialization failed",e);
+    }
+  }
+  perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.TEZ_INIT_OPERATORS);
+}

@@ -1,0 +1,99 @@
+{
+  DAGStatus status=null;
+  completed=new HashSet<String>();
+  boolean running=false;
+  boolean done=false;
+  int failedCounter=0;
+  int rc=0;
+  DAGStatus.State lastState=null;
+  String lastReport=null;
+  Set<StatusGetOpts> opts=new HashSet<StatusGetOpts>();
+  shutdownList.add(dagClient);
+  console.printInfo("\n");
+  perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_RUN_DAG);
+  perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_SUBMIT_TO_RUNNING);
+  while (true) {
+    try {
+      status=dagClient.getDAGStatus(opts);
+      Map<String,Progress> progressMap=status.getVertexProgress();
+      DAGStatus.State state=status.getState();
+      if (state != lastState || state == RUNNING) {
+        lastState=state;
+switch (state) {
+case SUBMITTED:
+          console.printInfo("Status: Submitted");
+        break;
+case INITING:
+      console.printInfo("Status: Initializing");
+    break;
+case RUNNING:
+  if (!running) {
+    perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.TEZ_SUBMIT_TO_RUNNING);
+    console.printInfo("Status: Running (application id: " + dagClient.getApplicationId() + ")\n");
+    for (    String s : progressMap.keySet()) {
+      perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_RUN_VERTEX + s);
+    }
+    running=true;
+  }
+lastReport=printStatus(progressMap,lastReport,console);
+break;
+case SUCCEEDED:
+lastReport=printStatus(progressMap,lastReport,console);
+console.printInfo("Status: Finished successfully");
+running=false;
+done=true;
+break;
+case KILLED:
+console.printInfo("Status: Killed");
+running=false;
+done=true;
+rc=1;
+break;
+case FAILED:
+case ERROR:
+console.printError("Status: Failed");
+running=false;
+done=true;
+rc=2;
+break;
+}
+}
+if (!done) {
+Thread.sleep(checkInterval);
+}
+}
+ catch (Exception e) {
+console.printInfo("Exception: " + e.getMessage());
+if (++failedCounter % maxRetryInterval / checkInterval == 0 || e instanceof InterruptedException) {
+try {
+console.printInfo("Killing DAG...");
+dagClient.tryKillDAG();
+}
+ catch (IOException io) {
+}
+catch (TezException te) {
+}
+e.printStackTrace();
+console.printError("Execution has failed.");
+rc=1;
+done=true;
+}
+ else {
+console.printInfo("Retrying...");
+}
+}
+ finally {
+if (done) {
+if (rc != 0 && status != null) {
+for (String diag : status.getDiagnostics()) {
+console.printError(diag);
+}
+}
+shutdownList.remove(dagClient);
+break;
+}
+}
+}
+perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.TEZ_RUN_DAG);
+return rc;
+}

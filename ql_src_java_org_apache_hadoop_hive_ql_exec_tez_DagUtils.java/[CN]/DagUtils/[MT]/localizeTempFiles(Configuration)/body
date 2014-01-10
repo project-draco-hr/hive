@@ -1,0 +1,43 @@
+{
+  List<LocalResource> tmpResources=new ArrayList<LocalResource>();
+  String addedFiles=Utilities.getResourceFiles(conf,SessionState.ResourceType.FILE);
+  if (StringUtils.isNotBlank(addedFiles)) {
+    HiveConf.setVar(conf,ConfVars.HIVEADDEDFILES,addedFiles);
+  }
+  String addedJars=Utilities.getResourceFiles(conf,SessionState.ResourceType.JAR);
+  if (StringUtils.isNotBlank(addedJars)) {
+    HiveConf.setVar(conf,ConfVars.HIVEADDEDJARS,addedJars);
+  }
+  String addedArchives=Utilities.getResourceFiles(conf,SessionState.ResourceType.ARCHIVE);
+  if (StringUtils.isNotBlank(addedArchives)) {
+    HiveConf.setVar(conf,ConfVars.HIVEADDEDARCHIVES,addedArchives);
+  }
+  String auxJars=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEAUXJARS);
+  String hdfsDirPathStr=HiveConf.getVar(conf,HiveConf.ConfVars.HIVE_JAR_DIRECTORY);
+  Path hdfsDirPath=new Path(hdfsDirPathStr);
+  FileSystem fs=hdfsDirPath.getFileSystem(conf);
+  if (!(fs instanceof DistributedFileSystem)) {
+    throw new IOException(ErrorMsg.INVALID_HDFS_URI.format(hdfsDirPathStr));
+  }
+  FileStatus fstatus=null;
+  try {
+    fstatus=fs.getFileStatus(hdfsDirPath);
+  }
+ catch (  FileNotFoundException fe) {
+  }
+  if ((fstatus == null) || (!fstatus.isDir())) {
+    Path destDir=getDefaultDestDir(conf);
+    hdfsDirPathStr=destDir.toString();
+  }
+  String allFiles=auxJars + "," + addedJars+ ","+ addedFiles+ ","+ addedArchives;
+  String[] allFilesArr=allFiles.split(",");
+  for (  String file : allFilesArr) {
+    if (!StringUtils.isNotBlank(file)) {
+      continue;
+    }
+    String hdfsFilePathStr=hdfsDirPathStr + "/" + getResourceBaseName(file);
+    LocalResource localResource=localizeResource(new Path(file),new Path(hdfsFilePathStr),conf);
+    tmpResources.add(localResource);
+  }
+  return tmpResources;
+}

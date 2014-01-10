@@ -1,0 +1,47 @@
+{
+  String hiveJarDir=conf.getVar(HiveConf.ConfVars.HIVE_JAR_DIRECTORY);
+  String currentVersionPathStr=utils.getExecJarPathLocal();
+  String currentJarName=utils.getResourceBaseName(currentVersionPathStr);
+  FileSystem fs=null;
+  Path jarPath=null;
+  FileStatus dirStatus=null;
+  if (hiveJarDir != null) {
+    Path hiveJarDirPath=new Path(hiveJarDir);
+    fs=hiveJarDirPath.getFileSystem(conf);
+    if (!(fs instanceof DistributedFileSystem)) {
+      throw new IOException(ErrorMsg.INVALID_HDFS_URI.format(hiveJarDir));
+    }
+    try {
+      dirStatus=fs.getFileStatus(hiveJarDirPath);
+    }
+ catch (    FileNotFoundException fe) {
+    }
+    if ((dirStatus != null) && (dirStatus.isDir())) {
+      FileStatus[] listFileStatus=fs.listStatus(hiveJarDirPath);
+      for (      FileStatus fstatus : listFileStatus) {
+        String jarName=utils.getResourceBaseName(fstatus.getPath().toString());
+        if (jarName.equals(currentJarName)) {
+          jarPath=fstatus.getPath();
+          return utils.localizeResource(null,jarPath,conf);
+        }
+      }
+      if (jarPath == null) {
+        Path dest=new Path(hiveJarDir + "/" + currentJarName);
+        return utils.localizeResource(new Path(currentVersionPathStr),dest,conf);
+      }
+    }
+  }
+  if ((hiveJarDir == null) || (dirStatus == null) || ((dirStatus != null) && (!dirStatus.isDir()))) {
+    Path dest=utils.getDefaultDestDir(conf);
+    String destPathStr=dest.toString();
+    String jarPathStr=destPathStr + "/" + currentJarName;
+    dirStatus=fs.getFileStatus(dest);
+    if (dirStatus.isDir()) {
+      return utils.localizeResource(new Path(currentVersionPathStr),new Path(jarPathStr),conf);
+    }
+ else {
+      throw new IOException(ErrorMsg.INVALID_DIR.format(dest.toString()));
+    }
+  }
+  throw new IOException(ErrorMsg.NO_VALID_LOCATIONS.getMsg());
+}
