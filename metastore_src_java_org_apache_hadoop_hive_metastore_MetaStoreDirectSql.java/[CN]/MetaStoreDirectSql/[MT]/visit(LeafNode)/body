@@ -6,19 +6,28 @@
   int partColCount=table.getPartitionKeys().size();
   int partColIndex=node.getPartColIndexForFilter(table,filterBuffer);
   if (filterBuffer.hasError())   return;
-  String colType=table.getPartitionKeys().get(partColIndex).getType();
-  boolean isStringCol=colType.equals(serdeConstants.STRING_TYPE_NAME);
-  if (!isStringCol && !serdeConstants.IntegralTypes.contains(colType)) {
-    filterBuffer.setError("Filter pushdown is only supported for string or integral columns");
+  String colTypeStr=table.getPartitionKeys().get(partColIndex).getType();
+  FilterType colType=FilterType.fromType(colTypeStr);
+  if (colType == FilterType.Invalid) {
+    filterBuffer.setError("Filter pushdown not supported for type " + colTypeStr);
     return;
   }
-  boolean isStringVal=node.value instanceof String;
-  if (!isStringVal && !(node.value instanceof Long)) {
-    filterBuffer.setError("Filter pushdown is only supported for string or integral values");
+  FilterType valType=FilterType.fromClass(node.value);
+  Object nodeValue=node.value;
+  if (valType == FilterType.Invalid) {
+    filterBuffer.setError("Filter pushdown not supported for value " + node.value.getClass());
     return;
   }
- else   if (isStringCol != isStringVal) {
-    filterBuffer.setError("Cannot push down filter for " + (isStringCol ? "string" : "integral") + " column and value "+ node.value);
+  if (colType == FilterType.Date && valType == FilterType.String) {
+    try {
+      nodeValue=new java.sql.Date(HiveMetaStore.PARTITION_DATE_FORMAT.parse((String)nodeValue).getTime());
+      valType=FilterType.Date;
+    }
+ catch (    ParseException pe) {
+    }
+  }
+  if (colType != valType) {
+    filterBuffer.setError("Cannot push down filter for " + colTypeStr + " column and value "+ nodeValue.getClass());
     return;
   }
   if (joins.isEmpty()) {
@@ -31,16 +40,21 @@
   }
   String tableValue="\"FILTER" + partColIndex + "\".\"PART_KEY_VAL\"";
   if (node.isReverseOrder) {
-    params.add(node.value);
+    params.add(nodeValue);
   }
-  if (!isStringCol) {
-    tableValue="cast(" + tableValue + " as decimal(21,0))";
+  if (colType != FilterType.String) {
+    if (colType == FilterType.Integral) {
+      tableValue="cast(" + tableValue + " as decimal(21,0))";
+    }
+ else     if (colType == FilterType.Date) {
+      tableValue="cast(" + tableValue + " as date)";
+    }
     tableValue="(case when \"TBLS\".\"TBL_NAME\" = ? and \"DBS\".\"NAME\" = ? then " + tableValue + " else null end)";
     params.add(table.getTableName().toLowerCase());
     params.add(table.getDbName().toLowerCase());
   }
   if (!node.isReverseOrder) {
-    params.add(node.value);
+    params.add(nodeValue);
   }
   filterBuffer.append(node.isReverseOrder ? "(? " + node.operator.getSqlOp() + " "+ tableValue+ ")" : "(" + tableValue + " "+ node.operator.getSqlOp()+ " ?)");
 }
