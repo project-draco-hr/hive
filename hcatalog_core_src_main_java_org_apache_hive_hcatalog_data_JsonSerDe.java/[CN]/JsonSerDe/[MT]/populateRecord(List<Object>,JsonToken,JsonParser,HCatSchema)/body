@@ -3,19 +3,17 @@
     throw new IOException("Field name expected");
   }
   String fieldName=p.getText();
-  int fpos;
-  try {
-    fpos=s.getPosition(fieldName);
-  }
- catch (  NullPointerException npe) {
+  Integer fpos=s.getPosition(fieldName);
+  if (fpos == null) {
     fpos=getPositionFromHiveInternalColumnName(fieldName);
-    LOG.debug("NPE finding position for field [{}] in schema [{}]",fieldName,s);
+    LOG.debug("NPE finding position for field [{}] in schema [{}]," + " attempting to check if it is an internal column name like _col0",fieldName,s);
+    if (fpos == -1) {
+      skipValue(p);
+      return;
+    }
     if (!fieldName.equalsIgnoreCase(getHiveInternalColumnName(fpos))) {
       LOG.error("Hive internal column name {} and position " + "encoding {} for the column name are at odds",fieldName,fpos);
-      throw npe;
-    }
-    if (fpos == -1) {
-      return;
+      throw new IOException("Hive internal column name (" + fieldName + ") and position encoding ("+ fpos+ ") for the column name are at odds");
     }
   }
   HCatFieldSchema hcatFieldSchema=s.getFields().get(fpos);
