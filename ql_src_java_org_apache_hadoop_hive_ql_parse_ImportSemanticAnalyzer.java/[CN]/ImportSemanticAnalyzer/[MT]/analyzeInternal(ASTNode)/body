@@ -22,7 +22,8 @@
       }
       List<Partition> partitions=rv.getValue();
       for (      Partition partition : partitions) {
-        AddPartitionDesc partDesc=new AddPartitionDesc(dbname,tblDesc.getTableName(),EximUtil.makePartSpec(tblDesc.getPartCols(),partition.getValues()),partition.getSd().getLocation(),partition.getParameters());
+        AddPartitionDesc partsDesc=new AddPartitionDesc(dbname,tblDesc.getTableName(),EximUtil.makePartSpec(tblDesc.getPartCols(),partition.getValues()),partition.getSd().getLocation(),partition.getParameters());
+        AddPartitionDesc.OnePartitionDesc partDesc=partsDesc.getPartition(0);
         partDesc.setInputFormat(partition.getSd().getInputFormat());
         partDesc.setOutputFormat(partition.getSd().getOutputFormat());
         partDesc.setNumBuckets(partition.getSd().getNumBuckets());
@@ -32,7 +33,7 @@
         partDesc.setBucketCols(partition.getSd().getBucketCols());
         partDesc.setSortCols(partition.getSd().getSortCols());
         partDesc.setLocation(new Path(fromPath,Warehouse.makePartName(tblDesc.getPartCols(),partition.getValues())).toString());
-        partitionDescs.add(partDesc);
+        partitionDescs.add(partsDesc);
       }
     }
  catch (    IOException e) {
@@ -72,7 +73,7 @@ partSpec.put(colName,val);
 boolean found=false;
 for (Iterator<AddPartitionDesc> partnIter=partitionDescs.listIterator(); partnIter.hasNext(); ) {
 AddPartitionDesc addPartitionDesc=partnIter.next();
-if (!found && addPartitionDesc.getPartSpec().equals(partSpec)) {
+if (!found && addPartitionDesc.getPartition(0).getPartSpec().equals(partSpec)) {
 found=true;
 }
  else {
@@ -104,11 +105,12 @@ conf.set("import.destination.dir",table.getDataLocation().toString());
 if (table.isPartitioned()) {
 LOG.debug("table partitioned");
 for (AddPartitionDesc addPartitionDesc : partitionDescs) {
-if (db.getPartition(table,addPartitionDesc.getPartSpec(),false) == null) {
+Map<String,String> partSpec=addPartitionDesc.getPartition(0).getPartSpec();
+if (db.getPartition(table,partSpec,false) == null) {
 rootTasks.add(addSinglePartition(fromURI,fs,tblDesc,table,wh,addPartitionDesc));
 }
  else {
-throw new SemanticException(ErrorMsg.PARTITION_EXISTS.getMsg(partSpecToString(addPartitionDesc.getPartSpec())));
+throw new SemanticException(ErrorMsg.PARTITION_EXISTS.getMsg(partSpecToString(partSpec)));
 }
 }
 }
