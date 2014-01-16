@@ -1,0 +1,31 @@
+{
+  Set<String> aliases=getParticipants(ctx);
+  Map<String,Long> aliasToKnownSize=ctx.getAliasToKnownSize();
+  Map<String,ArrayList<String>> pathToAliases=ctx.getPathToAliases();
+  Map<String,Task<? extends Serializable>> aliasToTask=ctx.getAliasToTask();
+  long threshold=HiveConf.getLongVar(conf,HiveConf.ConfVars.HIVESMALLTABLESFILESIZE);
+  Long bigTableSize=null;
+  Long smallTablesSize=null;
+  String bigTableFileAlias=null;
+  for (  String alias : aliases) {
+    if (!aliasToTask.containsKey(alias)) {
+      continue;
+    }
+    long sumOfOthers=Utilities.sumOfExcept(aliasToKnownSize,aliases,alias);
+    if (sumOfOthers < 0 || sumOfOthers > threshold) {
+      continue;
+    }
+    Long aliasSize=aliasToKnownSize.get(alias);
+    if (bigTableSize == null || (aliasSize != null && aliasSize > bigTableSize)) {
+      bigTableFileAlias=alias;
+      bigTableSize=aliasSize;
+      smallTablesSize=sumOfOthers;
+    }
+  }
+  if (bigTableFileAlias != null) {
+    LOG.info("Driver alias is " + bigTableFileAlias + " with size "+ bigTableSize+ " (total size of others : "+ smallTablesSize+ ", threshold : "+ threshold+ ")");
+    return bigTableFileAlias;
+  }
+  LOG.info("Failed to resolve driver alias (threshold : " + threshold + ", length mapping : "+ aliasToKnownSize+ ")");
+  return null;
+}

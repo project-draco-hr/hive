@@ -29,43 +29,30 @@
     int bigTablePosition=-1;
     if (convertJoinMapJoin) {
       long mapJoinSize=HiveConf.getLongVar(conf,HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASKTHRESHOLD);
-      boolean bigTableFound=false;
-      long largestBigTableCandidateSize=-1;
-      long sumTableSizes=0;
-      for (      String alias : aliasToWork.keySet()) {
+      Long bigTableSize=null;
+      Set<String> aliases=aliasToWork.keySet();
+      for (      String alias : aliases) {
         int tablePosition=getPosition(currWork,joinOp,alias);
-        boolean bigTableCandidate=bigTableCandidates.contains(tablePosition);
-        Long size=aliasToSize.get(alias);
-        if ((size == null) || (size > mapJoinSize)) {
-          sumTableSizes+=largestBigTableCandidateSize;
-          if (bigTableFound || (sumTableSizes > mapJoinSize) || !bigTableCandidate) {
-            convertJoinMapJoin=false;
-            break;
-          }
-          bigTableFound=true;
-          bigTablePosition=tablePosition;
-          largestBigTableCandidateSize=mapJoinSize + 1;
+        if (!bigTableCandidates.contains(tablePosition)) {
+          continue;
         }
- else {
-          if (bigTableCandidate && size > largestBigTableCandidateSize) {
-            bigTablePosition=tablePosition;
-            sumTableSizes+=largestBigTableCandidateSize;
-            largestBigTableCandidateSize=size;
-          }
- else {
-            sumTableSizes+=size;
-          }
-          if (sumTableSizes > mapJoinSize) {
-            convertJoinMapJoin=false;
-            break;
-          }
+        long sumOfOthers=Utilities.sumOfExcept(aliasToSize,aliases,alias);
+        if (sumOfOthers < 0 || sumOfOthers > mapJoinSize) {
+          continue;
+        }
+        if (bigTableSize == null && bigTablePosition >= 0 && tablePosition < bigTablePosition) {
+          continue;
+        }
+        Long aliasSize=aliasToSize.get(alias);
+        if (bigTableSize == null || (aliasSize != null && aliasSize > bigTableSize)) {
+          bigTablePosition=tablePosition;
+          bigTableSize=aliasSize;
         }
       }
     }
-    String bigTableAlias=null;
     currWork.setOpParseCtxMap(parseCtx.getOpParseCtx());
     currWork.setJoinTree(joinTree);
-    if (convertJoinMapJoin) {
+    if (bigTablePosition >= 0) {
       MapRedTask newTask=convertTaskToMapJoinTask(currTask.getWork(),bigTablePosition).getFirst();
       newTask.setTaskTag(Task.MAPJOIN_ONLY_NOBACKUP);
       replaceTask(currTask,newTask,physicalContext);
@@ -82,7 +69,7 @@
       MapredWork newWork=Utilities.clonePlan(currTask.getWork());
       ObjectPair<MapRedTask,String> newTaskAlias=convertTaskToMapJoinTask(newWork,i);
       MapRedTask newTask=newTaskAlias.getFirst();
-      bigTableAlias=newTaskAlias.getSecond();
+      String bigTableAlias=newTaskAlias.getSecond();
       if (cannotConvert(bigTableAlias,aliasToSize,aliasTotalKnownInputSize,ThresholdOfSmallTblSizeSum)) {
         continue;
       }
