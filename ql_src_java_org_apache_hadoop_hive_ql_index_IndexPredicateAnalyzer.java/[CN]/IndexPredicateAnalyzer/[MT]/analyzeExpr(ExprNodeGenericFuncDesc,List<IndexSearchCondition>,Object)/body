@@ -1,5 +1,4 @@
 {
-  expr=(ExprNodeGenericFuncDesc)expr;
   if (FunctionRegistry.isOpAnd(expr)) {
     assert(nodeOutputs.length == 2);
     ExprNodeDesc residual1=(ExprNodeDesc)nodeOutputs[0];
@@ -15,36 +14,27 @@
     residuals.add(residual2);
     return new ExprNodeGenericFuncDesc(TypeInfoFactory.booleanTypeInfo,FunctionRegistry.getGenericUDFForAnd(),residuals);
   }
-  String udfName;
-  if (expr.getGenericUDF() instanceof GenericUDFBridge) {
-    GenericUDFBridge func=(GenericUDFBridge)expr.getGenericUDF();
-    udfName=func.getUdfName();
-  }
- else {
-    udfName=expr.getGenericUDF().getClass().getName();
-  }
-  if (!udfNames.contains(udfName)) {
+  GenericUDF genericUDF=expr.getGenericUDF();
+  if (!(genericUDF instanceof GenericUDFBaseCompare)) {
     return expr;
   }
-  ExprNodeDesc child1=extractConstant((ExprNodeDesc)nodeOutputs[0]);
-  ExprNodeDesc child2=extractConstant((ExprNodeDesc)nodeOutputs[1]);
-  ExprNodeColumnDesc columnDesc=null;
-  ExprNodeConstantDesc constantDesc=null;
-  if ((child1 instanceof ExprNodeColumnDesc) && (child2 instanceof ExprNodeConstantDesc)) {
-    columnDesc=(ExprNodeColumnDesc)child1;
-    constantDesc=(ExprNodeConstantDesc)child2;
-  }
- else   if ((child2 instanceof ExprNodeColumnDesc) && (child1 instanceof ExprNodeConstantDesc)) {
-    columnDesc=(ExprNodeColumnDesc)child2;
-    constantDesc=(ExprNodeConstantDesc)child1;
-  }
-  if (columnDesc == null) {
+  ExprNodeDesc expr1=(ExprNodeDesc)nodeOutputs[0];
+  ExprNodeDesc expr2=(ExprNodeDesc)nodeOutputs[1];
+  ExprNodeDesc[] extracted=ExprNodeDescUtils.extractComparePair(expr1,expr2);
+  if (extracted == null) {
     return expr;
   }
-  if (allowedColumnNames != null) {
-    if (!allowedColumnNames.contains(columnDesc.getColumn())) {
-      return expr;
-    }
+  if (extracted.length > 2) {
+    genericUDF=genericUDF.flip();
+  }
+  String udfName=genericUDF.getUdfName();
+  if (!udfNames.contains(genericUDF.getUdfName())) {
+    return expr;
+  }
+  ExprNodeColumnDesc columnDesc=(ExprNodeColumnDesc)extracted[0];
+  ExprNodeConstantDesc constantDesc=(ExprNodeConstantDesc)extracted[1];
+  if (!allowedColumnNames.contains(columnDesc.getColumn())) {
+    return expr;
   }
   searchConditions.add(new IndexSearchCondition(columnDesc,udfName,constantDesc,expr));
   return null;
