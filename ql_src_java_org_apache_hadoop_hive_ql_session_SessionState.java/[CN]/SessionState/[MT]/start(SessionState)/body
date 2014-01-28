@@ -17,13 +17,26 @@
     }
   }
   try {
-    Hive.get(startSs.conf).getMSC();
+    Hive.get(new HiveConf(startSs.conf)).getMSC();
     ShimLoader.getHadoopShims().getUGIForConf(startSs.conf);
     FileSystem.get(startSs.conf);
   }
  catch (  Exception e) {
     throw new RuntimeException(e);
   }
-  setupAuth(startSs);
+  if (HiveConf.getVar(startSs.getConf(),HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("tez")) {
+    try {
+      if (startSs.tezSessionState == null) {
+        startSs.tezSessionState=new TezSessionState();
+      }
+      startSs.tezSessionState.open(startSs.getSessionId(),startSs.conf);
+    }
+ catch (    Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+ else {
+    LOG.info("No Tez session required at this point. hive.execution.engine=mr.");
+  }
   return startSs;
 }
