@@ -3,8 +3,23 @@
   Partition retPtn=null;
   try {
     ms.openTransaction();
-    retPtn=add_partition_core_notxn(ms,part,envContext).getKey();
-    success=ms.commitTransaction();
+    Table tbl=ms.getTable(part.getDbName(),part.getTableName());
+    if (tbl == null) {
+      throw new InvalidObjectException("Unable to add partition because table or database do not exist");
+    }
+    boolean shouldAdd=startAddPartition(ms,part,false);
+    assert shouldAdd;
+    boolean madeDir=createLocationForAddedPartition(tbl,part);
+    try {
+      initializeAddedPartition(tbl,part,madeDir);
+      success=ms.addPartition(part);
+    }
+  finally {
+      if (!success && madeDir) {
+        wh.deleteDir(new Path(part.getSd().getLocation()),true);
+      }
+    }
+    success=success && ms.commitTransaction();
   }
   finally {
     if (!success) {
@@ -12,5 +27,5 @@
     }
     fireMetaStoreAddPartitionEvent(ms,part,envContext,success);
   }
-  return retPtn;
+  return part;
 }

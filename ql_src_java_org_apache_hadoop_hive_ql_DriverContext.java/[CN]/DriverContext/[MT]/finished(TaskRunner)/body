@@ -1,0 +1,24 @@
+{
+  if (statsTasks.isEmpty() || !(runner.getTask() instanceof MapRedTask)) {
+    return;
+  }
+  MapRedTask mapredTask=(MapRedTask)runner.getTask();
+  MapWork mapWork=mapredTask.getWork().getMapWork();
+  ReduceWork reduceWork=mapredTask.getWork().getReduceWork();
+  List<Operator> operators=new ArrayList<Operator>(mapWork.getAliasToWork().values());
+  if (reduceWork != null) {
+    operators.add(reduceWork.getReducer());
+  }
+  final List<String> statKeys=new ArrayList<String>(1);
+  NodeUtils.iterate(operators,FileSinkOperator.class,new Function<FileSinkOperator>(){
+    public void apply(    FileSinkOperator fsOp){
+      if (fsOp.getConf().isGatherStats()) {
+        statKeys.add(fsOp.getConf().getStatsAggPrefix());
+      }
+    }
+  }
+);
+  for (  String statKey : statKeys) {
+    statsTasks.get(statKey).getWork().setSourceTask(mapredTask);
+  }
+}

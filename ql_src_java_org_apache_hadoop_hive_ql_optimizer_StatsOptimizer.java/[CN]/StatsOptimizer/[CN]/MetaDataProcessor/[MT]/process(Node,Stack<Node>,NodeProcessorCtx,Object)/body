@@ -21,25 +21,23 @@
   try {
     Hive hive=Hive.get(pctx.getConf());
     for (    AggregationDesc aggr : aggrs) {
-      if (aggr.getGenericUDAFName().equals(GenericUDAFCount.class.getAnnotation(Description.class).name())) {
-        long rowCnt=0;
+      if (aggr.getGenericUDAFName().equals(GenericUDAFSum.class.getAnnotation(Description.class).name())) {
+        if (!(aggr.getParameters().get(0) instanceof ExprNodeConstantDesc)) {
+          return null;
+        }
+        Long rowCnt=getRowCnt(pctx,tsOp,tbl);
+        if (rowCnt == null) {
+          return null;
+        }
+        oneRow.add(HiveDecimal.create(((ExprNodeConstantDesc)aggr.getParameters().get(0)).getValue().toString()).multiply(HiveDecimal.create(rowCnt)));
+        ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.DECIMAL));
+      }
+ else       if (aggr.getGenericUDAFName().equals(GenericUDAFCount.class.getAnnotation(Description.class).name())) {
+        Long rowCnt=0L;
         if ((aggr.getParameters().isEmpty() || aggr.getParameters().get(0) instanceof ExprNodeConstantDesc)) {
-          if (tbl.isPartitioned()) {
-            for (            Partition part : hive.getAllPartitionsOf(tbl)) {
-              long partRowCnt=Long.parseLong(part.getParameters().get(StatsSetupConst.ROW_COUNT));
-              if (partRowCnt < 1) {
-                Log.debug("Partition doesn't have upto date stats " + part.getSpec());
-                return null;
-              }
-              rowCnt+=partRowCnt;
-            }
-          }
- else {
-            rowCnt=Long.parseLong(tbl.getProperty(StatsSetupConst.ROW_COUNT));
-            if (rowCnt < 1) {
-              Log.debug("Table doesn't have upto date stats " + tbl.getTableName());
-              return null;
-            }
+          rowCnt=getRowCnt(pctx,tsOp,tbl);
+          if (rowCnt == null) {
+            return null;
           }
         }
  else {
@@ -71,7 +69,7 @@
             }
           }
  else {
-            for (            Partition part : hive.getAllPartitionsOf(tbl)) {
+            for (            Partition part : pctx.getPrunedPartitions(tsOp.getConf().getAlias(),tsOp).getPartitions()) {
               if (!StatsSetupConst.areStatsUptoDate(part.getParameters())) {
                 Log.debug("Stats for part : " + part.getSpec() + " are not upto date.");
                 return null;
@@ -122,7 +120,7 @@ return null;
 }
 }
  else {
-Set<Partition> parts=hive.getAllPartitionsOf(tbl);
+Set<Partition> parts=pctx.getPrunedPartitions(tsOp.getConf().getAlias(),tsOp).getPartitions();
 switch (type) {
 case Integeral:
 {
@@ -185,7 +183,7 @@ return null;
 }
 }
  else {
-Set<Partition> parts=hive.getAllPartitionsOf(tbl);
+Set<Partition> parts=pctx.getPrunedPartitions(tsOp.getConf().getAlias(),tsOp).getPartitions();
 switch (type) {
 case Integeral:
 {

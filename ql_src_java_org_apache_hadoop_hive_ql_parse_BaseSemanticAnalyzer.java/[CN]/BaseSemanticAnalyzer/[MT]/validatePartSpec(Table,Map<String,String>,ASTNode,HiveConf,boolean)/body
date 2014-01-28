@@ -1,0 +1,41 @@
+{
+  tbl.validatePartColumnNames(partSpec,shouldBeFull);
+  if (!HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_TYPE_CHECK_ON_INSERT)) {
+    return;
+  }
+  Map<ASTNode,ExprNodeDesc> astExprNodeMap=new HashMap<ASTNode,ExprNodeDesc>();
+  if (!getPartExprNodeDesc(astNode,astExprNodeMap)) {
+    STATIC_LOG.warn("Dynamic partitioning is used; only validating " + astExprNodeMap.size() + " columns");
+  }
+  if (astExprNodeMap.isEmpty()) {
+    return;
+  }
+  List<FieldSchema> parts=tbl.getPartitionKeys();
+  Map<String,String> partCols=new HashMap<String,String>(parts.size());
+  for (  FieldSchema col : parts) {
+    partCols.put(col.getName(),col.getType().toLowerCase());
+  }
+  for (  Entry<ASTNode,ExprNodeDesc> astExprNodePair : astExprNodeMap.entrySet()) {
+    String astKeyName=astExprNodePair.getKey().toString().toLowerCase();
+    if (astExprNodePair.getKey().getType() == HiveParser.Identifier) {
+      astKeyName=stripIdentifierQuotes(astKeyName);
+    }
+    String colType=partCols.get(astKeyName);
+    ObjectInspector inputOI=astExprNodePair.getValue().getWritableObjectInspector();
+    TypeInfo expectedType=TypeInfoUtils.getTypeInfoFromTypeString(colType);
+    ObjectInspector outputOI=TypeInfoUtils.getStandardWritableObjectInspectorFromTypeInfo(expectedType);
+    Object value=null;
+    String colSpec=partSpec.get(astKeyName);
+    try {
+      value=ExprNodeEvaluatorFactory.get(astExprNodePair.getValue()).evaluate(colSpec);
+    }
+ catch (    HiveException e) {
+      throw new SemanticException(e);
+    }
+    Object convertedValue=ObjectInspectorConverters.getConverter(inputOI,outputOI).convert(value);
+    if (convertedValue == null) {
+      throw new SemanticException(ErrorMsg.PARTITION_SPEC_TYPE_MISMATCH,astKeyName,inputOI.getTypeName(),outputOI.getTypeName());
+    }
+    normalizeColSpec(partSpec,astKeyName,colType,colSpec,convertedValue);
+  }
+}

@@ -1,0 +1,29 @@
+{
+  Set<String> aliases=getParticipants(ctx);
+  Map<String,Long> aliasToKnownSize=ctx.getAliasToKnownSize();
+  Map<String,ArrayList<String>> pathToAliases=ctx.getPathToAliases();
+  Set<String> unknownPaths=new HashSet<String>();
+  for (  Map.Entry<String,ArrayList<String>> entry : pathToAliases.entrySet()) {
+    for (    String alias : entry.getValue()) {
+      if (aliases.contains(alias) && !aliasToKnownSize.containsKey(alias)) {
+        unknownPaths.add(entry.getKey());
+        break;
+      }
+    }
+  }
+  Path hdfsTmpDir=ctx.getHdfsTmpDir();
+  Path localTmpDir=ctx.getLocalTmpDir();
+  for (  String p : unknownPaths) {
+    if (p.startsWith(hdfsTmpDir.toString()) || p.startsWith(localTmpDir.toString())) {
+      Path path=new Path(p);
+      FileSystem fs=path.getFileSystem(conf);
+      long fileSize=fs.getContentSummary(path).getLength();
+      for (      String alias : pathToAliases.get(p)) {
+        Long length=aliasToKnownSize.get(alias);
+        if (length == null) {
+          aliasToKnownSize.put(alias,fileSize);
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  boolean success=false;
+  try {
+    openTransaction();
+    dbName=dbName.toLowerCase().trim();
+    tableName=tableName.toLowerCase().trim();
+    MTable mtbl=getMTable(dbName,tableName);
+    if (mtbl == null) {
+      success=commitTransaction();
+      return false;
+    }
+    Query query=pm.newQuery("select partitionName from org.apache.hadoop.hive.metastore.model.MPartition " + "where table.tableName == t1 && table.database.name == t2 && partitionName == t3");
+    query.declareParameters("java.lang.String t1, java.lang.String t2, java.lang.String t3");
+    query.setUnique(true);
+    query.setResult("partitionName");
+    String name=Warehouse.makePartName(convertToFieldSchemas(mtbl.getPartitionKeys()),partVals);
+    String result=(String)query.execute(tableName,dbName,name);
+    success=commitTransaction();
+    return result != null;
+  }
+  finally {
+    if (!success) {
+      rollbackTransaction();
+    }
+  }
+}
