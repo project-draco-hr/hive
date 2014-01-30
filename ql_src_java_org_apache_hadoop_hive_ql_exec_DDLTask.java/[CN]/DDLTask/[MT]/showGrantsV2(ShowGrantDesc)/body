@@ -1,19 +1,17 @@
 {
   HiveAuthorizer authorizer=SessionState.get().getAuthorizerV2();
-  StringBuilder builder=new StringBuilder();
   try {
     List<HivePrivilegeInfo> privInfos=authorizer.showPrivileges(getHivePrincipal(showGrantDesc.getPrincipalDesc()),getHivePrivilegeObject(showGrantDesc.getHiveObj()));
+    List<HiveObjectPrivilege> privList=new ArrayList<HiveObjectPrivilege>();
     for (    HivePrivilegeInfo privInfo : privInfos) {
       HivePrincipal principal=privInfo.getPrincipal();
       HivePrivilegeObject privObj=privInfo.getObject();
       HivePrivilege priv=privInfo.getPrivilege();
       PrivilegeGrantInfo grantInfo=AuthorizationUtils.getThriftPrivilegeGrantInfo(priv,privInfo.getGrantorPrincipal(),privInfo.isGrantOption());
-      HiveObjectPrivilege thriftObjectPriv=new HiveObjectPrivilege(null,null,null,grantInfo);
-      List<HiveObjectPrivilege> privList=new ArrayList<HiveObjectPrivilege>();
+      HiveObjectPrivilege thriftObjectPriv=new HiveObjectPrivilege(new HiveObjectRef(AuthorizationUtils.getThriftHiveObjType(privObj.getType()),privObj.getDbname(),privObj.getTableviewname(),null,null),principal.getName(),AuthorizationUtils.getThriftPrincipalType(principal.getType()),grantInfo);
       privList.add(thriftObjectPriv);
-      writeGrantInfo(builder,AuthorizationUtils.getThriftPrincipalType(principal.getType()),principal.getName(),privObj.getDbname(),privObj.getTableviewname(),null,null,privList);
     }
-    writeToFile(builder.toString(),showGrantDesc.getResFile());
+    writeToFile(writeGrantInfo(privList),showGrantDesc.getResFile());
   }
  catch (  IOException e) {
     throw new HiveException("Error in show grant statement",e);

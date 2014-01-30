@@ -1,0 +1,31 @@
+{
+  incrementCounter("list_partition_column_privileges");
+  try {
+    if (dbName == null) {
+      return getMS().listPrincipalPartitionColumnGrantsAll(principalName,principalType);
+    }
+    Table tbl=get_table(dbName,tableName);
+    String partName=Warehouse.makePartName(tbl.getPartitionKeys(),partValues);
+    if (principalName == null) {
+      return getMS().listPartitionColumnGrantsAll(dbName,tableName,partName,columnName);
+    }
+    List<MPartitionColumnPrivilege> mPartitionCols=getMS().listPrincipalPartitionColumnGrants(principalName,principalType,dbName,tableName,partName,columnName);
+    if (mPartitionCols.isEmpty()) {
+      return Collections.emptyList();
+    }
+    List<HiveObjectPrivilege> result=new ArrayList<HiveObjectPrivilege>();
+    for (int i=0; i < mPartitionCols.size(); i++) {
+      MPartitionColumnPrivilege sCol=mPartitionCols.get(i);
+      HiveObjectRef objectRef=new HiveObjectRef(HiveObjectType.COLUMN,dbName,tableName,partValues,sCol.getColumnName());
+      HiveObjectPrivilege secObj=new HiveObjectPrivilege(objectRef,sCol.getPrincipalName(),principalType,new PrivilegeGrantInfo(sCol.getPrivilege(),sCol.getCreateTime(),sCol.getGrantor(),PrincipalType.valueOf(sCol.getGrantorType()),sCol.getGrantOption()));
+      result.add(secObj);
+    }
+    return result;
+  }
+ catch (  MetaException e) {
+    throw e;
+  }
+catch (  Exception e) {
+    throw new RuntimeException(e);
+  }
+}

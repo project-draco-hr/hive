@@ -1,21 +1,26 @@
 {
   incrementCounter("list_security_partition_grant");
   try {
-    RawStore ms=getMS();
+    if (dbName == null) {
+      return getMS().listPrincipalPartitionGrantsAll(principalName,principalType);
+    }
     Table tbl=get_table(dbName,tableName);
     String partName=Warehouse.makePartName(tbl.getPartitionKeys(),partValues);
-    List<MPartitionPrivilege> mParts=ms.listPrincipalPartitionGrants(principalName,principalType,dbName,tableName,partName);
-    if (mParts.size() > 0) {
-      List<HiveObjectPrivilege> result=new ArrayList<HiveObjectPrivilege>();
-      for (int i=0; i < mParts.size(); i++) {
-        MPartitionPrivilege sPart=mParts.get(i);
-        HiveObjectRef objectRef=new HiveObjectRef(HiveObjectType.PARTITION,dbName,tableName,partValues,null);
-        HiveObjectPrivilege secObj=new HiveObjectPrivilege(objectRef,sPart.getPrincipalName(),principalType,new PrivilegeGrantInfo(sPart.getPrivilege(),sPart.getCreateTime(),sPart.getGrantor(),PrincipalType.valueOf(sPart.getGrantorType()),sPart.getGrantOption()));
-        result.add(secObj);
-      }
-      return result;
+    if (principalName == null) {
+      return getMS().listPartitionGrantsAll(dbName,tableName,partName);
     }
-    return Collections.<HiveObjectPrivilege>emptyList();
+    List<MPartitionPrivilege> mParts=getMS().listPrincipalPartitionGrants(principalName,principalType,dbName,tableName,partName);
+    if (mParts.isEmpty()) {
+      return Collections.<HiveObjectPrivilege>emptyList();
+    }
+    List<HiveObjectPrivilege> result=new ArrayList<HiveObjectPrivilege>();
+    for (int i=0; i < mParts.size(); i++) {
+      MPartitionPrivilege sPart=mParts.get(i);
+      HiveObjectRef objectRef=new HiveObjectRef(HiveObjectType.PARTITION,dbName,tableName,partValues,null);
+      HiveObjectPrivilege secObj=new HiveObjectPrivilege(objectRef,sPart.getPrincipalName(),principalType,new PrivilegeGrantInfo(sPart.getPrivilege(),sPart.getCreateTime(),sPart.getGrantor(),PrincipalType.valueOf(sPart.getGrantorType()),sPart.getGrantOption()));
+      result.add(secObj);
+    }
+    return result;
   }
  catch (  MetaException e) {
     throw e;
