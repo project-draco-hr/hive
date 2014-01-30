@@ -1,26 +1,16 @@
 {
-  ExpressionTree tree=(filter != null && !filter.isEmpty()) ? getFilterParser(filter).tree : ExpressionTree.EMPTY_TREE;
-  dbName=dbName.toLowerCase();
-  tblName=tblName.toLowerCase();
-  GetPartsHelper ctx=new GetPartsHelper(dbName,tblName,allowSql,allowJdo);
-  try {
-    ctx.start(true);
-    if (ctx.canUseDirectSql()) {
-      try {
-        if (!ctx.setResult(directSql.getPartitionsViaSqlFilter(ctx.getTable(),tree,(maxParts < 0) ? null : (int)maxParts))) {
-          ctx.disableDirectSql();
-        }
+  final ExpressionTree tree=(filter != null && !filter.isEmpty()) ? getFilterParser(filter).tree : ExpressionTree.EMPTY_TREE;
+  return new GetListHelper<Partition>(dbName,tblName,allowSql,allowJdo){
+    protected List<Partition> getSqlResult(    GetHelper<List<Partition>> ctx) throws MetaException {
+      List<Partition> parts=directSql.getPartitionsViaSqlFilter(ctx.getTable(),tree,(maxParts < 0) ? null : (int)maxParts);
+      if (parts == null) {
+        ctx.disableDirectSql();
       }
- catch (      Exception ex) {
-        ctx.handleDirectSqlError(ex);
-      }
+      return parts;
     }
-    if (!ctx.canUseDirectSql()) {
-      ctx.setResult(getPartitionsViaOrmFilter(ctx.getTable(),tree,maxParts,true));
+    protected List<Partition> getJdoResult(    GetHelper<List<Partition>> ctx) throws MetaException, NoSuchObjectException {
+      return getPartitionsViaOrmFilter(ctx.getTable(),tree,maxParts,true);
     }
-    return ctx.commit();
   }
-  finally {
-    ctx.close();
-  }
+.run(true);
 }

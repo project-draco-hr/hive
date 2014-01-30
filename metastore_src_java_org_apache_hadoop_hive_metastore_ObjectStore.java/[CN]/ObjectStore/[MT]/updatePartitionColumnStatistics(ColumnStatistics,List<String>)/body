@@ -4,9 +4,15 @@
     openTransaction();
     List<ColumnStatisticsObj> statsObjs=colStats.getStatsObj();
     ColumnStatisticsDesc statsDesc=colStats.getStatsDesc();
+    Table table=ensureGetTable(statsDesc.getDbName(),statsDesc.getTableName());
+    Partition partition=convertToPart(getMPartition(statsDesc.getDbName(),statsDesc.getTableName(),partVals));
     for (    ColumnStatisticsObj statsObj : statsObjs) {
-      MPartitionColumnStatistics mStatsObj=convertToMPartitionColumnStatistics(statsDesc,statsObj,partVals);
-      writeMPartitionColumnStatistics(mStatsObj,partVals);
+      MPartition mPartition=getMPartition(statsDesc.getDbName(),statsDesc.getTableName(),partVals);
+      if (partition == null) {
+        throw new NoSuchObjectException("Partition for which stats is gathered doesn't exist.");
+      }
+      MPartitionColumnStatistics mStatsObj=StatObjectConverter.convertToMPartitionColumnStatistics(mPartition,statsDesc,statsObj);
+      writeMPartitionColumnStatistics(table,partition,mStatsObj);
     }
     committed=commitTransaction();
     return committed;

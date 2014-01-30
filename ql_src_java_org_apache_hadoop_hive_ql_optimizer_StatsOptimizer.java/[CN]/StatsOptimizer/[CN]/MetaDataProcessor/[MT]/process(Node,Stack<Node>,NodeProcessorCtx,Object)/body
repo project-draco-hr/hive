@@ -58,8 +58,12 @@
               Log.debug("Table doesn't have upto date stats " + tbl.getTableName());
               return null;
             }
-            ColumnStatisticsData statData=hive.getMSC().getTableColumnStatistics(tbl.getDbName(),tbl.getTableName(),colName).getStatsObjIterator().next().getStatsData();
-            Long nullCnt=getNullcountFor(type,statData);
+            List<ColumnStatisticsObj> stats=hive.getMSC().getTableColumnStatistics(tbl.getDbName(),tbl.getTableName(),Lists.newArrayList(colName));
+            if (stats.isEmpty()) {
+              Log.debug("No stats for " + tbl.getTableName() + " column "+ colName);
+              return null;
+            }
+            Long nullCnt=getNullcountFor(type,stats.get(0).getStatsData());
             if (null == nullCnt) {
               Log.debug("Unsupported type: " + desc.getTypeString() + " encountered in "+ "metadata optimizer for column : "+ colName);
               return null;
@@ -69,7 +73,8 @@
             }
           }
  else {
-            for (            Partition part : pctx.getPrunedPartitions(tsOp.getConf().getAlias(),tsOp).getPartitions()) {
+            Set<Partition> parts=pctx.getPrunedPartitions(tsOp.getConf().getAlias(),tsOp).getPartitions();
+            for (            Partition part : parts) {
               if (!StatsSetupConst.areStatsUptoDate(part.getParameters())) {
                 Log.debug("Stats for part : " + part.getSpec() + " are not upto date.");
                 return null;
@@ -80,7 +85,14 @@
                 return null;
               }
               rowCnt+=partRowCnt;
-              ColumnStatisticsData statData=hive.getMSC().getPartitionColumnStatistics(tbl.getDbName(),tbl.getTableName(),part.getName(),colName).getStatsObjIterator().next().getStatsData();
+            }
+            Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartStats(hive,tbl,colName,parts);
+            if (result == null) {
+              return null;
+            }
+            for (            List<ColumnStatisticsObj> statObj : result) {
+              ColumnStatisticsData statData=validateSingleColStat(statObj);
+              if (statData == null)               return null;
               Long nullCnt=getNullcountFor(type,statData);
               if (nullCnt == null) {
                 Log.debug("Unsupported type: " + desc.getTypeString() + " encountered in "+ "metadata optimizer for column : "+ colName);
@@ -104,7 +116,12 @@
             Log.debug("Stats for table : " + tbl.getTableName() + " are not upto date.");
             return null;
           }
-          ColumnStatisticsData statData=hive.getMSC().getTableColumnStatistics(tbl.getDbName(),tbl.getTableName(),colName).getStatsObjIterator().next().getStatsData();
+          List<ColumnStatisticsObj> stats=hive.getMSC().getTableColumnStatistics(tbl.getDbName(),tbl.getTableName(),Lists.newArrayList(colName));
+          if (stats.isEmpty()) {
+            Log.debug("No stats for " + tbl.getTableName() + " column "+ colName);
+            return null;
+          }
+          ColumnStatisticsData statData=stats.get(0).getStatsData();
 switch (type) {
 case Integeral:
             oneRow.add(statData.getLongStats().getHighValue());
@@ -125,13 +142,15 @@ switch (type) {
 case Integeral:
 {
 long maxVal=Long.MIN_VALUE;
-for (Partition part : parts) {
-if (!StatsSetupConst.areStatsUptoDate(part.getParameters())) {
-  Log.debug("Stats for part : " + part.getSpec() + " are not upto date.");
-  return null;
+Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartStats(hive,tbl,colName,parts);
+if (result == null) {
+return null;
 }
-ColumnStatisticsData statData=hive.getMSC().getPartitionColumnStatistics(tbl.getDbName(),tbl.getTableName(),part.getName(),colName).getStatsObjIterator().next().getStatsData();
-maxVal=Math.max(maxVal,statData.getLongStats().getHighValue());
+for (List<ColumnStatisticsObj> statObj : result) {
+ColumnStatisticsData statData=validateSingleColStat(statObj);
+if (statData == null) return null;
+long curVal=statData.getLongStats().getHighValue();
+maxVal=Math.max(maxVal,curVal);
 }
 oneRow.add(maxVal);
 ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.LONG));
@@ -140,13 +159,15 @@ break;
 case Double:
 {
 double maxVal=Double.MIN_VALUE;
-for (Partition part : parts) {
-if (!StatsSetupConst.areStatsUptoDate(part.getParameters())) {
-Log.debug("Stats for part : " + part.getSpec() + " are not upto date.");
+Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartStats(hive,tbl,colName,parts);
+if (result == null) {
 return null;
 }
-ColumnStatisticsData statData=hive.getMSC().getPartitionColumnStatistics(tbl.getDbName(),tbl.getTableName(),part.getName(),colName).getStatsObjIterator().next().getStatsData();
-maxVal=Math.max(maxVal,statData.getDoubleStats().getHighValue());
+for (List<ColumnStatisticsObj> statObj : result) {
+ColumnStatisticsData statData=validateSingleColStat(statObj);
+if (statData == null) return null;
+double curVal=statData.getDoubleStats().getHighValue();
+maxVal=Math.max(maxVal,curVal);
 }
 oneRow.add(maxVal);
 ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.DOUBLE));
@@ -167,7 +188,7 @@ if (!StatsSetupConst.areStatsUptoDate(tbl.getParameters())) {
 Log.debug("Stats for table : " + tbl.getTableName() + " are not upto date.");
 return null;
 }
-ColumnStatisticsData statData=hive.getMSC().getTableColumnStatistics(tbl.getDbName(),tbl.getTableName(),colName).getStatsObjIterator().next().getStatsData();
+ColumnStatisticsData statData=hive.getMSC().getTableColumnStatistics(tbl.getDbName(),tbl.getTableName(),Lists.newArrayList(colName)).get(0).getStatsData();
 switch (type) {
 case Integeral:
 oneRow.add(statData.getLongStats().getLowValue());
@@ -188,13 +209,15 @@ switch (type) {
 case Integeral:
 {
 long minVal=Long.MAX_VALUE;
-for (Partition part : parts) {
-if (!StatsSetupConst.areStatsUptoDate(part.getParameters())) {
-Log.debug("Stats for part : " + part.getSpec() + " are not upto date.");
+Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartStats(hive,tbl,colName,parts);
+if (result == null) {
 return null;
 }
-ColumnStatisticsData statData=hive.getMSC().getPartitionColumnStatistics(tbl.getDbName(),tbl.getTableName(),part.getName(),colName).getStatsObjIterator().next().getStatsData();
-minVal=Math.min(minVal,statData.getLongStats().getLowValue());
+for (List<ColumnStatisticsObj> statObj : result) {
+ColumnStatisticsData statData=validateSingleColStat(statObj);
+if (statData == null) return null;
+long curVal=statData.getLongStats().getLowValue();
+minVal=Math.min(minVal,curVal);
 }
 oneRow.add(minVal);
 ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.LONG));
@@ -203,13 +226,15 @@ break;
 case Double:
 {
 double minVal=Double.MAX_VALUE;
-for (Partition part : parts) {
-if (!StatsSetupConst.areStatsUptoDate(part.getParameters())) {
-Log.debug("Stats for part : " + part.getSpec() + " are not upto date.");
+Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartStats(hive,tbl,colName,parts);
+if (result == null) {
 return null;
 }
-ColumnStatisticsData statData=hive.getMSC().getPartitionColumnStatistics(tbl.getDbName(),tbl.getTableName(),part.getName(),colName).getStatsObjIterator().next().getStatsData();
-minVal=Math.min(minVal,statData.getDoubleStats().getLowValue());
+for (List<ColumnStatisticsObj> statObj : result) {
+ColumnStatisticsData statData=validateSingleColStat(statObj);
+if (statData == null) return null;
+double curVal=statData.getDoubleStats().getLowValue();
+minVal=Math.min(minVal,curVal);
 }
 oneRow.add(minVal);
 ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.DOUBLE));

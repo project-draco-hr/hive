@@ -1,19 +1,21 @@
 {
   String dbName=table.getDbName();
   String tabName=table.getTableName();
-  List<ColStatistics> colStatistics=Lists.newArrayList();
-  for (  ColumnInfo col : schema) {
-    if (!col.isHiddenVirtualCol()) {
-      String colName=col.getInternalName();
-      if (neededColumns.contains(colName)) {
-        String tabAlias=col.getTabAlias();
-        ColStatistics cs=getTableColumnStatsForColumn(dbName,tabName,colName);
-        if (cs != null) {
-          cs.setTableAlias(tabAlias);
-        }
-        colStatistics.add(cs);
-      }
+  Map<String,String> colToTabAlias=new HashMap<String,String>(schema.size());
+  List<String> neededColsInTable=processNeededColumns(schema,neededColumns,colToTabAlias);
+  List<ColStatistics> stats=null;
+  try {
+    List<ColumnStatisticsObj> colStat=Hive.get().getTableColumnStatistics(dbName,tabName,neededColsInTable);
+    stats=new ArrayList<ColStatistics>(colStat.size());
+    for (    ColumnStatisticsObj statObj : colStat) {
+      ColStatistics cs=getColStatistics(statObj,tabName,statObj.getColName());
+      cs.setTableAlias(colToTabAlias.get(cs.getColumnName()));
+      stats.add(cs);
     }
   }
-  return colStatistics;
+ catch (  HiveException e) {
+    LOG.error("Failed to retrieve table statistics: ",e);
+    stats=null;
+  }
+  return stats;
 }
