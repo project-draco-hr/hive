@@ -1,0 +1,26 @@
+{
+  Path tmpURI=getExecContext().getLocalWork().getTmpPath();
+  LOG.info("Temp URI for side table: " + tmpURI);
+  for (byte tag=0; tag < mapJoinTables.length; tag++) {
+    MapJoinTableContainer tableContainer=mapJoinTables[tag];
+    if (tableContainer == null) {
+      continue;
+    }
+    String bigBucketFileName=getExecContext().getCurrentBigBucketFile();
+    String fileName=getExecContext().getLocalWork().getBucketFileName(bigBucketFileName);
+    String dumpFilePrefix=conf.getDumpFilePrefix();
+    Path path=Utilities.generatePath(tmpURI,dumpFilePrefix,tag,fileName);
+    console.printInfo(Utilities.now() + "\tDump the side-table into file: " + path);
+    FileSystem fs=path.getFileSystem(hconf);
+    ObjectOutputStream out=new ObjectOutputStream(new BufferedOutputStream(fs.create(path),4096));
+    try {
+      mapJoinTableSerdes[tag].persist(out,tableContainer);
+    }
+  finally {
+      out.close();
+    }
+    tableContainer.clear();
+    FileStatus status=fs.getFileStatus(path);
+    console.printInfo(Utilities.now() + "\tUploaded 1 File to: " + path+ " ("+ status.getLen()+ " bytes)");
+  }
+}

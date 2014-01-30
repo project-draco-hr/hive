@@ -11,28 +11,47 @@
     e.printStackTrace();
   }
   mapJoinOp.getConf().resetOrder();
+  HiveConf conf=context.getParseCtx().getConf();
   HashTableSinkDesc hashTableSinkDesc=new HashTableSinkDesc(mapJoinOp.getConf());
   HashTableSinkOperator hashTableSinkOp=(HashTableSinkOperator)OperatorFactory.get(hashTableSinkDesc);
   float hashtableMemoryUsage;
   if (context.isFollowedByGroupBy()) {
-    hashtableMemoryUsage=context.getParseCtx().getConf().getFloatVar(HiveConf.ConfVars.HIVEHASHTABLEFOLLOWBYGBYMAXMEMORYUSAGE);
+    hashtableMemoryUsage=conf.getFloatVar(HiveConf.ConfVars.HIVEHASHTABLEFOLLOWBYGBYMAXMEMORYUSAGE);
   }
  else {
-    hashtableMemoryUsage=context.getParseCtx().getConf().getFloatVar(HiveConf.ConfVars.HIVEHASHTABLEMAXMEMORYUSAGE);
+    hashtableMemoryUsage=conf.getFloatVar(HiveConf.ConfVars.HIVEHASHTABLEMAXMEMORYUSAGE);
   }
   hashTableSinkOp.getConf().setHashtableMemoryUsage(hashtableMemoryUsage);
   int bigTable=mapJoinOp.getConf().getPosBigTable();
+  Byte[] orders=mapJoinOp.getConf().getTagOrder();
+  boolean useNontaged=conf.getBoolVar(HiveConf.ConfVars.HIVECONVERTJOINUSENONSTAGED) && conf.getVar(HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("mr") && !conf.getBoolVar(HiveConf.ConfVars.HIVE_VECTORIZATION_ENABLED);
   List<Operator<? extends OperatorDesc>> smallTablesParentOp=new ArrayList<Operator<? extends OperatorDesc>>();
   List<Operator<? extends OperatorDesc>> dummyOperators=new ArrayList<Operator<? extends OperatorDesc>>();
+  List<Operator<? extends OperatorDesc>> directOperators=new ArrayList<Operator<? extends OperatorDesc>>();
   List<Operator<? extends OperatorDesc>> parentsOp=mapJoinOp.getParentOperators();
   for (int i=0; i < parentsOp.size(); i++) {
     if (i == bigTable) {
       smallTablesParentOp.add(null);
+      directOperators.add(null);
       continue;
     }
     Operator<? extends OperatorDesc> parent=parentsOp.get(i);
+    boolean directFetchable=useNontaged && (parent instanceof TableScanOperator || parent instanceof MapJoinOperator);
+    if (directFetchable) {
+      smallTablesParentOp.add(null);
+      directOperators.add(parent);
+      hashTableSinkDesc.getKeys().put(orders[i],null);
+      hashTableSinkDesc.getExprs().put(orders[i],null);
+      hashTableSinkDesc.getFilters().put(orders[i],null);
+    }
+ else {
+      smallTablesParentOp.add(parent);
+      directOperators.add(null);
+    }
     parent.replaceChild(mapJoinOp,hashTableSinkOp);
-    smallTablesParentOp.add(parent);
+    if (directFetchable) {
+      parent.setChildOperators(null);
+    }
     HashTableDummyDesc desc=new HashTableDummyDesc();
     HashTableDummyOperator dummyOp=(HashTableDummyOperator)OperatorFactory.get(desc);
     TableDesc tbl;
@@ -59,5 +78,6 @@
   for (  Operator<? extends OperatorDesc> op : dummyOperators) {
     context.addDummyParentOp(op);
   }
+  context.addDirectWorks(mapJoinOp,directOperators);
   return null;
 }
