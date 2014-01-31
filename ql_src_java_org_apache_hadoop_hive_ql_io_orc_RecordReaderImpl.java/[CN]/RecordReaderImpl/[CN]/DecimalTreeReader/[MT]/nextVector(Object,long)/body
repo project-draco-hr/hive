@@ -1,3 +1,36 @@
 {
-  throw new UnsupportedOperationException("NextVector is not supported operation for Decimal type");
+  DecimalColumnVector result=null;
+  if (previousVector == null) {
+    result=new DecimalColumnVector(precision,scale);
+  }
+ else {
+    result=(DecimalColumnVector)previousVector;
+  }
+  boolean[] scratchIsNull=scratchScaleVector.isNull;
+  super.nextVector(result,batchSize);
+  if (result.isRepeating) {
+    if (!result.isNull[0]) {
+      BigInteger bInt=SerializationUtils.readBigInteger(valueStream);
+      short scaleInData=(short)scaleStream.next();
+      result.vector[0].update(bInt,scaleInData);
+      if (scale != scaleInData) {
+        result.vector[0].changeScaleDestructive((short)scale);
+      }
+    }
+  }
+ else {
+    scratchScaleVector.isNull=result.isNull;
+    scaleStream.nextVector(scratchScaleVector,batchSize);
+    for (int i=0; i < batchSize; i++) {
+      if (!result.isNull[i]) {
+        BigInteger bInt=SerializationUtils.readBigInteger(valueStream);
+        result.vector[i].update(bInt,(short)scratchScaleVector.vector[i]);
+        if (scale != scratchScaleVector.vector[i]) {
+          result.vector[i].changeScaleDestructive((short)scale);
+        }
+      }
+    }
+  }
+  scratchScaleVector.isNull=scratchIsNull;
+  return result;
 }
