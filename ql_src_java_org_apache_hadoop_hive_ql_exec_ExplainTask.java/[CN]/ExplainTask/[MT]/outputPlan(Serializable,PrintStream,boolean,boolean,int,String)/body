@@ -23,7 +23,7 @@
       String appender=isLogical ? " (" + operator.getOperatorId() + ")" : "";
       JSONObject jsonOut=outputPlan(operator.getConf(),out,extended,jsonOutput,jsonOutput ? 0 : indent,appender);
       if (jsonOutput) {
-        json.put(operator.getOperatorId(),jsonOut);
+        json=jsonOut;
       }
     }
     if (!visitedOps.contains(operator) || !isLogical) {
@@ -33,17 +33,12 @@
         for (        Operator<? extends OperatorDesc> op : operator.getChildOperators()) {
           JSONObject jsonOut=outputPlan(op,out,extended,jsonOutput,cindent);
           if (jsonOutput) {
-            json.put(operator.getOperatorId(),jsonOut);
+            ((JSONObject)json.get(JSONObject.getNames(json)[0])).accumulate("children",jsonOut);
           }
         }
       }
     }
     if (jsonOutput) {
-      if (keyJSONObject != null) {
-        JSONObject ret=new JSONObject();
-        ret.put(keyJSONObject,json);
-        return ret;
-      }
       return json;
     }
     return null;
@@ -84,7 +79,7 @@
             }
             out.println(val);
           }
-          if (jsonOutput) {
+          if (jsonOutput && shouldPrint(xpl_note,val)) {
             json.put(header,val.toString());
           }
           continue;
@@ -104,7 +99,7 @@
             out.print(header);
           }
           JSONObject jsonOut=outputMap(mp,!skipHeader && !emptyHeader,out,extended,jsonOutput,ind);
-          if (jsonOutput) {
+          if (jsonOutput && !mp.isEmpty()) {
             json.put(header,jsonOut);
           }
           continue;
@@ -112,12 +107,20 @@
  catch (        ClassCastException ce) {
         }
         try {
-          List<?> l=(List<?>)val;
+          List l;
+          try {
+            l=(List)val;
+          }
+ catch (          ClassCastException e) {
+            Set s=(Set)val;
+            l=new LinkedList();
+            l.addAll(s);
+          }
           if (out != null && !skipHeader && l != null && !l.isEmpty()) {
             out.print(header);
           }
           JSONArray jsonOut=outputList(l,out,!skipHeader && !emptyHeader,extended,jsonOutput,ind);
-          if (jsonOutput) {
+          if (jsonOutput && !l.isEmpty()) {
             json.put(header,jsonOut);
           }
           continue;
@@ -131,7 +134,14 @@
           }
           JSONObject jsonOut=outputPlan(s,out,extended,jsonOutput,ind);
           if (jsonOutput) {
-            json.put(header,jsonOut);
+            if (!skipHeader) {
+              json.put(header,jsonOut);
+            }
+ else {
+              for (              String k : JSONObject.getNames(jsonOut)) {
+                json.put(k,jsonOut.get(k));
+              }
+            }
           }
           continue;
         }
