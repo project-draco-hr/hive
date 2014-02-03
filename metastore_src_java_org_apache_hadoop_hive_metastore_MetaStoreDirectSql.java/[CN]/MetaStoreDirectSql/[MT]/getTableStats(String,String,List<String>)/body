@@ -1,0 +1,28 @@
+{
+  if (colNames.isEmpty()) {
+    return null;
+  }
+  boolean doTrace=LOG.isDebugEnabled();
+  long start=doTrace ? System.nanoTime() : 0;
+  String queryText="select " + STATS_COLLIST + " from \"TAB_COL_STATS\" "+ " where \"DB_NAME\" = ? and \"TABLE_NAME\" = ? and \"COLUMN_NAME\" in ("+ makeParams(colNames.size())+ ")";
+  Query query=pm.newQuery("javax.jdo.query.SQL",queryText);
+  Object[] params=new Object[colNames.size() + 2];
+  params[0]=dbName;
+  params[1]=tableName;
+  for (int i=0; i < colNames.size(); ++i) {
+    params[i + 2]=colNames.get(i);
+  }
+  Object qResult=query.executeWithArray(params);
+  long queryTime=doTrace ? System.nanoTime() : 0;
+  if (qResult == null) {
+    query.closeAll();
+    return null;
+  }
+  List<Object[]> list=ensureList(qResult);
+  if (list.isEmpty())   return null;
+  ColumnStatisticsDesc csd=new ColumnStatisticsDesc(true,dbName,tableName);
+  ColumnStatistics result=makeColumnStats(list,csd,0);
+  timingTrace(doTrace,queryText,start,queryTime);
+  query.closeAll();
+  return result;
+}

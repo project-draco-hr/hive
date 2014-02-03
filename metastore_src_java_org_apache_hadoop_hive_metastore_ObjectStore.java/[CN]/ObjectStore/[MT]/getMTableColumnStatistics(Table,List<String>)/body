@@ -1,0 +1,42 @@
+{
+  boolean committed=false;
+  openTransaction();
+  try {
+    List<MTableColumnStatistics> result=null;
+    validateTableCols(table,colNames);
+    Query query=pm.newQuery(MTableColumnStatistics.class);
+    String filter="tableName == t1 && dbName == t2 && (";
+    String paramStr="java.lang.String t1, java.lang.String t2";
+    Object[] params=new Object[colNames.size() + 2];
+    params[0]=table.getTableName();
+    params[1]=table.getDbName();
+    for (int i=0; i < colNames.size(); ++i) {
+      filter+=((i == 0) ? "" : " || ") + "colName == c" + i;
+      paramStr+=", java.lang.String c" + i;
+      params[i + 2]=colNames.get(i);
+    }
+    filter+=")";
+    query.setFilter(filter);
+    query.declareParameters(paramStr);
+    result=(List<MTableColumnStatistics>)query.executeWithArray(params);
+    pm.retrieveAll(result);
+    if (result.size() > colNames.size()) {
+      throw new MetaException("Unexpected " + result.size() + " statistics for "+ colNames.size()+ " columns");
+    }
+    committed=commitTransaction();
+    return result;
+  }
+ catch (  Exception ex) {
+    LOG.error("Error retrieving statistics via jdo",ex);
+    if (ex instanceof MetaException) {
+      throw (MetaException)ex;
+    }
+    throw new MetaException(ex.getMessage());
+  }
+ finally {
+    if (!committed) {
+      rollbackTransaction();
+      return Lists.newArrayList();
+    }
+  }
+}

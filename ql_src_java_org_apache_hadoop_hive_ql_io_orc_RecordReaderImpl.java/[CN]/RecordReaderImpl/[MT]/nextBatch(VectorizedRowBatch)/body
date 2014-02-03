@@ -4,7 +4,27 @@
     currentStripe+=1;
     readStripe();
   }
-  long batchSize=Math.min(VectorizedRowBatch.DEFAULT_SIZE,(rowCountInStripe - rowInStripe));
+  long batchSize=0;
+  if (rowIndexStride != 0 && includedRowGroups != null && rowInStripe < rowCountInStripe) {
+    int startRowGroup=(int)(rowInStripe / rowIndexStride);
+    if (!includedRowGroups[startRowGroup]) {
+      while (startRowGroup < includedRowGroups.length && !includedRowGroups[startRowGroup]) {
+        startRowGroup+=1;
+      }
+    }
+    int endRowGroup=startRowGroup;
+    while (endRowGroup < includedRowGroups.length && includedRowGroups[endRowGroup]) {
+      endRowGroup+=1;
+    }
+    final long markerPosition=(endRowGroup * rowIndexStride) < rowCountInStripe ? (endRowGroup * rowIndexStride) : rowCountInStripe;
+    batchSize=Math.min(VectorizedRowBatch.DEFAULT_SIZE,(markerPosition - rowInStripe));
+    if (LOG.isDebugEnabled() && batchSize < VectorizedRowBatch.DEFAULT_SIZE) {
+      LOG.debug("markerPosition: " + markerPosition + " batchSize: "+ batchSize);
+    }
+  }
+ else {
+    batchSize=Math.min(VectorizedRowBatch.DEFAULT_SIZE,(rowCountInStripe - rowInStripe));
+  }
   rowInStripe+=batchSize;
   if (previous == null) {
     ColumnVector[] cols=(ColumnVector[])reader.nextVector(null,(int)batchSize);

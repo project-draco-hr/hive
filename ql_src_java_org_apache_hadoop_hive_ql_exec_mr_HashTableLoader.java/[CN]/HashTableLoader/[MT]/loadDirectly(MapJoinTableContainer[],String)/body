@@ -1,0 +1,25 @@
+{
+  MapredLocalWork localWork=context.getLocalWork();
+  List<Operator<?>> directWorks=localWork.getDirectFetchOp().get(joinOp);
+  if (directWorks == null || directWorks.isEmpty()) {
+    return;
+  }
+  JobConf job=new JobConf(hconf);
+  MapredLocalTask localTask=new MapredLocalTask(localWork,job,false);
+  HashTableSinkOperator sink=new TemporaryHashSinkOperator(desc);
+  sink.setParentOperators(new ArrayList<Operator<? extends OperatorDesc>>(directWorks));
+  for (  Operator<?> operator : directWorks) {
+    if (operator instanceof TableScanOperator) {
+      operator.setChildOperators(Arrays.<Operator<? extends OperatorDesc>>asList(sink));
+    }
+  }
+  localTask.setExecContext(context);
+  localTask.startForward(inputFileName);
+  MapJoinTableContainer[] tables=sink.getMapJoinTables();
+  for (int i=0; i < sink.getNumParent(); i++) {
+    if (sink.getParentOperators().get(i) != null) {
+      mapJoinTables[i]=tables[i];
+    }
+  }
+  Arrays.fill(tables,null);
+}

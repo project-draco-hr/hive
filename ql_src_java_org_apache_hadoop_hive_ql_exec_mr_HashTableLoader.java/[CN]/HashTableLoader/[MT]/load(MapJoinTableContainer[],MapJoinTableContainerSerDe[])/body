@@ -1,0 +1,32 @@
+{
+  String currentInputPath=context.getCurrentInputPath().toString();
+  LOG.info("******* Load from HashTable for input file: " + currentInputPath);
+  MapredLocalWork localWork=context.getLocalWork();
+  try {
+    if (localWork.getDirectFetchOp() != null) {
+      loadDirectly(mapJoinTables,currentInputPath);
+    }
+    Path baseDir=getBaseDir(localWork);
+    if (baseDir == null) {
+      return;
+    }
+    String fileName=localWork.getBucketFileName(currentInputPath);
+    for (int pos=0; pos < mapJoinTables.length; pos++) {
+      if (pos == desc.getPosBigTable() || mapJoinTables[pos] != null) {
+        continue;
+      }
+      Path path=Utilities.generatePath(baseDir,desc.getDumpFilePrefix(),(byte)pos,fileName);
+      LOG.info("\tLoad back 1 hashtable file from tmp file uri:" + path);
+      ObjectInputStream in=new ObjectInputStream(new BufferedInputStream(new FileInputStream(path.toUri().getPath()),4096));
+      try {
+        mapJoinTables[pos]=mapJoinTableSerdes[pos].load(in);
+      }
+  finally {
+        in.close();
+      }
+    }
+  }
+ catch (  Exception e) {
+    throw new HiveException(e);
+  }
+}

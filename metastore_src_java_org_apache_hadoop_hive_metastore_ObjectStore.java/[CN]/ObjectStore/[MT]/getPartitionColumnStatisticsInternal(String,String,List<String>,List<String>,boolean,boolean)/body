@@ -1,0 +1,33 @@
+{
+  return new GetListHelper<ColumnStatistics>(dbName,tableName,allowSql,allowJdo){
+    protected List<ColumnStatistics> getSqlResult(    GetHelper<List<ColumnStatistics>> ctx) throws MetaException {
+      return directSql.getPartitionStats(dbName,tblName,partNames,colNames);
+    }
+    protected List<ColumnStatistics> getJdoResult(    GetHelper<List<ColumnStatistics>> ctx) throws MetaException, NoSuchObjectException {
+      List<MPartitionColumnStatistics> mStats=getMPartitionColumnStatistics(getTable(),partNames,colNames);
+      List<ColumnStatistics> result=new ArrayList<ColumnStatistics>(Math.min(mStats.size(),partNames.size()));
+      String lastPartName=null;
+      List<ColumnStatisticsObj> curList=null;
+      ColumnStatisticsDesc csd=null;
+      for (int i=0; i <= mStats.size(); ++i) {
+        boolean isLast=i == mStats.size();
+        MPartitionColumnStatistics mStatsObj=isLast ? null : mStats.get(i);
+        String partName=isLast ? null : (String)mStatsObj.getPartitionName();
+        if (isLast || !partName.equals(lastPartName)) {
+          if (i != 0) {
+            result.add(new ColumnStatistics(csd,curList));
+          }
+          if (isLast) {
+            continue;
+          }
+          csd=StatObjectConverter.getPartitionColumnStatisticsDesc(mStatsObj);
+          curList=new ArrayList<ColumnStatisticsObj>(colNames.size());
+        }
+        curList.add(StatObjectConverter.getPartitionColumnStatisticsObj(mStatsObj));
+        lastPartName=partName;
+      }
+      return result;
+    }
+  }
+.run(true);
+}

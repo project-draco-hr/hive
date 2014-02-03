@@ -12,19 +12,24 @@
     currTask.setBackupChildrenTasks(null);
     currTask.setBackupTask(null);
     if (currTask.getTaskTag() == Task.CONVERTED_MAPJOIN) {
-      localTask.setTaskTag(Task.CONVERTED_LOCAL_MAPJOIN);
+      localTask.setTaskTag(Task.CONVERTED_MAPJOIN_LOCAL);
     }
  else {
-      localTask.setTaskTag(Task.LOCAL_MAPJOIN);
+      localTask.setTaskTag(Task.HINTED_MAPJOIN_LOCAL);
+      currTask.setTaskTag(Task.HINTED_MAPJOIN);
     }
     LocalMapJoinProcCtx localMapJoinProcCtx=adjustLocalTask(localTask);
     List<Operator<? extends OperatorDesc>> dummyOps=localMapJoinProcCtx.getDummyParentOp();
-    MapredLocalWork newLocalWork=new MapredLocalWork();
+    MapredLocalWork newLocalWork=localwork.extractDirectWorks(localMapJoinProcCtx.getDirectWorks());
     newLocalWork.setDummyParentOp(dummyOps);
-    newLocalWork.setTmpPath(tmpPath);
-    newLocalWork.setInputFileChangeSensitive(localwork.getInputFileChangeSensitive());
-    newLocalWork.setBucketMapjoinContext(localwork.copyPartSpecMappingOnly());
     mapredWork.getMapWork().setMapLocalWork(newLocalWork);
+    if (localwork.getAliasToFetchWork().isEmpty()) {
+      newLocalWork.setHasStagedAlias(false);
+      currTask.setBackupTask(localTask.getBackupTask());
+      currTask.setBackupChildrenTasks(localTask.getBackupChildrenTasks());
+      return;
+    }
+    newLocalWork.setHasStagedAlias(true);
     List<Task<? extends Serializable>> parentTasks=currTask.getParentTasks();
     currTask.setParentTasks(null);
     if (parentTasks != null) {
@@ -45,7 +50,7 @@
         listTask.set(index,localTask);
         List<Serializable> listWork=(List<Serializable>)conditionalWork.getListWorks();
         index=listWork.indexOf(mapredWork);
-        listWork.set(index,(Serializable)localwork);
+        listWork.set(index,localwork);
         conditionalWork.setListWorks(listWork);
         ConditionalResolver resolver=conditionalTask.getResolver();
         if (resolver instanceof ConditionalResolverSkewJoin) {

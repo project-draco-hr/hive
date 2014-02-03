@@ -1,0 +1,61 @@
+{
+  if (childExpressions != null) {
+    super.evaluateChildren(batch);
+  }
+  DecimalColumnVector inV=(DecimalColumnVector)batch.cols[inputColumn];
+  int[] sel=batch.selected;
+  int n=batch.size;
+  LongColumnVector outV=(LongColumnVector)batch.cols[outputColumn];
+  if (n == 0) {
+    return;
+  }
+  if (inV.noNulls) {
+    outV.noNulls=true;
+    if (inV.isRepeating) {
+      outV.isRepeating=true;
+      func(outV,inV,0);
+    }
+ else     if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        func(outV,inV,i);
+      }
+      outV.isRepeating=false;
+    }
+ else {
+      for (int i=0; i != n; i++) {
+        func(outV,inV,i);
+      }
+      outV.isRepeating=false;
+    }
+  }
+ else {
+    outV.noNulls=false;
+    if (inV.isRepeating) {
+      outV.isRepeating=true;
+      outV.isNull[0]=inV.isNull[0];
+      if (!inV.isNull[0]) {
+        func(outV,inV,0);
+      }
+    }
+ else     if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        outV.isNull[i]=inV.isNull[i];
+        if (!inV.isNull[i]) {
+          func(outV,inV,i);
+        }
+      }
+      outV.isRepeating=false;
+    }
+ else {
+      System.arraycopy(inV.isNull,0,outV.isNull,0,n);
+      for (int i=0; i != n; i++) {
+        if (!inV.isNull[i]) {
+          func(outV,inV,i);
+        }
+      }
+      outV.isRepeating=false;
+    }
+  }
+}

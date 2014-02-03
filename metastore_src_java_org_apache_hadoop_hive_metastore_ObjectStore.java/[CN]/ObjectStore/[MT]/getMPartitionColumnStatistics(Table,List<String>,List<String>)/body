@@ -1,0 +1,50 @@
+{
+  boolean committed=false;
+  MPartitionColumnStatistics mStatsObj=null;
+  try {
+    openTransaction();
+    validateTableCols(table,colNames);
+    boolean foundCol=false;
+    Query query=pm.newQuery(MPartitionColumnStatistics.class);
+    String paramStr="java.lang.String t1, java.lang.String t2";
+    String filter="tableName == t1 && dbName == t2 && (";
+    Object[] params=new Object[colNames.size() + partNames.size() + 2];
+    int i=0;
+    params[i++]=table.getTableName();
+    params[i++]=table.getDbName();
+    int firstI=i;
+    for (    String s : partNames) {
+      filter+=((i == firstI) ? "" : " || ") + "partitionName == p" + i;
+      paramStr+=", java.lang.String p" + i;
+      params[i++]=s;
+    }
+    filter+=") && (";
+    firstI=i;
+    for (    String s : colNames) {
+      filter+=((i == firstI) ? "" : " || ") + "colName == c" + i;
+      paramStr+=", java.lang.String c" + i;
+      params[i++]=s;
+    }
+    filter+=")";
+    query.setFilter(filter);
+    query.declareParameters(paramStr);
+    query.setOrdering("partitionName ascending");
+    @SuppressWarnings("unchecked") List<MPartitionColumnStatistics> result=(List<MPartitionColumnStatistics>)query.executeWithArray(params);
+    pm.retrieveAll(result);
+    committed=commitTransaction();
+    return result;
+  }
+ catch (  Exception ex) {
+    LOG.error("Error retrieving statistics via jdo",ex);
+    if (ex instanceof MetaException) {
+      throw (MetaException)ex;
+    }
+    throw new MetaException(ex.getMessage());
+  }
+ finally {
+    if (!committed) {
+      rollbackTransaction();
+      return Lists.newArrayList();
+    }
+  }
+}
