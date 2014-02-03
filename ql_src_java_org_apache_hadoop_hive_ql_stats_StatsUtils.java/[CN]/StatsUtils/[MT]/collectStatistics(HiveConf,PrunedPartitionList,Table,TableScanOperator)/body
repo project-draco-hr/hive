@@ -3,6 +3,7 @@
   List<ColumnInfo> schema=tableScanOperator.getSchema().getSignature();
   List<String> neededColumns=tableScanOperator.getNeededColumns();
   boolean fetchColStats=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_STATS_FETCH_COLUMN_STATS);
+  boolean fetchPartStats=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_STATS_FETCH_PARTITION_STATS);
   float deserFactor=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVE_STATS_DESERIALIZATION_FACTOR);
   if (!table.isPartitioned()) {
     long nr=getNumRows(table);
@@ -33,19 +34,25 @@
     stats.addToColumnStats(colStats);
   }
  else   if (partList != null) {
-    List<Long> rowCounts=getBasicStatForPartitions(table,partList.getNotDeniedPartns(),StatsSetupConst.ROW_COUNT);
-    List<Long> dataSizes=getBasicStatForPartitions(table,partList.getNotDeniedPartns(),StatsSetupConst.RAW_DATA_SIZE);
-    long nr=getSumIgnoreNegatives(rowCounts);
-    long ds=getSumIgnoreNegatives(dataSizes);
-    if (ds <= 0) {
-      dataSizes=getBasicStatForPartitions(table,partList.getNotDeniedPartns(),StatsSetupConst.TOTAL_SIZE);
+    long nr=0;
+    long ds=0;
+    List<Long> rowCounts=Lists.newArrayList();
+    List<Long> dataSizes=Lists.newArrayList();
+    if (fetchPartStats) {
+      rowCounts=getBasicStatForPartitions(table,partList.getNotDeniedPartns(),StatsSetupConst.ROW_COUNT);
+      dataSizes=getBasicStatForPartitions(table,partList.getNotDeniedPartns(),StatsSetupConst.RAW_DATA_SIZE);
+      nr=getSumIgnoreNegatives(rowCounts);
       ds=getSumIgnoreNegatives(dataSizes);
       if (ds <= 0) {
-        dataSizes=getFileSizeForPartitions(conf,partList.getNotDeniedPartns());
+        dataSizes=getBasicStatForPartitions(table,partList.getNotDeniedPartns(),StatsSetupConst.TOTAL_SIZE);
+        ds=getSumIgnoreNegatives(dataSizes);
       }
-      ds=getSumIgnoreNegatives(dataSizes);
-      ds=(long)(ds * deserFactor);
     }
+    if (ds <= 0) {
+      dataSizes=getFileSizeForPartitions(conf,partList.getNotDeniedPartns());
+    }
+    ds=getSumIgnoreNegatives(dataSizes);
+    ds=(long)(ds * deserFactor);
     int avgRowSize=estimateRowSizeFromSchema(conf,schema,neededColumns);
     if (avgRowSize > 0) {
       setUnknownRcDsToAverage(rowCounts,dataSizes,avgRowSize);
