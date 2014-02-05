@@ -1,0 +1,118 @@
+{
+  Object val=null;
+  JsonToken valueToken;
+  if (isTokenCurrent) {
+    valueToken=p.getCurrentToken();
+  }
+ else {
+    valueToken=p.nextToken();
+  }
+switch (hcatFieldSchema.getType()) {
+case INT:
+    val=(valueToken == JsonToken.VALUE_NULL) ? null : p.getIntValue();
+  break;
+case TINYINT:
+val=(valueToken == JsonToken.VALUE_NULL) ? null : p.getByteValue();
+break;
+case SMALLINT:
+val=(valueToken == JsonToken.VALUE_NULL) ? null : p.getShortValue();
+break;
+case BIGINT:
+val=(valueToken == JsonToken.VALUE_NULL) ? null : p.getLongValue();
+break;
+case BOOLEAN:
+String bval=(valueToken == JsonToken.VALUE_NULL) ? null : p.getText();
+if (bval != null) {
+val=Boolean.valueOf(bval);
+}
+ else {
+val=null;
+}
+break;
+case FLOAT:
+val=(valueToken == JsonToken.VALUE_NULL) ? null : p.getFloatValue();
+break;
+case DOUBLE:
+val=(valueToken == JsonToken.VALUE_NULL) ? null : p.getDoubleValue();
+break;
+case STRING:
+val=(valueToken == JsonToken.VALUE_NULL) ? null : p.getText();
+break;
+case BINARY:
+throw new IOException("JsonSerDe does not support BINARY type");
+case DATE:
+val=(valueToken == JsonToken.VALUE_NULL) ? null : Date.valueOf(p.getText());
+break;
+case TIMESTAMP:
+val=(valueToken == JsonToken.VALUE_NULL) ? null : Timestamp.valueOf(p.getText());
+break;
+case DECIMAL:
+val=(valueToken == JsonToken.VALUE_NULL) ? null : HiveDecimal.create(p.getText());
+break;
+case VARCHAR:
+int vLen=((BaseCharTypeInfo)hcatFieldSchema.getTypeInfo()).getLength();
+val=(valueToken == JsonToken.VALUE_NULL) ? null : new HiveVarchar(p.getText(),vLen);
+break;
+case CHAR:
+int cLen=((BaseCharTypeInfo)hcatFieldSchema.getTypeInfo()).getLength();
+val=(valueToken == JsonToken.VALUE_NULL) ? null : new HiveChar(p.getText(),cLen);
+break;
+case ARRAY:
+if (valueToken == JsonToken.VALUE_NULL) {
+val=null;
+break;
+}
+if (valueToken != JsonToken.START_ARRAY) {
+throw new IOException("Start of Array expected");
+}
+List<Object> arr=new ArrayList<Object>();
+while ((valueToken=p.nextToken()) != JsonToken.END_ARRAY) {
+arr.add(extractCurrentField(p,hcatFieldSchema.getArrayElementSchema().get(0),true));
+}
+val=arr;
+break;
+case MAP:
+if (valueToken == JsonToken.VALUE_NULL) {
+val=null;
+break;
+}
+if (valueToken != JsonToken.START_OBJECT) {
+throw new IOException("Start of Object expected");
+}
+Map<Object,Object> map=new LinkedHashMap<Object,Object>();
+HCatFieldSchema valueSchema=hcatFieldSchema.getMapValueSchema().get(0);
+while ((valueToken=p.nextToken()) != JsonToken.END_OBJECT) {
+Object k=getObjectOfCorrespondingPrimitiveType(p.getCurrentName(),hcatFieldSchema.getMapKeyTypeInfo());
+Object v;
+if (valueSchema.getType() == HCatFieldSchema.Type.STRUCT) {
+v=extractCurrentField(p,valueSchema,false);
+}
+ else {
+v=extractCurrentField(p,valueSchema,true);
+}
+map.put(k,v);
+}
+val=map;
+break;
+case STRUCT:
+if (valueToken == JsonToken.VALUE_NULL) {
+val=null;
+break;
+}
+if (valueToken != JsonToken.START_OBJECT) {
+throw new IOException("Start of Object expected");
+}
+HCatSchema subSchema=hcatFieldSchema.getStructSubSchema();
+int sz=subSchema.getFieldNames().size();
+List<Object> struct=new ArrayList<Object>(Collections.nCopies(sz,null));
+while ((valueToken=p.nextToken()) != JsonToken.END_OBJECT) {
+populateRecord(struct,valueToken,p,subSchema);
+}
+val=struct;
+break;
+default :
+LOG.error("Unknown type found: " + hcatFieldSchema.getType());
+return null;
+}
+return val;
+}

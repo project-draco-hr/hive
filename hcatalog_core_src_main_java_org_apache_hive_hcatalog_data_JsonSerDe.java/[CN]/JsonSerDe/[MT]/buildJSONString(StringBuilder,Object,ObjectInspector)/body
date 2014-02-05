@@ -46,22 +46,33 @@ break;
 }
 case STRING:
 {
-sb.append('"');
-sb.append(SerDeUtils.escapeString(((StringObjectInspector)poi).getPrimitiveJavaObject(o)));
-sb.append('"');
-break;
-}
-case TIMESTAMP:
-{
-sb.append('"');
-sb.append(((TimestampObjectInspector)poi).getPrimitiveWritableObject(o));
-sb.append('"');
+String s=SerDeUtils.escapeString(((StringObjectInspector)poi).getPrimitiveJavaObject(o));
+appendWithQuotes(sb,s);
 break;
 }
 case BINARY:
 {
 throw new IOException("JsonSerDe does not support BINARY type");
 }
+case DATE:
+Date d=((DateObjectInspector)poi).getPrimitiveJavaObject(o);
+appendWithQuotes(sb,d.toString());
+break;
+case TIMESTAMP:
+{
+Timestamp t=((TimestampObjectInspector)poi).getPrimitiveJavaObject(o);
+appendWithQuotes(sb,t.toString());
+break;
+}
+case DECIMAL:
+sb.append(((HiveDecimalObjectInspector)poi).getPrimitiveJavaObject(o));
+break;
+case VARCHAR:
+appendWithQuotes(sb,((HiveVarcharObjectInspector)poi).getPrimitiveJavaObject(o).toString());
+break;
+case CHAR:
+appendWithQuotes(sb,((HiveCharObjectInspector)poi).getPrimitiveJavaObject(o).toString());
+break;
 default :
 throw new RuntimeException("Unknown primitive type: " + poi.getPrimitiveCategory());
 }
@@ -111,13 +122,11 @@ Map.Entry<?,?> e=(Map.Entry<?,?>)entry;
 StringBuilder keyBuilder=new StringBuilder();
 buildJSONString(keyBuilder,e.getKey(),mapKeyObjectInspector);
 String keyString=keyBuilder.toString().trim();
-boolean doQuoting=(!keyString.isEmpty()) && (keyString.charAt(0) != SerDeUtils.QUOTE);
-if (doQuoting) {
-sb.append(SerDeUtils.QUOTE);
+if ((!keyString.isEmpty()) && (keyString.charAt(0) != SerDeUtils.QUOTE)) {
+appendWithQuotes(sb,keyString);
 }
+ else {
 sb.append(keyString);
-if (doQuoting) {
-sb.append(SerDeUtils.QUOTE);
 }
 sb.append(SerDeUtils.COLON);
 buildJSONString(sb,e.getValue(),mapValueObjectInspector);
@@ -139,9 +148,7 @@ for (int i=0; i < structFields.size(); i++) {
 if (i > 0) {
 sb.append(SerDeUtils.COMMA);
 }
-sb.append(SerDeUtils.QUOTE);
-sb.append(structFields.get(i).getFieldName());
-sb.append(SerDeUtils.QUOTE);
+appendWithQuotes(sb,structFields.get(i).getFieldName());
 sb.append(SerDeUtils.COLON);
 buildJSONString(sb,soi.getStructFieldData(o,structFields.get(i)),structFields.get(i).getFieldObjectInspector());
 }
