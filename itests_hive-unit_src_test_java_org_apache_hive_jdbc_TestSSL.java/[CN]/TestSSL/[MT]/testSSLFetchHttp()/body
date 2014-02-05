@@ -1,12 +1,18 @@
 {
   setSslConfOverlay(confOverlay);
-  setBinaryConfOverlay(confOverlay);
-  miniHS2.start(confOverlay);
-  hs2Conn=DriverManager.getConnection(miniHS2.getJdbcURL() + ";ssl=true;sslTrustStore=" + dataFileDir+ File.separator+ TRUST_STORE_NAME+ ";trustStorePassword="+ KEY_STORE_PASSWORD,System.getProperty("user.name"),"bar");
-  hs2Conn.close();
-  miniHS2.stop();
   setHttpConfOverlay(confOverlay);
   miniHS2.start(confOverlay);
+  String tableName="sslTab";
+  Path dataFilePath=new Path(dataFileDir,"kv1.txt");
   hs2Conn=DriverManager.getConnection(miniHS2.getJdbcURL() + ";ssl=true;sslTrustStore=" + dataFileDir+ File.separator+ TRUST_STORE_NAME+ ";trustStorePassword="+ KEY_STORE_PASSWORD+ "?hive.server2.transport.mode="+ HS2_HTTP_MODE+ ";hive.server2.thrift.http.path="+ HS2_HTTP_ENDPOINT,System.getProperty("user.name"),"bar");
+  setupTestTableWithData(tableName,dataFilePath,hs2Conn);
+  Statement stmt=hs2Conn.createStatement();
+  ResultSet res=stmt.executeQuery("SELECT * FROM " + tableName);
+  int rowCount=0;
+  while (res.next()) {
+    ++rowCount;
+    assertEquals("val_" + res.getInt(1),res.getString(2));
+  }
+  assertEquals(500,rowCount);
   hs2Conn.close();
 }
