@@ -47,22 +47,21 @@
   }
  else {
     List<Partition> partsToDelete=new ArrayList<Partition>();
-    for (    PartitionSpec partSpec : dropTbl.getPartSpecs()) {
-      List<Partition> partitions=null;
-      if (dropTbl.isStringPartitionColumns()) {
-        try {
-          partitions=db.getPartitionsByFilter(tbl,partSpec.toString());
-        }
- catch (        Exception e) {
-          throw new HiveException(e);
-        }
+    for (    DropTableDesc.PartSpec partSpec : dropTbl.getPartSpecs()) {
+      List<Partition> partitions=new ArrayList<Partition>();
+      boolean hasUnknown;
+      try {
+        hasUnknown=db.getPartitionsByExpr(tbl,partSpec.getPartSpec(),conf,partitions);
       }
- else {
-        partitions=db.getPartitions(tbl,partSpec.getPartSpecWithoutOperator());
+ catch (      TException e) {
+        throw new HiveException(e);
+      }
+      if (hasUnknown) {
+        throw new HiveException("Unexpected unknown partititions from " + partSpec.getPartSpec().getExprString());
       }
       int partPrefixToDrop=0;
       for (      FieldSchema fs : tbl.getPartCols()) {
-        if (partSpec.existsKey(fs.getName())) {
+        if (partSpec.getPartSpecKeys().contains(fs.getName())) {
           partPrefixToDrop+=1;
         }
  else {
