@@ -1,0 +1,36 @@
+{
+  List<HiveObjectPrivilege> matchingPrivs=new ArrayList<HiveObjectPrivilege>();
+  StringBuilder errMsg=new StringBuilder();
+  for (  HivePrincipal principal : principals) {
+    List<HiveObjectPrivilege> msObjPrivs;
+    try {
+      msObjPrivs=mClient.list_privileges(principal.getName(),AuthorizationUtils.getThriftPrincipalType(principal.getType()),SQLAuthorizationUtils.getThriftHiveObjectRef(hivePrivObject));
+    }
+ catch (    MetaException e) {
+      throw new HiveAuthzPluginException(e);
+    }
+catch (    TException e) {
+      throw new HiveAuthzPluginException(e);
+    }
+    Map<String,HiveObjectPrivilege> priv2privObj=new HashMap<String,HiveObjectPrivilege>();
+    for (    HiveObjectPrivilege msObjPriv : msObjPrivs) {
+      PrivilegeGrantInfo grantInfo=msObjPriv.getGrantInfo();
+      if (grantInfo.getGrantor() != null && grantInfo.getGrantor().equals(userName) && grantInfo.getGrantorType() == PrincipalType.USER) {
+        priv2privObj.put(grantInfo.getPrivilege(),msObjPriv);
+      }
+    }
+    for (    HivePrivilege hivePrivilege : hivePrivileges) {
+      HiveObjectPrivilege matchedPriv=priv2privObj.get(hivePrivilege.getName());
+      if (matchedPriv != null) {
+        matchingPrivs.add(matchedPriv);
+      }
+ else {
+        errMsg.append("Cannot find privilege ").append(hivePrivilege).append(" for ").append(principal).append(" on ").append(hivePrivObject).append(" granted by ").append(userName).append(System.getProperty("line.separator"));
+      }
+    }
+  }
+  if (errMsg.length() != 0) {
+    throw new HiveAccessControlException(errMsg.toString());
+  }
+  return matchingPrivs;
+}

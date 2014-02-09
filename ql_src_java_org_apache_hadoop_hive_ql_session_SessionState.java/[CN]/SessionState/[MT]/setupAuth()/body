@@ -4,15 +4,17 @@
   }
   try {
     authenticator=HiveUtils.getAuthenticator(getConf(),HiveConf.ConfVars.HIVE_AUTHENTICATOR_MANAGER);
+    if (userName != null) {
+      authenticator=new SessionStateUserAuthenticator(this);
+    }
+    authenticator.setSessionState(this);
     authorizer=HiveUtils.getAuthorizeProviderManager(getConf(),HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER,authenticator,true);
     if (authorizer == null) {
       HiveAuthorizerFactory authorizerFactory=HiveUtils.getAuthorizerFactory(getConf(),HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER);
-      String authUser=userName == null ? authenticator.getUserName() : userName;
-      authorizerV2=authorizerFactory.createHiveAuthorizer(new HiveMetastoreClientFactoryImpl(),getConf(),authUser);
+      authorizerV2=authorizerFactory.createHiveAuthorizer(new HiveMetastoreClientFactoryImpl(),getConf(),authenticator);
+      getConf().setVar(ConfVars.HIVE_AUTHORIZATION_TABLE_OWNER_GRANTS,"insert,select,update,delete");
     }
- else {
-      createTableGrants=CreateTableAutomaticGrant.create(getConf());
-    }
+    createTableGrants=CreateTableAutomaticGrant.create(getConf());
   }
  catch (  HiveException e) {
     throw new RuntimeException(e);
