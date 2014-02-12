@@ -1,17 +1,14 @@
 {
+  boolean ifExists=(ast.getFirstChildWithType(HiveParser.TOK_IFEXISTS) != null) || HiveConf.getBoolVar(conf,ConfVars.DROPIGNORESNONEXISTENT);
+  boolean canGroupExprs=ifExists;
   String tblName=getUnescapedName((ASTNode)ast.getChild(0));
   Table tab=getTable(tblName,true);
-  List<ExprNodeGenericFuncDesc> partSpecs=new ArrayList<ExprNodeGenericFuncDesc>();
-  List<List<String>> names=new ArrayList<List<String>>();
-  getFullPartitionSpecs(ast,tab,partSpecs,names);
+  Map<Integer,List<ExprNodeGenericFuncDesc>> partSpecs=getFullPartitionSpecs(ast,tab,canGroupExprs);
+  if (partSpecs.isEmpty())   return;
   validateAlterTableType(tab,AlterTableTypes.DROPPARTITION,expectView);
   inputs.add(new ReadEntity(tab));
-  boolean ignoreProtection=(ast.getFirstChildWithType(HiveParser.TOK_IGNOREPROTECTION) != null);
-  if (partSpecs != null) {
-    boolean ifExists=(ast.getFirstChildWithType(HiveParser.TOK_IFEXISTS) != null);
-    boolean throwException=!ifExists && !HiveConf.getBoolVar(conf,ConfVars.DROPIGNORESNONEXISTENT);
-    addTableDropPartsOutputs(tblName,partSpecs,throwException,ignoreProtection);
-  }
-  DropTableDesc dropTblDesc=new DropTableDesc(tblName,partSpecs,names,expectView,ignoreProtection);
+  boolean ignoreProtection=ast.getFirstChildWithType(HiveParser.TOK_IGNOREPROTECTION) != null;
+  addTableDropPartsOutputs(tab,partSpecs.values(),!ifExists,ignoreProtection);
+  DropTableDesc dropTblDesc=new DropTableDesc(tblName,partSpecs,expectView,ignoreProtection);
   rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),dropTblDesc),conf));
 }
