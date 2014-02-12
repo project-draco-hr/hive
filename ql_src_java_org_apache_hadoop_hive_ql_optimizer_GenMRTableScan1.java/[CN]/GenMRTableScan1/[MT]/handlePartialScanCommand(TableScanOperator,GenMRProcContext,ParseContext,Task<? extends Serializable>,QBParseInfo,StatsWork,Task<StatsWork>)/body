@@ -1,2 +1,20 @@
 {
+  String aggregationKey=op.getConf().getStatsAggPrefix();
+  StringBuffer aggregationKeyBuffer=new StringBuffer(aggregationKey);
+  List<Path> inputPaths=GenMapRedUtils.getInputPathsForPartialScan(parseInfo,aggregationKeyBuffer);
+  aggregationKey=aggregationKeyBuffer.toString();
+  PartialScanWork scanWork=new PartialScanWork(inputPaths);
+  scanWork.setMapperCannotSpanPartns(true);
+  scanWork.setAggKey(aggregationKey);
+  statsWork.setPartialScanAnalyzeCommand(true);
+  DriverContext driverCxt=new DriverContext();
+  Task<PartialScanWork> psTask=TaskFactory.get(scanWork,parseCtx.getConf());
+  psTask.initialize(parseCtx.getConf(),null,driverCxt);
+  psTask.setWork(scanWork);
+  ctx.getRootTasks().remove(currTask);
+  ctx.getRootTasks().add(psTask);
+  psTask.addDependentTask(statsTask);
+  List<Task<? extends Serializable>> parentTasks=new ArrayList<Task<? extends Serializable>>();
+  parentTasks.add(psTask);
+  statsTask.setParentTasks(parentTasks);
 }
