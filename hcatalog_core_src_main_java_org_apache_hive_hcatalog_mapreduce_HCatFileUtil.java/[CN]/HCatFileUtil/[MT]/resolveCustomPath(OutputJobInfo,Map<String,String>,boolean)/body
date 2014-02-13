@@ -1,0 +1,34 @@
+{
+  String customPath=jobInfo.getCustomDynamicPath();
+  Matcher matcher=customPathPattern.matcher(customPath);
+  HashSet<String> partColumns=new HashSet<String>();
+  Map<String,String> partKVs=dynPartKVs != null ? dynPartKVs : jobInfo.getPartitionValues();
+  StringBuilder sb=new StringBuilder();
+  int previousEndIndex=0;
+  while (matcher.find()) {
+    sb.append(customPath.substring(previousEndIndex,matcher.start()));
+    if (createRegexPath) {
+      sb.append(matcher.group(1));
+    }
+    String columnName=matcher.group(2).toLowerCase();
+    partColumns.add(columnName);
+    String columnValue=partKVs.get(columnName);
+    if (columnValue != null) {
+      sb.append(columnValue);
+    }
+ else {
+      sb.append("__HIVE_DEFAULT_PARTITION__");
+    }
+    if (createRegexPath) {
+      sb.append(matcher.group(3));
+    }
+    previousEndIndex=matcher.end();
+  }
+  if (previousEndIndex < customPath.length()) {
+    sb.append(customPath.substring(previousEndIndex,customPath.length()));
+  }
+  if (partColumns.size() != jobInfo.getDynamicPartitioningKeys().size()) {
+    throw new IllegalArgumentException("Unable to configure custom dynamic location, " + " mismatch between number of dynamic partition columns obtained[" + partColumns.size() + "] and number of dynamic partition columns required["+ jobInfo.getDynamicPartitioningKeys().size()+ "]");
+  }
+  return sb.toString();
+}
