@@ -1,0 +1,30 @@
+{
+  if (prewarmed) {
+    return;
+  }
+  FileSystem fs=FileSystem.get(conf);
+  Mac mac=Mac.getInstance("HmacSHA1");
+  ReadaheadPool rpool=ReadaheadPool.getInstance();
+  ShimLoader.getHadoopShims();
+  URL hiveurl=new URL("jar:" + DagUtils.getInstance().getExecJarPathLocal() + "!/");
+  JarURLConnection hiveconn=(JarURLConnection)hiveurl.openConnection();
+  JarFile hivejar=hiveconn.getJarFile();
+  try {
+    Enumeration<JarEntry> classes=hivejar.entries();
+    while (classes.hasMoreElements()) {
+      JarEntry je=classes.nextElement();
+      if (je.getName().endsWith(".class")) {
+        String klass=je.getName().replace(".class","").replaceAll("/","\\.");
+        if (klass.indexOf("ql.exec") != -1 || klass.indexOf("ql.io") != -1) {
+          if (klass.indexOf("vector") != -1 || klass.indexOf("Operator") != -1) {
+            Class.forName(klass);
+          }
+        }
+      }
+    }
+  }
+  finally {
+    hivejar.close();
+  }
+  prewarmed=true;
+}
