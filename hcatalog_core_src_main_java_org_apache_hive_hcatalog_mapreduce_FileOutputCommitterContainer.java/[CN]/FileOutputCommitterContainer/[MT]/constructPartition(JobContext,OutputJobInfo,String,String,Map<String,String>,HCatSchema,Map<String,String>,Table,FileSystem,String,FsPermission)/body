@@ -1,0 +1,47 @@
+{
+  Partition partition=new Partition();
+  partition.setDbName(table.getDbName());
+  partition.setTableName(table.getTableName());
+  partition.setSd(new StorageDescriptor(table.getTTable().getSd()));
+  List<FieldSchema> fields=new ArrayList<FieldSchema>();
+  for (  HCatFieldSchema fieldSchema : outputSchema.getFields()) {
+    fields.add(HCatSchemaUtils.getFieldSchema(fieldSchema));
+  }
+  partition.getSd().setCols(fields);
+  partition.setValues(FileOutputFormatContainer.getPartitionValueList(table,partKVs));
+  partition.setParameters(params);
+  Path partPath;
+  if (customDynamicLocationUsed) {
+    partPath=new Path(dynPartPath);
+  }
+ else   if (!dynamicPartitioningUsed && Boolean.valueOf((String)table.getProperty("EXTERNAL")) && jobInfo.getLocation() != null && jobInfo.getLocation().length() > 0) {
+    partPath=new Path(jobInfo.getLocation());
+  }
+ else {
+    partPath=new Path(partLocnRoot);
+    int i=0;
+    for (    FieldSchema partKey : table.getPartitionKeys()) {
+      if (i++ != 0) {
+        applyGroupAndPerms(fs,partPath,perms,grpName,false);
+      }
+      partPath=constructPartialPartPath(partPath,partKey.getName().toLowerCase(),partKVs);
+    }
+  }
+  if (!ShimLoader.getHadoopShims().getHCatShim().isFileInHDFS(fs,partPath)) {
+    applyGroupAndPerms(fs,partPath,perms,grpName,true);
+  }
+  if (dynamicPartitioningUsed) {
+    String dynamicPartitionDestination=getFinalDynamicPartitionDestination(table,partKVs,jobInfo);
+    if (harProcessor.isEnabled()) {
+      harProcessor.exec(context,partition,partPath);
+      partition.getSd().setLocation(harProcessor.getProcessedLocation(new Path(dynamicPartitionDestination)));
+    }
+ else {
+      partition.getSd().setLocation(dynamicPartitionDestination);
+    }
+  }
+ else {
+    partition.getSd().setLocation(partPath.toString());
+  }
+  return partition;
+}

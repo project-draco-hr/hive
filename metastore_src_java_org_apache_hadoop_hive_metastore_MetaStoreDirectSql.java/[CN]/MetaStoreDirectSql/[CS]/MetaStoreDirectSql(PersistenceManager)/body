@@ -13,19 +13,28 @@
     tx=pm.currentTransaction();
     tx.begin();
   }
-  pm.newQuery(MDatabase.class,"name == ''").execute();
-  pm.newQuery(MTableColumnStatistics.class,"dbName == ''").execute();
-  pm.newQuery(MPartitionColumnStatistics.class,"dbName == ''").execute();
-  boolean isCompatibleDatastore=false;
-  String selfTestQuery="select \"DB_ID\" from \"DBS\"";
+  boolean isCompatibleDatastore=true;
   try {
-    pm.newQuery("javax.jdo.query.SQL",selfTestQuery).execute();
-    isCompatibleDatastore=true;
-    tx.commit();
+    pm.newQuery(MDatabase.class,"name == ''").execute();
+    pm.newQuery(MTableColumnStatistics.class,"dbName == ''").execute();
+    pm.newQuery(MPartitionColumnStatistics.class,"dbName == ''").execute();
   }
  catch (  Exception ex) {
-    LOG.error("Self-test query [" + selfTestQuery + "] failed; direct SQL is disabled",ex);
+    isCompatibleDatastore=false;
+    LOG.error("Database initialization failed; direct SQL is disabled",ex);
     tx.rollback();
+  }
+  if (isCompatibleDatastore) {
+    String selfTestQuery="select \"DB_ID\" from \"DBS\"";
+    try {
+      pm.newQuery("javax.jdo.query.SQL",selfTestQuery).execute();
+      tx.commit();
+    }
+ catch (    Exception ex) {
+      isCompatibleDatastore=false;
+      LOG.error("Self-test query [" + selfTestQuery + "] failed; direct SQL is disabled",ex);
+      tx.rollback();
+    }
   }
   this.isCompatibleDatastore=isCompatibleDatastore;
   this.isMySql=isMySql;

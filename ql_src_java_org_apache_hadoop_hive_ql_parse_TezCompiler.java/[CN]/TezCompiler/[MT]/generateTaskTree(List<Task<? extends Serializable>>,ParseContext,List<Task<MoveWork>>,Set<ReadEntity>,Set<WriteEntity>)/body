@@ -1,11 +1,13 @@
 {
+  GenTezUtils.getUtils().resetSequenceNumber();
   ParseContext tempParseContext=getParseContext(pCtx,rootTasks);
-  GenTezWork genTezWork=new GenTezWork();
+  GenTezWork genTezWork=new GenTezWork(GenTezUtils.getUtils());
   GenTezProcContext procCtx=new GenTezProcContext(conf,tempParseContext,mvTask,rootTasks,inputs,outputs);
   Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
   opRules.put(new RuleRegExp("Split Work - ReduceSink",ReduceSinkOperator.getOperatorName() + "%"),genTezWork);
   opRules.put(new RuleRegExp("No more walking on ReduceSink-MapJoin",ReduceSinkOperator.getOperatorName() + "%" + MapJoinOperator.getOperatorName()+ "%"),new ReduceSinkMapJoinProc());
   opRules.put(new RuleRegExp("Split Work + Move/Merge - FileSink",FileSinkOperator.getOperatorName() + "%"),new CompositeProcessor(new FileSinkProcessor(),genTezWork));
+  opRules.put(new RuleRegExp("Handle Potential Analyze Command",TableScanOperator.getOperatorName() + "%"),new ProcessAnalyzeTable(GenTezUtils.getUtils()));
   opRules.put(new RuleRegExp("Bail on Union",UnionOperator.getOperatorName() + "%"),new NodeProcessor(){
     @Override public Object process(    Node n,    Stack<Node> s,    NodeProcessorCtx procCtx,    Object... os) throws SemanticException {
       throw new SemanticException("Unions not yet supported on Tez." + " Please use MR for this query");

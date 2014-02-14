@@ -25,22 +25,40 @@
         httpPath=httpPath + "/*";
       }
     }
-    httpServer=new org.mortbay.jetty.Server();
+    httpServer=new org.eclipse.jetty.server.Server();
     QueuedThreadPool threadPool=new QueuedThreadPool();
     threadPool.setMinThreads(minWorkerThreads);
     threadPool.setMaxThreads(maxWorkerThreads);
     httpServer.setThreadPool(threadPool);
-    SelectChannelConnector connector=new SelectChannelConnector();
+    SelectChannelConnector connector;
+    Boolean useSsl=hiveConf.getBoolVar(ConfVars.HIVE_SERVER2_USE_SSL);
+    String schemeName=useSsl ? "https" : "http";
+    if (useSsl) {
+      String keyStorePath=hiveConf.getVar(ConfVars.HIVE_SERVER2_SSL_KEYSTORE_PATH).trim();
+      String keyStorePassword=hiveConf.getVar(ConfVars.HIVE_SERVER2_SSL_KEYSTORE_PASSWORD);
+      if (keyStorePath.isEmpty()) {
+        throw new IllegalArgumentException(ConfVars.HIVE_SERVER2_SSL_KEYSTORE_PATH.varname + " Not configured for SSL connection");
+      }
+      SslContextFactory sslContextFactory=new SslContextFactory();
+      sslContextFactory.setKeyStorePath(keyStorePath);
+      sslContextFactory.setKeyStorePassword(keyStorePassword);
+      connector=new SslSelectChannelConnector(sslContextFactory);
+    }
+ else {
+      connector=new SelectChannelConnector();
+    }
     connector.setPort(portNum);
     connector.setReuseAddress(!Shell.WINDOWS);
     httpServer.addConnector(connector);
     TCLIService.Processor<ThriftCLIService> processor=new TCLIService.Processor<ThriftCLIService>(new EmbeddedThriftBinaryCLIService());
     TProtocolFactory protocolFactory=new TBinaryProtocol.Factory();
     TServlet thriftHttpServlet=new ThriftHttpServlet(processor,protocolFactory);
-    final Context context=new Context(httpServer,"/",Context.SESSIONS);
+    final ServletContextHandler context=new ServletContextHandler(ServletContextHandler.SESSIONS);
+    context.setContextPath("/");
+    httpServer.setHandler(context);
     context.addServlet(new ServletHolder(thriftHttpServlet),httpPath);
     httpServer.start();
-    String msg="Starting CLIService in Http mode on port " + portNum + " path="+ httpPath+ " with "+ minWorkerThreads+ ".."+ maxWorkerThreads+ " worker threads";
+    String msg="Started ThriftHttpCLIService in " + schemeName + " mode on port "+ portNum+ " path="+ httpPath+ " with "+ minWorkerThreads+ ".."+ maxWorkerThreads+ " worker threads";
     LOG.info(msg);
     httpServer.join();
   }

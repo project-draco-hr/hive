@@ -1,0 +1,27 @@
+{
+  final String columns=configuration.get(IOConstants.COLUMNS);
+  final Map<String,String> contextMetadata=new HashMap<String,String>();
+  if (columns != null) {
+    final List<String> listColumns=getColumns(columns);
+    final List<Type> typeListTable=new ArrayList<Type>();
+    for (    final String col : listColumns) {
+      if (fileSchema.containsField(col)) {
+        typeListTable.add(fileSchema.getType(col));
+      }
+    }
+    MessageType tableSchema=new MessageType(TABLE_SCHEMA,typeListTable);
+    contextMetadata.put(HIVE_SCHEMA_KEY,tableSchema.toString());
+    MessageType requestedSchemaByUser=tableSchema;
+    final List<Integer> indexColumnsWanted=ColumnProjectionUtils.getReadColumnIDs(configuration);
+    final List<Type> typeListWanted=new ArrayList<Type>();
+    for (    final Integer idx : indexColumnsWanted) {
+      typeListWanted.add(tableSchema.getType(listColumns.get(idx)));
+    }
+    requestedSchemaByUser=new MessageType(fileSchema.getName(),typeListWanted);
+    return new ReadContext(requestedSchemaByUser,contextMetadata);
+  }
+ else {
+    contextMetadata.put(HIVE_SCHEMA_KEY,fileSchema.toString());
+    return new ReadContext(fileSchema,contextMetadata);
+  }
+}

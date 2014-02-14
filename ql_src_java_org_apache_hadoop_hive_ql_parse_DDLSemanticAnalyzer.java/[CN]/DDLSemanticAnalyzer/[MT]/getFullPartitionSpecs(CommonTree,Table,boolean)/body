@@ -1,0 +1,41 @@
+{
+  Map<String,String> colTypes=new HashMap<String,String>();
+  for (  FieldSchema fs : tab.getPartitionKeys()) {
+    colTypes.put(fs.getName().toLowerCase(),fs.getType());
+  }
+  Map<Integer,List<ExprNodeGenericFuncDesc>> result=new HashMap<Integer,List<ExprNodeGenericFuncDesc>>();
+  for (int childIndex=1; childIndex < ast.getChildCount(); childIndex++) {
+    Tree partSpecTree=ast.getChild(childIndex);
+    if (partSpecTree.getType() != HiveParser.TOK_PARTSPEC)     continue;
+    ExprNodeGenericFuncDesc expr=null;
+    HashSet<String> names=new HashSet<String>(partSpecTree.getChildCount());
+    for (int i=0; i < partSpecTree.getChildCount(); ++i) {
+      CommonTree partSpecSingleKey=(CommonTree)partSpecTree.getChild(i);
+      assert(partSpecSingleKey.getType() == HiveParser.TOK_PARTVAL);
+      String key=partSpecSingleKey.getChild(0).getText().toLowerCase();
+      String operator=partSpecSingleKey.getChild(1).getText();
+      String val=stripQuotes(partSpecSingleKey.getChild(2).getText());
+      String type=colTypes.get(key);
+      if (type == null) {
+        throw new SemanticException("Column " + key + " not found");
+      }
+      ExprNodeColumnDesc column=new ExprNodeColumnDesc(TypeInfoFactory.getPrimitiveTypeInfo(type),key,null,true);
+      ExprNodeGenericFuncDesc op=makeBinaryPredicate(operator,column,new ExprNodeConstantDesc(val));
+      expr=(expr == null) ? op : makeBinaryPredicate("and",expr,op);
+      names.add(key);
+    }
+    if (expr == null)     continue;
+    int prefixLength=calculatePartPrefix(tab,names);
+    List<ExprNodeGenericFuncDesc> orExpr=result.get(prefixLength);
+    if (orExpr == null) {
+      result.put(prefixLength,Lists.newArrayList(expr));
+    }
+ else     if (canGroupExprs) {
+      orExpr.set(0,makeBinaryPredicate("or",expr,orExpr.get(0)));
+    }
+ else {
+      orExpr.add(expr);
+    }
+  }
+  return result;
+}

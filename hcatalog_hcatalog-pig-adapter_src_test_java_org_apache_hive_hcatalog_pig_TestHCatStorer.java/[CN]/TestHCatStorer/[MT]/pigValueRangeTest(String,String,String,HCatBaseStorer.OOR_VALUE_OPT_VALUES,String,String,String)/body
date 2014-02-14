@@ -1,0 +1,58 @@
+{
+  TestHCatLoader.dropTable(tblName,driver);
+  final String field="f1";
+  TestHCatLoader.createTable(tblName,field + " " + hiveType,null,driver,"RCFILE");
+  HcatTestUtils.createTestDataFile(INPUT_FILE_NAME,new String[]{inputValue});
+  LOG.debug("File=" + INPUT_FILE_NAME);
+  dumpFile(INPUT_FILE_NAME);
+  PigServer server=createPigServer(true);
+  int queryNumber=1;
+  logAndRegister(server,"A = load '" + INPUT_FILE_NAME + "' as ("+ field+ ":"+ pigType+ ");",queryNumber++);
+  Iterator<Tuple> firstLoad=server.openIterator("A");
+  if (goal == null) {
+    logAndRegister(server,"store A into '" + tblName + "' using "+ HCatStorer.class.getName()+ "();",queryNumber++);
+  }
+ else {
+    FrontendException fe=null;
+    try {
+      logAndRegister(server,"store A into '" + tblName + "' using "+ HCatStorer.class.getName()+ "('','','-"+ HCatStorer.ON_OOR_VALUE_OPT+ " "+ goal+ "');",queryNumber++);
+    }
+ catch (    FrontendException e) {
+      fe=e;
+    }
+switch (goal) {
+case Null:
+      break;
+case Throw:
+    Assert.assertTrue("Expected a FrontendException",fe != null);
+  Assert.assertEquals("Expected a different FrontendException.",fe.getMessage(),"Unable to store alias A");
+return;
+default :
+Assert.assertFalse("Unexpected goal: " + goal,1 == 1);
+}
+}
+logAndRegister(server,"B = load '" + tblName + "' using "+ HCatLoader.class.getName()+ "();",queryNumber);
+CommandProcessorResponse cpr=driver.run("select * from " + tblName);
+LOG.debug("cpr.respCode=" + cpr.getResponseCode() + " cpr.errMsg="+ cpr.getErrorMessage()+ " for table "+ tblName);
+List l=new ArrayList();
+driver.getResults(l);
+LOG.debug("Dumping rows via SQL from " + tblName);
+for (Object t : l) {
+LOG.debug(t == null ? null : t.toString() + " t.class=" + t.getClass());
+}
+Iterator<Tuple> itr=server.openIterator("B");
+int numRowsRead=0;
+while (itr.hasNext()) {
+Tuple t=itr.next();
+if ("date".equals(hiveType)) {
+DateTime dateTime=(DateTime)t.get(0);
+Assert.assertTrue(format != null);
+Assert.assertEquals("Comparing Pig to Raw data for table " + tblName,expectedValue,dateTime == null ? null : dateTime.toString(format));
+}
+ else {
+Assert.assertEquals("Comparing Pig to Raw data for table " + tblName,expectedValue,t.isNull(0) ? null : t.get(0).toString());
+}
+numRowsRead++;
+}
+Assert.assertEquals("Expected " + 1 + " rows; got "+ numRowsRead+ " file="+ INPUT_FILE_NAME+ "; table "+ tblName,1,numRowsRead);
+}

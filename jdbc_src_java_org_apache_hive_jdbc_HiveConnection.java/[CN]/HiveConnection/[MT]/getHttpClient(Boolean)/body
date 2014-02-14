@@ -1,0 +1,27 @@
+{
+  HttpRequestInterceptor authInterceptor=new HttpBasicAuthInterceptor(getUserName(),getPasswd());
+  if (useSsl) {
+    String sslTrustStorePath=sessConfMap.get(HIVE_SSL_TRUST_STORE);
+    String sslTrustStorePassword=sessConfMap.get(HIVE_SSL_TRUST_STORE_PASSWORD);
+    KeyStore sslTrustStore;
+    SSLContext sslContext;
+    if (sslTrustStorePath == null || sslTrustStorePath.isEmpty()) {
+      sslContext=SSLContexts.createDefault();
+    }
+ else {
+      try {
+        sslTrustStore=KeyStore.getInstance(HIVE_SSL_TRUST_STORE_TYPE);
+        sslTrustStore.load(new FileInputStream(sslTrustStorePath),sslTrustStorePassword.toCharArray());
+        sslContext=SSLContexts.custom().loadTrustMaterial(sslTrustStore).build();
+      }
+ catch (      Exception e) {
+        String msg="Could not create an https connection to " + jdbcURI + ". "+ e.getMessage();
+        throw new SQLException(msg," 08S01",e);
+      }
+    }
+    return HttpClients.custom().setHostnameVerifier(SSLConnectionSocketFactory.ALLOW_ALL_HOSTNAME_VERIFIER).setSslcontext(sslContext).addInterceptorFirst(authInterceptor).build();
+  }
+ else {
+    return HttpClients.custom().addInterceptorFirst(authInterceptor).build();
+  }
+}
