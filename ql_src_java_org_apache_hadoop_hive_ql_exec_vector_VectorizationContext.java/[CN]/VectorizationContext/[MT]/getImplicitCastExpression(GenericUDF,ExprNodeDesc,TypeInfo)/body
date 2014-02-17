@@ -1,0 +1,41 @@
+{
+  TypeInfo inputTypeInfo=child.getTypeInfo();
+  String inputTypeString=inputTypeInfo.getTypeName();
+  String castTypeString=castType.getTypeName();
+  if (inputTypeString.equals(castTypeString)) {
+    return null;
+  }
+  boolean inputTypeDecimal=false;
+  boolean castTypeDecimal=false;
+  if (decimalTypePattern.matcher(inputTypeString).matches()) {
+    inputTypeDecimal=true;
+  }
+  if (decimalTypePattern.matcher(castTypeString).matches()) {
+    castTypeDecimal=true;
+  }
+  if (castTypeDecimal && !inputTypeDecimal) {
+    castType=updatePrecision(inputTypeInfo,(DecimalTypeInfo)castType);
+    GenericUDFToDecimal castToDecimalUDF=new GenericUDFToDecimal();
+    List<ExprNodeDesc> children=new ArrayList<ExprNodeDesc>();
+    children.add(child);
+    ExprNodeDesc desc=new ExprNodeGenericFuncDesc(castType,castToDecimalUDF,children);
+    return desc;
+  }
+ else   if (!castTypeDecimal && inputTypeDecimal) {
+    GenericUDF genericUdf=getGenericUDFForCast(castType);
+    List<ExprNodeDesc> children=new ArrayList<ExprNodeDesc>();
+    children.add(child);
+    ExprNodeDesc desc=new ExprNodeGenericFuncDesc(castType,genericUdf,children);
+    return desc;
+  }
+ else {
+    if (udf instanceof GenericUDFCoalesce) {
+      GenericUDF genericUdf=getGenericUDFForCast(castType);
+      List<ExprNodeDesc> children=new ArrayList<ExprNodeDesc>();
+      children.add(child);
+      ExprNodeDesc desc=new ExprNodeGenericFuncDesc(castType,genericUdf,children);
+      return desc;
+    }
+  }
+  return null;
+}
