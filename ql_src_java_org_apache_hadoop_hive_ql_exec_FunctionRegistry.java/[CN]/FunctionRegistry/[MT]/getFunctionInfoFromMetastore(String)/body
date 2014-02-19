@@ -1,0 +1,34 @@
+{
+  FunctionInfo ret=null;
+  try {
+    String dbName;
+    String fName;
+    if (FunctionUtils.isQualifiedFunctionName(functionName)) {
+      String[] parts=FunctionUtils.splitQualifiedFunctionName(functionName);
+      dbName=parts[0];
+      fName=parts[1];
+    }
+ else {
+      dbName=SessionState.get().getCurrentDatabase();
+      fName=functionName;
+    }
+    HiveConf conf=SessionState.get().getConf();
+    Function func=Hive.get(conf).getFunction(dbName,fName);
+    if (func != null) {
+      Class<?> udfClass=Class.forName(func.getClassName(),true,JavaUtils.getClassLoader());
+      if (registerTemporaryFunction(functionName,udfClass)) {
+        ret=mFunctions.get(functionName);
+      }
+ else {
+        LOG.error(func.getClassName() + " is not a valid UDF class and was not registered.");
+      }
+    }
+  }
+ catch (  HiveException e) {
+    LOG.info("Unable to lookup UDF in metastore: " + e);
+  }
+catch (  ClassNotFoundException e) {
+    LOG.error("Unable to load UDF class: " + e);
+  }
+  return ret;
+}
