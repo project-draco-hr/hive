@@ -8,30 +8,31 @@
   int doubleIndicesIndex=0;
   int[] stringIndices=new int[keyExpressions.length];
   int stringIndicesIndex=0;
+  int[] decimalIndices=new int[keyExpressions.length];
+  int decimalIndicesIndex=0;
   KeyLookupHelper[] indexLookup=new KeyLookupHelper[keyExpressions.length];
   for (int i=0; i < keyExpressions.length; ++i) {
     indexLookup[i]=new KeyLookupHelper();
     String outputType=keyExpressions[i].getOutputType();
     if (VectorizationContext.isIntFamily(outputType) || VectorizationContext.isDatetimeFamily(outputType)) {
       longIndices[longIndicesIndex]=i;
-      indexLookup[i].longIndex=longIndicesIndex;
-      indexLookup[i].doubleIndex=-1;
-      indexLookup[i].stringIndex=-1;
+      indexLookup[i].setLong(longIndicesIndex);
       ++longIndicesIndex;
     }
  else     if (VectorizationContext.isFloatFamily(outputType)) {
       doubleIndices[doubleIndicesIndex]=i;
-      indexLookup[i].longIndex=-1;
-      indexLookup[i].doubleIndex=doubleIndicesIndex;
-      indexLookup[i].stringIndex=-1;
+      indexLookup[i].setDouble(doubleIndicesIndex);
       ++doubleIndicesIndex;
     }
  else     if (VectorizationContext.isStringFamily(outputType)) {
       stringIndices[stringIndicesIndex]=i;
-      indexLookup[i].longIndex=-1;
-      indexLookup[i].doubleIndex=-1;
-      indexLookup[i].stringIndex=stringIndicesIndex;
+      indexLookup[i].setString(stringIndicesIndex);
       ++stringIndicesIndex;
+    }
+ else     if (VectorizationContext.isDecimalFamily(outputType)) {
+      decimalIndices[decimalIndicesIndex]=i;
+      indexLookup[i].setDecimal(decimalIndicesIndex);
+      ++decimalIndicesIndex;
     }
  else {
       throw new HiveException("Unsuported vector output type: " + outputType);
@@ -41,15 +42,17 @@
   compiledKeyWrapperBatch.longIndices=Arrays.copyOf(longIndices,longIndicesIndex);
   compiledKeyWrapperBatch.doubleIndices=Arrays.copyOf(doubleIndices,doubleIndicesIndex);
   compiledKeyWrapperBatch.stringIndices=Arrays.copyOf(stringIndices,stringIndicesIndex);
+  compiledKeyWrapperBatch.decimalIndices=Arrays.copyOf(decimalIndices,decimalIndicesIndex);
   compiledKeyWrapperBatch.vectorHashKeyWrappers=new VectorHashKeyWrapper[VectorizedRowBatch.DEFAULT_SIZE];
   for (int i=0; i < VectorizedRowBatch.DEFAULT_SIZE; ++i) {
-    compiledKeyWrapperBatch.vectorHashKeyWrappers[i]=new VectorHashKeyWrapper(longIndicesIndex,doubleIndicesIndex,stringIndicesIndex);
+    compiledKeyWrapperBatch.vectorHashKeyWrappers[i]=new VectorHashKeyWrapper(longIndicesIndex,doubleIndicesIndex,stringIndicesIndex,decimalIndicesIndex);
   }
   JavaDataModel model=JavaDataModel.get();
-  compiledKeyWrapperBatch.keysFixedSize+=JavaDataModel.alignUp(model.object() + model.ref() * 6 + model.primitive1(),model.memoryAlign());
+  compiledKeyWrapperBatch.keysFixedSize+=JavaDataModel.alignUp(model.object() + model.ref() * MODEL_REFERENCES_COUNT + model.primitive1(),model.memoryAlign());
   compiledKeyWrapperBatch.keysFixedSize+=model.lengthForLongArrayOfSize(longIndicesIndex);
   compiledKeyWrapperBatch.keysFixedSize+=model.lengthForDoubleArrayOfSize(doubleIndicesIndex);
   compiledKeyWrapperBatch.keysFixedSize+=model.lengthForObjectArrayOfSize(stringIndicesIndex);
+  compiledKeyWrapperBatch.keysFixedSize+=model.lengthForObjectArrayOfSize(decimalIndicesIndex);
   compiledKeyWrapperBatch.keysFixedSize+=model.lengthForIntArrayOfSize(longIndicesIndex) * 2;
   compiledKeyWrapperBatch.keysFixedSize+=model.lengthForBooleanArrayOfSize(keyExpressions.length);
   return compiledKeyWrapperBatch;
