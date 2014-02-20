@@ -98,6 +98,7 @@ break;
 case HiveParser.TOK_TABLELOCATION:
 location=unescapeSQLString(child.getChild(0).getText());
 location=EximUtil.relativeToAbsolutePath(conf,location);
+inputs.add(new ReadEntity(new Path(location),FileUtils.isLocalFile(conf,location)));
 break;
 case HiveParser.TOK_TABLEPROPERTIES:
 tblProps=DDLSemanticAnalyzer.getProps((ASTNode)child.getChild(0));
@@ -137,6 +138,10 @@ return null;
 e.printStackTrace();
 }
 }
+String[] qualified=Hive.getQualifiedNames(tableName);
+String dbName=qualified.length == 1 ? SessionState.get().getCurrentDatabase() : qualified[0];
+Database database=getDatabase(dbName);
+outputs.add(new WriteEntity(database));
 CreateTableDesc crtTblDesc=null;
 switch (command_type) {
 case CREATE_TABLE:
@@ -155,13 +160,8 @@ SessionState.get().setCommandType(HiveOperation.CREATETABLE);
 rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),crtTblLikeDesc),conf));
 break;
 case CTAS:
-String databaseName;
 try {
 Table dumpTable=db.newTable(tableName);
-databaseName=dumpTable.getDbName();
-if (null == db.getDatabase(dumpTable.getDbName())) {
-throw new SemanticException(ErrorMsg.DATABASE_NOT_EXISTS.getMsg(dumpTable.getDbName()));
-}
 if (null != db.getTable(dumpTable.getDbName(),dumpTable.getTableName(),false)) {
 throw new SemanticException(ErrorMsg.TABLE_ALREADY_EXISTS.getMsg(tableName));
 }
@@ -170,7 +170,7 @@ throw new SemanticException(ErrorMsg.TABLE_ALREADY_EXISTS.getMsg(tableName));
 throw new SemanticException(e);
 }
 tblProps=addDefaultProperties(tblProps);
-crtTblDesc=new CreateTableDesc(databaseName,tableName,isExt,cols,partCols,bucketCols,sortCols,numBuckets,rowFormatParams.fieldDelim,rowFormatParams.fieldEscape,rowFormatParams.collItemDelim,rowFormatParams.mapKeyDelim,rowFormatParams.lineDelim,comment,storageFormat.inputFormat,storageFormat.outputFormat,location,shared.serde,storageFormat.storageHandler,shared.serdeProps,tblProps,ifNotExists,skewedColNames,skewedValues);
+crtTblDesc=new CreateTableDesc(dbName,tableName,isExt,cols,partCols,bucketCols,sortCols,numBuckets,rowFormatParams.fieldDelim,rowFormatParams.fieldEscape,rowFormatParams.collItemDelim,rowFormatParams.mapKeyDelim,rowFormatParams.lineDelim,comment,storageFormat.inputFormat,storageFormat.outputFormat,location,shared.serde,storageFormat.storageHandler,shared.serdeProps,tblProps,ifNotExists,skewedColNames,skewedValues);
 crtTblDesc.setStoredAsSubDirectories(storedAsDirs);
 crtTblDesc.setNullFormat(rowFormatParams.nullFormat);
 qb.setTableDesc(crtTblDesc);
