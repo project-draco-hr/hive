@@ -1,5 +1,23 @@
 {
-  OperationStatus opStatus=sessionManager.getOperationManager().getOperationStatus(opHandle);
+  Operation operation=sessionManager.getOperationManager().getOperation(opHandle);
+  if (operation.shouldRunAsync()) {
+    long timeout=operation.getParentSession().getHiveConf().getLongVar(HiveConf.ConfVars.HIVE_SERVER2_LONG_POLLING_TIMEOUT);
+    try {
+      operation.getBackgroundHandle().get(timeout,TimeUnit.MILLISECONDS);
+    }
+ catch (    TimeoutException e) {
+      LOG.trace(opHandle + ": Long polling timed out");
+    }
+catch (    CancellationException e) {
+      LOG.trace(opHandle + ": The background operation was cancelled",e);
+    }
+catch (    ExecutionException e) {
+      LOG.trace(opHandle + ": The background operation was aborted",e);
+    }
+catch (    InterruptedException e) {
+    }
+  }
+  OperationStatus opStatus=operation.getStatus();
   LOG.debug(opHandle + ": getOperationStatus()");
   return opStatus;
 }

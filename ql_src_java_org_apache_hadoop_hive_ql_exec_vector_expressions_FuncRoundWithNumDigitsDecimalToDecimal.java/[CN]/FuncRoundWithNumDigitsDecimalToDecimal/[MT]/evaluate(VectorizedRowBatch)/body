@@ -1,0 +1,53 @@
+{
+  if (childExpressions != null) {
+    this.evaluateChildren(batch);
+  }
+  DecimalColumnVector inputColVector=(DecimalColumnVector)batch.cols[colNum];
+  DecimalColumnVector outputColVector=(DecimalColumnVector)batch.cols[outputColumn];
+  int[] sel=batch.selected;
+  boolean[] inputIsNull=inputColVector.isNull;
+  boolean[] outputIsNull=outputColVector.isNull;
+  outputColVector.noNulls=inputColVector.noNulls;
+  int n=batch.size;
+  Decimal128[] vector=inputColVector.vector;
+  if (n == 0) {
+    return;
+  }
+  if (inputColVector.isRepeating) {
+    outputIsNull[0]=inputIsNull[0];
+    DecimalUtil.round(0,vector[0],outputColVector);
+    outputColVector.isRepeating=true;
+  }
+ else   if (inputColVector.noNulls) {
+    if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        outputIsNull[i]=false;
+        DecimalUtil.round(i,vector[i],outputColVector);
+      }
+    }
+ else {
+      Arrays.fill(outputIsNull,0,n,false);
+      for (int i=0; i != n; i++) {
+        DecimalUtil.round(i,vector[i],outputColVector);
+      }
+    }
+    outputColVector.isRepeating=false;
+  }
+ else {
+    if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        outputIsNull[i]=inputIsNull[i];
+        DecimalUtil.round(i,vector[i],outputColVector);
+      }
+    }
+ else {
+      System.arraycopy(inputIsNull,0,outputIsNull,0,n);
+      for (int i=0; i != n; i++) {
+        DecimalUtil.round(i,vector[i],outputColVector);
+      }
+    }
+    outputColVector.isRepeating=false;
+  }
+}

@@ -1,0 +1,34 @@
+{
+  long testIterationTimeout=System.currentTimeMillis() + 100000;
+  long longPollingStart;
+  long longPollingEnd;
+  long longPollingTimeDelta;
+  OperationStatus opStatus=null;
+  OperationState state=null;
+  confOverlay.put(HiveConf.ConfVars.HIVE_SERVER2_LONG_POLLING_TIMEOUT.varname,String.valueOf(longPollingTimeout));
+  OperationHandle opHandle=client.executeStatementAsync(sessionHandle,queryString,confOverlay);
+  int count=0;
+  while (true) {
+    if (System.currentTimeMillis() > testIterationTimeout) {
+      System.out.println("Polling timed out");
+      break;
+    }
+    longPollingStart=System.currentTimeMillis();
+    System.out.println("Long polling starts at: " + longPollingStart);
+    opStatus=client.getOperationStatus(opHandle);
+    state=opStatus.getState();
+    longPollingEnd=System.currentTimeMillis();
+    System.out.println("Long polling ends at: " + longPollingEnd);
+    System.out.println("Polling: " + opHandle + " count="+ (++count)+ " state="+ state);
+    if (state == OperationState.CANCELED || state == OperationState.CLOSED || state == OperationState.FINISHED || state == OperationState.ERROR) {
+      break;
+    }
+ else {
+      longPollingTimeDelta=longPollingEnd - longPollingStart;
+      assertTrue(longPollingTimeDelta - 0.9 * longPollingTimeout > 0);
+    }
+  }
+  assertEquals(expectedState,client.getOperationStatus(opHandle).getState());
+  client.closeOperation(opHandle);
+  return opStatus;
+}

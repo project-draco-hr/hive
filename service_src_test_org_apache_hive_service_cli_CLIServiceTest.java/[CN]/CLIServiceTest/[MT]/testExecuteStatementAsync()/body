@@ -1,74 +1,44 @@
 {
-  HashMap<String,String> confOverlay=new HashMap<String,String>();
-  SessionHandle sessionHandle=client.openSession("tom","password",new HashMap<String,String>());
-  long pollTimeout=System.currentTimeMillis() + 100000;
+  Map<String,String> confOverlay=new HashMap<String,String>();
+  String tableName="TEST_EXEC_ASYNC";
+  String columnDefinitions="(ID STRING)";
+  String queryString;
+  SessionHandle sessionHandle=setupTestData(tableName,columnDefinitions,confOverlay);
   assertNotNull(sessionHandle);
   OperationState state=null;
   OperationHandle opHandle;
   OperationStatus opStatus=null;
-  String queryString="SET " + HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY.varname + " = false";
+  queryString="SET " + HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY.varname + " = false";
   opHandle=client.executeStatement(sessionHandle,queryString,confOverlay);
   client.closeOperation(opHandle);
-  queryString="DROP TABLE IF EXISTS TEST_EXEC_ASYNC";
-  opHandle=client.executeStatement(sessionHandle,queryString,confOverlay);
-  client.closeOperation(opHandle);
-  queryString="CREATE TABLE TEST_EXEC_ASYNC(ID STRING)";
-  opHandle=client.executeStatement(sessionHandle,queryString,confOverlay);
-  client.closeOperation(opHandle);
-  String wrongQueryString="SELECT NON_EXISTANT_COLUMN FROM TEST_EXEC_ASYNC";
+  long longPollingTimeout;
+  longPollingTimeout=new HiveConf().getLongVar(ConfVars.HIVE_SERVER2_LONG_POLLING_TIMEOUT);
+  queryString="SELECT NON_EXISTING_COLUMN FROM " + tableName;
   try {
-    opHandle=client.executeStatementAsync(sessionHandle,wrongQueryString,confOverlay);
-    fail("Async syntax excution should fail");
+    runQueryAsync(sessionHandle,queryString,confOverlay,OperationState.ERROR,longPollingTimeout);
   }
  catch (  HiveSQLException e) {
   }
-  wrongQueryString="CREATE TABLE NON_EXISTING_TAB (ID STRING) location 'hdfs://fooNN:10000/a/b/c'";
-  opHandle=client.executeStatementAsync(sessionHandle,wrongQueryString,confOverlay);
-  int count=0;
-  while (true) {
-    if (System.currentTimeMillis() > pollTimeout) {
-      System.out.println("Polling timed out");
-      break;
-    }
-    opStatus=client.getOperationStatus(opHandle);
-    state=opStatus.getState();
-    System.out.println("Polling: " + opHandle + " count="+ (++count)+ " state="+ state);
-    if (state == OperationState.CANCELED || state == OperationState.CLOSED || state == OperationState.FINISHED || state == OperationState.ERROR) {
-      break;
-    }
-    Thread.sleep(1000);
-  }
-  assertEquals("Operation should be in error state",OperationState.ERROR,state);
+  queryString="CREATE TABLE NON_EXISTING_TAB (ID STRING) location 'hdfs://localhost:10000/a/b/c'";
+  opStatus=runQueryAsync(sessionHandle,queryString,confOverlay,OperationState.ERROR,longPollingTimeout);
   assertEquals(opStatus.getOperationException().getSQLState(),"08S01");
   assertEquals(opStatus.getOperationException().getErrorCode(),1);
-  client.closeOperation(opHandle);
-  queryString="SELECT ID FROM TEST_EXEC_ASYNC";
+  queryString="SELECT ID FROM " + tableName;
+  runQueryAsync(sessionHandle,queryString,confOverlay,OperationState.FINISHED,longPollingTimeout);
+  longPollingTimeout=0;
+  queryString="SELECT ID FROM " + tableName;
+  runQueryAsync(sessionHandle,queryString,confOverlay,OperationState.FINISHED,longPollingTimeout);
+  longPollingTimeout=500;
+  queryString="SELECT ID FROM " + tableName;
+  runQueryAsync(sessionHandle,queryString,confOverlay,OperationState.FINISHED,longPollingTimeout);
+  queryString="SELECT ID FROM " + tableName;
   opHandle=client.executeStatementAsync(sessionHandle,queryString,confOverlay);
-  assertTrue(opHandle.hasResultSet());
-  count=0;
-  while (true) {
-    if (System.currentTimeMillis() > pollTimeout) {
-      System.out.println("Polling timed out");
-      break;
-    }
-    opStatus=client.getOperationStatus(opHandle);
-    state=opStatus.getState();
-    System.out.println("Polling: " + opHandle + " count="+ (++count)+ " state="+ state);
-    if (state == OperationState.CANCELED || state == OperationState.CLOSED || state == OperationState.FINISHED || state == OperationState.ERROR) {
-      break;
-    }
-    Thread.sleep(1000);
-  }
-  assertEquals("Query should be finished",OperationState.FINISHED,state);
-  client.closeOperation(opHandle);
-  opHandle=client.executeStatementAsync(sessionHandle,queryString,confOverlay);
-  System.out.println("cancelling " + opHandle);
+  System.out.println("Cancelling " + opHandle);
   client.cancelOperation(opHandle);
   state=client.getOperationStatus(opHandle).getState();
   System.out.println(opHandle + " after cancelling, state= " + state);
   assertEquals("Query should be cancelled",OperationState.CANCELED,state);
-  queryString="DROP TABLE IF EXISTS TEST_EXEC_ASYNC";
-  opHandle=client.executeStatement(sessionHandle,queryString,confOverlay);
-  client.closeOperation(opHandle);
+  queryString="DROP TABLE " + tableName;
+  client.executeStatement(sessionHandle,queryString,confOverlay);
   client.closeSession(sessionHandle);
 }

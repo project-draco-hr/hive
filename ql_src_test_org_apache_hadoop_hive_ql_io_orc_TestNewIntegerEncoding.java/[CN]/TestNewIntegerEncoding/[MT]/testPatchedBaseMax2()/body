@@ -1,0 +1,26 @@
+{
+  ObjectInspector inspector;
+synchronized (TestOrcFile.class) {
+    inspector=ObjectInspectorFactory.getReflectionObjectInspector(Long.class,ObjectInspectorFactory.ObjectInspectorOptions.JAVA);
+  }
+  List<Long> input=Lists.newArrayList();
+  Random rand=new Random();
+  for (int i=0; i < 5120; i++) {
+    input.add((long)rand.nextInt(60));
+  }
+  input.set(128,Long.MAX_VALUE);
+  input.set(256,Long.MAX_VALUE);
+  input.set(511,Long.MAX_VALUE);
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).inspector(inspector).stripeSize(100000).bufferSize(10000));
+  for (  Long l : input) {
+    writer.addRow(l);
+  }
+  writer.close();
+  Reader reader=OrcFile.createReader(fs,testFilePath,conf);
+  RecordReader rows=reader.rows(null);
+  int idx=0;
+  while (rows.hasNext()) {
+    Object row=rows.next(null);
+    assertEquals(input.get(idx++).longValue(),((LongWritable)row).get());
+  }
+}

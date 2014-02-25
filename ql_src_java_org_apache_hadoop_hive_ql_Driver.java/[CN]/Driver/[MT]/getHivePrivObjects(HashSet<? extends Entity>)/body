@@ -5,8 +5,34 @@
   }
   for (  Entity privObject : privObjects) {
     HivePrivilegeObjectType privObjType=AuthorizationUtils.getHivePrivilegeObjectType(privObject.getType());
-    HivePrivilegeObject hPrivObject=new HivePrivilegeObject(privObjType,getDataBaseName(privObject),privObject.getTable() == null ? null : privObject.getTable().getTableName());
-    hivePrivobjs.add(hPrivObject);
-  }
-  return hivePrivobjs;
+    if (privObject instanceof ReadEntity && !((ReadEntity)privObject).isDirect()) {
+      continue;
+    }
+    if (privObject instanceof WriteEntity && ((WriteEntity)privObject).isTempURI()) {
+      continue;
+    }
+    String dbname=null;
+    String tableURI=null;
+switch (privObject.getType()) {
+case DATABASE:
+      dbname=privObject.getDatabase() == null ? null : privObject.getDatabase().getName();
+    break;
+case TABLE:
+  dbname=privObject.getTable() == null ? null : privObject.getTable().getDbName();
+tableURI=privObject.getTable() == null ? null : privObject.getTable().getTableName();
+break;
+case DFS_DIR:
+case LOCAL_DIR:
+tableURI=privObject.getD();
+break;
+case DUMMYPARTITION:
+case PARTITION:
+break;
+default :
+throw new AssertionError("Unexpected object type");
+}
+HivePrivilegeObject hPrivObject=new HivePrivilegeObject(privObjType,dbname,tableURI);
+hivePrivobjs.add(hPrivObject);
+}
+return hivePrivobjs;
 }

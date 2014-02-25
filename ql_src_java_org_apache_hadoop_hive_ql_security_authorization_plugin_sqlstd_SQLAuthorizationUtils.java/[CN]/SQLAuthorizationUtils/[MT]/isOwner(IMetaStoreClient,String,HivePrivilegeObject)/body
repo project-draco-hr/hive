@@ -1,19 +1,34 @@
 {
-  if (hivePrivObject.getType() == HivePrivilegeObjectType.TABLE) {
-    Table thriftTableObj=null;
+switch (hivePrivObject.getType()) {
+case TABLE_OR_VIEW:
+{
+      Table thriftTableObj=null;
+      try {
+        thriftTableObj=metastoreClient.getTable(hivePrivObject.getDbname(),hivePrivObject.getTableViewURI());
+      }
+ catch (      Exception e) {
+        throwGetObjErr(e,hivePrivObject);
+      }
+      return userName.equals(thriftTableObj.getOwner());
+    }
+case DATABASE:
+{
+    if (MetaStoreUtils.DEFAULT_DATABASE_NAME.equalsIgnoreCase(hivePrivObject.getDbname())) {
+      return true;
+    }
+    Database db=null;
     try {
-      thriftTableObj=metastoreClient.getTable(hivePrivObject.getDbname(),hivePrivObject.getTableviewname());
+      db=metastoreClient.getDatabase(hivePrivObject.getDbname());
     }
- catch (    MetaException e) {
-      throwGetTableErr(e,hivePrivObject);
+ catch (    Exception e) {
+      throwGetObjErr(e,hivePrivObject);
     }
-catch (    NoSuchObjectException e) {
-      throwGetTableErr(e,hivePrivObject);
-    }
-catch (    TException e) {
-      throwGetTableErr(e,hivePrivObject);
-    }
-    return userName.equals(thriftTableObj.getOwner());
+    return userName.equals(db.getOwnerName());
   }
-  return false;
+case DFS_URI:
+case LOCAL_URI:
+case PARTITION:
+default :
+return false;
+}
 }

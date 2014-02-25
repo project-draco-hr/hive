@@ -1,0 +1,36 @@
+{
+  boolean commited=false;
+  List<String> funcs=null;
+  try {
+    openTransaction();
+    dbName=dbName.toLowerCase().trim();
+    String[] subpatterns=pattern.trim().split("\\|");
+    String query="select functionName from org.apache.hadoop.hive.metastore.model.MFunction " + "where database.name == dbName && (";
+    boolean first=true;
+    for (    String subpattern : subpatterns) {
+      subpattern="(?i)" + subpattern.replaceAll("\\*",".*");
+      if (!first) {
+        query=query + " || ";
+      }
+      query=query + " functionName.matches(\"" + subpattern+ "\")";
+      first=false;
+    }
+    query=query + ")";
+    Query q=pm.newQuery(query);
+    q.declareParameters("java.lang.String dbName");
+    q.setResult("functionName");
+    q.setOrdering("functionName ascending");
+    Collection names=(Collection)q.execute(dbName);
+    funcs=new ArrayList<String>();
+    for (Iterator i=names.iterator(); i.hasNext(); ) {
+      funcs.add((String)i.next());
+    }
+    commited=commitTransaction();
+  }
+  finally {
+    if (!commited) {
+      rollbackTransaction();
+    }
+  }
+  return funcs;
+}
