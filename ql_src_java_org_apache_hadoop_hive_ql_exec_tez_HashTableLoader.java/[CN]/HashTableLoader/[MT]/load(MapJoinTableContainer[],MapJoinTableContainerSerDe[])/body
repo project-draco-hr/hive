@@ -3,6 +3,7 @@
   Map<Integer,String> parentToInput=desc.getParentToInput();
   int hashTableThreshold=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVEHASHTABLETHRESHOLD);
   float hashTableLoadFactor=HiveConf.getFloatVar(hconf,HiveConf.ConfVars.HIVEHASHTABLELOADFACTOR);
+  boolean useLazyRows=HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVEMAPJOINLAZYHASHTABLE);
   for (int pos=0; pos < mapJoinTables.length; pos++) {
     if (pos == desc.getPosBigTable()) {
       continue;
@@ -14,12 +15,12 @@
       while (kvReader.next()) {
         MapJoinKey key=new MapJoinKey();
         key.read(mapJoinTableSerdes[pos].getKeyContext(),(Writable)kvReader.getCurrentKey());
-        MapJoinRowContainer values=tableContainer.get(key);
+        LazyFlatRowContainer values=(LazyFlatRowContainer)tableContainer.get(key);
         if (values == null) {
-          values=new MapJoinRowContainer();
+          values=new LazyFlatRowContainer();
           tableContainer.put(key,values);
         }
-        values.read(mapJoinTableSerdes[pos].getValueContext(),(Writable)kvReader.getCurrentValue());
+        values.add(mapJoinTableSerdes[pos].getValueContext(),(BytesWritable)kvReader.getCurrentValue(),useLazyRows);
       }
       mapJoinTables[pos]=tableContainer;
     }
