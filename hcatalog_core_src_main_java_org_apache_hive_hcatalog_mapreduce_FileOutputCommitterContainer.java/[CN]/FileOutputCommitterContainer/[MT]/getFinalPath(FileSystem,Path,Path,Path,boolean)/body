@@ -1,0 +1,37 @@
+{
+  URI taskOutputUri=file.toUri();
+  URI relativePath=src.toUri().relativize(taskOutputUri);
+  if (taskOutputUri == relativePath) {
+    throw new HCatException(ErrorType.ERROR_MOVE_FAILED,"Can not get the relative path: base = " + src + " child = "+ file);
+  }
+  if (relativePath.getPath().length() > 0) {
+    Path itemDest=new Path(dest,relativePath.getPath());
+    if (!immutable) {
+      String name=relativePath.getPath();
+      String filetype;
+      int index=name.lastIndexOf('.');
+      if (index >= 0) {
+        filetype=name.substring(index);
+        name=name.substring(0,index);
+      }
+ else {
+        filetype="";
+      }
+      final int COUNTER_MAX=1000;
+      int counter=1;
+      for (; fs.exists(itemDest) && counter < COUNTER_MAX; counter++) {
+        itemDest=new Path(dest,name + (APPEND_SUFFIX + counter) + filetype);
+      }
+      if (counter == COUNTER_MAX) {
+        throw new HCatException(ErrorType.ERROR_MOVE_FAILED,"Could not find a unique destination path for move: file = " + file + " , src = "+ src+ ", dest = "+ dest);
+      }
+    }
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("FinalPath(file:" + file + ":"+ src+ "->"+ dest+ "="+ itemDest);
+    }
+    return itemDest;
+  }
+ else {
+    return dest;
+  }
+}
