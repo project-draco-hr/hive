@@ -1,0 +1,28 @@
+{
+  conf=hconf;
+  Path statsDir=new Path(hconf.get(StatsSetupConst.STATS_TMP_LOC));
+  LOG.debug("About to read stats from : " + statsDir);
+  statsMap=new HashMap<String,Map<String,String>>();
+  try {
+    fs=statsDir.getFileSystem(hconf);
+    statsList=new ArrayList<Map<String,Map<String,String>>>();
+    FileStatus[] status=fs.listStatus(statsDir,new PathFilter(){
+      @Override public boolean accept(      Path file){
+        return file.getName().startsWith(StatsSetupConst.STATS_FILE_PREFIX);
+      }
+    }
+);
+    for (    FileStatus file : status) {
+      Input in=new Input(fs.open(file.getPath()));
+      statsMap=Utilities.runtimeSerializationKryo.get().readObject(in,statsMap.getClass());
+      LOG.info("Read stats : " + statsMap);
+      statsList.add(statsMap);
+      in.close();
+    }
+    return true;
+  }
+ catch (  IOException e) {
+    LOG.error(e);
+    return false;
+  }
+}
