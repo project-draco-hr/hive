@@ -4,6 +4,10 @@
   int hashTableThreshold=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVEHASHTABLETHRESHOLD);
   float hashTableLoadFactor=HiveConf.getFloatVar(hconf,HiveConf.ConfVars.HIVEHASHTABLELOADFACTOR);
   boolean useLazyRows=HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVEMAPJOINLAZYHASHTABLE);
+  if (!HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVEMAPJOINUSEOPTIMIZEDKEYS)) {
+    lastKey=new MapJoinKeyObject();
+  }
+  Output output=new Output();
   for (int pos=0; pos < mapJoinTables.length; pos++) {
     if (pos == desc.getPosBigTable()) {
       continue;
@@ -13,12 +17,11 @@
       KeyValueReader kvReader=(KeyValueReader)input.getReader();
       MapJoinTableContainer tableContainer=new HashMapWrapper(hashTableThreshold,hashTableLoadFactor);
       while (kvReader.next()) {
-        MapJoinKey key=new MapJoinKey();
-        key.read(mapJoinTableSerdes[pos].getKeyContext(),(Writable)kvReader.getCurrentKey());
-        LazyFlatRowContainer values=(LazyFlatRowContainer)tableContainer.get(key);
+        lastKey=MapJoinKey.read(output,lastKey,mapJoinTableSerdes[pos].getKeyContext(),(Writable)kvReader.getCurrentKey(),false);
+        LazyFlatRowContainer values=(LazyFlatRowContainer)tableContainer.get(lastKey);
         if (values == null) {
           values=new LazyFlatRowContainer();
-          tableContainer.put(key,values);
+          tableContainer.put(lastKey,values);
         }
         values.add(mapJoinTableSerdes[pos].getValueContext(),(BytesWritable)kvReader.getCurrentValue(),useLazyRows);
       }
@@ -33,5 +36,8 @@ catch (    SerDeException e) {
 catch (    Exception e) {
       throw new HiveException(e);
     }
+  }
+  if (lastKey == null) {
+    lastKey=new MapJoinKeyObject();
   }
 }

@@ -7,16 +7,14 @@
   outputBatch=vrbCtx.createVectorizedRowBatch();
   keyWrapperBatch=VectorHashKeyWrapperBatch.compileKeyWrapperBatch(keyExpressions);
   keyEvaluator=new MapJoinKeyEvaluator(){
-    private MapJoinKey key;
+    private MapJoinKey key=null;
+    private final Output output=new Output();
     public MapJoinKeyEvaluator init(){
-      key=new MapJoinKey(new Object[keyExpressions.length]);
       return this;
     }
     @Override public MapJoinKey evaluate(    VectorHashKeyWrapper kw) throws HiveException {
-      Object[] keyValues=key.getKey();
-      for (int i=0; i < keyExpressions.length; ++i) {
-        keyValues[i]=keyWrapperBatch.getWritableKeyValue(kw,i,keyOutputWriters[i]);
-      }
+      MapJoinKey refKey=(key == null ? loader.getKeyType() : key);
+      key=MapJoinKey.readFromVector(output,refKey,kw,keyOutputWriters,keyWrapperBatch,refKey == key);
       return key;
     }
   }
