@@ -9,8 +9,10 @@
   FileSystem fs=tblPath.getFileSystem(conf);
   if (table.getPartitionKeys().size() == 0) {
     Path src=new Path(jobInfo.getLocation());
-    moveTaskOutputs(fs,src,src,tblPath,false);
-    fs.delete(src,true);
+    moveTaskOutputs(fs,src,src,tblPath,false,table.isImmutable());
+    if (!src.equals(tblPath)) {
+      fs.delete(src,true);
+    }
     return;
   }
   HiveMetaStoreClient client=null;
@@ -39,9 +41,11 @@
     if (dynamicPartitioningUsed && harProcessor.isEnabled() && (!partitionsToAdd.isEmpty())) {
       if (!customDynamicLocationUsed) {
         Path src=new Path(ptnRootLocation);
-        moveTaskOutputs(fs,src,src,tblPath,true);
-        moveTaskOutputs(fs,src,src,tblPath,false);
-        fs.delete(src,true);
+        moveTaskOutputs(fs,src,src,tblPath,true,true);
+        moveTaskOutputs(fs,src,src,tblPath,false,true);
+        if (!src.equals(tblPath)) {
+          fs.delete(src,true);
+        }
       }
  else {
         moveCustomLocationTaskOutputs(fs,table,hiveConf);
@@ -65,19 +69,63 @@
  else {
       updateTableSchema(client,table,jobInfo.getOutputSchema());
       LOG.info("HAR not is not being used. The table {} has new partitions {}.",table.getTableName(),ptnInfos);
-      if (dynamicPartitioningUsed && (partitionsToAdd.size() > 0)) {
-        if (!customDynamicLocationUsed) {
-          Path src=new Path(ptnRootLocation);
-          moveTaskOutputs(fs,src,src,tblPath,true);
-          moveTaskOutputs(fs,src,src,tblPath,false);
-          fs.delete(src,true);
+      if (partitionsToAdd.size() > 0) {
+        if (!dynamicPartitioningUsed) {
+          if (partitionsToAdd.size() > 1) {
+            throw new HCatException(ErrorType.ERROR_PUBLISHING_PARTITION,"More than one partition to publish in non-dynamic partitioning job");
+          }
+          Partition p=partitionsToAdd.get(0);
+          Path src=new Path(jobInfo.getLocation());
+          Path dest=new Path(p.getSd().getLocation());
+          moveTaskOutputs(fs,src,src,dest,true,table.isImmutable());
+          moveTaskOutputs(fs,src,src,dest,false,table.isImmutable());
+          if (!src.equals(dest)) {
+            fs.delete(src,true);
+          }
+          boolean publishRequired=false;
+          try {
+            Partition existingP=client.getPartition(p.getDbName(),p.getTableName(),p.getValues());
+            if (existingP != null) {
+              if (table.isImmutable()) {
+                throw new HCatException(ErrorType.ERROR_DUPLICATE_PARTITION,"Attempted duplicate partition publish on to immutable table");
+              }
+ else {
+                if (!existingP.getSd().getInputFormat().equals(table.getInputFormatClass().getName())) {
+                  throw new HCatException(ErrorType.ERROR_PUBLISHING_PARTITION,"Attempted partition append, where old partition format was " + existingP.getSd().getInputFormat() + " and table format was "+ table.getInputFormatClass().getName());
+                }
+              }
+            }
+ else {
+              publishRequired=true;
+            }
+          }
+ catch (          NoSuchObjectException e) {
+            publishRequired=true;
+          }
+          if (publishRequired) {
+            client.add_partitions(partitionsToAdd);
+            partitionsAdded=partitionsToAdd;
+          }
         }
  else {
-          moveCustomLocationTaskOutputs(fs,table,hiveConf);
+          if (!customDynamicLocationUsed) {
+            Path src=new Path(ptnRootLocation);
+            moveTaskOutputs(fs,src,src,tblPath,true,true);
+            moveTaskOutputs(fs,src,src,tblPath,false,true);
+            if (!src.equals(tblPath)) {
+              fs.delete(src,true);
+            }
+          }
+ else {
+            moveCustomLocationTaskOutputs(fs,table,hiveConf);
+          }
+          client.add_partitions(partitionsToAdd);
+          partitionsAdded=partitionsToAdd;
         }
       }
-      client.add_partitions(partitionsToAdd);
-      partitionsAdded=partitionsToAdd;
+      for (      Partition p : partitionsAdded) {
+        applyGroupAndPerms(fs,new Path(p.getSd().getLocation()),tblStat.getPermission(),tblStat.getGroup(),true);
+      }
     }
   }
  catch (  Exception e) {

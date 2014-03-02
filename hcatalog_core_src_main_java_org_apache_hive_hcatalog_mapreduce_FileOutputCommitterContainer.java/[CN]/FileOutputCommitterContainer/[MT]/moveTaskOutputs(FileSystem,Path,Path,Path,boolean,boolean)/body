@@ -1,15 +1,23 @@
 {
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("moveTaskOutputs " + file + " from: "+ srcDir+ " to: "+ destDir+ " dry: "+ dryRun+ " immutable: "+ immutable);
+  }
+  if (dynamicPartitioningUsed) {
+    immutable=true;
+  }
   if (file.getName().equals(TEMP_DIR_NAME) || file.getName().equals(LOGS_DIR_NAME) || file.getName().equals(SUCCEEDED_FILE_NAME)) {
     return;
   }
-  final Path finalOutputPath=getFinalPath(file,srcDir,destDir);
+  final Path finalOutputPath=getFinalPath(fs,file,srcDir,destDir,immutable);
   if (fs.isFile(file)) {
     if (dryRun) {
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Testing if moving file: [" + file + "] to ["+ finalOutputPath+ "] would cause a problem");
-      }
-      if (fs.exists(finalOutputPath)) {
-        throw new HCatException(ErrorType.ERROR_MOVE_FAILED,"Data already exists in " + finalOutputPath + ", duplicate publish not possible.");
+      if (immutable) {
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("Testing if moving file: [" + file + "] to ["+ finalOutputPath+ "] would cause a problem");
+        }
+        if (fs.exists(finalOutputPath)) {
+          throw new HCatException(ErrorType.ERROR_MOVE_FAILED,"Data already exists in " + finalOutputPath + ", duplicate publish not possible.");
+        }
       }
     }
  else {
@@ -42,7 +50,7 @@
     }
     if (firstChild != null && firstChild.isDir()) {
       for (      FileStatus child : children) {
-        moveTaskOutputs(fs,child.getPath(),srcDir,destDir,dryRun);
+        moveTaskOutputs(fs,child.getPath(),srcDir,destDir,dryRun,immutable);
       }
     }
  else {
@@ -66,13 +74,13 @@
         }
  else {
           for (          FileStatus child : children) {
-            moveTaskOutputs(fs,child.getPath(),srcDir,destDir,dryRun);
+            moveTaskOutputs(fs,child.getPath(),srcDir,destDir,dryRun,immutable);
           }
         }
       }
  else {
-        if (fs.exists(finalOutputPath)) {
-          throw new HCatException(ErrorType.ERROR_MOVE_FAILED,"Data already exists in " + finalOutputPath + ", duplicate publish not possible.");
+        if (immutable && fs.exists(finalOutputPath) && !MetaStoreUtils.isDirEmpty(fs,finalOutputPath)) {
+          throw new HCatException(ErrorType.ERROR_DUPLICATE_PARTITION,"Data already exists in " + finalOutputPath + ", duplicate publish not possible.");
         }
       }
     }
