@@ -1,0 +1,25 @@
+{
+  Configuration conf=sessionConfig.getTezConfiguration();
+  ProcessorDescriptor prewarmProcDescriptor=new ProcessorDescriptor(HivePreWarmProcessor.class.getName());
+  prewarmProcDescriptor.setUserPayload(MRHelpers.createUserPayloadFromConf(conf));
+  PreWarmContext context=new PreWarmContext(prewarmProcDescriptor,getContainerResource(conf),numContainers,new VertexLocationHint(null));
+  Map<String,LocalResource> combinedResources=new HashMap<String,LocalResource>();
+  combinedResources.putAll(sessionConfig.getSessionResources());
+  try {
+    for (    LocalResource lr : localizeTempFiles(conf)) {
+      combinedResources.put(getBaseName(lr),lr);
+    }
+  }
+ catch (  LoginException le) {
+    throw new IOException(le);
+  }
+  if (localResources != null) {
+    combinedResources.putAll(localResources);
+  }
+  context.setLocalResources(combinedResources);
+  Map<String,String> environment=new HashMap<String,String>();
+  MRHelpers.updateEnvironmentForMRTasks(conf,environment,true);
+  context.setEnvironment(environment);
+  context.setJavaOpts(getContainerJavaOpts(conf));
+  return context;
+}

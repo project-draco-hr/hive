@@ -8,9 +8,12 @@
   opRules.put(new RuleRegExp("No more walking on ReduceSink-MapJoin",ReduceSinkOperator.getOperatorName() + "%" + MapJoinOperator.getOperatorName()+ "%"),new ReduceSinkMapJoinProc());
   opRules.put(new RuleRegExp("Split Work + Move/Merge - FileSink",FileSinkOperator.getOperatorName() + "%"),new CompositeProcessor(new FileSinkProcessor(),genTezWork));
   opRules.put(new RuleRegExp("Handle Potential Analyze Command",TableScanOperator.getOperatorName() + "%"),new ProcessAnalyzeTable(GenTezUtils.getUtils()));
-  opRules.put(new RuleRegExp("Bail on Union",UnionOperator.getOperatorName() + "%"),new NodeProcessor(){
+  opRules.put(new RuleRegExp("Handle union",UnionOperator.getOperatorName() + "%"),new NodeProcessor(){
     @Override public Object process(    Node n,    Stack<Node> s,    NodeProcessorCtx procCtx,    Object... os) throws SemanticException {
-      throw new SemanticException("Unions not yet supported on Tez." + " Please use MR for this query");
+      GenTezProcContext context=(GenTezProcContext)procCtx;
+      UnionOperator union=(UnionOperator)n;
+      context.currentUnionOperators.add(union);
+      return null;
     }
   }
 );
@@ -19,4 +22,10 @@
   topNodes.addAll(pCtx.getTopOps().values());
   GraphWalker ogw=new GenTezWorkWalker(disp,procCtx);
   ogw.startWalking(topNodes,null);
+  for (  BaseWork w : procCtx.workWithUnionOperators) {
+    GenTezUtils.getUtils().removeUnionOperators(conf,procCtx,w);
+  }
+  for (  FileSinkOperator fileSink : procCtx.fileSinkSet) {
+    GenTezUtils.getUtils().processFileSink(procCtx,fileSink);
+  }
 }
