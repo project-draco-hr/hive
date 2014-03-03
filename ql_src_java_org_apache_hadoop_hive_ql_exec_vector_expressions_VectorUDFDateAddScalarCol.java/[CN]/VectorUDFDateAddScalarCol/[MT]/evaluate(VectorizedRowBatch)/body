@@ -1,0 +1,72 @@
+{
+  LongColumnVector inputCol=(LongColumnVector)batch.cols[this.colNum];
+  final int n=inputCol.isRepeating ? 1 : batch.size;
+  int[] sel=batch.selected;
+  BytesColumnVector outV=(BytesColumnVector)batch.cols[outputColumn];
+switch (inputTypes[0]) {
+case DATE:
+    baseDate.setTime(DateWritable.daysToMillis((int)longValue));
+  break;
+case TIMESTAMP:
+baseDate.setTime(longValue / 1000000);
+break;
+case STRING:
+try {
+baseDate=formatter.parse(new String(stringValue,"UTF-8"));
+break;
+}
+ catch (Exception e) {
+outV.noNulls=false;
+if (batch.selectedInUse) {
+for (int j=0; j < n; j++) {
+  int i=sel[j];
+  outV.isNull[i]=true;
+}
+}
+ else {
+for (int i=0; i < n; i++) {
+  outV.isNull[i]=true;
+}
+}
+return;
+}
+}
+if (batch.size == 0) {
+return;
+}
+outV.isRepeating=inputCol.isRepeating;
+if (inputCol.noNulls) {
+outV.noNulls=true;
+if (batch.selectedInUse) {
+for (int j=0; j < n; j++) {
+int i=sel[j];
+evaluate(baseDate,inputCol.vector[i],outV,i);
+}
+}
+ else {
+for (int i=0; i < n; i++) {
+evaluate(baseDate,inputCol.vector[i],outV,i);
+}
+}
+}
+ else {
+outV.noNulls=false;
+if (batch.selectedInUse) {
+for (int j=0; j < n; j++) {
+int i=sel[j];
+outV.isNull[i]=inputCol.isNull[i];
+if (!inputCol.isNull[i]) {
+evaluate(baseDate,inputCol.vector[i],outV,i);
+}
+}
+}
+ else {
+for (int i=0; i < n; i++) {
+outV.isNull[i]=inputCol.isNull[i];
+if (!inputCol.isNull[i]) {
+evaluate(baseDate,inputCol.vector[i],outV,i);
+}
+}
+}
+}
+}
