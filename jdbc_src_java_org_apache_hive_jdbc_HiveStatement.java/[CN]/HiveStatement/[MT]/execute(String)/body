@@ -7,6 +7,7 @@
       closeClientOperation();
     }
     TExecuteStatementReq execReq=new TExecuteStatementReq(sessHandle,sql);
+    execReq.setRunAsync(true);
     execReq.setConfOverlay(sessConf);
     TExecuteStatementResp execResp=client.ExecuteStatement(execReq);
     Utils.verifySuccessWithInfo(execResp.getStatus());
@@ -18,40 +19,40 @@
 catch (  Exception ex) {
     throw new SQLException(ex.toString(),"08S01",ex);
   }
-  if (!stmtHandle.isHasResultSet()) {
-    TGetOperationStatusReq statusReq=new TGetOperationStatusReq(stmtHandle);
-    boolean requestComplete=false;
-    while (!requestComplete) {
-      try {
-        TGetOperationStatusResp statusResp=client.GetOperationStatus(statusReq);
-        Utils.verifySuccessWithInfo(statusResp.getStatus());
-        if (statusResp.isSetOperationState()) {
+  TGetOperationStatusReq statusReq=new TGetOperationStatusReq(stmtHandle);
+  boolean operationComplete=false;
+  TGetOperationStatusResp statusResp;
+  while (!operationComplete) {
+    try {
+      statusResp=client.GetOperationStatus(statusReq);
+      Utils.verifySuccessWithInfo(statusResp.getStatus());
+      if (statusResp.isSetOperationState()) {
 switch (statusResp.getOperationState()) {
 case CLOSED_STATE:
 case FINISHED_STATE:
-            return false;
+          operationComplete=true;
+        break;
 case CANCELED_STATE:
-          throw new SQLException("Query was cancelled","01000");
+      throw new SQLException("Query was cancelled","01000");
 case ERROR_STATE:
-        throw new SQLException("Query failed","HY000");
+    throw new SQLException(statusResp.getErrorMessage(),statusResp.getSqlState(),statusResp.getErrorCode());
 case UKNOWN_STATE:
-      throw new SQLException("Unknown query","HY000");
+  throw new SQLException("Unknown query","HY000");
 case INITIALIZED_STATE:
 case PENDING_STATE:
 case RUNNING_STATE:
-    break;
+break;
 }
 }
 }
- catch (Exception ex) {
-throw new SQLException(ex.toString(),"08S01",ex);
+ catch (SQLException e) {
+throw e;
 }
-try {
-Thread.sleep(100);
-}
- catch (InterruptedException ex) {
+catch (Exception e) {
+throw new SQLException(e.toString(),"08S01",e);
 }
 }
+if (!stmtHandle.isHasResultSet()) {
 return false;
 }
 resultSet=new HiveQueryResultSet.Builder(this).setClient(client).setSessionHandle(sessHandle).setStmtHandle(stmtHandle).setMaxRows(maxRows).setFetchSize(fetchSize).setScrollable(isScrollableResultset).build();
