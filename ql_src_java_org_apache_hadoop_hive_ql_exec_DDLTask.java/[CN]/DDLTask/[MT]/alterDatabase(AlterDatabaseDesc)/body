@@ -1,7 +1,12 @@
 {
   String dbName=alterDbDesc.getDatabaseName();
   Database database=db.getDatabase(dbName);
-  Map<String,String> newParams=alterDbDesc.getDatabaseProperties();
+  if (database == null) {
+    throw new HiveException(ErrorMsg.DATABASE_NOT_EXISTS,dbName);
+  }
+switch (alterDbDesc.getAlterType()) {
+case ALTER_PROPERTY:
+    Map<String,String> newParams=alterDbDesc.getDatabaseProperties();
   if (database != null) {
     Map<String,String> params=database.getParameters();
     if (params != null && newParams != null) {
@@ -11,10 +16,15 @@
  else {
       database.setParameters(newParams);
     }
-    db.alterDatabase(database.getName(),database);
   }
- else {
-    throw new HiveException(ErrorMsg.DATABASE_NOT_EXISTS,dbName);
-  }
-  return 0;
+break;
+case ALTER_OWNER:
+database.setOwnerName(alterDbDesc.getOwnerPrincipal().getName());
+database.setOwnerType(alterDbDesc.getOwnerPrincipal().getType());
+break;
+default :
+throw new AssertionError("Unsupported alter database type! : " + alterDbDesc.getAlterType());
+}
+db.alterDatabase(database.getName(),database);
+return 0;
 }
