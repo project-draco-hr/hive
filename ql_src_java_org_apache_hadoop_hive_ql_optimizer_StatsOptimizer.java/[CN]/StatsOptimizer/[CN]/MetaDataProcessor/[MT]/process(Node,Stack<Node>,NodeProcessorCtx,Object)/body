@@ -1,26 +1,37 @@
 {
-  TableScanOperator tsOp=(TableScanOperator)stack.get(0);
-  if (tsOp.getParentOperators() != null && tsOp.getParentOperators().size() > 0) {
-    return null;
-  }
-  SelectOperator selOp=(SelectOperator)tsOp.getChildren().get(0);
-  for (  ExprNodeDesc desc : selOp.getConf().getColList()) {
-    if (!(desc instanceof ExprNodeColumnDesc)) {
+  try {
+    TableScanOperator tsOp=(TableScanOperator)stack.get(0);
+    if (tsOp.getParentOperators() != null && tsOp.getParentOperators().size() > 0) {
       return null;
     }
-  }
-  GroupByOperator gbyOp=(GroupByOperator)selOp.getChildren().get(0);
-  FileSinkOperator fsOp=(FileSinkOperator)(gbyOp.getChildren().get(0).getChildren().get(0).getChildren().get(0).getChildren().get(0));
-  if (fsOp.getChildOperators() != null && fsOp.getChildOperators().size() > 0) {
-    return null;
-  }
-  List<AggregationDesc> aggrs=gbyOp.getConf().getAggregators();
-  Table tbl=pctx.getTopToTable().get(tsOp);
-  List<Object> oneRow=new ArrayList<Object>();
-  List<ObjectInspector> ois=new ArrayList<ObjectInspector>();
-  try {
+    SelectOperator selOp=(SelectOperator)tsOp.getChildren().get(0);
+    for (    ExprNodeDesc desc : selOp.getConf().getColList()) {
+      if (!(desc instanceof ExprNodeColumnDesc)) {
+        return null;
+      }
+    }
+    GroupByOperator gbyOp=(GroupByOperator)selOp.getChildren().get(0);
+    ReduceSinkOperator rsOp=(ReduceSinkOperator)gbyOp.getChildren().get(0);
+    if (rsOp.getConf().getDistinctColumnIndices().size() > 0) {
+      return null;
+    }
+    selOp=(SelectOperator)rsOp.getChildOperators().get(0).getChildOperators().get(0);
+    List<AggregationDesc> aggrs=gbyOp.getConf().getAggregators();
+    if (!(selOp.getConf().getColList().size() == aggrs.size())) {
+      return null;
+    }
+    FileSinkOperator fsOp=(FileSinkOperator)(selOp.getChildren().get(0));
+    if (fsOp.getChildOperators() != null && fsOp.getChildOperators().size() > 0) {
+      return null;
+    }
+    Table tbl=pctx.getTopToTable().get(tsOp);
+    List<Object> oneRow=new ArrayList<Object>();
+    List<ObjectInspector> ois=new ArrayList<ObjectInspector>();
     Hive hive=Hive.get(pctx.getConf());
     for (    AggregationDesc aggr : aggrs) {
+      if (aggr.getDistinct()) {
+        return null;
+      }
       if (aggr.getGenericUDAFName().equals(GenericUDAFSum.class.getAnnotation(Description.class).name())) {
         if (!(aggr.getParameters().get(0) instanceof ExprNodeConstantDesc)) {
           return null;
@@ -251,11 +262,6 @@ Log.debug("Unsupported aggregation for metadata optimizer: " + aggr.getGenericUD
 return null;
 }
 }
-}
- catch (Exception e) {
-Log.debug("Failed to optimize using metadata optimizer",e);
-return null;
-}
 List<List<Object>> allRows=new ArrayList<List<Object>>();
 allRows.add(oneRow);
 List<String> colNames=new ArrayList<String>();
@@ -268,4 +274,9 @@ FetchTask fTask=(FetchTask)TaskFactory.get(fWork,pctx.getConf());
 fWork.setLimit(allRows.size());
 pctx.setFetchTask(fTask);
 return null;
+}
+ catch (Exception e) {
+Log.debug("Failed to optimize using metadata optimizer",e);
+return null;
+}
 }
