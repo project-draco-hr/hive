@@ -12,13 +12,11 @@
     }
     SessionState ss=SessionState.get();
     session=ss.getTezSession();
-    if (session == null) {
-      session=new TezSessionState();
-      ss.setTezSession(session);
-    }
+    session=TezSessionPoolManager.getInstance().getSession(session,conf);
+    ss.setTezSession(session);
     if (!session.isOpen()) {
       LOG.info("Tez session hasn't been created yet. Opening session");
-      session.open(ss.getSessionId(),conf);
+      session.open(session.getSessionId(),conf);
     }
     Path scratchDir=ctx.getMRScratchDir();
     utils.createTezDir(scratchDir,conf);
@@ -30,6 +28,7 @@
     rc=monitor.monitorExecution(client);
     Set<StatusGetOpts> statusGetOpts=EnumSet.of(StatusGetOpts.GET_COUNTERS);
     counters=client.getDAGStatus(statusGetOpts).getDAGCounters();
+    TezSessionPoolManager.getInstance().returnSession(session);
     if (LOG.isInfoEnabled()) {
       for (      CounterGroup group : counters) {
         LOG.info(group.getDisplayName() + ":");
