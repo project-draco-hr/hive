@@ -1,0 +1,136 @@
+{
+  List<LockInfo> locksBeingChecked=getLockInfoFromLockId(dbConn,extLockId);
+  LockResponse response=new LockResponse();
+  response.setLockid(extLockId);
+  long now=System.currentTimeMillis();
+  try {
+    LOG.debug("Setting savepoint");
+    Savepoint save=dbConn.setSavepoint();
+    Statement stmt=dbConn.createStatement();
+    StringBuffer query=new StringBuffer("select hl_lock_ext_id, " + "hl_lock_int_id, hl_db, hl_table, hl_partition, hl_lock_state, " + "hl_lock_type from HIVE_LOCKS where hl_db in (");
+    Set<String> strings=new HashSet<String>(locksBeingChecked.size());
+    for (    LockInfo info : locksBeingChecked) {
+      strings.add(info.db);
+    }
+    boolean first=true;
+    for (    String s : strings) {
+      if (first)       first=false;
+ else       query.append(", ");
+      query.append('\'');
+      query.append(s);
+      query.append('\'');
+    }
+    query.append(")");
+    boolean sawNull=false;
+    strings.clear();
+    for (    LockInfo info : locksBeingChecked) {
+      if (info.table == null) {
+        sawNull=true;
+        break;
+      }
+ else {
+        strings.add(info.table);
+      }
+    }
+    if (!sawNull) {
+      query.append(" and (hl_table is null or hl_table in(");
+      first=true;
+      for (      String s : strings) {
+        if (first)         first=false;
+ else         query.append(", ");
+        query.append('\'');
+        query.append(s);
+        query.append('\'');
+      }
+      query.append("))");
+      sawNull=false;
+      strings.clear();
+      for (      LockInfo info : locksBeingChecked) {
+        if (info.partition == null) {
+          sawNull=true;
+          break;
+        }
+ else {
+          strings.add(info.partition);
+        }
+      }
+      if (!sawNull) {
+        query.append(" and (hl_partition is null or hl_partition in(");
+        first=true;
+        for (        String s : strings) {
+          if (first)           first=false;
+ else           query.append(", ");
+          query.append('\'');
+          query.append(s);
+          query.append('\'');
+        }
+        query.append("))");
+      }
+    }
+    query.append(" for update");
+    LOG.debug("Going to execute query <" + query.toString() + ">");
+    ResultSet rs=stmt.executeQuery(query.toString());
+    SortedSet lockSet=new TreeSet(new LockInfoComparator());
+    while (rs.next()) {
+      lockSet.add(new LockInfo(rs));
+    }
+    LockInfo[] locks=(LockInfo[])lockSet.toArray(new LockInfo[1]);
+    for (    LockInfo info : locksBeingChecked) {
+      int index=-1;
+      for (int i=0; i < locks.length; i++) {
+        if (locks[i].equals(info)) {
+          index=i;
+          break;
+        }
+      }
+      if (index == -1) {
+        LOG.debug("Going to rollback");
+        dbConn.rollback();
+        throw new MetaException("How did we get here, " + "we heartbeated our lock before we started!");
+      }
+      if (locks[index].state == LockState.ACQUIRED) {
+        continue;
+      }
+      for (int i=index - 1; i >= 0; i--) {
+        if (!locks[index].db.equals(locks[i].db)) {
+          continue;
+        }
+        if (locks[index].table != null && locks[i].table != null && !locks[index].table.equals(locks[i].table)) {
+          continue;
+        }
+        if (locks[index].partition != null && locks[i].partition != null && !locks[index].partition.equals(locks[i].partition)) {
+          continue;
+        }
+switch (jumpTable.get(locks[index].type).get(locks[i].type).get(locks[i].state)) {
+case ACQUIRE:
+          acquire(dbConn,stmt,extLockId,info.intLockId);
+        break;
+case WAIT:
+      wait(dbConn,save);
+    if (alwaysCommit) {
+      LOG.debug("Going to commit");
+      dbConn.commit();
+    }
+  response.setState(LockState.WAITING);
+return response;
+case KEEP_LOOKING:
+continue;
+}
+}
+acquire(dbConn,stmt,extLockId,info.intLockId);
+}
+LOG.debug("Going to commit");
+dbConn.commit();
+response.setState(LockState.ACQUIRED);
+return response;
+}
+ catch (SQLException e) {
+try {
+LOG.debug("Going to rollback");
+dbConn.rollback();
+}
+ catch (SQLException e1) {
+}
+throw new MetaException("Unable to connect to transaction database " + StringUtils.stringifyException(e));
+}
+}

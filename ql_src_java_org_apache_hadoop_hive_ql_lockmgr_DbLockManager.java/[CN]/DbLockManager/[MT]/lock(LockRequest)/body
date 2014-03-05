@@ -1,0 +1,29 @@
+{
+  try {
+    LOG.debug("Requesting lock");
+    LockResponse res=client.lock(lock);
+    while (res.getState() == LockState.WAITING) {
+      backoff();
+      res=client.checkLock(res.getLockid());
+    }
+    DbHiveLock hl=new DbHiveLock(res.getLockid());
+    locks.add(hl);
+    if (res.getState() != LockState.ACQUIRED) {
+      throw new LockException(ErrorMsg.LOCK_CANNOT_BE_ACQUIRED.getMsg());
+    }
+    List<HiveLock> locks=new ArrayList<HiveLock>(1);
+    locks.add(hl);
+    return locks;
+  }
+ catch (  NoSuchTxnException e) {
+    LOG.error("Metastore could not find txnid " + lock.getTxnid());
+    throw new LockException(ErrorMsg.TXNMGR_NOT_INSTANTIATED.getMsg(),e);
+  }
+catch (  TxnAbortedException e) {
+    LOG.error("Transaction " + lock.getTxnid() + " already aborted.");
+    throw new LockException(ErrorMsg.TXN_ABORTED.getMsg(),e);
+  }
+catch (  TException e) {
+    throw new LockException(ErrorMsg.METASTORE_COMMUNICATION_FAILED.getMsg(),e);
+  }
+}

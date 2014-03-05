@@ -1,0 +1,85 @@
+{
+  timeOutLocks(dbConn);
+  try {
+    Statement stmt=dbConn.createStatement();
+    long txnid=rqst.getTxnid();
+    if (txnid > 0) {
+      String s="select txn_state from TXNS where txn_id = " + txnid + "for update";
+      LOG.debug("Going to execute query <" + s + ">");
+      ResultSet rs=stmt.executeQuery(s);
+      if (!rs.next()) {
+        LOG.debug("Going to rollback");
+        dbConn.rollback();
+        throw new NoSuchTxnException("No such transaction: " + txnid);
+      }
+      if (rs.getString(1).charAt(0) == TXN_ABORTED) {
+        LOG.debug("Going to rollback");
+        dbConn.rollback();
+        throw new TxnAbortedException("Transaction " + txnid + " already aborted");
+      }
+      for (      LockComponent lc : rqst.getComponent()) {
+        String dbName=lc.getDbname();
+        String tblName=lc.getTablename();
+        String partName=lc.getPartitionname();
+        s="insert into TXN_COMPONENTS " + "(tc_txnid, tc_database, tc_table, tc_partition) " + "values (" + txnid + ", '"+ dbName+ "', "+ (tblName == null ? "null" : "'" + tblName + "'")+ ", "+ (partName == null ? "null" : "'" + partName + "'")+ ")";
+        LOG.debug("Going to execute update <" + s + ">");
+        stmt.executeUpdate(s);
+      }
+    }
+    LOG.debug("Going to execute query <select nl_next from NEXT_LOCK_ID " + "for update>");
+    ResultSet rs=stmt.executeQuery("select nl_next from NEXT_LOCK_ID " + "for update");
+    if (!rs.next()) {
+      LOG.debug("Going to rollback");
+      dbConn.rollback();
+      throw new MetaException("Transaction tables not properly " + "initialized, no record found in next_lock_id");
+    }
+    long extLockId=rs.getLong(1);
+    String s="update NEXT_LOCK_ID set nl_next = " + (extLockId + 1);
+    LOG.debug("Going to execute update <" + s + ">");
+    stmt.executeUpdate(s);
+    long intLockId=0;
+    for (    LockComponent lc : rqst.getComponent()) {
+      intLockId++;
+      String dbName=lc.getDbname();
+      String tblName=lc.getTablename();
+      String partName=lc.getPartitionname();
+      LockType lockType=lc.getType();
+      char lockChar='z';
+switch (lockType) {
+case EXCLUSIVE:
+        lockChar=LOCK_EXCLUSIVE;
+      break;
+case SHARED_READ:
+    lockChar=LOCK_SHARED;
+  break;
+case SHARED_WRITE:
+lockChar=LOCK_SEMI_SHARED;
+break;
+}
+long now=System.currentTimeMillis();
+s="insert into HIVE_LOCKS " + " (hl_lock_ext_id, hl_lock_int_id, hl_txnid, hl_db, hl_table, " + "hl_partition, hl_lock_state, hl_lock_type, hl_last_heartbeat, hl_user, hl_host)"+ " values (" + extLockId + ", "+ +intLockId+ ","+ (txnid >= 0 ? txnid : "null")+ ", '"+ dbName+ "', "+ (tblName == null ? "null" : "'" + tblName + "'")+ ", "+ (partName == null ? "null" : "'" + partName + "'")+ ", '"+ LOCK_WAITING+ "', "+ "'"+ lockChar+ "', "+ now+ ", '"+ rqst.getUser()+ "', '"+ rqst.getHostname()+ "')";
+LOG.debug("Going to execute update <" + s + ">");
+stmt.executeUpdate(s);
+}
+LockResponse rsp=checkLock(dbConn,extLockId,txnid,wait);
+if (!wait && rsp.getState() != LockState.ACQUIRED) {
+LOG.debug("Lock not acquired, going to rollback");
+dbConn.rollback();
+rsp=new LockResponse();
+rsp.setState(LockState.NOT_ACQUIRED);
+}
+return rsp;
+}
+ catch (SQLException e) {
+try {
+LOG.debug("Going to rollback");
+dbConn.rollback();
+}
+ catch (SQLException e1) {
+}
+throw new MetaException("Unable to connect to transaction database " + StringUtils.stringifyException(e));
+}
+catch (NoSuchLockException e) {
+throw new MetaException("Couldn't find a lock we just created!");
+}
+}

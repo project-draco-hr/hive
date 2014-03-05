@@ -34,6 +34,7 @@
   boolean ckLock=false;
   try {
     ckLock=checkConcurrency();
+    createTxnManager();
   }
  catch (  SemanticException e) {
     errorMessage="FAILED: Error in semantic analysis: " + e.getMessage();
@@ -66,19 +67,38 @@
       requireLock=true;
     }
   }
+  ret=recordValidTxns();
+  if (ret != 0)   return new CommandProcessorResponse(ret,errorMessage,SQLState);
   if (requireLock) {
     ret=acquireReadWriteLocks();
     if (ret != 0) {
-      releaseLocks(ctx.getHiveLocks());
+      try {
+        releaseLocks(ctx.getHiveLocks());
+      }
+ catch (      LockException e) {
+      }
       return new CommandProcessorResponse(ret,errorMessage,SQLState);
     }
   }
   ret=execute();
   if (ret != 0) {
-    releaseLocks(ctx.getHiveLocks());
+    try {
+      releaseLocks(ctx.getHiveLocks());
+    }
+ catch (    LockException e) {
+    }
     return new CommandProcessorResponse(ret,errorMessage,SQLState);
   }
-  releaseLocks(ctx.getHiveLocks());
+  try {
+    releaseLocks(ctx.getHiveLocks());
+  }
+ catch (  LockException e) {
+    errorMessage="FAILED: Hive Internal Error: " + Utilities.getNameMessage(e);
+    SQLState=ErrorMsg.findSQLState(e.getMessage());
+    downstreamError=e;
+    console.printError(errorMessage + "\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
+    return new CommandProcessorResponse(12,errorMessage,SQLState);
+  }
   perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.DRIVER_RUN);
   perfLogger.close(LOG,plan);
   try {

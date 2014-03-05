@@ -1,0 +1,32 @@
+{
+  if (txnid == 0)   return;
+  try {
+    Statement stmt=dbConn.createStatement();
+    long now=System.currentTimeMillis();
+    String s="select txn_state from TXNS where txn_id = " + txnid + "for update";
+    LOG.debug("Going to execute query <" + s + ">");
+    ResultSet rs=stmt.executeQuery(s);
+    if (!rs.next()) {
+      LOG.debug("Going to rollback");
+      dbConn.rollback();
+      throw new NoSuchTxnException("No such transaction: " + txnid);
+    }
+    if (rs.getString(1).charAt(0) == TXN_ABORTED) {
+      LOG.debug("Going to rollback");
+      dbConn.rollback();
+      throw new TxnAbortedException("Transaction " + txnid + " already aborted");
+    }
+    s="update TXNS set txn_last_heartbeat = " + now + " where txn_id = "+ txnid;
+    LOG.debug("Going to execute update <" + s + ">");
+    stmt.executeUpdate(s);
+  }
+ catch (  SQLException e) {
+    try {
+      LOG.debug("Going to rollback");
+      dbConn.rollback();
+    }
+ catch (    SQLException e1) {
+    }
+    throw new MetaException("Unable to connect to transaction database " + StringUtils.stringifyException(e));
+  }
+}

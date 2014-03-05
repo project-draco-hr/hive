@@ -1,0 +1,70 @@
+{
+  Connection dbConn=getDbConn();
+  try {
+    Statement stmt=dbConn.createStatement();
+    String s="select ncq_next from NEXT_COMPACTION_QUEUE_ID for update";
+    LOG.debug("going to execute query <" + s + ">");
+    ResultSet rs=stmt.executeQuery(s);
+    if (!rs.next()) {
+      LOG.debug("Going to rollback");
+      dbConn.rollback();
+      throw new MetaException("Transaction tables not properly initiated, " + "no record found in next_compaction_queue_id");
+    }
+    long id=rs.getLong(1);
+    s="update NEXT_COMPACTION_QUEUE_ID set ncq_next = " + (id + 1);
+    LOG.debug("Going to execute update <" + s + ">");
+    stmt.executeUpdate(s);
+    StringBuffer buf=new StringBuffer("insert into COMPACTION_QUEUE (cq_id, cq_database, " + "cq_table, ");
+    String partName=rqst.getPartitionname();
+    if (partName != null)     buf.append("cq_partition, ");
+    buf.append("cq_state, cq_type");
+    if (rqst.getRunas() != null)     buf.append(", cq_run_as");
+    buf.append(") values (");
+    buf.append(id);
+    buf.append(", '");
+    buf.append(rqst.getDbname());
+    buf.append("', '");
+    buf.append(rqst.getTablename());
+    buf.append("', '");
+    if (partName != null) {
+      buf.append(partName);
+      buf.append("', '");
+    }
+    buf.append(INITIATED_STATE);
+    buf.append("', '");
+switch (rqst.getType()) {
+case MAJOR:
+      buf.append(MAJOR_TYPE);
+    break;
+case MINOR:
+  buf.append(MINOR_TYPE);
+break;
+default :
+LOG.debug("Going to rollback");
+dbConn.rollback();
+throw new MetaException("Unexpected compaction type " + rqst.getType().toString());
+}
+if (rqst.getRunas() != null) {
+buf.append("', '");
+buf.append(rqst.getRunas());
+}
+buf.append("')");
+s=buf.toString();
+LOG.debug("Going to execute update <" + s + ">");
+stmt.executeUpdate(s);
+LOG.debug("Going to commit");
+dbConn.commit();
+}
+ catch (SQLException e) {
+try {
+LOG.debug("Going to rollback");
+dbConn.rollback();
+}
+ catch (SQLException e1) {
+}
+throw new MetaException("Unable to select from transaction database " + StringUtils.stringifyException(e));
+}
+ finally {
+closeDbConn(dbConn);
+}
+}

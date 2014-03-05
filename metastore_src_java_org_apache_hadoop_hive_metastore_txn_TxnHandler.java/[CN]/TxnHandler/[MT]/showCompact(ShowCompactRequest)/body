@@ -1,0 +1,58 @@
+{
+  ShowCompactResponse response=new ShowCompactResponse();
+  Connection dbConn=getDbConn();
+  try {
+    Statement stmt=dbConn.createStatement();
+    String s="select cq_database, cq_table, cq_partition, cq_state, cq_type, cq_worker_id, " + "cq_start, cq_run_as from COMPACTION_QUEUE";
+    LOG.debug("Going to execute query <" + s + ">");
+    ResultSet rs=stmt.executeQuery(s);
+    while (rs.next()) {
+      ShowCompactResponseElement e=new ShowCompactResponseElement();
+      e.setDbname(rs.getString(1));
+      e.setTablename(rs.getString(2));
+      e.setPartitionname(rs.getString(3));
+switch (rs.getString(4).charAt(0)) {
+case INITIATED_STATE:
+        e.setState(INITIATED_RESPONSE);
+      break;
+case WORKING_STATE:
+    e.setState(WORKING_RESPONSE);
+  break;
+case READY_FOR_CLEANING:
+e.setState(CLEANING_RESPONSE);
+break;
+default :
+throw new MetaException("Unexpected compaction state " + rs.getString(4));
+}
+switch (rs.getString(5).charAt(0)) {
+case MAJOR_TYPE:
+e.setType(CompactionType.MAJOR);
+break;
+case MINOR_TYPE:
+e.setType(CompactionType.MINOR);
+break;
+default :
+throw new MetaException("Unexpected compaction type " + rs.getString(5));
+}
+e.setWorkerid(rs.getString(6));
+e.setStart(rs.getLong(7));
+e.setRunAs(rs.getString(8));
+response.addToCompacts(e);
+}
+LOG.debug("Going to rollback");
+dbConn.rollback();
+}
+ catch (SQLException e) {
+LOG.debug("Going to rollback");
+try {
+dbConn.rollback();
+}
+ catch (SQLException e1) {
+}
+throw new MetaException("Unable to select from transaction database " + StringUtils.stringifyException(e));
+}
+ finally {
+closeDbConn(dbConn);
+}
+return response;
+}

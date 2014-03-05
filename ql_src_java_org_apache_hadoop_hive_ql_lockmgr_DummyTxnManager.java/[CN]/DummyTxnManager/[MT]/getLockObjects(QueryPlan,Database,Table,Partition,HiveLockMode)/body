@@ -1,0 +1,45 @@
+{
+  List<HiveLockObj> locks=new LinkedList<HiveLockObj>();
+  HiveLockObject.HiveLockObjectData lockData=new HiveLockObject.HiveLockObjectData(plan.getQueryId(),String.valueOf(System.currentTimeMillis()),"IMPLICIT",plan.getQueryStr());
+  if (db != null) {
+    locks.add(new HiveLockObj(new HiveLockObject(db.getName(),lockData),mode));
+    return locks;
+  }
+  if (t != null) {
+    locks.add(new HiveLockObj(new HiveLockObject(t,lockData),mode));
+    mode=HiveLockMode.SHARED;
+    locks.add(new HiveLockObj(new HiveLockObject(t.getDbName(),lockData),mode));
+    return locks;
+  }
+  if (p != null) {
+    if (!(p instanceof DummyPartition)) {
+      locks.add(new HiveLockObj(new HiveLockObject(p,lockData),mode));
+    }
+    mode=HiveLockMode.SHARED;
+    String name=p.getName();
+    if (p instanceof DummyPartition) {
+      name=p.getName().split("@")[2];
+    }
+    String partialName="";
+    String[] partns=name.split("/");
+    int len=p instanceof DummyPartition ? partns.length : partns.length - 1;
+    Map<String,String> partialSpec=new LinkedHashMap<String,String>();
+    for (int idx=0; idx < len; idx++) {
+      String partn=partns[idx];
+      partialName+=partn;
+      String[] nameValue=partn.split("=");
+      assert(nameValue.length == 2);
+      partialSpec.put(nameValue[0],nameValue[1]);
+      try {
+        locks.add(new HiveLockObj(new HiveLockObject(new DummyPartition(p.getTable(),p.getTable().getDbName() + "/" + p.getTable().getTableName()+ "/"+ partialName,partialSpec),lockData),mode));
+        partialName+="/";
+      }
+ catch (      HiveException e) {
+        throw new LockException(e.getMessage());
+      }
+    }
+    locks.add(new HiveLockObj(new HiveLockObject(p.getTable(),lockData),mode));
+    locks.add(new HiveLockObj(new HiveLockObject(p.getTable().getDbName(),lockData),mode));
+  }
+  return locks;
+}

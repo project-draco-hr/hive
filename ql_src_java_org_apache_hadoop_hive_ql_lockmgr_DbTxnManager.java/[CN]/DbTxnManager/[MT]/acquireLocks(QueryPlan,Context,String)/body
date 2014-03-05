@@ -1,0 +1,86 @@
+{
+  init();
+  getLockManager();
+  boolean atLeastOneLock=false;
+  LockRequestBuilder rqstBuilder=new LockRequestBuilder();
+  LOG.debug("Setting lock request transaction to " + txnId);
+  rqstBuilder.setTransactionId(txnId).setUser(username);
+  for (  ReadEntity input : plan.getInputs()) {
+    LockComponentBuilder compBuilder=new LockComponentBuilder();
+    compBuilder.setShared();
+    Table t=null;
+switch (input.getType()) {
+case DATABASE:
+      compBuilder.setDbName(input.getDatabase().getName());
+    break;
+case TABLE:
+  t=input.getTable();
+compBuilder.setDbName(t.getDbName());
+compBuilder.setTableName(t.getTableName());
+break;
+case PARTITION:
+case DUMMYPARTITION:
+compBuilder.setPartitionName(input.getPartition().getName());
+t=input.getPartition().getTable();
+compBuilder.setDbName(t.getDbName());
+compBuilder.setTableName(t.getTableName());
+break;
+default :
+continue;
+}
+LockComponent comp=compBuilder.build();
+LOG.debug("Adding lock component to lock request " + comp.toString());
+rqstBuilder.addLockComponent(comp);
+atLeastOneLock=true;
+}
+for (WriteEntity output : plan.getOutputs()) {
+if (output.getType() == Entity.Type.DFS_DIR || output.getType() == Entity.Type.LOCAL_DIR) {
+continue;
+}
+LockComponentBuilder compBuilder=new LockComponentBuilder();
+Table t=null;
+LOG.debug("output is null " + (output == null));
+switch (output.getWriteType()) {
+case DDL:
+case INSERT_OVERWRITE:
+compBuilder.setExclusive();
+break;
+case INSERT:
+case DDL_METADATA_ONLY:
+compBuilder.setShared();
+break;
+case UPDATE:
+case DELETE:
+compBuilder.setSemiShared();
+break;
+default :
+throw new RuntimeException("Unknown write type " + output.getWriteType().toString());
+}
+switch (output.getType()) {
+case DATABASE:
+compBuilder.setDbName(output.getDatabase().getName());
+break;
+case TABLE:
+t=output.getTable();
+compBuilder.setDbName(t.getDbName());
+compBuilder.setTableName(t.getTableName());
+break;
+case PARTITION:
+case DUMMYPARTITION:
+compBuilder.setPartitionName(output.getPartition().getName());
+t=output.getPartition().getTable();
+compBuilder.setDbName(t.getDbName());
+compBuilder.setTableName(t.getTableName());
+break;
+default :
+continue;
+}
+LockComponent comp=compBuilder.build();
+LOG.debug("Adding lock component to lock request " + comp.toString());
+rqstBuilder.addLockComponent(comp);
+atLeastOneLock=true;
+}
+if (!atLeastOneLock) return;
+List<HiveLock> locks=lockMgr.lock(rqstBuilder.build());
+ctx.setHiveLocks(locks);
+}

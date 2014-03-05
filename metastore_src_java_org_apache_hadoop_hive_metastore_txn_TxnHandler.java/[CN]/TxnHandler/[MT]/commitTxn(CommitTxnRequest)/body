@@ -1,0 +1,48 @@
+{
+  long txnid=rqst.getTxnid();
+  Connection dbConn=getDbConn();
+  try {
+    Statement stmt=dbConn.createStatement();
+    String s="select txn_state from TXNS where txn_id = " + txnid + " for update";
+    LOG.debug("Going to execute query <" + s + ">");
+    ResultSet rs=stmt.executeQuery(s);
+    if (!rs.next()) {
+      LOG.debug("Going to rollback");
+      dbConn.rollback();
+      throw new NoSuchTxnException("No such transaction: " + txnid);
+    }
+    if (rs.getString(1).charAt(0) == TXN_ABORTED) {
+      LOG.debug("Going to rollback");
+      dbConn.rollback();
+      throw new TxnAbortedException("Transaction " + txnid + " already aborted");
+    }
+    s="insert into COMPLETED_TXN_COMPONENTS select tc_txnid, tc_database, tc_table, " + "tc_partition from TXN_COMPONENTS where tc_txnid = " + txnid;
+    LOG.debug("Going to execute insert <" + s + ">");
+    if (stmt.executeUpdate(s) < 1) {
+      LOG.error("Expected to move at least one record from txn_components to " + "completed_txn_components when committing txn!");
+    }
+    s="delete from TXN_COMPONENTS where tc_txnid = " + txnid;
+    LOG.debug("Going to execute update <" + s + ">");
+    stmt.executeUpdate(s);
+    s="delete from HIVE_LOCKS where hl_txnid = " + txnid;
+    LOG.debug("Going to execute update <" + s + ">");
+    stmt.executeUpdate(s);
+    s="delete from TXNS where txn_id = " + txnid;
+    LOG.debug("Going to execute update <" + s + ">");
+    stmt.executeUpdate(s);
+    LOG.debug("Going to commit");
+    dbConn.commit();
+  }
+ catch (  SQLException e) {
+    try {
+      LOG.debug("Going to rollback");
+      dbConn.rollback();
+    }
+ catch (    SQLException e1) {
+    }
+    throw new MetaException("Unable to update transaction database " + StringUtils.stringifyException(e));
+  }
+ finally {
+    closeDbConn(dbConn);
+  }
+}

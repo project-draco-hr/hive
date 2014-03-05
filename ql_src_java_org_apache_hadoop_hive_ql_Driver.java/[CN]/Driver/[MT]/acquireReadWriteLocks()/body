@@ -2,70 +2,15 @@
   PerfLogger perfLogger=PerfLogger.getPerfLogger();
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.ACQUIRE_READ_WRITE_LOCKS);
   try {
-    boolean supportConcurrency=conf.getBoolVar(HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY);
-    if (!supportConcurrency) {
-      return 0;
-    }
-    List<HiveLockObj> lockObjects=new ArrayList<HiveLockObj>();
-    for (    ReadEntity input : plan.getInputs()) {
-      if (input.getType() == ReadEntity.Type.DATABASE) {
-        lockObjects.addAll(getLockObjects(input.getDatabase(),null,null,HiveLockMode.SHARED));
-      }
- else       if (input.getType() == ReadEntity.Type.TABLE) {
-        lockObjects.addAll(getLockObjects(null,input.getTable(),null,HiveLockMode.SHARED));
-      }
- else {
-        lockObjects.addAll(getLockObjects(null,null,input.getPartition(),HiveLockMode.SHARED));
-      }
-    }
-    for (    WriteEntity output : plan.getOutputs()) {
-      List<HiveLockObj> lockObj=null;
-      if (output.getType() == WriteEntity.Type.DATABASE) {
-        lockObjects.addAll(getLockObjects(output.getDatabase(),null,null,output.isComplete() ? HiveLockMode.EXCLUSIVE : HiveLockMode.SHARED));
-      }
- else       if (output.getTyp() == WriteEntity.Type.TABLE) {
-        lockObj=getLockObjects(null,output.getTable(),null,output.isComplete() ? HiveLockMode.EXCLUSIVE : HiveLockMode.SHARED);
-      }
- else       if (output.getTyp() == WriteEntity.Type.PARTITION) {
-        lockObj=getLockObjects(null,null,output.getPartition(),HiveLockMode.EXCLUSIVE);
-      }
- else       if (output.getTyp() == WriteEntity.Type.DUMMYPARTITION) {
-        lockObj=getLockObjects(null,null,output.getPartition(),HiveLockMode.SHARED);
-      }
-      if (lockObj != null) {
-        lockObjects.addAll(lockObj);
-        ctx.getOutputLockObjects().put(output,lockObj);
-      }
-    }
-    if (lockObjects.isEmpty() && !ctx.isNeedLockMgr()) {
-      return 0;
-    }
-    HiveLockObjectData lockData=new HiveLockObjectData(plan.getQueryId(),String.valueOf(System.currentTimeMillis()),"IMPLICIT",plan.getQueryStr());
-    String currentDb=SessionState.get().getCurrentDatabase();
-    lockObjects.add(new HiveLockObj(new HiveLockObject(currentDb,lockData),HiveLockMode.SHARED));
-    dedupLockObjects(lockObjects);
-    List<HiveLock> hiveLocks=ctx.getHiveLockMgr().lock(lockObjects,false);
-    if (hiveLocks == null) {
-      throw new SemanticException(ErrorMsg.LOCK_CANNOT_BE_ACQUIRED.getMsg());
-    }
- else {
-      ctx.setHiveLocks(hiveLocks);
-    }
-    return (0);
+    txnMgr.acquireLocks(plan,ctx,userName);
+    return 0;
   }
- catch (  SemanticException e) {
+ catch (  LockException e) {
     errorMessage="FAILED: Error in acquiring locks: " + e.getMessage();
     SQLState=ErrorMsg.findSQLState(e.getMessage());
     downstreamError=e;
     console.printError(errorMessage,"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
-    return (10);
-  }
-catch (  LockException e) {
-    errorMessage="FAILED: Error in acquiring locks: " + e.getMessage();
-    SQLState=ErrorMsg.findSQLState(e.getMessage());
-    downstreamError=e;
-    console.printError(errorMessage,"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
-    return (10);
+    return 10;
   }
  finally {
     perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.ACQUIRE_READ_WRITE_LOCKS);

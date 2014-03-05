@@ -1,0 +1,45 @@
+{
+  Connection dbConn=getDbConn();
+  List<CompactionInfo> rc=new ArrayList<CompactionInfo>();
+  try {
+    Statement stmt=dbConn.createStatement();
+    String s="select cq_id, cq_database, cq_table, cq_partition, " + "cq_type, cq_run_as from COMPACTION_QUEUE where cq_state = '" + READY_FOR_CLEANING + "'"+ " for update";
+    LOG.debug("Going to execute query <" + s + ">");
+    ResultSet rs=stmt.executeQuery(s);
+    while (rs.next()) {
+      CompactionInfo info=new CompactionInfo();
+      info.id=rs.getLong(1);
+      info.dbname=rs.getString(2);
+      info.tableName=rs.getString(3);
+      info.partName=rs.getString(4);
+switch (rs.getString(5).charAt(0)) {
+case MAJOR_TYPE:
+        info.type=CompactionType.MAJOR;
+      break;
+case MINOR_TYPE:
+    info.type=CompactionType.MINOR;
+  break;
+default :
+throw new MetaException("Unexpected compaction type " + rs.getString(5));
+}
+info.runAs=rs.getString(6);
+rc.add(info);
+}
+LOG.debug("Going to rollback");
+dbConn.rollback();
+return rc;
+}
+ catch (SQLException e) {
+LOG.error("Unable to select next element for cleaning, " + e.getMessage());
+try {
+LOG.debug("Going to rollback");
+dbConn.rollback();
+}
+ catch (SQLException e1) {
+}
+return null;
+}
+ finally {
+closeDbConn(dbConn);
+}
+}

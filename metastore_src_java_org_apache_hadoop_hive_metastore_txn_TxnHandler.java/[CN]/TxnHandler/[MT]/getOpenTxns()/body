@@ -1,0 +1,37 @@
+{
+  Connection dbConn=getDbConn();
+  try {
+    Statement stmt=dbConn.createStatement();
+    LOG.debug("Going to execute query <select ntxn_next - 1 from " + "NEXT_TXN_ID>");
+    ResultSet rs=stmt.executeQuery("select ntxn_next - 1 from NEXT_TXN_ID");
+    if (!rs.next()) {
+      throw new MetaException("Transaction tables not properly " + "initialized, no record found in next_txn_id");
+    }
+    long hwm=rs.getLong(1);
+    if (rs.wasNull()) {
+      throw new MetaException("Transaction tables not properly " + "initialized, null record found in next_txn_id");
+    }
+    Set<Long> openList=new HashSet<Long>();
+    LOG.debug("Going to execute query<select txn_id from TXNS>");
+    rs=stmt.executeQuery("select txn_id from TXNS");
+    while (rs.next()) {
+      openList.add(rs.getLong(1));
+    }
+    stmt.close();
+    LOG.debug("Going to rollback");
+    dbConn.rollback();
+    return new GetOpenTxnsResponse(hwm,openList);
+  }
+ catch (  SQLException e) {
+    try {
+      LOG.debug("Going to rollback");
+      dbConn.rollback();
+    }
+ catch (    SQLException e1) {
+    }
+    throw new MetaException("Unable to select from transaction database, " + StringUtils.stringifyException(e));
+  }
+ finally {
+    closeDbConn(dbConn);
+  }
+}

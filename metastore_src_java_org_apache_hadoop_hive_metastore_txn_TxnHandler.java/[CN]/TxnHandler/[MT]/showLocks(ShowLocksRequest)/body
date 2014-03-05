@@ -1,0 +1,60 @@
+{
+  Connection dbConn=getDbConn();
+  ShowLocksResponse rsp=new ShowLocksResponse();
+  List<ShowLocksResponseElement> elems=new ArrayList<ShowLocksResponseElement>();
+  try {
+    Statement stmt=dbConn.createStatement();
+    String s="select hl_lock_ext_id, hl_txnid, hl_db, hl_table, hl_partition, hl_lock_state, " + "hl_lock_type, hl_last_heartbeat, hl_acquired_at, hl_user, hl_host from HIVE_LOCKS";
+    LOG.debug("Doing to execute query <" + s + ">");
+    ResultSet rs=stmt.executeQuery(s);
+    while (rs.next()) {
+      ShowLocksResponseElement e=new ShowLocksResponseElement();
+      e.setLockid(rs.getLong(1));
+      long txnid=rs.getLong(2);
+      if (!rs.wasNull())       e.setTxnid(txnid);
+      e.setDbname(rs.getString(3));
+      e.setTablename(rs.getString(4));
+      String partition=rs.getString(5);
+      if (partition != null)       e.setPartname(partition);
+switch (rs.getString(6).charAt(0)) {
+case LOCK_ACQUIRED:
+        e.setState(LockState.ACQUIRED);
+      break;
+case LOCK_WAITING:
+    e.setState(LockState.WAITING);
+  break;
+default :
+throw new MetaException("Unknown lock state " + rs.getString(6).charAt(0));
+}
+switch (rs.getString(7).charAt(0)) {
+case LOCK_SEMI_SHARED:
+e.setType(LockType.SHARED_WRITE);
+break;
+case LOCK_EXCLUSIVE:
+e.setType(LockType.EXCLUSIVE);
+break;
+case LOCK_SHARED:
+e.setType(LockType.SHARED_READ);
+break;
+default :
+throw new MetaException("Unknown lock type " + rs.getString(6).charAt(0));
+}
+e.setLastheartbeat(rs.getLong(8));
+long acquiredAt=rs.getLong(9);
+if (!rs.wasNull()) e.setAcquiredat(acquiredAt);
+e.setUser(rs.getString(10));
+e.setHostname(rs.getString(11));
+elems.add(e);
+}
+LOG.debug("Going to rollback");
+dbConn.rollback();
+}
+ catch (SQLException e) {
+throw new MetaException("Unable to select from transaction database " + StringUtils.stringifyException(e));
+}
+ finally {
+closeDbConn(dbConn);
+}
+rsp.setLocks(elems);
+return rsp;
+}
