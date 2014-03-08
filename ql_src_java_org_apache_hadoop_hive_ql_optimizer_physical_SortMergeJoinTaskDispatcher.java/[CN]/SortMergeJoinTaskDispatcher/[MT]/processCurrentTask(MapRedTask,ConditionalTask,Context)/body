@@ -15,7 +15,7 @@
   currJoinWork.getMapWork().setJoinTree(joinTree);
   List<Serializable> listWorks=new ArrayList<Serializable>();
   List<Task<? extends Serializable>> listTasks=new ArrayList<Task<? extends Serializable>>();
-  HashMap<String,Task<? extends Serializable>> aliasToTask=new HashMap<String,Task<? extends Serializable>>();
+  HashMap<Task<? extends Serializable>,Set<String>> taskToAliases=new HashMap<Task<? extends Serializable>,Set<String>>();
   HashMap<String,ArrayList<String>> pathToAliases=currJoinWork.getMapWork().getPathToAliases();
   SMBJoinDesc originalSMBJoinDesc=originalSMBJoinOp.getConf();
   Byte[] order=originalSMBJoinDesc.getTagOrder();
@@ -30,12 +30,13 @@
       if (!bigTableCandidates.contains(bigTablePosition)) {
         continue;
       }
-      ObjectPair<MapRedTask,String> newTaskAlias=convertSMBTaskToMapJoinTask(currJoinWork,bigTablePosition,newSMBJoinOp,joinTree);
-      MapRedTask newTask=newTaskAlias.getFirst();
-      String bigTableAlias=newTaskAlias.getSecond();
-      Long aliasKnownSize=aliasToSize.get(bigTableAlias);
-      if (aliasKnownSize != null && aliasKnownSize.longValue() > 0) {
-        long smallTblTotalKnownSize=aliasTotalKnownInputSize - aliasKnownSize.longValue();
+      MapRedTask newTask=convertSMBTaskToMapJoinTask(currJoinWork,bigTablePosition,newSMBJoinOp,joinTree);
+      MapWork mapWork=newTask.getWork().getMapWork();
+      Operator<?> parentOp=originalSMBJoinOp.getParentOperators().get(bigTablePosition);
+      Set<String> aliases=GenMapRedUtils.findAliases(mapWork,parentOp);
+      long aliasKnownSize=Utilities.sumOf(aliasToSize,aliases);
+      if (aliasKnownSize > 0) {
+        long smallTblTotalKnownSize=aliasTotalKnownInputSize - aliasKnownSize;
         if (smallTblTotalKnownSize > ThresholdOfSmallTblSizeSum) {
           continue;
         }
@@ -45,7 +46,7 @@
       newTask.setTaskTag(Task.CONVERTED_MAPJOIN);
       newTask.setBackupTask(currTask);
       newTask.setBackupChildrenTasks(currTask.getChildTasks());
-      aliasToTask.put(bigTableAlias,newTask);
+      taskToAliases.put(newTask,aliases);
     }
   }
  catch (  Exception e) {
@@ -63,7 +64,7 @@
   ConditionalResolverCommonJoinCtx resolverCtx=new ConditionalResolverCommonJoinCtx();
   resolverCtx.setPathToAliases(pathToAliases);
   resolverCtx.setAliasToKnownSize(aliasToSize);
-  resolverCtx.setAliasToTask(aliasToTask);
+  resolverCtx.setTaskToAliases(taskToAliases);
   resolverCtx.setCommonJoinTask(currTask);
   resolverCtx.setLocalTmpDir(context.getLocalScratchDir(false));
   resolverCtx.setHdfsTmpDir(context.getMRScratchDir());
