@@ -1,0 +1,33 @@
+{
+  super(hiveConf,"localhost",MetaStoreUtils.findFreePort(),MetaStoreUtils.findFreePort());
+  baseDir=Files.createTempDir();
+  FileSystem fs;
+  if (useMiniMR) {
+    dfs=ShimLoader.getHadoopShims().getMiniDfs(hiveConf,4,true,null);
+    fs=dfs.getFileSystem();
+    mr=ShimLoader.getHadoopShims().getMiniMrCluster(hiveConf,4,fs.getUri().toString(),1);
+    mr.setupConfiguration(getHiveConf());
+    baseDfsDir=new Path(new Path(fs.getUri()),"/base");
+  }
+ else {
+    fs=FileSystem.getLocal(hiveConf);
+    baseDfsDir=new Path("file://" + baseDir.getPath());
+  }
+  String metaStoreURL="jdbc:derby:" + baseDir.getAbsolutePath() + File.separator+ "test_metastore-"+ hs2Counter.incrementAndGet()+ ";create=true";
+  fs.mkdirs(baseDfsDir);
+  Path wareHouseDir=new Path(baseDfsDir,"warehouse");
+  fs.mkdirs(wareHouseDir);
+  setWareHouseDir(wareHouseDir.toString());
+  System.setProperty(HiveConf.ConfVars.METASTORECONNECTURLKEY.varname,metaStoreURL);
+  hiveConf.setVar(HiveConf.ConfVars.METASTORECONNECTURLKEY,metaStoreURL);
+  setBinaryPort(MetaStoreUtils.findFreePort());
+  hiveConf.setVar(ConfVars.HIVE_SERVER2_TRANSPORT_MODE,HS2_BINARY_MODE);
+  hiveConf.setVar(ConfVars.HIVE_SERVER2_THRIFT_BIND_HOST,getHost());
+  hiveConf.setIntVar(ConfVars.HIVE_SERVER2_THRIFT_PORT,getBinaryPort());
+  hiveConf.setIntVar(ConfVars.HIVE_SERVER2_THRIFT_HTTP_PORT,getHttpPort());
+  HiveMetaStore.HMSHandler.resetDefaultDBFlag();
+  Path scratchDir=new Path(baseDfsDir,"scratch");
+  fs.mkdirs(scratchDir);
+  System.setProperty(HiveConf.ConfVars.SCRATCHDIR.varname,scratchDir.toString());
+  System.setProperty(HiveConf.ConfVars.LOCALSCRATCHDIR.varname,baseDir.getPath() + File.separator + "scratch");
+}
