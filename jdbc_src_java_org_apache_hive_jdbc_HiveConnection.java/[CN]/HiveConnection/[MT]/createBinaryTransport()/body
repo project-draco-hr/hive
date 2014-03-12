@@ -1,9 +1,9 @@
 {
   try {
     if (!HIVE_AUTH_SIMPLE.equals(sessConfMap.get(HIVE_AUTH_TYPE))) {
+      Map<String,String> saslProps=new HashMap<String,String>();
+      SaslQOP saslQOP=SaslQOP.AUTH;
       if (sessConfMap.containsKey(HIVE_AUTH_PRINCIPAL)) {
-        Map<String,String> saslProps=new HashMap<String,String>();
-        SaslQOP saslQOP=SaslQOP.AUTH;
         if (sessConfMap.containsKey(HIVE_AUTH_QOP)) {
           try {
             saslQOP=SaslQOP.fromString(sessConfMap.get(HIVE_AUTH_QOP));
@@ -18,29 +18,35 @@
         transport=KerberosSaslHelper.getKerberosTransport(sessConfMap.get(HIVE_AUTH_PRINCIPAL),host,HiveAuthFactory.getSocketTransport(host,port,loginTimeout),saslProps,assumeSubject);
       }
  else {
-        String userName=sessConfMap.get(HIVE_AUTH_USER);
-        if ((userName == null) || userName.isEmpty()) {
-          userName=HIVE_ANONYMOUS_USER;
-        }
-        String passwd=sessConfMap.get(HIVE_AUTH_PASSWD);
-        if ((passwd == null) || passwd.isEmpty()) {
-          passwd=HIVE_ANONYMOUS_PASSWD;
-        }
-        String useSslStr=sessConfMap.get(HIVE_USE_SSL);
-        if ("true".equalsIgnoreCase(useSslStr)) {
-          String sslTrustStore=sessConfMap.get(HIVE_SSL_TRUST_STORE);
-          String sslTrustStorePassword=sessConfMap.get(HIVE_SSL_TRUST_STORE_PASSWORD);
-          if (sslTrustStore == null || sslTrustStore.isEmpty()) {
-            transport=HiveAuthFactory.getSSLSocket(host,port,loginTimeout);
-          }
- else {
-            transport=HiveAuthFactory.getSSLSocket(host,port,loginTimeout,sslTrustStore,sslTrustStorePassword);
-          }
+        String tokenStr=getClientDelegationToken(sessConfMap);
+        if (tokenStr != null) {
+          transport=KerberosSaslHelper.getTokenTransport(tokenStr,host,HiveAuthFactory.getSocketTransport(host,port,loginTimeout),saslProps);
         }
  else {
-          transport=HiveAuthFactory.getSocketTransport(host,port,loginTimeout);
+          String userName=sessConfMap.get(HIVE_AUTH_USER);
+          if ((userName == null) || userName.isEmpty()) {
+            userName=HIVE_ANONYMOUS_USER;
+          }
+          String passwd=sessConfMap.get(HIVE_AUTH_PASSWD);
+          if ((passwd == null) || passwd.isEmpty()) {
+            passwd=HIVE_ANONYMOUS_PASSWD;
+          }
+          String useSslStr=sessConfMap.get(HIVE_USE_SSL);
+          if ("true".equalsIgnoreCase(useSslStr)) {
+            String sslTrustStore=sessConfMap.get(HIVE_SSL_TRUST_STORE);
+            String sslTrustStorePassword=sessConfMap.get(HIVE_SSL_TRUST_STORE_PASSWORD);
+            if (sslTrustStore == null || sslTrustStore.isEmpty()) {
+              transport=HiveAuthFactory.getSSLSocket(host,port,loginTimeout);
+            }
+ else {
+              transport=HiveAuthFactory.getSSLSocket(host,port,loginTimeout,sslTrustStore,sslTrustStorePassword);
+            }
+          }
+ else {
+            transport=HiveAuthFactory.getSocketTransport(host,port,loginTimeout);
+          }
+          transport=PlainSaslHelper.getPlainTransport(userName,passwd,transport);
         }
-        transport=PlainSaslHelper.getPlainTransport(userName,passwd,transport);
       }
     }
  else {

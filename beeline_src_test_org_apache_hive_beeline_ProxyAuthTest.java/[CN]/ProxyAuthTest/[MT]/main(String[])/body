@@ -1,0 +1,102 @@
+{
+  if (args.length < 4) {
+    System.out.println("Usage ProxyAuthTest <host> <port> <server_principal> <proxy_user> [testTab]");
+    System.exit(1);
+  }
+  File currentResultFile=null;
+  String[] beeLineArgs={};
+  Class.forName(driverName);
+  String host=args[0];
+  String port=args[1];
+  String serverPrincipal=args[2];
+  String proxyUser=args[3];
+  String url=null;
+  if (args.length > 4) {
+    tabName=args[4];
+  }
+  generateData();
+  generateSQL(null);
+  try {
+    url="jdbc:hive2://" + host + ":"+ port+ "/default;principal="+ serverPrincipal;
+    con=DriverManager.getConnection(url);
+    System.out.println("Connected successfully to " + url);
+    String token=((HiveConnection)con).getDelegationToken(proxyUser,serverPrincipal);
+    if ("true".equals(System.getProperty("proxyAuth.debug","false"))) {
+      System.out.println("Got token: " + token);
+    }
+    con.close();
+    System.setProperty(BEELINE_EXIT,"true");
+    url="jdbc:hive2://" + host + ":"+ port+ "/default;principal="+ serverPrincipal;
+    currentResultFile=generateSQL(null);
+    beeLineArgs=new String[]{"-u",url,"-n","foo","-p","bar"};
+    System.out.println("Connection with kerberos, user/password via args, using input rediction");
+    BeeLine.mainWithInputRedirection(beeLineArgs,inpStream);
+    compareResults(currentResultFile);
+    url="jdbc:hive2://" + host + ":"+ port+ "/default;principal="+ serverPrincipal;
+    currentResultFile=generateSQL(null);
+    beeLineArgs=new String[]{"-u",url,"-n","foo","-p","bar","-f",scriptFileName};
+    System.out.println("Connection with kerberos, user/password via args, using input script");
+    BeeLine.main(beeLineArgs);
+    compareResults(currentResultFile);
+    url="jdbc:hive2://" + host + ":"+ port+ "/default;principal="+ serverPrincipal;
+    currentResultFile=generateSQL(url + " foo bar ");
+    beeLineArgs=new String[]{"-u",url,"-f",scriptFileName};
+    System.out.println("Connection with kerberos, user/password via connect, using input script");
+    BeeLine.main(beeLineArgs);
+    compareResults(currentResultFile);
+    url="jdbc:hive2://" + host + ":"+ port+ "/default;principal="+ serverPrincipal;
+    currentResultFile=generateSQL(url + " foo bar ");
+    beeLineArgs=new String[]{"-u",url,"-f",scriptFileName};
+    System.out.println("Connection with kerberos, user/password via connect, using input redirect");
+    BeeLine.mainWithInputRedirection(beeLineArgs,inpStream);
+    compareResults(currentResultFile);
+    System.out.println("Store token into ugi and try");
+    storeTokenInJobConf(token);
+    url="jdbc:hive2://" + host + ":"+ port+ "/default;auth=delegationToken";
+    con=DriverManager.getConnection(url);
+    System.out.println("Connecting to " + url);
+    runTest();
+    con.close();
+    url="jdbc:hive2://" + host + ":"+ port+ "/default";
+    currentResultFile=generateSQL(null);
+    beeLineArgs=new String[]{"-u",url,"-n","foo","-p","bar","-a","delegationToken"};
+    System.out.println("Connection with token, user/password via args, using input redirection");
+    BeeLine.mainWithInputRedirection(beeLineArgs,inpStream);
+    compareResults(currentResultFile);
+    url="jdbc:hive2://" + host + ":"+ port+ "/default";
+    currentResultFile=generateSQL(null);
+    beeLineArgs=new String[]{"-u",url,"-n","foo","-p","bar","-a","delegationToken","-f",scriptFileName};
+    System.out.println("Connection with token, user/password via args, using input script");
+    BeeLine.main(beeLineArgs);
+    compareResults(currentResultFile);
+    url="jdbc:hive2://" + host + ":"+ port+ "/default";
+    currentResultFile=generateSQL(url + " foo bar ");
+    beeLineArgs=new String[]{"-a","delegationToken","-f",scriptFileName};
+    System.out.println("Connection with token, user/password via connect, using input script");
+    BeeLine.main(beeLineArgs);
+    compareResults(currentResultFile);
+    url="jdbc:hive2://" + host + ":"+ port+ "/default";
+    currentResultFile=generateSQL(url + " foo bar ");
+    System.out.println("Connection with token, user/password via connect, using input script");
+    beeLineArgs=new String[]{"-f",scriptFileName,"-a","delegationToken"};
+    BeeLine.main(beeLineArgs);
+    compareResults(currentResultFile);
+    url="jdbc:hive2://" + host + ":"+ port+ "/default;principal="+ serverPrincipal+ ";hive.server2.proxy.user="+ proxyUser;
+    con=DriverManager.getConnection(url);
+    System.out.println("Connected successfully to " + url);
+    runTest();
+    ((HiveConnection)con).cancelDelegationToken(token);
+    con.close();
+  }
+ catch (  SQLException e) {
+    System.out.println("*** SQLException: " + e.getMessage() + " : "+ e.getSQLState());
+    e.printStackTrace();
+  }
+  try {
+    url="jdbc:hive2://" + host + ":"+ port+ "/default;auth=delegationToken";
+    con=DriverManager.getConnection(url);
+    throw new Exception("connection should have failed after token cancelation");
+  }
+ catch (  SQLException e) {
+  }
+}
