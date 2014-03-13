@@ -1,10 +1,12 @@
 {
   try {
-    FileSystem fs=srcf.getFileSystem(conf);
+    FileSystem destFs=destf.getFileSystem(conf);
     boolean inheritPerms=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_WAREHOUSE_SUBDIR_INHERIT_PERMS);
     FileStatus[] srcs;
+    FileSystem srcFs;
     try {
-      srcs=fs.globStatus(srcf);
+      srcFs=srcf.getFileSystem(conf);
+      srcs=srcFs.globStatus(srcf);
     }
  catch (    IOException e) {
       throw new HiveException("Getting globStatus " + srcf.toString(),e);
@@ -13,7 +15,7 @@
       LOG.info("No sources specified to move: " + srcf);
       return;
     }
-    List<List<Path[]>> result=checkPaths(conf,fs,srcs,destf,true);
+    List<List<Path[]>> result=checkPaths(conf,destFs,srcs,srcFs,destf,true);
     if (oldPath != null) {
       try {
         FileSystem fs2=oldPath.getFileSystem(conf);
@@ -29,33 +31,33 @@
     }
     if (srcs.length == 1 && srcs[0].isDir()) {
       Path destfp=destf.getParent();
-      if (!fs.exists(destfp)) {
-        boolean success=fs.mkdirs(destfp);
+      if (!destFs.exists(destfp)) {
+        boolean success=destFs.mkdirs(destfp);
         if (!success) {
           LOG.warn("Error creating directory " + destf.toString());
         }
         if (inheritPerms && success) {
-          fs.setPermission(destfp,fs.getFileStatus(destfp.getParent()).getPermission());
+          destFs.setPermission(destfp,destFs.getFileStatus(destfp.getParent()).getPermission());
         }
       }
-      boolean b=renameFile(conf,srcs[0].getPath(),destf,fs,true);
+      boolean b=renameFile(conf,srcs[0].getPath(),destf,destFs,true,isSrcLocal);
       if (!b) {
         throw new HiveException("Unable to move results from " + srcs[0].getPath() + " to destination directory: "+ destf);
       }
     }
  else {
-      if (!fs.exists(destf)) {
-        boolean success=fs.mkdirs(destf);
+      if (!destFs.exists(destf)) {
+        boolean success=destFs.mkdirs(destf);
         if (!success) {
           LOG.warn("Error creating directory " + destf.toString());
         }
         if (inheritPerms && success) {
-          fs.setPermission(destf,fs.getFileStatus(destf.getParent()).getPermission());
+          destFs.setPermission(destf,destFs.getFileStatus(destf.getParent()).getPermission());
         }
       }
       for (      List<Path[]> sdpairs : result) {
         for (        Path[] sdpair : sdpairs) {
-          if (!renameFile(conf,sdpair[0],sdpair[1],fs,true)) {
+          if (!renameFile(conf,sdpair[0],sdpair[1],destFs,true,isSrcLocal)) {
             throw new IOException("Error moving: " + sdpair[0] + " into: "+ sdpair[1]);
           }
         }
