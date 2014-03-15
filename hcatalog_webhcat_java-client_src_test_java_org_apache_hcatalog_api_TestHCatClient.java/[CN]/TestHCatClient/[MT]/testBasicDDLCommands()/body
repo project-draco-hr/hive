@@ -1,0 +1,63 @@
+{
+  String db="testdb";
+  String tableOne="testTable1";
+  String tableTwo="testTable2";
+  String tableThree="testTable3";
+  HCatClient client=HCatClient.create(new Configuration(hcatConf));
+  client.dropDatabase(db,true,HCatClient.DropDBMode.CASCADE);
+  HCatCreateDBDesc dbDesc=HCatCreateDBDesc.create(db).ifNotExists(false).build();
+  client.createDatabase(dbDesc);
+  List<String> dbNames=client.listDatabaseNamesByPattern("*");
+  assertTrue(dbNames.contains("default"));
+  assertTrue(dbNames.contains(db));
+  HCatDatabase testDb=client.getDatabase(db);
+  assertTrue(testDb.getComment() == null);
+  assertTrue(testDb.getProperties().size() == 0);
+  String warehouseDir=System.getProperty("test.warehouse.dir","/user/hive/warehouse");
+  String expectedDir=org.apache.hive.hcatalog.api.TestHCatClient.fixPath(warehouseDir).replaceFirst("pfile:///","pfile:/");
+  assertEquals(expectedDir + "/" + db+ ".db",testDb.getLocation());
+  ArrayList<HCatFieldSchema> cols=new ArrayList<HCatFieldSchema>();
+  cols.add(new HCatFieldSchema("id",Type.INT,"id comment"));
+  cols.add(new HCatFieldSchema("value",Type.STRING,"value comment"));
+  HCatCreateTableDesc tableDesc=HCatCreateTableDesc.create(db,tableOne,cols).fileFormat("rcfile").build();
+  client.createTable(tableDesc);
+  HCatTable table1=client.getTable(db,tableOne);
+  assertTrue(table1.getInputFileFormat().equalsIgnoreCase(RCFileInputFormat.class.getName()));
+  assertTrue(table1.getOutputFileFormat().equalsIgnoreCase(RCFileOutputFormat.class.getName()));
+  assertTrue(table1.getSerdeLib().equalsIgnoreCase(ColumnarSerDe.class.getName()));
+  assertTrue(table1.getCols().equals(cols));
+  try {
+    client.createTable(tableDesc);
+    fail("Expected exception");
+  }
+ catch (  HCatException e) {
+    assertTrue(e.getMessage().contains("AlreadyExistsException while creating table."));
+  }
+  client.dropTable(db,tableOne,true);
+  HCatCreateTableDesc tableDesc2=HCatCreateTableDesc.create(db,tableTwo,cols).build();
+  client.createTable(tableDesc2);
+  HCatTable table2=client.getTable(db,tableTwo);
+  assertTrue(table2.getInputFileFormat().equalsIgnoreCase(TextInputFormat.class.getName()));
+  assertTrue(table2.getOutputFileFormat().equalsIgnoreCase(HiveIgnoreKeyTextOutputFormat.class.getName()));
+  assertEquals((expectedDir + "/" + db+ ".db/"+ tableTwo).toLowerCase(),table2.getLocation().toLowerCase());
+  HCatCreateTableDesc tableDesc3=HCatCreateTableDesc.create(db,tableThree,cols).fileFormat("orcfile").build();
+  client.createTable(tableDesc3);
+  HCatTable table3=client.getTable(db,tableThree);
+  assertTrue(table3.getInputFileFormat().equalsIgnoreCase(OrcInputFormat.class.getName()));
+  assertTrue(table3.getOutputFileFormat().equalsIgnoreCase(OrcOutputFormat.class.getName()));
+  assertTrue(table3.getSerdeLib().equalsIgnoreCase(OrcSerde.class.getName()));
+  assertTrue(table1.getCols().equals(cols));
+  String tableFour="table4";
+  String nonDefaultSerDe="com.my.custom.SerDe";
+  HCatCreateTableDesc tableDesc4=HCatCreateTableDesc.create(db,tableFour,cols).serDe(nonDefaultSerDe).build();
+  client.createTable(tableDesc4);
+  HCatTable table4=client.getTable(db,tableFour);
+  assertEquals("SerDe libraries don't match!",nonDefaultSerDe,table4.getSerdeLib());
+  client.dropTable(db,tableFour,true);
+  tableDesc4=HCatCreateTableDesc.create(db,tableFour,cols).serDe(nonDefaultSerDe).storageHandler(DefaultStorageHandler.class.getName()).build();
+  client.createTable(tableDesc4);
+  table4=client.getTable(db,tableFour);
+  assertNotSame("SerDe libraries shouldn't have matched!",nonDefaultSerDe,table4.getSerdeLib());
+  client.dropTable(db,tableFour,true);
+  client.close();
+}

@@ -1,0 +1,30 @@
+{
+  MockLoader.setData(tablename + "Input",data);
+  try {
+    createTable(tablename,tableSchema);
+    PigServer server=new PigServer(ExecType.LOCAL);
+    server.setBatchOn();
+    server.registerQuery("A = load '" + tablename + "Input' using org.apache.hcatalog.pig.MockLoader() AS ("+ pigSchema+ ");");
+    Schema dumpedASchema=server.dumpSchema("A");
+    server.registerQuery("STORE A into '" + tablename + "' using org.apache.hcatalog.pig.HCatStorer("+ (provideSchemaToStorer ? "'', '" + pigSchema + "'" : "")+ ");");
+    ExecJob execJob=server.executeBatch().get(0);
+    if (!execJob.getStatistics().isSuccessful()) {
+      throw new RuntimeException("Import failed",execJob.getException());
+    }
+    server.registerQuery("X = load '" + tablename + "' using org.apache.hcatalog.pig.HCatLoader();");
+    server.dumpSchema("X");
+    Iterator<Tuple> it=server.openIterator("X");
+    int i=0;
+    while (it.hasNext()) {
+      Tuple input=data.get(i++);
+      Tuple output=it.next();
+      compareTuples(input,output);
+      LOG.info("tuple : {} ",output);
+    }
+    Schema dumpedXSchema=server.dumpSchema("X");
+    Assert.assertEquals("expected " + dumpedASchema + " but was "+ dumpedXSchema+ " (ignoring field names)","",compareIgnoreFiledNames(dumpedASchema,dumpedXSchema));
+  }
+  finally {
+    dropTable(tablename);
+  }
+}

@@ -1,0 +1,38 @@
+{
+  if (groups != null) {
+    List<String> groupList=Arrays.asList(groups);
+    String superGroupName=getSuperGroupName(fs.getConf());
+    if (userBelongsToSuperGroup(superGroupName,groupList)) {
+      LOG.info("User \"" + user + "\" belongs to super-group \""+ superGroupName+ "\". "+ "Permission granted for actions: ("+ actions+ ").");
+      return;
+    }
+  }
+  final FileStatus stat;
+  try {
+    stat=fs.getFileStatus(path);
+  }
+ catch (  FileNotFoundException fnfe) {
+    return;
+  }
+catch (  org.apache.hadoop.fs.permission.AccessControlException ace) {
+    throw new AccessControlException(ace.getMessage());
+  }
+  final FsPermission dirPerms=stat.getPermission();
+  final String grp=stat.getGroup();
+  for (  FsAction action : actions) {
+    if (user.equals(stat.getOwner())) {
+      if (dirPerms.getUserAction().implies(action)) {
+        continue;
+      }
+    }
+    if (ArrayUtils.contains(groups,grp)) {
+      if (dirPerms.getGroupAction().implies(action)) {
+        continue;
+      }
+    }
+    if (dirPerms.getOtherAction().implies(action)) {
+      continue;
+    }
+    throw new AccessControlException("action " + action + " not permitted on path "+ path+ " for user "+ user);
+  }
+}
