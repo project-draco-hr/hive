@@ -10,29 +10,18 @@
     }
     minWorkerThreads=hiveConf.getIntVar(ConfVars.HIVE_SERVER2_THRIFT_HTTP_MIN_WORKER_THREADS);
     maxWorkerThreads=hiveConf.getIntVar(ConfVars.HIVE_SERVER2_THRIFT_HTTP_MAX_WORKER_THREADS);
-    String httpPath=hiveConf.getVar(HiveConf.ConfVars.HIVE_SERVER2_THRIFT_HTTP_PATH);
-    if (httpPath == null || httpPath.equals("")) {
-      httpPath="/*";
-    }
- else {
-      if (!httpPath.startsWith("/")) {
-        httpPath="/" + httpPath;
-      }
-      if (httpPath.endsWith("/")) {
-        httpPath=httpPath + "*";
-      }
-      if (!httpPath.endsWith("/*")) {
-        httpPath=httpPath + "/*";
-      }
-    }
+    String httpPath=getHttpPath(hiveConf.getVar(HiveConf.ConfVars.HIVE_SERVER2_THRIFT_HTTP_PATH));
     httpServer=new org.eclipse.jetty.server.Server();
     QueuedThreadPool threadPool=new QueuedThreadPool();
     threadPool.setMinThreads(minWorkerThreads);
     threadPool.setMaxThreads(maxWorkerThreads);
     httpServer.setThreadPool(threadPool);
-    SelectChannelConnector connector;
-    Boolean useSsl=hiveConf.getBoolVar(ConfVars.HIVE_SERVER2_USE_SSL);
+    SelectChannelConnector connector=new SelectChannelConnector();
+    ;
+    boolean useSsl=hiveConf.getBoolVar(ConfVars.HIVE_SERVER2_USE_SSL);
     String schemeName=useSsl ? "https" : "http";
+    String authType=hiveConf.getVar(ConfVars.HIVE_SERVER2_AUTHENTICATION);
+    UserGroupInformation serviceUGI=cliService.getServiceUGI();
     if (useSsl) {
       String keyStorePath=hiveConf.getVar(ConfVars.HIVE_SERVER2_SSL_KEYSTORE_PATH).trim();
       String keyStorePassword=hiveConf.getVar(ConfVars.HIVE_SERVER2_SSL_KEYSTORE_PASSWORD);
@@ -44,15 +33,14 @@
       sslContextFactory.setKeyStorePassword(keyStorePassword);
       connector=new SslSelectChannelConnector(sslContextFactory);
     }
- else {
-      connector=new SelectChannelConnector();
-    }
     connector.setPort(portNum);
     connector.setReuseAddress(!Shell.WINDOWS);
     httpServer.addConnector(connector);
-    TCLIService.Processor<ThriftCLIService> processor=new TCLIService.Processor<ThriftCLIService>(new EmbeddedThriftBinaryCLIService());
+    hiveAuthFactory=new HiveAuthFactory();
+    TProcessorFactory processorFactory=hiveAuthFactory.getAuthProcFactory(this);
+    TProcessor processor=processorFactory.getProcessor(null);
     TProtocolFactory protocolFactory=new TBinaryProtocol.Factory();
-    TServlet thriftHttpServlet=new ThriftHttpServlet(processor,protocolFactory);
+    TServlet thriftHttpServlet=new ThriftHttpServlet(processor,protocolFactory,authType,serviceUGI);
     final ServletContextHandler context=new ServletContextHandler(ServletContextHandler.SESSIONS);
     context.setContextPath("/");
     httpServer.setHandler(context);

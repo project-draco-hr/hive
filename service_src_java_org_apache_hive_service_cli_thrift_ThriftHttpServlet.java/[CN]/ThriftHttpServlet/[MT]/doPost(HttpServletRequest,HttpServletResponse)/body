@@ -1,4 +1,23 @@
 {
-  logRequestHeader(request);
-  super.doPost(request,response);
+  String clientUserName;
+  try {
+    if (isKerberosAuthMode(authType)) {
+      clientUserName=doKerberosAuth(request,serviceUGI);
+    }
+ else {
+      clientUserName=doPasswdAuth(request,authType);
+    }
+    LOG.info("Client username: " + clientUserName);
+    SessionManager.setUserName(clientUserName);
+    super.doPost(request,response);
+  }
+ catch (  HttpAuthenticationException e) {
+    LOG.error("Error: ",e);
+    response.setContentType("application/x-thrift");
+    response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+    response.getWriter().println("Authentication Error: " + e.getMessage());
+  }
+ finally {
+    SessionManager.clearUserName();
+  }
 }
