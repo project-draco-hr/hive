@@ -1,30 +1,32 @@
 {
   Location loc;
-  Object predObj=predicate.getLiteral();
-  Object minValue=getPrimitiveObject(predObj,min);
-  Object maxValue=getPrimitiveObject(predObj,max);
+  try {
+    Object baseObj=predicate.getLiteral();
+    Object minValue=getConvertedStatsObj(min,baseObj);
+    Object maxValue=getConvertedStatsObj(max,baseObj);
+    Object predObj=getBaseObjectForComparison(baseObj,minValue);
 switch (predicate.getOperator()) {
 case NULL_SAFE_EQUALS:
-    loc=compareToRange((Comparable)predicate.getLiteral(),minValue,maxValue);
-  if (loc == Location.BEFORE || loc == Location.AFTER) {
-    return TruthValue.NO;
-  }
+      loc=compareToRange((Comparable)predObj,minValue,maxValue);
+    if (loc == Location.BEFORE || loc == Location.AFTER) {
+      return TruthValue.NO;
+    }
  else {
-    return TruthValue.YES_NO;
-  }
+      return TruthValue.YES_NO;
+    }
 case EQUALS:
-loc=compareToRange((Comparable)predicate.getLiteral(),minValue,maxValue);
+  loc=compareToRange((Comparable)predObj,minValue,maxValue);
 if (minValue.equals(maxValue) && loc == Location.MIN) {
-return TruthValue.YES_NULL;
+  return TruthValue.YES_NULL;
 }
  else if (loc == Location.BEFORE || loc == Location.AFTER) {
-return TruthValue.NO_NULL;
+  return TruthValue.NO_NULL;
 }
  else {
-return TruthValue.YES_NO_NULL;
+  return TruthValue.YES_NO_NULL;
 }
 case LESS_THAN:
-loc=compareToRange((Comparable)predicate.getLiteral(),minValue,maxValue);
+loc=compareToRange((Comparable)predObj,minValue,maxValue);
 if (loc == Location.AFTER) {
 return TruthValue.YES_NULL;
 }
@@ -35,7 +37,7 @@ return TruthValue.NO_NULL;
 return TruthValue.YES_NO_NULL;
 }
 case LESS_THAN_EQUALS:
-loc=compareToRange((Comparable)predicate.getLiteral(),minValue,maxValue);
+loc=compareToRange((Comparable)predObj,minValue,maxValue);
 if (loc == Location.AFTER || loc == Location.MAX) {
 return TruthValue.YES_NULL;
 }
@@ -48,9 +50,8 @@ return TruthValue.YES_NO_NULL;
 case IN:
 if (minValue.equals(maxValue)) {
 for (Object arg : predicate.getLiteralList()) {
-minValue=getPrimitiveObject(arg,min);
-maxValue=getPrimitiveObject(arg,max);
-loc=compareToRange((Comparable)arg,minValue,maxValue);
+predObj=getBaseObjectForComparison(arg,minValue);
+loc=compareToRange((Comparable)predObj,minValue,maxValue);
 if (loc == Location.MIN) {
 return TruthValue.YES_NULL;
 }
@@ -59,9 +60,8 @@ return TruthValue.NO_NULL;
 }
  else {
 for (Object arg : predicate.getLiteralList()) {
-minValue=getPrimitiveObject(arg,min);
-maxValue=getPrimitiveObject(arg,max);
-loc=compareToRange((Comparable)arg,minValue,maxValue);
+predObj=getBaseObjectForComparison(arg,minValue);
+loc=compareToRange((Comparable)predObj,minValue,maxValue);
 if (loc == Location.MIN || loc == Location.MIDDLE || loc == Location.MAX) {
 return TruthValue.YES_NO_NULL;
 }
@@ -70,13 +70,10 @@ return TruthValue.NO_NULL;
 }
 case BETWEEN:
 List<Object> args=predicate.getLiteralList();
-minValue=getPrimitiveObject(args.get(0),min);
-maxValue=getPrimitiveObject(args.get(0),max);
-loc=compareToRange((Comparable)args.get(0),minValue,maxValue);
+Object predObj1=getBaseObjectForComparison(args.get(0),minValue);
+loc=compareToRange((Comparable)predObj1,minValue,maxValue);
 if (loc == Location.BEFORE || loc == Location.MIN) {
-Object predObj2=args.get(1);
-minValue=getPrimitiveObject(predObj2,min);
-maxValue=getPrimitiveObject(predObj2,max);
+Object predObj2=getBaseObjectForComparison(args.get(1),minValue);
 Location loc2=compareToRange((Comparable)predObj2,minValue,maxValue);
 if (loc2 == Location.AFTER || loc2 == Location.MAX) {
 return TruthValue.YES_NULL;
@@ -97,6 +94,10 @@ return TruthValue.YES_NO_NULL;
 case IS_NULL:
 return TruthValue.YES_NO;
 default :
+return TruthValue.YES_NO_NULL;
+}
+}
+ catch (NumberFormatException nfe) {
 return TruthValue.YES_NO_NULL;
 }
 }
