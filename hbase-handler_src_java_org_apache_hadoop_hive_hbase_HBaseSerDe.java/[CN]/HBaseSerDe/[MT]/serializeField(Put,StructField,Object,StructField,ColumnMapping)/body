@@ -1,0 +1,41 @@
+{
+  if (value == null) {
+    return;
+  }
+  ObjectInspector foi=field.getFieldObjectInspector();
+  if (colMap.qualifierName == null) {
+    MapObjectInspector moi=(MapObjectInspector)foi;
+    ObjectInspector koi=moi.getMapKeyObjectInspector();
+    ObjectInspector voi=moi.getMapValueObjectInspector();
+    Map<?,?> map=moi.getMap(value);
+    if (map == null) {
+      return;
+    }
+ else {
+      for (      Map.Entry<?,?> entry : map.entrySet()) {
+        byte[] columnQualifierBytes=serialize(entry.getKey(),koi,3,colMap.binaryStorage.get(0),serdeParams);
+        if (columnQualifierBytes == null) {
+          continue;
+        }
+        byte[] bytes=serialize(entry.getValue(),voi,3,colMap.binaryStorage.get(1),serdeParams);
+        if (bytes == null) {
+          continue;
+        }
+        put.add(colMap.familyNameBytes,columnQualifierBytes,bytes);
+      }
+    }
+  }
+ else {
+    byte[] bytes=null;
+    if (!foi.getCategory().equals(Category.PRIMITIVE) && declaredField.getFieldObjectInspector().getCategory().equals(Category.PRIMITIVE)) {
+      bytes=serialize(SerDeUtils.getJSONString(value,foi),PrimitiveObjectInspectorFactory.javaStringObjectInspector,1,false,serdeParams);
+    }
+ else {
+      bytes=serialize(value,foi,1,colMap.binaryStorage.get(0),serdeParams);
+    }
+    if (bytes == null) {
+      return;
+    }
+    put.add(colMap.familyNameBytes,colMap.qualifierNameBytes,bytes);
+  }
+}

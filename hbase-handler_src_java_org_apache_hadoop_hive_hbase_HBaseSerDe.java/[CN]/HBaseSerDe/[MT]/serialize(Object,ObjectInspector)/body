@@ -5,24 +5,39 @@
   StructObjectInspector soi=(StructObjectInspector)objInspector;
   List<? extends StructField> fields=soi.getAllStructFieldRefs();
   List<Object> list=soi.getStructFieldsDataAsList(obj);
-  List<? extends StructField> declaredFields=(serdeParams.getRowTypeInfo() != null && ((StructTypeInfo)serdeParams.getRowTypeInfo()).getAllStructFieldNames().size() > 0) ? ((StructObjectInspector)getObjectInspector()).getAllStructFieldRefs() : null;
-  Put put=null;
+  List<? extends StructField> declaredFields=((StructObjectInspector)getObjectInspector()).getAllStructFieldRefs();
+  int iKey=serdeParams.getKeyIndex();
+  StructField field=fields.get(iKey);
+  Object value=list.get(iKey);
+  StructField declaredField=declaredFields.get(iKey);
+  byte[] key;
   try {
-    byte[] key=serializeField(iKey,null,fields,list,declaredFields);
-    if (key == null) {
-      throw new SerDeException("HBase row key cannot be NULL");
-    }
-    if (putTimestamp >= 0) {
-      put=new Put(key,putTimestamp);
-    }
+    key=serializeKeyField(field,value,declaredField,serdeParams);
+  }
+ catch (  IOException ex) {
+    throw new SerDeException(ex);
+  }
+  if (key == null) {
+    throw new SerDeException("HBase row key cannot be NULL");
+  }
+  Put put=null;
+  long putTimestamp=serdeParams.getPutTimestamp();
+  if (putTimestamp >= 0) {
+    put=new Put(key,putTimestamp);
+  }
  else {
-      put=new Put(key);
-    }
+    put=new Put(key);
+  }
+  try {
     for (int i=0; i < fields.size(); i++) {
       if (i == iKey) {
         continue;
       }
-      serializeField(i,put,fields,list,declaredFields);
+      field=fields.get(i);
+      value=list.get(i);
+      declaredField=declaredFields.get(i);
+      ColumnMapping colMap=serdeParams.getColumnMapping().get(i);
+      serializeField(put,field,value,declaredField,colMap);
     }
   }
  catch (  IOException e) {

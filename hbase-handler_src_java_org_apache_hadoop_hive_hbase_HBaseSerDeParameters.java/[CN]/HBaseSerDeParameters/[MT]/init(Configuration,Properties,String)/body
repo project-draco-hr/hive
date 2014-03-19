@@ -1,0 +1,51 @@
+{
+  serdeParams=LazySimpleSerDe.initSerdeParams(job,tbl,serdeName);
+  putTimestamp=Long.valueOf(tbl.getProperty(HBaseSerDe.HBASE_PUT_TIMESTAMP,"-1"));
+  String compKeyClass=tbl.getProperty(HBaseSerDe.HBASE_COMPOSITE_KEY_CLASS);
+  if (compKeyClass != null) {
+    try {
+      compositeKeyClass=job.getClassByName(compKeyClass);
+    }
+ catch (    ClassNotFoundException e) {
+      throw new SerDeException(e);
+    }
+  }
+  columnMappingString=tbl.getProperty(HBaseSerDe.HBASE_COLUMNS_MAPPING);
+  doColumnRegexMatching=Boolean.valueOf(tbl.getProperty(HBaseSerDe.HBASE_COLUMNS_REGEX_MATCHING,"true"));
+  columnMapping=HBaseSerDe.parseColumnsMapping(columnMappingString,doColumnRegexMatching);
+  String columnTypeProperty=tbl.getProperty(serdeConstants.LIST_COLUMN_TYPES);
+  if (columnTypeProperty == null) {
+    StringBuilder sb=new StringBuilder();
+    for (int i=0; i < columnMapping.size(); i++) {
+      if (sb.length() > 0) {
+        sb.append(":");
+      }
+      ColumnMapping colMap=columnMapping.get(i);
+      if (colMap.hbaseRowKey) {
+        sb.append(serdeConstants.STRING_TYPE_NAME);
+      }
+ else       if (colMap.qualifierName == null) {
+        sb.append(serdeConstants.MAP_TYPE_NAME + "<" + serdeConstants.STRING_TYPE_NAME+ ","+ serdeConstants.STRING_TYPE_NAME+ ">");
+      }
+ else {
+        sb.append(serdeConstants.STRING_TYPE_NAME);
+      }
+    }
+    tbl.setProperty(serdeConstants.LIST_COLUMN_TYPES,sb.toString());
+  }
+  if (columnMapping.size() != serdeParams.getColumnNames().size()) {
+    throw new SerDeException(serdeName + ": columns has " + serdeParams.getColumnNames().size()+ " elements while hbase.columns.mapping has "+ columnMapping.size()+ " elements"+ " (counting the key if implicit)");
+  }
+  for (int i=0; i < columnMapping.size(); i++) {
+    ColumnMapping colMap=columnMapping.get(i);
+    if (colMap.qualifierName == null && !colMap.hbaseRowKey) {
+      TypeInfo typeInfo=serdeParams.getColumnTypes().get(i);
+      if ((typeInfo.getCategory() != Category.MAP) || (((MapTypeInfo)typeInfo).getMapKeyTypeInfo().getCategory() != Category.PRIMITIVE)) {
+        throw new SerDeException(serdeName + ": hbase column family '" + colMap.familyName+ "' should be mapped to Map<? extends LazyPrimitive<?, ?>,?>, that is "+ "the Key for the map should be of primitive type, but is mapped to "+ typeInfo.getTypeName());
+      }
+    }
+  }
+  String hbaseTableStorageType=tbl.getProperty(HBaseSerDe.HBASE_TABLE_DEFAULT_STORAGE_TYPE);
+  parseColumnStorageTypes(hbaseTableStorageType);
+  setKeyColumnOffset();
+}
