@@ -4,6 +4,7 @@
   int hashTableThreshold=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVEHASHTABLETHRESHOLD);
   float hashTableLoadFactor=HiveConf.getFloatVar(hconf,HiveConf.ConfVars.HIVEHASHTABLELOADFACTOR);
   boolean useLazyRows=HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVEMAPJOINLAZYHASHTABLE);
+  TezCacheAccess tezCacheAccess=TezCacheAccess.createInstance(hconf);
   if (!HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVEMAPJOINUSEOPTIMIZEDKEYS)) {
     lastKey=new MapJoinKeyObject();
   }
@@ -12,7 +13,8 @@
     if (pos == desc.getPosBigTable()) {
       continue;
     }
-    LogicalInput input=tezContext.getInput(parentToInput.get(pos));
+    String inputName=parentToInput.get(pos);
+    LogicalInput input=tezContext.getInput(inputName);
     try {
       KeyValueReader kvReader=(KeyValueReader)input.getReader();
       MapJoinTableContainer tableContainer=new HashMapWrapper(hashTableThreshold,hashTableLoadFactor);
@@ -36,6 +38,8 @@ catch (    SerDeException e) {
 catch (    Exception e) {
       throw new HiveException(e);
     }
+    tezCacheAccess.registerCachedInput(inputName);
+    LOG.info("Setting Input: " + inputName + " as cached");
   }
   if (lastKey == null) {
     lastKey=new MapJoinKeyObject();
