@@ -1,9 +1,4 @@
 {
-  if (null != hconf) {
-    this.percentEntriesToFlush=HiveConf.getFloatVar(hconf,HiveConf.ConfVars.HIVE_VECTORIZATION_GROUPBY_FLUSH_PERCENT);
-    this.checkInterval=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVE_VECTORIZATION_GROUPBY_CHECKINTERVAL);
-    this.maxHtEntries=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVE_VECTORIZATION_GROUPBY_MAXENTRIES);
-  }
   List<ObjectInspector> objectInspectors=new ArrayList<ObjectInspector>();
   List<ExprNodeDesc> keysDesc=conf.getKeys();
   try {
@@ -19,7 +14,6 @@
     keyWrappersBatch=VectorHashKeyWrapperBatch.compileKeyWrapperBatch(keyExpressions);
     aggregationBatchInfo=new VectorAggregationBufferBatch();
     aggregationBatchInfo.compileAggregationBatchInfo(aggregators);
-    mapKeysAggregationBuffers=new HashMap<KeyWrapper,VectorAggregationBufferRow>();
     List<String> outputFieldNames=conf.getOutputColumnNames();
     outputObjInspector=ObjectInspectorFactory.getStandardStructObjectInspector(outputFieldNames,objectInspectors);
   }
@@ -29,6 +23,13 @@
 catch (  Throwable e) {
     throw new HiveException(e);
   }
-  computeMemoryLimits();
   initializeChildren(hconf);
+  forwardCache=new Object[keyExpressions.length + aggregators.length];
+  if (keyExpressions.length == 0) {
+    processingMode=this.new ProcessingModeGlobalAggregate();
+  }
+ else {
+    processingMode=this.new ProcessingModeHashAggregate();
+  }
+  processingMode.initialize(hconf);
 }
