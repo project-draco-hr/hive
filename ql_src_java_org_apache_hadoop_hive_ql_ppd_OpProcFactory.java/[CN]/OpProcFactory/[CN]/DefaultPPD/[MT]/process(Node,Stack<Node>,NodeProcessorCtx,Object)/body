@@ -1,11 +1,19 @@
 {
   LOG.info("Processing for " + nd.getName() + "("+ ((Operator)nd).getIdentifier()+ ")");
   OpWalkerInfo owi=(OpWalkerInfo)procCtx;
-  boolean hasUnpushedPredicates=mergeWithChildrenPred(nd,owi,null,null,false);
-  if (HiveConf.getBoolVar(owi.getParseContext().getConf(),HiveConf.ConfVars.HIVEPPDREMOVEDUPLICATEFILTERS)) {
-    if (hasUnpushedPredicates) {
-      ExprWalkerInfo unpushedPreds=mergeChildrenPred(nd,owi,null,false);
-      return createFilter((Operator)nd,unpushedPreds,owi);
+  Set<String> includes=getQualifiedAliases((Operator<?>)nd,owi);
+  boolean hasUnpushedPredicates=mergeWithChildrenPred(nd,owi,null,includes);
+  if (hasUnpushedPredicates && HiveConf.getBoolVar(owi.getParseContext().getConf(),HiveConf.ConfVars.HIVEPPDREMOVEDUPLICATEFILTERS)) {
+    if (includes != null || nd instanceof ReduceSinkOperator) {
+      owi.getCandidateFilterOps().clear();
+    }
+ else {
+      ExprWalkerInfo pruned=owi.getPrunedPreds((Operator<? extends OperatorDesc>)nd);
+      Map<String,List<ExprNodeDesc>> residual=pruned.getResidualPredicates(true);
+      if (residual != null && !residual.isEmpty()) {
+        createFilter((Operator)nd,residual,owi);
+        pruned.getNonFinalCandidates().clear();
+      }
     }
   }
   return null;

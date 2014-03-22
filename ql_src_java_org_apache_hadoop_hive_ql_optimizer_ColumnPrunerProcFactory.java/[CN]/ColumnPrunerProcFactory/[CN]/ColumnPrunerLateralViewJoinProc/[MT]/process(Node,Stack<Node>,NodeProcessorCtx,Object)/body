@@ -3,28 +3,21 @@
   ColumnPrunerProcCtx cppCtx=(ColumnPrunerProcCtx)ctx;
   List<String> cols=cppCtx.genColLists(op);
   Map<String,ExprNodeDesc> colExprMap=op.getColumnExprMap();
-  List<String> colsAfterReplacement=new ArrayList<String>();
-  for (  String col : cols) {
-    if (colExprMap.containsKey(col)) {
-      ExprNodeDesc expr=colExprMap.get(col);
-      colsAfterReplacement.addAll(expr.getCols());
-    }
- else {
-      colsAfterReplacement.add(col);
-    }
-  }
   List<String> outputCols=op.getConf().getOutputInternalColNames();
-  if (outputCols.size() != cols.size()) {
-    ArrayList<String> newColNames=new ArrayList<String>();
-    for (    String col : cols) {
-      int index=outputCols.indexOf(col);
-      if (index >= 0 && index < colExprMap.size()) {
-        newColNames.add(col);
-      }
+  int numSelColumns=op.getConf().getNumSelColumns();
+  List<String> colsAfterReplacement=new ArrayList<String>();
+  ArrayList<String> newColNames=new ArrayList<String>();
+  for (  String col : cols) {
+    int index=outputCols.indexOf(col);
+    if (index >= 0 && index < numSelColumns) {
+      ExprNodeDesc transformed=colExprMap.get(col);
+      Utilities.mergeUniqElems(colsAfterReplacement,transformed.getCols());
+      newColNames.add(col);
     }
-    newColNames.addAll(outputCols.subList(colExprMap.size(),outputCols.size()));
-    op.getConf().setOutputInternalColNames(newColNames);
   }
+  op.getConf().setNumSelColumns(newColNames.size());
+  newColNames.addAll(outputCols.subList(numSelColumns,outputCols.size()));
+  op.getConf().setOutputInternalColNames(newColNames);
   cppCtx.getPrunedColLists().put(op,colsAfterReplacement);
   return null;
 }

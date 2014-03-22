@@ -1,0 +1,42 @@
+{
+  RowResolver inputRS=opParseCtx.get(child).getRowResolver();
+  RowResolver outputRS=new RowResolver();
+  ArrayList<String> outputColumns=new ArrayList<String>();
+  ArrayList<ExprNodeDesc> reduceKeys=new ArrayList<ExprNodeDesc>();
+  ArrayList<ASTNode> exprs=joinTree.getExpressions().get(pos);
+  for (int i=0; i < exprs.size(); i++) {
+    ASTNode expr=exprs.get(i);
+    reduceKeys.add(genExprNodeDesc(expr,inputRS));
+  }
+  ArrayList<ExprNodeDesc> reduceValues=new ArrayList<ExprNodeDesc>();
+  Iterator<String> tblNamesIter=inputRS.getTableNames().iterator();
+  Map<String,ExprNodeDesc> colExprMap=new HashMap<String,ExprNodeDesc>();
+  while (tblNamesIter.hasNext()) {
+    String src=tblNamesIter.next();
+    HashMap<String,ColumnInfo> fMap=inputRS.getFieldMap(src);
+    for (    Map.Entry<String,ColumnInfo> entry : fMap.entrySet()) {
+      String field=entry.getKey();
+      ColumnInfo valueInfo=entry.getValue();
+      ExprNodeColumnDesc inputExpr=new ExprNodeColumnDesc(valueInfo.getType(),valueInfo.getInternalName(),valueInfo.getTabAlias(),valueInfo.getIsVirtualCol());
+      reduceValues.add(inputExpr);
+      if (outputRS.get(src,field) == null) {
+        String col=getColumnInternalName(reduceValues.size() - 1);
+        outputColumns.add(col);
+        ColumnInfo newColInfo=new ColumnInfo(Utilities.ReduceField.VALUE.toString() + "." + col,valueInfo.getType(),src,valueInfo.getIsVirtualCol(),valueInfo.isHiddenVirtualCol());
+        colExprMap.put(newColInfo.getInternalName(),inputExpr);
+        outputRS.put(src,field,newColInfo);
+      }
+    }
+  }
+  int numReds=-1;
+  if (reduceKeys.size() == 0) {
+    numReds=1;
+    if (conf.getVar(HiveConf.ConfVars.HIVEMAPREDMODE).equalsIgnoreCase("strict")) {
+      throw new SemanticException(ErrorMsg.NO_CARTESIAN_PRODUCT.getMsg());
+    }
+  }
+  ReduceSinkOperator rsOp=(ReduceSinkOperator)putOpInsertMap(OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(reduceKeys,reduceValues,outputColumns,false,joinTree.getNextTag(),reduceKeys.size(),numReds),new RowSchema(outputRS.getColumnInfos()),child),outputRS);
+  rsOp.setColumnExprMap(colExprMap);
+  rsOp.setInputAliases(srcs);
+  return rsOp;
+}

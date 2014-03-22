@@ -8,6 +8,7 @@
   Operator lvForward=putOpInsertMap(OperatorFactory.getAndMakeChild(new LateralViewForwardDesc(),new RowSchema(lvForwardRR.getColumnInfos()),op),lvForwardRR);
   RowResolver allPathRR=opParseCtx.get(lvForward).getRowResolver();
   Operator allPath=putOpInsertMap(OperatorFactory.getAndMakeChild(new SelectDesc(true),new RowSchema(allPathRR.getColumnInfos()),lvForward),allPathRR);
+  int allColumns=allPathRR.getColumnInfos().size();
   QB blankQb=new QB(null,null,false);
   Operator udtfPath=genSelectPlan((ASTNode)lateralViewTree.getChild(0),blankQb,lvForward,lateralViewTree.getType() == HiveParser.TOK_LATERAL_VIEW_OUTER);
   for (  String udtfAlias : blankQb.getAliases()) {
@@ -16,16 +17,10 @@
   RowResolver udtfPathRR=opParseCtx.get(udtfPath).getRowResolver();
   RowResolver lateralViewRR=new RowResolver();
   ArrayList<String> outputInternalColNames=new ArrayList<String>();
-  LVmergeRowResolvers(allPathRR,lateralViewRR,outputInternalColNames);
-  LVmergeRowResolvers(udtfPathRR,lateralViewRR,outputInternalColNames);
   Map<String,ExprNodeDesc> colExprMap=new HashMap<String,ExprNodeDesc>();
-  int i=0;
-  for (  ColumnInfo c : allPathRR.getColumnInfos()) {
-    String internalName=getColumnInternalName(i);
-    i++;
-    colExprMap.put(internalName,new ExprNodeColumnDesc(c.getType(),c.getInternalName(),c.getTabAlias(),c.getIsVirtualCol()));
-  }
-  Operator lateralViewJoin=putOpInsertMap(OperatorFactory.getAndMakeChild(new LateralViewJoinDesc(outputInternalColNames),new RowSchema(lateralViewRR.getColumnInfos()),allPath,udtfPath),lateralViewRR);
+  LVmergeRowResolvers(allPathRR,lateralViewRR,colExprMap,outputInternalColNames);
+  LVmergeRowResolvers(udtfPathRR,lateralViewRR,colExprMap,outputInternalColNames);
+  Operator lateralViewJoin=putOpInsertMap(OperatorFactory.getAndMakeChild(new LateralViewJoinDesc(allColumns,outputInternalColNames),new RowSchema(lateralViewRR.getColumnInfos()),allPath,udtfPath),lateralViewRR);
   lateralViewJoin.setColumnExprMap(colExprMap);
   return lateralViewJoin;
 }
