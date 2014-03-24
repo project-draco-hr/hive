@@ -1,0 +1,29 @@
+{
+  if (dontHeartbeat)   return;
+  if (txnMgr == null) {
+    LOG.debug("txnMgr null, not heartbeating");
+    dontHeartbeat=true;
+    return;
+  }
+  if (heartbeatInterval == 0) {
+    heartbeatInterval=HiveConf.getIntVar(conf,HiveConf.ConfVars.HIVE_TXN_TIMEOUT) * 500;
+    if (heartbeatInterval == 0) {
+      LOG.warn(HiveConf.ConfVars.HIVE_TXN_MANAGER.toString() + " not set, heartbeats won't be sent");
+      dontHeartbeat=true;
+      LOG.debug("heartbeat interval 0, not heartbeating");
+      return;
+    }
+  }
+  long now=System.currentTimeMillis();
+  if (now - lastHeartbeat > heartbeatInterval) {
+    try {
+      LOG.debug("heartbeating");
+      txnMgr.heartbeat();
+    }
+ catch (    LockException e) {
+      LOG.warn("Failed trying to heartbeat " + e.getMessage());
+      throw new IOException(e);
+    }
+    lastHeartbeat=now;
+  }
+}
