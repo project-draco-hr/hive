@@ -1,30 +1,37 @@
 {
-  perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_RUN_PROCESSOR);
-  LOG.info("Running task: " + processorContext.getUniqueIdentifier());
-  if (isMap) {
-    rproc=new MapRecordProcessor();
-    MRInputLegacy mrInput=getMRInput(inputs);
-    try {
-      mrInput.init();
-    }
- catch (    IOException e) {
-      throw new RuntimeException("Failed while initializing MRInput",e);
-    }
-  }
- else {
-    rproc=new ReduceRecordProcessor();
-  }
-  TezCacheAccess cacheAccess=TezCacheAccess.createInstance(jobConf);
-  for (  Entry<String,LogicalInput> inputEntry : inputs.entrySet()) {
-    if (!cacheAccess.isInputCached(inputEntry.getKey())) {
-      inputEntry.getValue().start();
+  try {
+    perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_RUN_PROCESSOR);
+    LOG.info("Running task: " + processorContext.getUniqueIdentifier());
+    if (isMap) {
+      rproc=new MapRecordProcessor();
+      MRInputLegacy mrInput=getMRInput(inputs);
+      try {
+        mrInput.init();
+      }
+ catch (      IOException e) {
+        throw new RuntimeException("Failed while initializing MRInput",e);
+      }
     }
  else {
-      LOG.info("Input: " + inputEntry.getKey() + " is already cached. Skipping start");
+      rproc=new ReduceRecordProcessor();
+    }
+    TezCacheAccess cacheAccess=TezCacheAccess.createInstance(jobConf);
+    for (    Entry<String,LogicalInput> inputEntry : inputs.entrySet()) {
+      if (!cacheAccess.isInputCached(inputEntry.getKey())) {
+        inputEntry.getValue().start();
+      }
+ else {
+        LOG.info("Input: " + inputEntry.getKey() + " is already cached. Skipping start");
+      }
+    }
+    MRTaskReporter mrReporter=new MRTaskReporter(processorContext);
+    rproc.init(jobConf,processorContext,mrReporter,inputs,outputs);
+    rproc.run();
+    perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.TEZ_RUN_PROCESSOR);
+  }
+  finally {
+    if (rproc != null) {
+      rproc.close();
     }
   }
-  MRTaskReporter mrReporter=new MRTaskReporter(processorContext);
-  rproc.init(jobConf,processorContext,mrReporter,inputs,outputs);
-  rproc.run();
-  perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.TEZ_RUN_PROCESSOR);
 }
