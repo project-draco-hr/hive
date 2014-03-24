@@ -1,0 +1,56 @@
+{
+  FileSinkOperator fsOp=(FileSinkOperator)nd;
+  if (fsOp.getConf().getDynPartCtx() == null) {
+    LOG.debug("Bailing out of sort dynamic partition optimization as dpCtx is null");
+    return null;
+  }
+  removeRSInsertedByEnforceBucketing(fsOp);
+  Operator<? extends OperatorDesc> fsParent=fsOp.getParentOperators().get(0);
+  fsParent.getChildOperators().clear();
+  DynamicPartitionCtx dpCtx=fsOp.getConf().getDynPartCtx();
+  Table destTable=parseCtx.getFsopToTable().get(fsOp);
+  if (destTable == null) {
+    LOG.debug("Bailing out of sort dynamic partition optimization as destination table is null");
+    return null;
+  }
+  int numBuckets=destTable.getNumBuckets();
+  dpCtx.setNumBuckets(numBuckets);
+  List<Integer> bucketPositions=getBucketPositions(destTable.getBucketCols(),destTable.getCols());
+  ObjectPair<List<Integer>,List<Integer>> sortOrderPositions=getSortPositionsOrder(destTable.getSortCols(),destTable.getCols());
+  List<Integer> sortPositions=sortOrderPositions.getFirst();
+  List<Integer> sortOrder=sortOrderPositions.getSecond();
+  List<Integer> partitionPositions=getPartitionPositions(dpCtx,fsParent.getSchema());
+  List<ColumnInfo> colInfos=parseCtx.getOpParseCtx().get(fsParent).getRowResolver().getColumnInfos();
+  ArrayList<ExprNodeDesc> bucketColumns=getPositionsToExprNodes(bucketPositions,colInfos);
+  fsOp.getConf().setMultiFileSpray(false);
+  fsOp.getConf().setNumFiles(1);
+  fsOp.getConf().setTotalFiles(1);
+  RowResolver inputRR=parseCtx.getOpParseCtx().get(fsParent).getRowResolver();
+  ObjectPair<String,RowResolver> pair=copyRowResolver(inputRR);
+  RowResolver outRR=pair.getSecond();
+  ArrayList<ColumnInfo> valColInfo=Lists.newArrayList(fsParent.getSchema().getSignature());
+  ArrayList<ExprNodeDesc> newValueCols=Lists.newArrayList();
+  Map<String,ExprNodeDesc> colExprMap=Maps.newHashMap();
+  for (  ColumnInfo ci : valColInfo) {
+    newValueCols.add(new ExprNodeColumnDesc(ci.getType(),ci.getInternalName(),ci.getTabAlias(),ci.isHiddenVirtualCol()));
+    colExprMap.put(ci.getInternalName(),newValueCols.get(newValueCols.size() - 1));
+  }
+  ReduceSinkDesc rsConf=getReduceSinkDesc(partitionPositions,sortPositions,sortOrder,newValueCols,bucketColumns,numBuckets,fsParent);
+  ReduceSinkOperator rsOp=(ReduceSinkOperator)putOpInsertMap(OperatorFactory.getAndMakeChild(rsConf,new RowSchema(outRR.getColumnInfos()),fsParent),outRR,parseCtx);
+  rsOp.setColumnExprMap(colExprMap);
+  ObjectPair<String,RowResolver> exPair=copyRowResolver(outRR);
+  RowResolver exRR=exPair.getSecond();
+  ExtractDesc exConf=new ExtractDesc(new ExprNodeColumnDesc(TypeInfoFactory.stringTypeInfo,Utilities.ReduceField.VALUE.toString(),"",false));
+  ExtractOperator exOp=(ExtractOperator)putOpInsertMap(OperatorFactory.getAndMakeChild(exConf,new RowSchema(exRR.getColumnInfos()),rsOp),exRR,parseCtx);
+  fsOp.getParentOperators().clear();
+  fsOp.getParentOperators().add(exOp);
+  exOp.getChildOperators().add(fsOp);
+  fsOp.getConf().setDpSortState(FileSinkDesc.DPSortState.PARTITION_SORTED);
+  if (bucketColumns.size() > 0) {
+    fsOp.getConf().setDpSortState(FileSinkDesc.DPSortState.PARTITION_BUCKET_SORTED);
+  }
+  ArrayList<ExprNodeDesc> partitionColumns=getPositionsToExprNodes(partitionPositions,rsOp.getSchema().getSignature());
+  fsOp.getConf().setPartitionCols(partitionColumns);
+  LOG.info("Inserted " + rsOp.getOperatorId() + " and "+ exOp.getOperatorId()+ " as parent of "+ fsOp.getOperatorId()+ " and child of "+ fsParent.getOperatorId());
+  return null;
+}

@@ -1,0 +1,57 @@
+{
+  List<Integer> keyColsPosInVal=Lists.newArrayList();
+  ArrayList<ExprNodeDesc> newKeyCols=Lists.newArrayList();
+  List<Integer> newSortOrder=Lists.newArrayList();
+  int numPartAndBuck=partitionPositions.size();
+  keyColsPosInVal.addAll(partitionPositions);
+  if (!bucketColumns.isEmpty()) {
+    keyColsPosInVal.add(-1);
+    numPartAndBuck+=1;
+  }
+  keyColsPosInVal.addAll(sortPositions);
+  Integer order=1;
+  if (sortOrder != null && !sortOrder.isEmpty()) {
+    if (sortOrder.get(0).intValue() == 0) {
+      order=0;
+    }
+  }
+  for (int i=0; i < numPartAndBuck; i++) {
+    newSortOrder.add(order);
+  }
+  newSortOrder.addAll(sortOrder);
+  ArrayList<ExprNodeDesc> newPartCols=Lists.newArrayList();
+  for (  Integer idx : keyColsPosInVal) {
+    if (idx < 0) {
+      newKeyCols.add(new ExprNodeConstantDesc(TypeInfoFactory.getPrimitiveTypeInfoFromPrimitiveWritable(IntWritable.class),-1));
+    }
+ else {
+      newKeyCols.add(newValueCols.get(idx).clone());
+    }
+  }
+  for (  Integer idx : partitionPositions) {
+    newPartCols.add(newValueCols.get(idx).clone());
+  }
+  String orderStr="";
+  for (int i=0; i < newKeyCols.size(); i++) {
+    orderStr+="+";
+  }
+  List<FieldSchema> fields=PlanUtils.getFieldSchemasFromColumnList(newKeyCols,"reducesinkkey");
+  TableDesc keyTable=PlanUtils.getReduceKeyTableDesc(fields,orderStr);
+  ArrayList<String> outputKeyCols=Lists.newArrayList();
+  for (int i=0; i < newKeyCols.size(); i++) {
+    outputKeyCols.add("reducesinkkey" + i);
+  }
+  List<String> outCols=Utilities.getInternalColumnNamesFromSignature(parent.getSchema().getSignature());
+  ArrayList<String> outValColNames=Lists.newArrayList(outCols);
+  List<FieldSchema> valFields=PlanUtils.getFieldSchemasFromColumnList(newValueCols,outValColNames,0,"");
+  TableDesc valueTable=PlanUtils.getReduceValueTableDesc(valFields);
+  List<List<Integer>> distinctColumnIndices=Lists.newArrayList();
+  int numDistributionKeys=newPartCols.size();
+  if (bucketColumns != null && !bucketColumns.isEmpty()) {
+    numDistributionKeys+=1;
+  }
+  ReduceSinkDesc rsConf=new ReduceSinkDesc(newKeyCols,numDistributionKeys,newValueCols,outputKeyCols,distinctColumnIndices,outValColNames,-1,newPartCols,-1,keyTable,valueTable);
+  rsConf.setBucketCols(bucketColumns);
+  rsConf.setNumBuckets(numBuckets);
+  return rsConf;
+}

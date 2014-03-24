@@ -1,0 +1,33 @@
+{
+  try {
+    if (isNativeTable) {
+      fsp.finalPaths[filesIdx]=fsp.getFinalPath(taskId,fsp.tmpPath,null);
+      LOG.info("Final Path: FS " + fsp.finalPaths[filesIdx]);
+      fsp.outPaths[filesIdx]=fsp.getTaskOutPath(taskId);
+      LOG.info("Writing to temp file: FS " + fsp.outPaths[filesIdx]);
+    }
+ else {
+      fsp.finalPaths[filesIdx]=fsp.outPaths[filesIdx]=specPath;
+    }
+    String extension=Utilities.getFileExtension(jc,isCompressed,hiveOutputFormat);
+    if (!bDynParts && !this.isSkewedStoredAsSubDirectories) {
+      fsp.finalPaths[filesIdx]=fsp.getFinalPath(taskId,parent,extension);
+    }
+ else {
+      fsp.finalPaths[filesIdx]=fsp.getFinalPath(taskId,fsp.tmpPath,extension);
+    }
+    LOG.info("New Final Path: FS " + fsp.finalPaths[filesIdx]);
+    if (isNativeTable) {
+      autoDelete=fs.deleteOnExit(fsp.outPaths[filesIdx]);
+    }
+    Utilities.copyTableJobPropertiesToConf(conf.getTableInfo(),jc);
+    fsp.outWriters[filesIdx]=HiveFileFormatUtils.getHiveRecordWriter(jc,conf.getTableInfo(),outputClass,conf,fsp.outPaths[filesIdx],reporter);
+    statsFromRecordWriter[filesIdx]=fsp.outWriters[filesIdx] instanceof StatsProvidingRecordWriter;
+    if (reporter != null) {
+      reporter.incrCounter(HiveConf.getVar(hconf,HiveConf.ConfVars.HIVECOUNTERGROUP),Operator.HIVECOUNTERCREATEDFILES,1);
+    }
+  }
+ catch (  IOException e) {
+    throw new HiveException(e);
+  }
+}
