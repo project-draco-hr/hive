@@ -1,36 +1,37 @@
 {
   try {
     populateAndCacheStripeDetails();
-    Configuration conf=context.conf;
-    SearchArgument sarg=createSarg(types,conf);
-    List<StripeStatistics> stripeStats=null;
-    int[] filterColumns=null;
-    if (sarg != null) {
-      List<PredicateLeaf> sargLeaves=null;
-      String[] allColumns=conf.get(serdeConstants.LIST_COLUMNS).split(",");
-      String[] neededColumns=conf.get(ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR).split(",");
-      sargLeaves=sarg.getLeaves();
-      filterColumns=new int[sargLeaves.size()];
-      for (int i=0; i < filterColumns.length; ++i) {
-        String colName=sargLeaves.get(i).getColumnName();
-        if (containsColumn(neededColumns,colName)) {
-          filterColumns[i]=RecordReaderImpl.findColumns(allColumns,colName);
-        }
- else {
-          filterColumns[i]=-1;
+    boolean[] includeStripe=null;
+    if (deltas.isEmpty()) {
+      Reader.Options options=new Reader.Options();
+      setIncludedColumns(options,types,context.conf,isOriginal);
+      setSearchArgument(options,types,context.conf,isOriginal);
+      if (options.getSearchArgument() != null) {
+        SearchArgument sarg=options.getSearchArgument();
+        List<PredicateLeaf> sargLeaves=sarg.getLeaves();
+        List<StripeStatistics> stripeStats=metadata.getStripeStatistics();
+        int[] filterColumns=RecordReaderImpl.mapSargColumns(sargLeaves,options.getColumnNames(),getRootColumn(isOriginal));
+        if (stripeStats != null) {
+          includeStripe=new boolean[stripes.size()];
+          for (int i=0; i < stripes.size(); ++i) {
+            includeStripe[i]=(i > stripeStats.size()) || isStripeSatisfyPredicate(stripeStats.get(i),sarg,filterColumns);
+            if (LOG.isDebugEnabled() && !includeStripe[i]) {
+              LOG.debug("Eliminating ORC stripe-" + i + " of file '"+ file.getPath()+ "'  as it did not satisfy "+ "predicate condition.");
+            }
+          }
         }
       }
-      stripeStats=metadata.getStripeStatistics();
+    }
+    if (includeStripe == null) {
+      includeStripe=new boolean[stripes.size()];
+      Arrays.fill(includeStripe,true);
     }
     long currentOffset=-1;
     long currentLength=0;
     int idx=-1;
     for (    StripeInformation stripe : stripes) {
       idx++;
-      if (sarg != null && stripeStats != null && idx < stripeStats.size() && !isStripeSatisfyPredicate(stripeStats.get(idx),sarg,filterColumns)) {
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("Eliminating ORC stripe-" + idx + " of file '"+ file.getPath()+ "'  as it did not satisfy predicate condition.");
-        }
+      if (!includeStripe[idx]) {
         if (currentOffset != -1) {
           createSplit(currentOffset,currentLength,fileMetaInfo);
           currentOffset=-1;

@@ -1,0 +1,55 @@
+{
+  JobConf conf=new JobConf();
+  conf.set("hive.exec.plan",workDir.toString());
+  conf.set("mapred.job.tracker","local");
+  conf.set("hive.vectorized.execution.enabled",Boolean.toString(isVectorized));
+  conf.set("fs.mock.impl",MockFileSystem.class.getName());
+  conf.set("mapred.mapper.class",ExecMapper.class.getName());
+  Path root=new Path(warehouseDir,"table/p=0");
+  conf.set("mapred.input.dir",root.toString());
+  StringBuilder columnIds=new StringBuilder();
+  StringBuilder columnNames=new StringBuilder();
+  StringBuilder columnTypes=new StringBuilder();
+  StructObjectInspector structOI=(StructObjectInspector)objectInspector;
+  List<? extends StructField> fields=structOI.getAllStructFieldRefs();
+  int numCols=fields.size();
+  for (int i=0; i < numCols; ++i) {
+    if (i != 0) {
+      columnIds.append(',');
+      columnNames.append(',');
+      columnTypes.append(',');
+    }
+    columnIds.append(i);
+    columnNames.append(fields.get(i).getFieldName());
+    columnTypes.append(fields.get(i).getFieldObjectInspector().getTypeName());
+  }
+  conf.set("hive.io.file.readcolumn.ids",columnIds.toString());
+  conf.set("partition_columns","p");
+  MockFileSystem fs=(MockFileSystem)warehouseDir.getFileSystem(conf);
+  fs.clear();
+  Properties tblProps=new Properties();
+  tblProps.put("serialization.lib",OrcSerde.class.getName());
+  tblProps.put("columns",columnNames.toString());
+  tblProps.put("columns.types",columnTypes.toString());
+  TableDesc tbl=new TableDesc(OrcInputFormat.class,OrcOutputFormat.class,tblProps);
+  LinkedHashMap<String,String> partSpec=new LinkedHashMap<String,String>();
+  PartitionDesc part=new PartitionDesc(tbl,partSpec);
+  MapWork mapWork=new MapWork();
+  mapWork.setVectorMode(isVectorized);
+  mapWork.setUseBucketizedHiveInputFormat(false);
+  LinkedHashMap<String,ArrayList<String>> aliasMap=new LinkedHashMap<String,ArrayList<String>>();
+  ArrayList<String> aliases=new ArrayList<String>();
+  aliases.add("tbl");
+  aliasMap.put(root.toString(),aliases);
+  mapWork.setPathToAliases(aliasMap);
+  LinkedHashMap<String,PartitionDesc> partMap=new LinkedHashMap<String,PartitionDesc>();
+  partMap.put(root.toString(),part);
+  mapWork.setPathToPartitionInfo(partMap);
+  mapWork.setScratchColumnMap(new HashMap<String,Map<String,Integer>>());
+  mapWork.setScratchColumnVectorTypes(new HashMap<String,Map<Integer,String>>());
+  FileSystem localFs=FileSystem.getLocal(conf).getRaw();
+  FSDataOutputStream planStream=localFs.create(new Path(workDir,"map.xml"));
+  Utilities.serializePlan(mapWork,planStream,conf);
+  planStream.close();
+  return conf;
+}

@@ -1,0 +1,21 @@
+{
+  final Path filename=AcidUtils.createFilename(path,options);
+  final OrcFile.WriterOptions opts=OrcFile.writerOptions(options.getConfiguration());
+  if (!options.isWritingBase()) {
+    opts.bufferSize(OrcRecordUpdater.DELTA_BUFFER_SIZE).stripeSize(OrcRecordUpdater.DELTA_STRIPE_SIZE).blockPadding(false).compress(CompressionKind.NONE).rowIndexStride(0);
+  }
+  final OrcRecordUpdater.KeyIndexBuilder watcher=new OrcRecordUpdater.KeyIndexBuilder();
+  opts.inspector(options.getInspector()).callback(watcher);
+  final Writer writer=OrcFile.createWriter(filename,opts);
+  return new FSRecordWriter(){
+    @Override public void write(    Writable w) throws IOException {
+      OrcStruct orc=(OrcStruct)w;
+      watcher.addKey(((LongWritable)orc.getFieldValue(OrcRecordUpdater.ORIGINAL_TRANSACTION)).get(),((IntWritable)orc.getFieldValue(OrcRecordUpdater.BUCKET)).get(),((LongWritable)orc.getFieldValue(OrcRecordUpdater.ROW_ID)).get());
+      writer.addRow(w);
+    }
+    @Override public void close(    boolean abort) throws IOException {
+      writer.close();
+    }
+  }
+;
+}

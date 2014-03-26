@@ -1,25 +1,44 @@
 {
-  if (isVectorMode(conf)) {
-    org.apache.hadoop.mapred.RecordReader<NullWritable,VectorizedRowBatch> vorr=voif.getRecordReader(inputSplit,conf,reporter);
-    return (org.apache.hadoop.mapred.RecordReader)vorr;
-  }
-  FileSplit fSplit=(FileSplit)inputSplit;
-  reporter.setStatus(fSplit.toString());
-  Path path=fSplit.getPath();
-  FileSystem fs=path.getFileSystem(conf);
-  Reader reader=null;
-  if (!(fSplit instanceof OrcSplit)) {
-    reader=OrcFile.createReader(fs,path,conf);
-  }
- else {
-    OrcSplit orcSplit=(OrcSplit)fSplit;
-    if (orcSplit.hasFooter()) {
-      FileMetaInfo fMetaInfo=orcSplit.getFileMetaInfo();
-      reader=OrcFile.createReader(fs,path,fMetaInfo,conf);
+  boolean vectorMode=Utilities.isVectorMode(conf);
+  if (inputSplit.getClass() == FileSplit.class) {
+    if (vectorMode) {
+      return createVectorizedReader(inputSplit,conf,reporter);
     }
- else {
-      reader=OrcFile.createReader(fs,path,conf);
+    return new OrcRecordReader(OrcFile.createReader(((FileSplit)inputSplit).getPath(),OrcFile.readerOptions(conf)),conf,(FileSplit)inputSplit);
+  }
+  OrcSplit split=(OrcSplit)inputSplit;
+  if (vectorMode) {
+    if (!split.getDeltas().isEmpty() || !split.isOriginal()) {
+      throw new IOException("Vectorization and ACID tables are incompatible.");
+    }
+    return createVectorizedReader(inputSplit,conf,reporter);
+  }
+  reporter.setStatus(inputSplit.toString());
+  if (split.isOriginal() && split.getDeltas().isEmpty()) {
+    return new OrcRecordReader(OrcFile.createReader(split.getPath(),OrcFile.readerOptions(conf)),conf,split);
+  }
+  Options options=new Options(conf).reporter(reporter);
+  final RowReader<OrcStruct> inner=getReader(inputSplit,options);
+  final RecordIdentifier id=inner.createKey();
+  return new org.apache.hadoop.mapred.RecordReader<NullWritable,OrcStruct>(){
+    @Override public boolean next(    NullWritable nullWritable,    OrcStruct orcStruct) throws IOException {
+      return inner.next(id,orcStruct);
+    }
+    @Override public NullWritable createKey(){
+      return NullWritable.get();
+    }
+    @Override public OrcStruct createValue(){
+      return inner.createValue();
+    }
+    @Override public long getPos() throws IOException {
+      return inner.getPos();
+    }
+    @Override public void close() throws IOException {
+      inner.close();
+    }
+    @Override public float getProgress() throws IOException {
+      return inner.getProgress();
     }
   }
-  return new OrcRecordReader(reader,conf,fSplit.getStart(),fSplit.getLength());
+;
 }

@@ -30,10 +30,9 @@ synchronized (TestOrcFile.class) {
     writer.addRow(createRandomRow(intValues,doubleValues,stringValues,byteValues,words,i));
   }
   writer.close();
-  writer=null;
-  Reader reader=OrcFile.createReader(fs,testFilePath,conf);
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf).filesystem(fs));
   assertEquals(COUNT,reader.getNumberOfRows());
-  RecordReader rows=reader.rows(null);
+  RecordReader rows=reader.rows();
   OrcStruct row=null;
   for (int i=COUNT - 1; i >= 0; --i) {
     rows.seekToRow(i);
@@ -44,14 +43,14 @@ synchronized (TestOrcFile.class) {
     assertEquals(expected.short1.shortValue(),((ShortWritable)row.getFieldValue(2)).get());
     assertEquals(expected.int1.intValue(),((IntWritable)row.getFieldValue(3)).get());
     assertEquals(expected.long1.longValue(),((LongWritable)row.getFieldValue(4)).get());
-    assertEquals(expected.float1.floatValue(),((FloatWritable)row.getFieldValue(5)).get(),0.0001);
-    assertEquals(expected.double1.doubleValue(),((DoubleWritable)row.getFieldValue(6)).get(),0.0001);
+    assertEquals(expected.float1,((FloatWritable)row.getFieldValue(5)).get(),0.0001);
+    assertEquals(expected.double1,((DoubleWritable)row.getFieldValue(6)).get(),0.0001);
     assertEquals(expected.bytes1,row.getFieldValue(7));
     assertEquals(expected.string1,row.getFieldValue(8));
     List<InnerStruct> expectedList=expected.middle.list;
-    List<OrcStruct> actualList=(List)((OrcStruct)row.getFieldValue(9)).getFieldValue(0);
+    List<OrcStruct> actualList=(List<OrcStruct>)((OrcStruct)row.getFieldValue(9)).getFieldValue(0);
     compareList(expectedList,actualList);
-    compareList(expected.list,(List)row.getFieldValue(10));
+    compareList(expected.list,(List<OrcStruct>)row.getFieldValue(10));
   }
   rows.close();
   Iterator<StripeInformation> stripeIterator=reader.getStripes().iterator();
@@ -74,7 +73,7 @@ synchronized (TestOrcFile.class) {
   boolean[] columns=new boolean[reader.getStatistics().length];
   columns[5]=true;
   columns[9]=true;
-  rows=reader.rows(offsetOfStripe2,offsetOfStripe4 - offsetOfStripe2,columns);
+  rows=reader.rowsOptions(new Reader.Options().range(offsetOfStripe2,offsetOfStripe4 - offsetOfStripe2).include(columns));
   rows.seekToRow(lastRowOfStripe2);
   for (int i=0; i < 2; ++i) {
     row=(OrcStruct)rows.next(row);

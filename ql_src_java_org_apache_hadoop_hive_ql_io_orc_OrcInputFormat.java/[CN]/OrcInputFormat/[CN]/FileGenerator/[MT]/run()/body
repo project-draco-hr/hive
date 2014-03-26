@@ -1,15 +1,28 @@
 {
   try {
-    Iterator<FileStatus> itr=context.shims.listLocatedStatus(fs,dir,hiddenFileFilter);
-    while (itr.hasNext()) {
-      FileStatus file=itr.next();
-      if (!file.isDir()) {
-        FileInfo fileInfo=null;
-        if (context.cacheStripeDetails) {
-          fileInfo=verifyCachedFileInfo(file);
+    AcidUtils.Directory dirInfo=AcidUtils.getAcidState(dir,context.conf,context.transactionList);
+    List<Long> deltas=AcidUtils.serializeDeltas(dirInfo.getCurrentDirectories());
+    Path base=dirInfo.getBaseDirectory();
+    List<FileStatus> original=dirInfo.getOriginalFiles();
+    boolean[] covered=new boolean[context.numBuckets];
+    boolean isOriginal=base == null;
+    if (base != null || !original.isEmpty()) {
+      List<FileStatus> children=original;
+      if (base != null) {
+        children=SHIMS.listLocatedStatus(fs,base,AcidUtils.hiddenFileFilter);
+      }
+      for (      FileStatus child : children) {
+        AcidOutputFormat.Options opts=AcidUtils.parseBaseBucketFilename(child.getPath(),context.conf);
+        scheduleSplits(child,isOriginal,true,deltas);
+        int b=opts.getBucket();
+        if (b >= 0 && b < covered.length) {
+          covered[b]=true;
         }
-        SplitGenerator spgen=new SplitGenerator(context,fs,file,fileInfo);
-        spgen.schedule();
+      }
+    }
+    for (int b=0; b < context.numBuckets; ++b) {
+      if (!covered[b]) {
+        context.splits.add(new OrcSplit(dir,b,0,new String[0],null,false,false,deltas));
       }
     }
   }

@@ -1,0 +1,65 @@
+{
+  this.conf=conf;
+  this.collapse=collapseEvents;
+  this.offset=options.getOffset();
+  this.length=options.getLength();
+  this.validTxnList=validTxnList;
+  Reader.Options eventOptions=createEventOptions(options);
+  if (reader == null) {
+    baseReader=null;
+  }
+ else {
+    if (isOriginal) {
+      discoverOriginalKeyBounds(reader,bucket,options);
+    }
+ else {
+      discoverKeyBounds(reader,options);
+    }
+    LOG.info("min key = " + minKey + ", max key = "+ maxKey);
+    ReaderPair pair;
+    ReaderKey key=new ReaderKey();
+    if (isOriginal) {
+      options=options.clone();
+      options.range(options.getOffset(),Long.MAX_VALUE);
+      pair=new OriginalReaderPair(key,reader,bucket,minKey,maxKey,options);
+    }
+ else {
+      pair=new ReaderPair(key,reader,bucket,minKey,maxKey,eventOptions);
+    }
+    if (pair.nextRecord != null) {
+      readers.put(key,pair);
+    }
+    baseReader=pair.recordReader;
+  }
+  eventOptions.range(0,Long.MAX_VALUE);
+  if (deltaDirectory != null) {
+    for (    Path delta : deltaDirectory) {
+      ReaderKey key=new ReaderKey();
+      Path deltaFile=AcidUtils.createBucketFile(delta,bucket);
+      FileSystem fs=deltaFile.getFileSystem(conf);
+      long length=getLastFlushLength(fs,deltaFile);
+      if (fs.exists(deltaFile) && length != -1) {
+        Reader deltaReader=OrcFile.createReader(deltaFile,OrcFile.readerOptions(conf).maxLength(length));
+        ReaderPair deltaPair=new ReaderPair(key,deltaReader,bucket,minKey,maxKey,eventOptions);
+        if (deltaPair.nextRecord != null) {
+          readers.put(key,deltaPair);
+        }
+      }
+    }
+  }
+  Map.Entry<ReaderKey,ReaderPair> entry=readers.pollFirstEntry();
+  if (entry == null) {
+    columns=0;
+    primary=null;
+  }
+ else {
+    primary=entry.getValue();
+    if (readers.isEmpty()) {
+      secondaryKey=null;
+    }
+ else {
+      secondaryKey=readers.firstKey();
+    }
+    columns=primary.getColumns();
+  }
+}

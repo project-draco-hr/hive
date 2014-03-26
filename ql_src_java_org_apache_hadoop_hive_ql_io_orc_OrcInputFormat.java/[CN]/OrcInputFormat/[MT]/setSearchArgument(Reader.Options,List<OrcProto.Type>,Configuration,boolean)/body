@@ -1,0 +1,23 @@
+{
+  int rootColumn=getRootColumn(isOriginal);
+  String serializedPushdown=conf.get(TableScanDesc.FILTER_EXPR_CONF_STR);
+  String columnNamesString=conf.get(ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR);
+  if (serializedPushdown == null || columnNamesString == null) {
+    LOG.debug("No ORC pushdown predicate");
+    options.searchArgument(null,null);
+  }
+ else {
+    SearchArgument sarg=SearchArgument.FACTORY.create(Utilities.deserializeExpression(serializedPushdown));
+    LOG.info("ORC pushdown predicate: " + sarg);
+    String[] neededColumnNames=columnNamesString.split(",");
+    String[] columnNames=new String[types.size() - rootColumn];
+    boolean[] includedColumns=options.getInclude();
+    int i=0;
+    for (    int columnId : types.get(rootColumn).getSubtypesList()) {
+      if (includedColumns == null || includedColumns[columnId]) {
+        columnNames[columnId - rootColumn]=neededColumnNames[i++];
+      }
+    }
+    options.searchArgument(sarg,columnNames);
+  }
+}

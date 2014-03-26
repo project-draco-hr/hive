@@ -1,0 +1,25 @@
+{
+  StructObjectInspector inspector;
+synchronized (TestOrcFile.class) {
+    inspector=(StructObjectInspector)ObjectInspectorFactory.getReflectionObjectInspector(MyRow.class,ObjectInspectorFactory.ObjectInspectorOptions.JAVA);
+  }
+  JobConf conf=createMockExecutionEnvironment(workDir,new Path("mock:///"),inspector,true);
+  Path partDir=new Path(conf.get("mapred.input.dir"));
+  OrcRecordUpdater writer=new OrcRecordUpdater(partDir,new AcidOutputFormat.Options(conf).maximumTransactionId(10).writingBase(true).bucket(0).inspector(inspector));
+  for (int i=0; i < 10; ++i) {
+    writer.insert(10,new MyRow(i,2 * i));
+  }
+  WriterImpl baseWriter=(WriterImpl)writer.getWriter();
+  writer.close(false);
+  ((MockOutputStream)baseWriter.getStream()).setBlocks(new MockBlock("host0","host1"));
+  HiveInputFormat<?,?> inputFormat=new HiveInputFormat<WritableComparable,Writable>();
+  InputSplit[] splits=inputFormat.getSplits(conf,10);
+  assertEquals(1,splits.length);
+  try {
+    org.apache.hadoop.mapred.RecordReader<NullWritable,VectorizedRowBatch> reader=inputFormat.getRecordReader(splits[0],conf,Reporter.NULL);
+    assertTrue("should throw here",false);
+  }
+ catch (  IOException ioe) {
+    assertEquals("java.io.IOException: Vectorization and ACID tables are incompatible.",ioe.getMessage());
+  }
+}

@@ -1,0 +1,36 @@
+{
+  if (recordReader.hasNext()) {
+    long nextRowId=recordReader.getRowNumber();
+    if (next == null) {
+      nextRecord=new OrcStruct(OrcRecordUpdater.FIELDS);
+      IntWritable operation=new IntWritable(OrcRecordUpdater.INSERT_OPERATION);
+      nextRecord.setFieldValue(OrcRecordUpdater.OPERATION,operation);
+      nextRecord.setFieldValue(OrcRecordUpdater.CURRENT_TRANSACTION,new LongWritable(0));
+      nextRecord.setFieldValue(OrcRecordUpdater.ORIGINAL_TRANSACTION,new LongWritable(0));
+      nextRecord.setFieldValue(OrcRecordUpdater.BUCKET,new IntWritable(bucket));
+      nextRecord.setFieldValue(OrcRecordUpdater.ROW_ID,new LongWritable(nextRowId));
+      nextRecord.setFieldValue(OrcRecordUpdater.ROW,recordReader.next(null));
+    }
+ else {
+      nextRecord=next;
+      ((IntWritable)next.getFieldValue(OrcRecordUpdater.OPERATION)).set(OrcRecordUpdater.INSERT_OPERATION);
+      ((LongWritable)next.getFieldValue(OrcRecordUpdater.ORIGINAL_TRANSACTION)).set(0);
+      ((IntWritable)next.getFieldValue(OrcRecordUpdater.BUCKET)).set(bucket);
+      ((LongWritable)next.getFieldValue(OrcRecordUpdater.CURRENT_TRANSACTION)).set(0);
+      ((LongWritable)next.getFieldValue(OrcRecordUpdater.ROW_ID)).set(0);
+      nextRecord.setFieldValue(OrcRecordUpdater.ROW,recordReader.next(OrcRecordUpdater.getRow(next)));
+    }
+    key.setValues(0L,bucket,nextRowId,0L);
+    if (maxKey != null && key.compareRow(maxKey) > 0) {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("key " + key + " > maxkey "+ maxKey);
+      }
+      nextRecord=null;
+      recordReader.close();
+    }
+  }
+ else {
+    nextRecord=null;
+    recordReader.close();
+  }
+}
