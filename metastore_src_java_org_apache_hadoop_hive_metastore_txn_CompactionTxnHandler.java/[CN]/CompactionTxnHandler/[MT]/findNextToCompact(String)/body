@@ -1,27 +1,28 @@
 {
-  Connection dbConn=getDbConn();
-  CompactionInfo info=new CompactionInfo();
   try {
-    Statement stmt=dbConn.createStatement();
-    String s="select cq_id, cq_database, cq_table, cq_partition, " + "cq_type from COMPACTION_QUEUE where cq_state = '" + INITIATED_STATE + "' for update";
-    LOG.debug("Going to execute query <" + s + ">");
-    ResultSet rs=stmt.executeQuery(s);
-    if (!rs.next()) {
-      LOG.debug("No compactions found ready to compact");
-      dbConn.rollback();
-      return null;
-    }
-    info.id=rs.getLong(1);
-    info.dbname=rs.getString(2);
-    info.tableName=rs.getString(3);
-    info.partName=rs.getString(4);
+    Connection dbConn=getDbConn();
+    CompactionInfo info=new CompactionInfo();
+    try {
+      Statement stmt=dbConn.createStatement();
+      String s="select cq_id, cq_database, cq_table, cq_partition, " + "cq_type from COMPACTION_QUEUE where cq_state = '" + INITIATED_STATE + "' for update";
+      LOG.debug("Going to execute query <" + s + ">");
+      ResultSet rs=stmt.executeQuery(s);
+      if (!rs.next()) {
+        LOG.debug("No compactions found ready to compact");
+        dbConn.rollback();
+        return null;
+      }
+      info.id=rs.getLong(1);
+      info.dbname=rs.getString(2);
+      info.tableName=rs.getString(3);
+      info.partName=rs.getString(4);
 switch (rs.getString(5).charAt(0)) {
 case MAJOR_TYPE:
-      info.type=CompactionType.MAJOR;
-    break;
+        info.type=CompactionType.MAJOR;
+      break;
 case MINOR_TYPE:
-  info.type=CompactionType.MINOR;
-break;
+    info.type=CompactionType.MINOR;
+  break;
 default :
 throw new MetaException("Unexpected compaction type " + rs.getString(5));
 }
@@ -45,9 +46,17 @@ dbConn.rollback();
 }
  catch (SQLException e1) {
 }
-return null;
+detectDeadlock(e,"findNextToCompact");
+throw new MetaException("Unable to connect to transaction database " + StringUtils.stringifyException(e));
 }
  finally {
 closeDbConn(dbConn);
+}
+}
+ catch (DeadlockException e) {
+return findNextToCompact(workerId);
+}
+ finally {
+deadlockCnt=0;
 }
 }

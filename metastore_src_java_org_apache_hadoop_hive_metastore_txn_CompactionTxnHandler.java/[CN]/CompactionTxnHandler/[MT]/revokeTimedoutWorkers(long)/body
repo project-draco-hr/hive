@@ -1,24 +1,34 @@
 {
-  Connection dbConn=getDbConn();
-  long latestValidStart=System.currentTimeMillis() - timeout;
   try {
-    Statement stmt=dbConn.createStatement();
-    String s="update COMPACTION_QUEUE set cq_worker_id = null, cq_start = null, cq_state = '" + INITIATED_STATE + "' where cq_state = '"+ WORKING_STATE+ "' and cq_start < "+ latestValidStart;
-    LOG.debug("Going to execute update <" + s + ">");
-    stmt.executeUpdate(s);
-    LOG.debug("Going to commit");
-    dbConn.commit();
-  }
- catch (  SQLException e) {
+    Connection dbConn=getDbConn();
+    long latestValidStart=System.currentTimeMillis() - timeout;
     try {
-      LOG.error("Unable to change dead worker's records back to initiated state " + e.getMessage());
-      LOG.debug("Going to rollback");
-      dbConn.rollback();
+      Statement stmt=dbConn.createStatement();
+      String s="update COMPACTION_QUEUE set cq_worker_id = null, cq_start = null, cq_state = '" + INITIATED_STATE + "' where cq_state = '"+ WORKING_STATE+ "' and cq_start < "+ latestValidStart;
+      LOG.debug("Going to execute update <" + s + ">");
+      stmt.executeUpdate(s);
+      LOG.debug("Going to commit");
+      dbConn.commit();
     }
- catch (    SQLException e1) {
+ catch (    SQLException e) {
+      try {
+        LOG.error("Unable to change dead worker's records back to initiated state " + e.getMessage());
+        LOG.debug("Going to rollback");
+        dbConn.rollback();
+      }
+ catch (      SQLException e1) {
+      }
+      detectDeadlock(e,"revokeTimedoutWorkers");
+      throw new MetaException("Unable to connect to transaction database " + StringUtils.stringifyException(e));
     }
+ finally {
+      closeDbConn(dbConn);
+    }
+  }
+ catch (  DeadlockException e) {
+    revokeTimedoutWorkers(timeout);
   }
  finally {
-    closeDbConn(dbConn);
+    deadlockCnt=0;
   }
 }

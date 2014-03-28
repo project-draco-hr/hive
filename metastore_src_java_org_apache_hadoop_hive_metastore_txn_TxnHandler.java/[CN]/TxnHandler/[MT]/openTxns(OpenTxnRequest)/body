@@ -1,43 +1,52 @@
 {
   int numTxns=rqst.getNum_txns();
-  Connection dbConn=getDbConn();
   try {
-    int maxTxns=HiveConf.getIntVar(conf,HiveConf.ConfVars.HIVE_TXN_MAX_OPEN_BATCH);
-    if (numTxns > maxTxns)     numTxns=maxTxns;
-    Statement stmt=dbConn.createStatement();
-    LOG.debug("Going to execute query <select ntxn_next from NEXT_TXN_ID " + " for update>");
-    ResultSet rs=stmt.executeQuery("select ntxn_next from NEXT_TXN_ID for update");
-    if (!rs.next()) {
-      throw new MetaException("Transaction database not properly " + "configured, can't find next transaction id.");
-    }
-    long first=rs.getLong(1);
-    String s="update NEXT_TXN_ID set ntxn_next = " + (first + numTxns);
-    LOG.debug("Going to execute update <" + s + ">");
-    stmt.executeUpdate(s);
-    long now=System.currentTimeMillis();
-    s="insert into TXNS (txn_id, txn_state, txn_started, " + "txn_last_heartbeat, txn_user, txn_host) values (?, 'o', " + now + ", "+ now+ ", '"+ rqst.getUser()+ "', '"+ rqst.getHostname()+ "')";
-    LOG.debug("Going to prepare statement <" + s + ">");
-    PreparedStatement ps=dbConn.prepareStatement(s);
-    List<Long> txnIds=new ArrayList<Long>(numTxns);
-    for (long i=first; i < first + numTxns; i++) {
-      ps.setLong(1,i);
-      ps.executeUpdate();
-      txnIds.add(i);
-    }
-    LOG.debug("Going to commit");
-    dbConn.commit();
-    return new OpenTxnsResponse(txnIds);
-  }
- catch (  SQLException e) {
+    Connection dbConn=getDbConn();
     try {
-      LOG.debug("Going to rollback");
-      dbConn.rollback();
+      int maxTxns=HiveConf.getIntVar(conf,HiveConf.ConfVars.HIVE_TXN_MAX_OPEN_BATCH);
+      if (numTxns > maxTxns)       numTxns=maxTxns;
+      Statement stmt=dbConn.createStatement();
+      LOG.debug("Going to execute query <select ntxn_next from NEXT_TXN_ID " + " for update>");
+      ResultSet rs=stmt.executeQuery("select ntxn_next from NEXT_TXN_ID for update");
+      if (!rs.next()) {
+        throw new MetaException("Transaction database not properly " + "configured, can't find next transaction id.");
+      }
+      long first=rs.getLong(1);
+      String s="update NEXT_TXN_ID set ntxn_next = " + (first + numTxns);
+      LOG.debug("Going to execute update <" + s + ">");
+      stmt.executeUpdate(s);
+      long now=System.currentTimeMillis();
+      s="insert into TXNS (txn_id, txn_state, txn_started, " + "txn_last_heartbeat, txn_user, txn_host) values (?, 'o', " + now + ", "+ now+ ", '"+ rqst.getUser()+ "', '"+ rqst.getHostname()+ "')";
+      LOG.debug("Going to prepare statement <" + s + ">");
+      PreparedStatement ps=dbConn.prepareStatement(s);
+      List<Long> txnIds=new ArrayList<Long>(numTxns);
+      for (long i=first; i < first + numTxns; i++) {
+        ps.setLong(1,i);
+        ps.executeUpdate();
+        txnIds.add(i);
+      }
+      LOG.debug("Going to commit");
+      dbConn.commit();
+      return new OpenTxnsResponse(txnIds);
     }
- catch (    SQLException e1) {
+ catch (    SQLException e) {
+      try {
+        LOG.debug("Going to rollback");
+        dbConn.rollback();
+      }
+ catch (      SQLException e1) {
+      }
+      detectDeadlock(e,"openTxns");
+      throw new MetaException("Unable to select from transaction database " + StringUtils.stringifyException(e));
     }
-    throw new MetaException("Unable to select from transaction database " + StringUtils.stringifyException(e));
+ finally {
+      closeDbConn(dbConn);
+    }
+  }
+ catch (  DeadlockException e) {
+    return openTxns(rqst);
   }
  finally {
-    closeDbConn(dbConn);
+    deadlockCnt=0;
   }
 }
