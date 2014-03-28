@@ -1,0 +1,42 @@
+{
+  if (!(joinOp.getParentOperators().get(0) instanceof ReduceSinkOperator)) {
+    LOG.info("Operator is " + joinOp.getParentOperators().get(0).getName() + ". Cannot convert to bucket map join");
+    return false;
+  }
+  ReduceSinkOperator rs=(ReduceSinkOperator)joinOp.getParentOperators().get(bigTablePosition);
+  List<List<String>> colNames=rs.getParentOperators().get(0).getOpTraits().getBucketColNames();
+  if ((colNames != null) && (colNames.isEmpty() == false)) {
+    Operator<? extends OperatorDesc> parentOfParent=rs.getParentOperators().get(0);
+    for (    List<String> listBucketCols : parentOfParent.getOpTraits().getBucketColNames()) {
+      if (listBucketCols.isEmpty()) {
+        continue;
+      }
+      int colCount=0;
+      for (      String colName : rs.getOpTraits().getBucketColNames().get(0)) {
+        ExprNodeDesc exprNodeDesc=rs.getColumnExprMap().get(colName);
+        if (exprNodeDesc instanceof ExprNodeColumnDesc) {
+          if (((ExprNodeColumnDesc)exprNodeDesc).getColumn().equals(listBucketCols.get(colCount))) {
+            colCount++;
+          }
+ else {
+            break;
+          }
+        }
+        if (colCount == rs.getOpTraits().getBucketColNames().get(0).size()) {
+          int numBuckets=parentOfParent.getOpTraits().getNumBuckets();
+          boolean isSubQuery=false;
+          if (numBuckets < 0) {
+            isSubQuery=true;
+            numBuckets=rs.getConf().getNumReducers();
+          }
+          tezBucketJoinProcCtx.setNumBuckets(numBuckets);
+          tezBucketJoinProcCtx.setIsSubQuery(isSubQuery);
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+  LOG.info("No info available to check for bucket map join. Cannot convert");
+  return false;
+}

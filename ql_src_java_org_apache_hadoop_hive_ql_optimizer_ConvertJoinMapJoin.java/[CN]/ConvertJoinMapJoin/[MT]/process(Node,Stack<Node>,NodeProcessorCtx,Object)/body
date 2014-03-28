@@ -4,67 +4,36 @@
     return null;
   }
   JoinOperator joinOp=(JoinOperator)nd;
-  Set<Integer> bigTableCandidateSet=MapJoinProcessor.getBigTableCandidates(joinOp.getConf().getConds());
-  long maxSize=context.conf.getLongVar(HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASKTHRESHOLD);
-  int bigTablePosition=-1;
-  Statistics bigInputStat=null;
-  long totalSize=0;
-  int pos=0;
-  boolean bigTableFound=false;
+  int numBuckets=-1;
+  int estimatedBuckets=-1;
   for (  Operator<? extends OperatorDesc> parentOp : joinOp.getParentOperators()) {
-    Statistics currInputStat=parentOp.getStatistics();
-    if (currInputStat == null) {
-      LOG.warn("Couldn't get statistics from: " + parentOp);
-      return null;
+    if (parentOp.getOpTraits().getNumBuckets() > 0) {
+      numBuckets=(numBuckets < parentOp.getOpTraits().getNumBuckets()) ? parentOp.getOpTraits().getNumBuckets() : numBuckets;
     }
-    long inputSize=currInputStat.getDataSize();
-    if ((bigInputStat == null) || ((bigInputStat != null) && (inputSize > bigInputStat.getDataSize()))) {
-      if (bigTableFound) {
-        return null;
-      }
-      if (inputSize > maxSize) {
-        if (!bigTableCandidateSet.contains(pos)) {
-          return null;
-        }
-        bigTableFound=true;
-      }
-      if (bigInputStat != null) {
-        totalSize+=bigInputStat.getDataSize();
-      }
-      if (totalSize > maxSize) {
-        return null;
-      }
-      if (bigTableCandidateSet.contains(pos)) {
-        bigTablePosition=pos;
-        bigInputStat=currInputStat;
-      }
-    }
- else {
-      totalSize+=currInputStat.getDataSize();
-      if (totalSize > maxSize) {
-        return null;
-      }
-    }
-    pos++;
+    ReduceSinkOperator rs=(ReduceSinkOperator)parentOp;
+    estimatedBuckets=(estimatedBuckets < rs.getConf().getNumReducers()) ? rs.getConf().getNumReducers() : estimatedBuckets;
   }
-  if (bigTablePosition == -1) {
+  if (numBuckets <= 0) {
+    numBuckets=estimatedBuckets;
+    if (numBuckets <= 0) {
+      numBuckets=1;
+    }
+  }
+  LOG.info("Estimated number of buckets " + numBuckets);
+  int mapJoinConversionPos=mapJoinConversionPos(joinOp,context,numBuckets);
+  if (mapJoinConversionPos < 0) {
     return null;
   }
-  ParseContext parseContext=context.parseContext;
-  MapJoinOperator mapJoinOp=MapJoinProcessor.convertJoinOpMapJoinOp(context.conf,parseContext.getOpParseCtx(),joinOp,parseContext.getJoinContext().get(joinOp),bigTablePosition,true);
-  Operator<? extends OperatorDesc> parentBigTableOp=mapJoinOp.getParentOperators().get(bigTablePosition);
-  if (parentBigTableOp instanceof ReduceSinkOperator) {
-    mapJoinOp.getParentOperators().remove(bigTablePosition);
-    if (!(mapJoinOp.getParentOperators().contains(parentBigTableOp.getParentOperators().get(0)))) {
-      mapJoinOp.getParentOperators().add(bigTablePosition,parentBigTableOp.getParentOperators().get(0));
+  if (context.conf.getBoolVar(HiveConf.ConfVars.HIVE_CONVERT_JOIN_BUCKET_MAPJOIN_TEZ)) {
+    if (convertJoinBucketMapJoin(joinOp,context,mapJoinConversionPos)) {
+      return null;
     }
-    parentBigTableOp.getParentOperators().get(0).removeChild(parentBigTableOp);
-    for (    Operator<? extends OperatorDesc> op : mapJoinOp.getParentOperators()) {
-      if (!(op.getChildOperators().contains(mapJoinOp))) {
-        op.getChildOperators().add(mapJoinOp);
-      }
-      op.getChildOperators().remove(joinOp);
-    }
+  }
+  LOG.info("Convert to non-bucketed map join");
+  MapJoinOperator mapJoinOp=convertJoinMapJoin(joinOp,context,mapJoinConversionPos);
+  mapJoinOp.setOpTraits(new OpTraits(null,-1));
+  for (  Operator<? extends OperatorDesc> childOp : mapJoinOp.getChildOperators()) {
+    setAllChildrenTraitsToNull(childOp);
   }
   return null;
 }

@@ -1,0 +1,24 @@
+{
+  for (  Operator<? extends OperatorDesc> parentOp : joinOp.getParentOperators()) {
+    if (parentOp instanceof MuxOperator) {
+      return null;
+    }
+  }
+  ParseContext parseContext=context.parseContext;
+  MapJoinOperator mapJoinOp=MapJoinProcessor.convertJoinOpMapJoinOp(context.conf,parseContext.getOpParseCtx(),joinOp,parseContext.getJoinContext().get(joinOp),bigTablePosition,true);
+  Operator<? extends OperatorDesc> parentBigTableOp=mapJoinOp.getParentOperators().get(bigTablePosition);
+  if (parentBigTableOp instanceof ReduceSinkOperator) {
+    mapJoinOp.getParentOperators().remove(bigTablePosition);
+    if (!(mapJoinOp.getParentOperators().contains(parentBigTableOp.getParentOperators().get(0)))) {
+      mapJoinOp.getParentOperators().add(bigTablePosition,parentBigTableOp.getParentOperators().get(0));
+    }
+    parentBigTableOp.getParentOperators().get(0).removeChild(parentBigTableOp);
+    for (    Operator<? extends OperatorDesc> op : mapJoinOp.getParentOperators()) {
+      if (!(op.getChildOperators().contains(mapJoinOp))) {
+        op.getChildOperators().add(mapJoinOp);
+      }
+      op.getChildOperators().remove(joinOp);
+    }
+  }
+  return mapJoinOp;
+}
