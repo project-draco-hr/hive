@@ -13,19 +13,32 @@
   if (pcols != null && pcols.length() > 0) {
     LinkedHashMap<String,String> partSpec=part.getPartSpec();
     String[] partKeys=pcols.trim().split("/");
+    String pcolTypes=partProps.getProperty(hive_metastoreConstants.META_TABLE_PARTITION_COLUMN_TYPES);
+    String[] partKeyTypes=pcolTypes.trim().split(":");
+    if (partKeys.length > partKeyTypes.length) {
+      throw new HiveException("Internal error : partKeys length, " + partKeys.length + " greater than partKeyTypes length, "+ partKeyTypes.length);
+    }
     List<String> partNames=new ArrayList<String>(partKeys.length);
-    partitionValues=new LinkedHashMap<String,String>();
     List<ObjectInspector> partObjectInspectors=new ArrayList<ObjectInspector>(partKeys.length);
+    partitionValues=new LinkedHashMap<String,Object>();
+    partitionTypes=new LinkedHashMap<String,PrimitiveCategory>();
     for (int i=0; i < partKeys.length; i++) {
       String key=partKeys[i];
       partNames.add(key);
+      ObjectInspector objectInspector=null;
+      Object objectVal;
       if (partSpec == null) {
-        partitionValues.put(key,"");
+        objectVal=null;
+        objectInspector=PrimitiveObjectInspectorFactory.javaStringObjectInspector;
+        partitionTypes.put(key,PrimitiveCategory.STRING);
       }
  else {
-        partitionValues.put(key,partSpec.get(key));
+        objectInspector=TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(TypeInfoFactory.getPrimitiveTypeInfo(partKeyTypes[i]));
+        objectVal=ObjectInspectorConverters.getConverter(PrimitiveObjectInspectorFactory.javaStringObjectInspector,objectInspector).convert(partSpec.get(key));
+        partitionTypes.put(key,TypeInfoFactory.getPrimitiveTypeInfo(partKeyTypes[i]).getPrimitiveCategory());
       }
-      partObjectInspectors.add(PrimitiveObjectInspectorFactory.writableStringObjectInspector);
+      partitionValues.put(key,objectVal);
+      partObjectInspectors.add(objectInspector);
     }
     StructObjectInspector partObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(partNames,partObjectInspectors);
     StructObjectInspector rowObjectInspector=ObjectInspectorFactory.getUnionStructObjectInspector(Arrays.asList(new StructObjectInspector[]{partRawRowObjectInspector,partObjectInspector}));

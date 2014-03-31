@@ -15,19 +15,25 @@
   String pcols=partProps.getProperty(hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS);
   if (pcols != null && pcols.length() > 0) {
     String[] partKeys=pcols.trim().split("/");
+    String pcolTypes=partProps.getProperty(hive_metastoreConstants.META_TABLE_PARTITION_COLUMN_TYPES);
+    String[] partKeyTypes=pcolTypes.trim().split(":");
+    if (partKeys.length > partKeyTypes.length) {
+      throw new HiveException("Internal error : partKeys length, " + partKeys.length + " greater than partKeyTypes length, "+ partKeyTypes.length);
+    }
     List<String> partNames=new ArrayList<String>(partKeys.length);
     Object[] partValues=new Object[partKeys.length];
     List<ObjectInspector> partObjectInspectors=new ArrayList<ObjectInspector>(partKeys.length);
     for (int i=0; i < partKeys.length; i++) {
       String key=partKeys[i];
       partNames.add(key);
+      ObjectInspector oi=PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(TypeInfoFactory.getPrimitiveTypeInfo(partKeyTypes[i]));
       if (partSpec == null) {
         partValues[i]=null;
       }
  else {
-        partValues[i]=new Text(partSpec.get(key));
+        partValues[i]=ObjectInspectorConverters.getConverter(PrimitiveObjectInspectorFactory.javaStringObjectInspector,oi).convert(partSpec.get(key));
       }
-      partObjectInspectors.add(PrimitiveObjectInspectorFactory.writableStringObjectInspector);
+      partObjectInspectors.add(oi);
     }
     opCtx.rowWithPart=new Object[]{null,partValues};
     opCtx.partObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(partNames,partObjectInspectors);
