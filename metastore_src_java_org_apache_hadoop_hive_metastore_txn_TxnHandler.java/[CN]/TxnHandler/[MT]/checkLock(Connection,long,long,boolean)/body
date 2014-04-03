@@ -90,6 +90,7 @@
     if (locks[index].state == LockState.ACQUIRED) {
       continue;
     }
+    boolean acquired=false;
     for (int i=index - 1; i >= 0; i--) {
       if (!locks[index].db.equals(locks[i].db)) {
         continue;
@@ -103,20 +104,22 @@
 switch (jumpTable.get(locks[index].type).get(locks[i].type).get(locks[i].state)) {
 case ACQUIRE:
         acquire(dbConn,stmt,extLockId,info.intLockId);
-      break;
+      acquired=true;
+    break;
 case WAIT:
-    wait(dbConn,save);
-  if (alwaysCommit) {
-    LOG.debug("Going to commit");
-    dbConn.commit();
-  }
+  wait(dbConn,save);
+if (alwaysCommit) {
+  LOG.debug("Going to commit");
+  dbConn.commit();
+}
 response.setState(LockState.WAITING);
 return response;
 case KEEP_LOOKING:
 continue;
 }
+if (acquired) break;
 }
-acquire(dbConn,stmt,extLockId,info.intLockId);
+if (!acquired) acquire(dbConn,stmt,extLockId,info.intLockId);
 }
 LOG.debug("Going to commit");
 dbConn.commit();
