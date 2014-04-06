@@ -50,6 +50,17 @@
     String importedifc=tableDesc.getInputFormat();
     String existingofc=table.getOutputFormatClass().getName();
     String importedofc=tableDesc.getOutputFormat();
+    try {
+      Class<?> origin=Class.forName(importedofc,true,JavaUtils.getClassLoader());
+      Class<? extends HiveOutputFormat> replaced=HiveFileFormatUtils.getOutputFormatSubstitute(origin,false);
+      if (replaced == null) {
+        throw new SemanticException(ErrorMsg.INVALID_OUTPUT_FORMAT_TYPE.getMsg());
+      }
+      importedofc=replaced.getCanonicalName();
+    }
+ catch (    Exception e) {
+      throw new SemanticException(ErrorMsg.INVALID_OUTPUT_FORMAT_TYPE.getMsg());
+    }
     if ((!existingifc.equals(importedifc)) || (!existingofc.equals(importedofc))) {
       throw new SemanticException(ErrorMsg.INCOMPATIBLE_SCHEMA.getMsg(" Table inputformat/outputformats do not match"));
     }
@@ -60,6 +71,7 @@
     }
     String existingSerdeFormat=table.getSerdeParam(serdeConstants.SERIALIZATION_FORMAT);
     String importedSerdeFormat=tableDesc.getSerdeProps().get(serdeConstants.SERIALIZATION_FORMAT);
+    importedSerdeFormat=importedSerdeFormat == null ? "1" : importedSerdeFormat;
     if (!ObjectUtils.equals(existingSerdeFormat,importedSerdeFormat)) {
       throw new SemanticException(ErrorMsg.INCOMPATIBLE_SCHEMA.getMsg(" Table Serde format does not match"));
     }
