@@ -4,8 +4,34 @@
     throw new IOException(ErrorMsg.INVALID_HDFS_URI.format(dest.toString()));
   }
   if (src != null) {
-    if (!checkPreExisting(src,dest,conf)) {
-      destFS.copyFromLocalFile(false,true,src,dest);
+    LOG.info("Localizing resource because it does not exist: " + src + " to dest: "+ dest);
+    try {
+      destFS.copyFromLocalFile(false,false,src,dest);
+    }
+ catch (    IOException e) {
+      LOG.info("Looks like another thread is writing the same file will wait.");
+      int waitAttempts=conf.getInt(HiveConf.ConfVars.HIVE_LOCALIZE_RESOURCE_NUM_WAIT_ATTEMPTS.varname,HiveConf.ConfVars.HIVE_LOCALIZE_RESOURCE_NUM_WAIT_ATTEMPTS.defaultIntVal);
+      long sleepInterval=conf.getLong(HiveConf.ConfVars.HIVE_LOCALIZE_RESOURCE_WAIT_INTERVAL.varname,HiveConf.ConfVars.HIVE_LOCALIZE_RESOURCE_WAIT_INTERVAL.defaultLongVal);
+      LOG.info("Number of wait attempts: " + waitAttempts + ". Wait interval: "+ sleepInterval);
+      boolean found=false;
+      for (int i=0; i < waitAttempts; i++) {
+        if (!checkPreExisting(src,dest,conf)) {
+          try {
+            Thread.currentThread().sleep(sleepInterval);
+          }
+ catch (          InterruptedException interruptedException) {
+            throw new IOException(interruptedException);
+          }
+        }
+ else {
+          found=true;
+          break;
+        }
+      }
+      if (!found) {
+        LOG.error("Could not find the jar that was being uploaded");
+        throw new IOException("Previous writer likely failed to write " + dest + ". Failing because I am unlikely to write too.");
+      }
     }
   }
   return createLocalResource(destFS,dest,LocalResourceType.FILE,LocalResourceVisibility.APPLICATION);
