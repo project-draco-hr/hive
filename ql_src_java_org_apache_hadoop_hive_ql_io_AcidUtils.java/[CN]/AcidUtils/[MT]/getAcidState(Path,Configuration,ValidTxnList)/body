@@ -6,29 +6,23 @@
   List<ParsedDelta> working=new ArrayList<ParsedDelta>();
   final List<FileStatus> original=new ArrayList<FileStatus>();
   final List<FileStatus> obsolete=new ArrayList<FileStatus>();
-  Path ignoredBase=null;
   List<FileStatus> children=SHIMS.listLocatedStatus(fs,directory,hiddenFileFilter);
   for (  FileStatus child : children) {
     Path p=child.getPath();
     String fn=p.getName();
     if (fn.startsWith(BASE_PREFIX) && child.isDir()) {
       long txn=parseBase(p);
-      if (txnList.isTxnRangeCommitted(0,txn) != ValidTxnList.RangeResponse.ALL) {
-        ignoredBase=p;
+      if (bestBase == null) {
+        bestBase=child;
+        bestBaseTxn=txn;
+      }
+ else       if (bestBaseTxn < txn) {
+        obsolete.add(bestBase);
+        bestBase=child;
+        bestBaseTxn=txn;
       }
  else {
-        if (bestBase == null) {
-          bestBase=child;
-          bestBaseTxn=txn;
-        }
- else         if (bestBaseTxn < txn) {
-          obsolete.add(bestBase);
-          bestBase=child;
-          bestBaseTxn=txn;
-        }
- else {
-          obsolete.add(child);
-        }
+        obsolete.add(child);
       }
     }
  else     if (fn.startsWith(DELTA_PREFIX) && child.isDir()) {
@@ -40,9 +34,6 @@
  else {
       findOriginals(fs,child,original);
     }
-  }
-  if (bestBase == null && ignoredBase != null) {
-    throw new IllegalArgumentException("All base directories were ignored," + " such as " + ignoredBase + " by "+ txnList);
   }
   if (bestBase != null) {
     obsolete.addAll(original);
