@@ -3,24 +3,15 @@
     return;
   }
   try {
-    authenticator=HiveUtils.getAuthenticator(getConf(),HiveConf.ConfVars.HIVE_AUTHENTICATOR_MANAGER);
+    authenticator=HiveUtils.getAuthenticator(conf,HiveConf.ConfVars.HIVE_AUTHENTICATOR_MANAGER);
     authenticator.setSessionState(this);
-    authorizer=HiveUtils.getAuthorizeProviderManager(getConf(),HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER,authenticator,true);
+    authorizer=HiveUtils.getAuthorizeProviderManager(conf,HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER,authenticator,true);
     if (authorizer == null) {
-      HiveAuthorizerFactory authorizerFactory=HiveUtils.getAuthorizerFactory(getConf(),HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER);
-      authorizerV2=authorizerFactory.createHiveAuthorizer(new HiveMetastoreClientFactoryImpl(),getConf(),authenticator);
-      getConf().setVar(ConfVars.HIVE_AUTHORIZATION_TABLE_OWNER_GRANTS,"INSERT,SELECT,UPDATE,DELETE");
-      String hooks=getConf().getVar(ConfVars.PREEXECHOOKS).trim();
-      if (hooks.isEmpty()) {
-        hooks=DisallowTransformHook.class.getName();
-      }
- else {
-        hooks=hooks + "," + DisallowTransformHook.class.getName();
-      }
-      LOG.debug("Configuring hooks : " + hooks);
-      getConf().setVar(ConfVars.PREEXECHOOKS,hooks);
+      HiveAuthorizerFactory authorizerFactory=HiveUtils.getAuthorizerFactory(conf,HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER);
+      authorizerV2=authorizerFactory.createHiveAuthorizer(new HiveMetastoreClientFactoryImpl(),conf,authenticator);
+      authorizerV2.applyAuthorizationConfigPolicy(conf);
+      createTableGrants=CreateTableAutomaticGrant.create(conf);
     }
-    createTableGrants=CreateTableAutomaticGrant.create(getConf());
   }
  catch (  HiveException e) {
     throw new RuntimeException(e);
