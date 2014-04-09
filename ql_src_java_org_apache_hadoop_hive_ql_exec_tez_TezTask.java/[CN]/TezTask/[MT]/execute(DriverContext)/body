@@ -18,25 +18,17 @@
     String[] inputOutputJars=work.configureJobConfAndExtractJars(jobConf);
     Path scratchDir=ctx.getMRScratchDir();
     scratchDir=utils.createTezDir(scratchDir,conf);
-    String hiveJarDir=utils.getHiveJarDirectory(conf);
-    List<LocalResource> additionalLr=utils.localizeTempFilesFromConf(hiveJarDir,conf);
-    List<LocalResource> handlerLr=utils.localizeTempFiles(hiveJarDir,conf,inputOutputJars);
-    if (handlerLr != null) {
-      additionalLr.addAll(handlerLr);
-    }
-    if (!session.hasResources(handlerLr)) {
-      if (session.isOpen()) {
-        LOG.info("Tez session being reopened to pass custom jars to AM");
-        session.close(false);
-        session=TezSessionPoolManager.getInstance().getSession(null,conf,false);
-        ss.setTezSession(session);
-      }
-      session.open(conf,additionalLr);
+    if (!session.hasResources(inputOutputJars) && session.isOpen()) {
+      LOG.info("Tez session being reopened to pass custom jars to AM");
+      session.close(false);
+      session=TezSessionPoolManager.getInstance().getSession(null,conf,false);
+      ss.setTezSession(session);
     }
     if (!session.isOpen()) {
       LOG.info("Tez session hasn't been created yet. Opening session");
-      session.open(conf);
+      session.open(conf,inputOutputJars);
     }
+    List<LocalResource> additionalLr=session.getLocalizedResources();
     LocalResource appJarLr=session.getAppJarLr();
     DAG dag=build(jobConf,work,scratchDir,appJarLr,additionalLr,ctx);
     client=submit(jobConf,dag,scratchDir,appJarLr,session);
