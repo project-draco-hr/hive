@@ -7,18 +7,20 @@
     return new OrcRecordReader(OrcFile.createReader(((FileSplit)inputSplit).getPath(),OrcFile.readerOptions(conf)),conf,(FileSplit)inputSplit);
   }
   OrcSplit split=(OrcSplit)inputSplit;
-  if (vectorMode) {
-    if (!split.getDeltas().isEmpty() || !split.isOriginal()) {
-      throw new IOException("Vectorization and ACID tables are incompatible.");
-    }
-    return createVectorizedReader(inputSplit,conf,reporter);
-  }
   reporter.setStatus(inputSplit.toString());
   if (split.isOriginal() && split.getDeltas().isEmpty()) {
-    return new OrcRecordReader(OrcFile.createReader(split.getPath(),OrcFile.readerOptions(conf)),conf,split);
+    if (vectorMode) {
+      return createVectorizedReader(inputSplit,conf,reporter);
+    }
+ else {
+      return new OrcRecordReader(OrcFile.createReader(split.getPath(),OrcFile.readerOptions(conf)),conf,split);
+    }
   }
   Options options=new Options(conf).reporter(reporter);
   final RowReader<OrcStruct> inner=getReader(inputSplit,options);
+  if (vectorMode) {
+    return (org.apache.hadoop.mapred.RecordReader)new VectorizedOrcAcidRowReader(inner,conf,(FileSplit)inputSplit);
+  }
   final RecordIdentifier id=inner.createKey();
   return new org.apache.hadoop.mapred.RecordReader<NullWritable,OrcStruct>(){
     @Override public boolean next(    NullWritable nullWritable,    OrcStruct orcStruct) throws IOException {
