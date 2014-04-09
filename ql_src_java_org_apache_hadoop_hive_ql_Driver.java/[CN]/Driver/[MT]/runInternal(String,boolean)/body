@@ -24,12 +24,6 @@
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.DRIVER_RUN);
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TIME_TO_SUBMIT);
   int ret;
-  if (!alreadyCompiled) {
-    ret=compileInternal(command);
-    if (ret != 0) {
-      return new CommandProcessorResponse(ret,errorMessage,SQLState);
-    }
-  }
   boolean requireLock=false;
   boolean ckLock=false;
   try {
@@ -44,6 +38,15 @@
     ret=10;
     return new CommandProcessorResponse(ret,errorMessage,SQLState);
   }
+  ret=recordValidTxns();
+  if (ret != 0)   return new CommandProcessorResponse(ret,errorMessage,SQLState);
+  if (!alreadyCompiled) {
+    ret=compileInternal(command);
+    if (ret != 0) {
+      return new CommandProcessorResponse(ret,errorMessage,SQLState);
+    }
+  }
+  ctx.setHiveTxnManager(txnMgr);
   if (ckLock) {
     boolean lockOnlyMapred=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_LOCK_MAPRED_ONLY);
     if (lockOnlyMapred) {
@@ -67,8 +70,6 @@
       requireLock=true;
     }
   }
-  ret=recordValidTxns();
-  if (ret != 0)   return new CommandProcessorResponse(ret,errorMessage,SQLState);
   if (requireLock) {
     ret=acquireReadWriteLocks();
     if (ret != 0) {
