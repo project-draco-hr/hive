@@ -1,0 +1,26 @@
+{
+  vectorizedRowBatch.reset();
+  buffer.reset();
+  if (!innerReader.next(key,value)) {
+    return false;
+  }
+  if (needToSetPartition) {
+    try {
+      rowBatchCtx.addPartitionColsToBatch(vectorizedRowBatch);
+    }
+ catch (    HiveException e) {
+      throw new IOException("Problem adding partition column",e);
+    }
+    needToSetPartition=false;
+  }
+  try {
+    VectorizedBatchUtil.addRowToBatch(value,(StructObjectInspector)objectInspector,vectorizedRowBatch.size++,vectorizedRowBatch,buffer);
+    while (vectorizedRowBatch.size < vectorizedRowBatch.selected.length && innerReader.next(key,value)) {
+      VectorizedBatchUtil.addRowToBatch(value,(StructObjectInspector)objectInspector,vectorizedRowBatch.size++,vectorizedRowBatch,buffer);
+    }
+  }
+ catch (  HiveException he) {
+    throw new IOException("error iterating",he);
+  }
+  return true;
+}
