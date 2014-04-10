@@ -2,20 +2,16 @@
   FileStatus fstatus=null;
   String hdfsDirPathStr=HiveConf.getVar(conf,HiveConf.ConfVars.HIVE_JAR_DIRECTORY,null);
   if (hdfsDirPathStr != null) {
-    Path hdfsDirPath=new Path(hdfsDirPathStr);
-    FileSystem fs=hdfsDirPath.getFileSystem(conf);
-    if (!(fs instanceof DistributedFileSystem)) {
-      throw new IOException(ErrorMsg.INVALID_HDFS_URI.format(hdfsDirPathStr));
-    }
-    try {
-      fstatus=fs.getFileStatus(hdfsDirPath);
-    }
- catch (    FileNotFoundException fe) {
-    }
+    LOG.info("Hive jar directory is " + hdfsDirPathStr);
+    fstatus=validateTargetDir(new Path(hdfsDirPathStr),conf);
   }
-  if ((fstatus == null) || (!fstatus.isDir())) {
+  if (fstatus == null) {
     Path destDir=getDefaultDestDir(conf);
-    hdfsDirPathStr=destDir.toString();
+    LOG.info("Jar dir is null/directory doesn't exist. Choosing HIVE_INSTALL_DIR - " + destDir);
+    fstatus=validateTargetDir(destDir,conf);
   }
-  return hdfsDirPathStr;
+  if (fstatus == null) {
+    throw new IOException(ErrorMsg.NO_VALID_LOCATIONS.getMsg());
+  }
+  return fstatus;
 }
