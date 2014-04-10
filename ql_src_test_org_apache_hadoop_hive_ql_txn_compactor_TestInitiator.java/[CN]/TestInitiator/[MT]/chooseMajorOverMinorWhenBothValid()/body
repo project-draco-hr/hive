@@ -1,0 +1,33 @@
+{
+  Table t=newTable("default","cmomwbv",false);
+  HiveConf conf=new HiveConf();
+  addBaseFile(conf,t,null,200L,200);
+  addDeltaFile(conf,t,null,201L,211L,11);
+  addDeltaFile(conf,t,null,212L,222L,11);
+  addDeltaFile(conf,t,null,223L,233L,11);
+  addDeltaFile(conf,t,null,234L,244L,11);
+  addDeltaFile(conf,t,null,245L,255L,11);
+  addDeltaFile(conf,t,null,256L,266L,11);
+  addDeltaFile(conf,t,null,267L,277L,11);
+  addDeltaFile(conf,t,null,278L,288L,11);
+  addDeltaFile(conf,t,null,289L,299L,11);
+  addDeltaFile(conf,t,null,300L,310L,11);
+  addDeltaFile(conf,t,null,311L,321L,11);
+  burnThroughTransactions(320);
+  long txnid=openTxn();
+  LockComponent comp=new LockComponent(LockType.SHARED_WRITE,LockLevel.TABLE,"default");
+  comp.setTablename("cmomwbv");
+  List<LockComponent> components=new ArrayList<LockComponent>(1);
+  components.add(comp);
+  LockRequest req=new LockRequest(components,"me","localhost");
+  req.setTxnid(txnid);
+  LockResponse res=txnHandler.lock(req);
+  txnHandler.commitTxn(new CommitTxnRequest(txnid));
+  startInitiator(conf);
+  ShowCompactResponse rsp=txnHandler.showCompact(new ShowCompactRequest());
+  List<ShowCompactResponseElement> compacts=rsp.getCompacts();
+  Assert.assertEquals(1,compacts.size());
+  Assert.assertEquals("initiated",compacts.get(0).getState());
+  Assert.assertEquals("cmomwbv",compacts.get(0).getTablename());
+  Assert.assertEquals(CompactionType.MAJOR,compacts.get(0).getType());
+}

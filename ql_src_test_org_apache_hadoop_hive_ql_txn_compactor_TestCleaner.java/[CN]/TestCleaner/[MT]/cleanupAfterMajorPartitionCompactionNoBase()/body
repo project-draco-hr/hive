@@ -1,0 +1,21 @@
+{
+  Table t=newTable("default","campcnb",true);
+  Partition p=newPartition(t,"today");
+  HiveConf conf=new HiveConf();
+  addDeltaFile(conf,t,p,1L,22L,22);
+  addDeltaFile(conf,t,p,23L,24L,2);
+  addBaseFile(conf,t,p,25L,25);
+  burnThroughTransactions(25);
+  CompactionRequest rqst=new CompactionRequest("default","campcnb",CompactionType.MAJOR);
+  rqst.setPartitionname("ds=today");
+  txnHandler.compact(rqst);
+  CompactionInfo ci=txnHandler.findNextToCompact("fred");
+  txnHandler.markCompacted(ci);
+  txnHandler.setRunAs(ci.id,System.getProperty("user.name"));
+  startCleaner(conf);
+  ShowCompactResponse rsp=txnHandler.showCompact(new ShowCompactRequest());
+  Assert.assertNull(rsp.getCompacts());
+  List<Path> paths=getDirectories(conf,t,p);
+  Assert.assertEquals(1,paths.size());
+  Assert.assertEquals("base_25",paths.get(0).getName());
+}

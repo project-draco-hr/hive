@@ -1,0 +1,35 @@
+{
+  String partValue=(p == null) ? null : p.getValues().get(0);
+  Path location=new Path(getLocation(t.getTableName(),partValue));
+  String filename=null;
+switch (type) {
+case BASE:
+    filename="base_" + maxTxn;
+  break;
+case DELTA:
+filename="delta_" + minTxn + "_"+ maxTxn;
+break;
+case LEGACY:
+break;
+}
+FileSystem fs=FileSystem.get(conf);
+for (int bucket=0; bucket < numBuckets; bucket++) {
+if (bucket == 0 && !allBucketsPresent) continue;
+Path partFile=null;
+if (type == FileType.LEGACY) {
+partFile=new Path(location,String.format(AcidUtils.BUCKET_DIGITS,bucket) + "_0");
+}
+ else {
+Path dir=new Path(location,filename);
+fs.mkdirs(dir);
+partFile=AcidUtils.createBucketFile(dir,bucket);
+}
+FSDataOutputStream out=fs.create(partFile);
+for (int i=0; i < numRecords; i++) {
+RecordIdentifier ri=new RecordIdentifier(maxTxn - 1,bucket,i);
+ri.write(out);
+out.writeBytes("mary had a little lamb its fleece was white as snow\n");
+}
+out.close();
+}
+}

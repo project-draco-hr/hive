@@ -1,0 +1,30 @@
+{
+  Path baseDir=null;
+  if (entries.get(BASE_DIR) != null)   baseDir=new Path(entries.get(BASE_DIR));
+  StringableList tmpDeltaDirs=new StringableList(entries.get(DELTA_DIRS));
+  Path[] deltaDirs=tmpDeltaDirs.toArray(new Path[tmpDeltaDirs.size()]);
+  StringableList dirsToSearch=new StringableList(entries.get(DIRS_TO_SEARCH));
+  Map<Integer,BucketTracker> splitToBucketMap=new HashMap<Integer,BucketTracker>();
+  for (  Path dir : dirsToSearch) {
+    FileSystem fs=dir.getFileSystem(entries);
+    if (dir.getName().startsWith(AcidUtils.BASE_PREFIX) || dir.getName().startsWith(AcidUtils.DELTA_PREFIX)) {
+      boolean sawBase=dir.getName().startsWith(AcidUtils.BASE_PREFIX);
+      FileStatus[] files=fs.listStatus(dir,AcidUtils.bucketFileFilter);
+      for (int j=0; j < files.length; j++) {
+        Matcher matcher=AcidUtils.BUCKET_DIGIT_PATTERN.matcher(files[j].getPath().getName());
+        addFileToMap(matcher,files[j].getPath(),sawBase,splitToBucketMap);
+      }
+    }
+ else {
+      Matcher matcher=AcidUtils.LEGACY_BUCKET_DIGIT_PATTERN.matcher(dir.getName());
+      addFileToMap(matcher,dir,true,splitToBucketMap);
+    }
+  }
+  List<InputSplit> splits=new ArrayList<InputSplit>(splitToBucketMap.size());
+  for (  Map.Entry<Integer,BucketTracker> e : splitToBucketMap.entrySet()) {
+    BucketTracker bt=e.getValue();
+    splits.add(new CompactorInputSplit(entries,e.getKey(),bt.buckets,bt.sawBase ? baseDir : null,deltaDirs));
+  }
+  LOG.debug("Returning " + splits.size() + " splits");
+  return splits.toArray(new InputSplit[splits.size()]);
+}
