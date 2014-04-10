@@ -1,0 +1,27 @@
+{
+  this.endPoint=endPoint;
+  this.conf=conf != null ? conf : HiveEndPoint.createHiveConf(DelimitedInputWriter.class,endPoint.metaStoreUri);
+  try {
+    msClient=new HiveMetaStoreClient(conf);
+    this.tbl=msClient.getTable(endPoint.database,endPoint.table);
+    this.partitionPath=getPathForEndPoint(msClient,endPoint);
+    this.totalBuckets=tbl.getSd().getNumBuckets();
+    if (totalBuckets <= 0) {
+      throw new StreamingException("Cannot stream to table that has not been bucketed : " + endPoint);
+    }
+    String outFormatName=this.tbl.getSd().getOutputFormat();
+    outf=(AcidOutputFormat<?>)ReflectionUtils.newInstance(Class.forName(outFormatName),conf);
+  }
+ catch (  MetaException e) {
+    throw new ConnectionError(endPoint,e);
+  }
+catch (  NoSuchObjectException e) {
+    throw new ConnectionError(endPoint,e);
+  }
+catch (  TException e) {
+    throw new StreamingException(e.getMessage(),e);
+  }
+catch (  ClassNotFoundException e) {
+    throw new StreamingException(e.getMessage(),e);
+  }
+}

@@ -1,0 +1,48 @@
+{
+  try {
+    LogUtils.initHiveLog4j();
+  }
+ catch (  LogUtils.LogInitializationException e) {
+    System.err.println("Unable to initialize log4j " + StringUtils.stringifyException(e));
+    System.exit(-1);
+  }
+  Options options=new Options();
+  options.addOption(OptionBuilder.hasArg().withArgName("abort-pct").withDescription("Percentage of transactions to abort, defaults to 5").withLongOpt("abortpct").create('a'));
+  options.addOption(OptionBuilder.hasArgs().withArgName("column-names").withDescription("column names of table to write to").withLongOpt("columns").withValueSeparator(',').isRequired().create('c'));
+  options.addOption(OptionBuilder.hasArg().withArgName("database").withDescription("Database of table to write to").withLongOpt("database").isRequired().create('d'));
+  options.addOption(OptionBuilder.hasArg().withArgName("frequency").withDescription("How often to commit a transaction, in seconds, defaults to 1").withLongOpt("frequency").create('f'));
+  options.addOption(OptionBuilder.hasArg().withArgName("iterations").withDescription("Number of batches to write, defaults to 10").withLongOpt("num-batches").create('i'));
+  options.addOption(OptionBuilder.hasArg().withArgName("metastore-uri").withDescription("URI of Hive metastore").withLongOpt("metastore-uri").isRequired().create('m'));
+  options.addOption(OptionBuilder.hasArg().withArgName("num_transactions").withDescription("Number of transactions per batch, defaults to 100").withLongOpt("num-txns").create('n'));
+  options.addOption(OptionBuilder.hasArgs().withArgName("partition-values").withDescription("partition values, must be provided in order of partition columns, " + "if not provided table is assumed to not be partitioned").withLongOpt("partition").withValueSeparator(',').create('p'));
+  options.addOption(OptionBuilder.hasArg().withArgName("records-per-transaction").withDescription("records to write in each transaction, defaults to 100").withLongOpt("records-per-txn").withValueSeparator(',').create('r'));
+  options.addOption(OptionBuilder.hasArgs().withArgName("column-types").withDescription("column types, valid values are string, int, float, decimal, date, " + "datetime").withLongOpt("schema").withValueSeparator(',').isRequired().create('s'));
+  options.addOption(OptionBuilder.hasArg().withArgName("table").withDescription("Table to write to").withLongOpt("table").isRequired().create('t'));
+  options.addOption(OptionBuilder.hasArg().withArgName("num-writers").withDescription("Number of writers to create, defaults to 2").withLongOpt("writers").create('w'));
+  options.addOption(OptionBuilder.hasArg(false).withArgName("pause").withDescription("Wait on keyboard input after commit & batch close. default: disabled").withLongOpt("pause").create('x'));
+  Parser parser=new GnuParser();
+  CommandLine cmdline=null;
+  try {
+    cmdline=parser.parse(options,args);
+  }
+ catch (  ParseException e) {
+    System.err.println(e.getMessage());
+    usage(options);
+  }
+  boolean pause=cmdline.hasOption('x');
+  String db=cmdline.getOptionValue('d');
+  String table=cmdline.getOptionValue('t');
+  String uri=cmdline.getOptionValue('m');
+  int txnsPerBatch=Integer.valueOf(cmdline.getOptionValue('n',"100"));
+  int writers=Integer.valueOf(cmdline.getOptionValue('w',"2"));
+  int batches=Integer.valueOf(cmdline.getOptionValue('i',"10"));
+  int recordsPerTxn=Integer.valueOf(cmdline.getOptionValue('r',"100"));
+  int frequency=Integer.valueOf(cmdline.getOptionValue('f',"1"));
+  int ap=Integer.valueOf(cmdline.getOptionValue('a',"5"));
+  float abortPct=((float)ap) / 100.0f;
+  String[] partVals=cmdline.getOptionValues('p');
+  String[] cols=cmdline.getOptionValues('c');
+  String[] types=cmdline.getOptionValues('s');
+  StreamingIntegrationTester sit=new StreamingIntegrationTester(db,table,uri,txnsPerBatch,writers,batches,recordsPerTxn,frequency,abortPct,partVals,cols,types,pause);
+  sit.go();
+}

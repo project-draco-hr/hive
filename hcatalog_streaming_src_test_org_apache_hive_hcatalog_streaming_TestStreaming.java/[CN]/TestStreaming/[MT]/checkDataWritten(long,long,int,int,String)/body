@@ -1,0 +1,33 @@
+{
+  ValidTxnList txns=msClient.getValidTxns();
+  AcidUtils.Directory dir=AcidUtils.getAcidState(new Path(partLocation),conf,txns);
+  Assert.assertEquals(0,dir.getObsolete().size());
+  Assert.assertEquals(0,dir.getOriginalFiles().size());
+  List<AcidUtils.ParsedDelta> current=dir.getCurrentDirectories();
+  System.out.println("Files found: ");
+  for (  AcidUtils.ParsedDelta pd : current)   System.out.println(pd.getPath().toString());
+  Assert.assertEquals(numExpectedFiles,current.size());
+  long min=Long.MAX_VALUE;
+  long max=Long.MIN_VALUE;
+  for (  AcidUtils.ParsedDelta pd : current) {
+    if (pd.getMaxTransaction() > max)     max=pd.getMaxTransaction();
+    if (pd.getMinTransaction() < min)     min=pd.getMinTransaction();
+  }
+  Assert.assertEquals(minTxn,min);
+  Assert.assertEquals(maxTxn,max);
+  InputFormat inf=new OrcInputFormat();
+  JobConf job=new JobConf();
+  job.set("mapred.input.dir",partLocation.toString());
+  job.set("bucket_count",Integer.toString(buckets));
+  job.set(ValidTxnList.VALID_TXNS_KEY,txns.toString());
+  InputSplit[] splits=inf.getSplits(job,1);
+  Assert.assertEquals(1,splits.length);
+  org.apache.hadoop.mapred.RecordReader<NullWritable,OrcStruct> rr=inf.getRecordReader(splits[0],job,Reporter.NULL);
+  NullWritable key=rr.createKey();
+  OrcStruct value=rr.createValue();
+  for (int i=0; i < records.length; i++) {
+    Assert.assertEquals(true,rr.next(key,value));
+    Assert.assertEquals(records[i],value.toString());
+  }
+  Assert.assertEquals(false,rr.next(key,value));
+}

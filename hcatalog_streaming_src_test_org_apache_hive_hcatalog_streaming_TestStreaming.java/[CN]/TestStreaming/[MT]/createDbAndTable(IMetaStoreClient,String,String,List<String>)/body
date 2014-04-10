@@ -1,0 +1,35 @@
+{
+  Database db=new Database();
+  db.setName(databaseName);
+  String dbLocation="raw://" + dbFolder.newFolder(databaseName + ".db").getCanonicalPath();
+  db.setLocationUri(dbLocation);
+  client.createDatabase(db);
+  Table tbl=new Table();
+  tbl.setDbName(databaseName);
+  tbl.setTableName(tableName);
+  tbl.setTableType(TableType.MANAGED_TABLE.toString());
+  StorageDescriptor sd=new StorageDescriptor();
+  sd.setCols(getTableColumns());
+  sd.setNumBuckets(1);
+  sd.setLocation(dbLocation + Path.SEPARATOR + tableName);
+  tbl.setPartitionKeys(getPartitionKeys());
+  tbl.setSd(sd);
+  sd.setBucketCols(new ArrayList<String>(2));
+  sd.setSerdeInfo(new SerDeInfo());
+  sd.getSerdeInfo().setName(tbl.getTableName());
+  sd.getSerdeInfo().setParameters(new HashMap<String,String>());
+  sd.getSerdeInfo().getParameters().put(serdeConstants.SERIALIZATION_FORMAT,"1");
+  sd.getSerdeInfo().setSerializationLib(OrcSerde.class.getName());
+  sd.setInputFormat(HiveInputFormat.class.getName());
+  sd.setOutputFormat(OrcOutputFormat.class.getName());
+  Map<String,String> tableParams=new HashMap<String,String>();
+  tbl.setParameters(tableParams);
+  client.createTable(tbl);
+  try {
+    addPartition(client,tbl,partVals);
+  }
+ catch (  AlreadyExistsException e) {
+  }
+  Partition createdPartition=client.getPartition(databaseName,tableName,partVals);
+  partLocation=createdPartition.getSd().getLocation();
+}
