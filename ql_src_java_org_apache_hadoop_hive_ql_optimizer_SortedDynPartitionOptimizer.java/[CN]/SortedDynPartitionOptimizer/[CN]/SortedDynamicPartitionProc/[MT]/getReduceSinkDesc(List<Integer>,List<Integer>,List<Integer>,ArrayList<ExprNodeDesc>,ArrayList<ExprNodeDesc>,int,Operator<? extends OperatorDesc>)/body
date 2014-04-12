@@ -19,6 +19,15 @@
     newSortOrder.add(order);
   }
   newSortOrder.addAll(sortOrder);
+  String orderStr="";
+  for (  Integer i : newSortOrder) {
+    if (i.intValue() == 1) {
+      orderStr+="+";
+    }
+ else {
+      orderStr+="-";
+    }
+  }
   ArrayList<ExprNodeDesc> newPartCols=Lists.newArrayList();
   for (  Integer idx : keyColsPosInVal) {
     if (idx < 0) {
@@ -31,9 +40,13 @@
   for (  Integer idx : partitionPositions) {
     newPartCols.add(newValueCols.get(idx).clone());
   }
-  String orderStr="";
-  for (int i=0; i < newKeyCols.size(); i++) {
-    orderStr+="+";
+  ReduceSinkOperator parentRSOp=OperatorUtils.findSingleOperatorUpstream(parent,ReduceSinkOperator.class);
+  if (parentRSOp != null) {
+    String parentRSOpOrder=parentRSOp.getConf().getOrder();
+    if (parentRSOpOrder != null && !parentRSOpOrder.isEmpty() && sortPositions.isEmpty()) {
+      newKeyCols.addAll(parentRSOp.getConf().getKeyCols());
+      orderStr+=parentRSOpOrder;
+    }
   }
   List<FieldSchema> fields=PlanUtils.getFieldSchemasFromColumnList(newKeyCols,"reducesinkkey");
   TableDesc keyTable=PlanUtils.getReduceKeyTableDesc(fields,orderStr);
@@ -46,11 +59,7 @@
   List<FieldSchema> valFields=PlanUtils.getFieldSchemasFromColumnList(newValueCols,outValColNames,0,"");
   TableDesc valueTable=PlanUtils.getReduceValueTableDesc(valFields);
   List<List<Integer>> distinctColumnIndices=Lists.newArrayList();
-  int numDistributionKeys=newPartCols.size();
-  if (bucketColumns != null && !bucketColumns.isEmpty()) {
-    numDistributionKeys+=1;
-  }
-  ReduceSinkDesc rsConf=new ReduceSinkDesc(newKeyCols,numDistributionKeys,newValueCols,outputKeyCols,distinctColumnIndices,outValColNames,-1,newPartCols,-1,keyTable,valueTable);
+  ReduceSinkDesc rsConf=new ReduceSinkDesc(newKeyCols,newKeyCols.size(),newValueCols,outputKeyCols,distinctColumnIndices,outValColNames,-1,newPartCols,-1,keyTable,valueTable);
   rsConf.setBucketCols(bucketColumns);
   rsConf.setNumBuckets(numBuckets);
   return rsConf;
