@@ -1,0 +1,34 @@
+{
+  LOG.info("Creating directory if it doesn't exist: " + f);
+  if (!inheritPerms) {
+    return fs.mkdirs(f);
+  }
+ else {
+    try {
+      return fs.getFileStatus(f).isDir();
+    }
+ catch (    FileNotFoundException ignore) {
+    }
+    Path path=f;
+    List<Path> pathsToSet=new ArrayList<Path>();
+    while (!fs.exists(path)) {
+      pathsToSet.add(path);
+      path=path.getParent();
+    }
+    boolean success=fs.mkdirs(f);
+    if (!success) {
+      return false;
+    }
+ else {
+      FsPermission parentPerm=fs.getFileStatus(path).getPermission();
+      String parentGroup=fs.getFileStatus(path).getGroup();
+      for (      Path pathToSet : pathsToSet) {
+        String currOwner=fs.getFileStatus(pathToSet).getOwner();
+        LOG.info("Setting permission and group of parent directory: " + path.toString() + " on new directory: "+ pathToSet.toString());
+        fs.setPermission(pathToSet,parentPerm);
+        fs.setOwner(pathToSet,currOwner,parentGroup);
+      }
+      return true;
+    }
+  }
+}
