@@ -1,0 +1,20 @@
+{
+  boolean copied=FileUtil.copy(srcFS,src,dstFS,dst,deleteSource,overwrite,conf);
+  boolean inheritPerms=conf.getBoolVar(HiveConf.ConfVars.HIVE_WAREHOUSE_SUBDIR_INHERIT_PERMS);
+  if (copied && inheritPerms) {
+    FileStatus destFileStatus=dstFS.getFileStatus(dst);
+    FsPermission perm=destFileStatus.getPermission();
+    String permString=Integer.toString(perm.toShort(),8);
+    String group=destFileStatus.getGroup();
+    try {
+      FsShell fshell=new FsShell();
+      fshell.setConf(conf);
+      fshell.run(new String[]{"-chgrp","-R",group,dst.toString()});
+      fshell.run(new String[]{"-chmod","-R",permString,dst.toString()});
+    }
+ catch (    Exception e) {
+      throw new IOException("Unable to set permissions of " + dst,e);
+    }
+  }
+  return copied;
+}
