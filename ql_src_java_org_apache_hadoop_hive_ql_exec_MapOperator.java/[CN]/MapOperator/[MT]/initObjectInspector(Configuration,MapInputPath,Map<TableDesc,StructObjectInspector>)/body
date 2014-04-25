@@ -2,20 +2,20 @@
   PartitionDesc pd=ctx.partDesc;
   TableDesc td=pd.getTableDesc();
   MapOpCtx opCtx=new MapOpCtx();
-  Properties partProps=isPartitioned(pd) ? pd.getOverlayedProperties() : pd.getTableDesc().getProperties();
+  Properties overlayedProps=SerDeUtils.createOverlayedProperties(td.getProperties(),pd.getProperties());
   Map<String,String> partSpec=pd.getPartSpec();
-  opCtx.tableName=String.valueOf(partProps.getProperty("name"));
+  opCtx.tableName=String.valueOf(overlayedProps.getProperty("name"));
   opCtx.partName=String.valueOf(partSpec);
   Class serdeclass=hconf.getClassByName(pd.getSerdeClassName());
   opCtx.deserializer=(Deserializer)serdeclass.newInstance();
-  opCtx.deserializer.initialize(hconf,partProps);
+  SerDeUtils.initializeSerDe(opCtx.deserializer,hconf,td.getProperties(),pd.getProperties());
   StructObjectInspector partRawRowObjectInspector=(StructObjectInspector)opCtx.deserializer.getObjectInspector();
   opCtx.tblRawRowObjectInspector=convertedOI.get(td);
   opCtx.partTblObjectInspectorConverter=ObjectInspectorConverters.getConverter(partRawRowObjectInspector,opCtx.tblRawRowObjectInspector);
-  String pcols=partProps.getProperty(hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS);
+  String pcols=overlayedProps.getProperty(hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS);
   if (pcols != null && pcols.length() > 0) {
     String[] partKeys=pcols.trim().split("/");
-    String pcolTypes=partProps.getProperty(hive_metastoreConstants.META_TABLE_PARTITION_COLUMN_TYPES);
+    String pcolTypes=overlayedProps.getProperty(hive_metastoreConstants.META_TABLE_PARTITION_COLUMN_TYPES);
     String[] partKeyTypes=pcolTypes.trim().split(":");
     if (partKeys.length > partKeyTypes.length) {
       throw new HiveException("Internal error : partKeys length, " + partKeys.length + " greater than partKeyTypes length, "+ partKeyTypes.length);
