@@ -1,0 +1,28 @@
+{
+  ASTNode sqNode=sq.getOriginalSubQueryASTForRewrite();
+  ASTNode tokQry=getQueryASTNode(sqNode);
+  ASTNode tokInsert=(ASTNode)tokQry.getChild(1);
+  ASTNode tokWhere=null;
+  for (int i=0; i < tokInsert.getChildCount(); i++) {
+    if (tokInsert.getChild(i).getType() == HiveParser.TOK_WHERE) {
+      tokWhere=(ASTNode)tokInsert.getChild(i);
+      break;
+    }
+  }
+  SubQueryDiagnostic.QBSubQueryRewrite diag=sq.getDiagnostic();
+  String sqStr=diag.getRewrittenQuery();
+  String joinCond=diag.getJoiningCondition();
+  stream.replace(program,sqNode.getTokenStartIndex(),sqNode.getTokenStopIndex(),"1 = 1");
+  String sqJoin=" " + getJoinKeyWord(sq) + " "+ sqStr+ " "+ joinCond;
+  addedJoins.append(" ").append(sqJoin);
+  String postJoinCond=diag.getOuterQueryPostJoinCond();
+  if (postJoinCond != null) {
+    stream.insertAfter(program,tokWhere.getTokenStopIndex()," and " + postJoinCond);
+  }
+  String qualifier=isWhere ? "Where Clause " : "Having Clause ";
+  if (qbAlias != null) {
+    qualifier=qualifier + "for Query Block '" + qbAlias+ "' ";
+  }
+  out.println(String.format("\n%s Rewritten SubQuery:\n%s",qualifier,diag.getRewrittenQuery()));
+  out.println(String.format("\n%s SubQuery Joining Condition:\n%s",qualifier,diag.getJoiningCondition()));
+}
