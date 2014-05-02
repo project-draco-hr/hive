@@ -6,18 +6,25 @@
   JoinOperator joinOp=(JoinOperator)nd;
   int numBuckets=-1;
   int estimatedBuckets=-1;
-  for (  Operator<? extends OperatorDesc> parentOp : joinOp.getParentOperators()) {
-    if (parentOp.getOpTraits().getNumBuckets() > 0) {
-      numBuckets=(numBuckets < parentOp.getOpTraits().getNumBuckets()) ? parentOp.getOpTraits().getNumBuckets() : numBuckets;
+  if (context.conf.getBoolVar(HiveConf.ConfVars.HIVE_CONVERT_JOIN_BUCKET_MAPJOIN_TEZ)) {
+    for (    Operator<? extends OperatorDesc> parentOp : joinOp.getParentOperators()) {
+      if (parentOp.getOpTraits().getNumBuckets() > 0) {
+        numBuckets=(numBuckets < parentOp.getOpTraits().getNumBuckets()) ? parentOp.getOpTraits().getNumBuckets() : numBuckets;
+      }
+      if (parentOp instanceof ReduceSinkOperator) {
+        ReduceSinkOperator rs=(ReduceSinkOperator)parentOp;
+        estimatedBuckets=(estimatedBuckets < rs.getConf().getNumReducers()) ? rs.getConf().getNumReducers() : estimatedBuckets;
+      }
     }
-    ReduceSinkOperator rs=(ReduceSinkOperator)parentOp;
-    estimatedBuckets=(estimatedBuckets < rs.getConf().getNumReducers()) ? rs.getConf().getNumReducers() : estimatedBuckets;
-  }
-  if (numBuckets <= 0) {
-    numBuckets=estimatedBuckets;
     if (numBuckets <= 0) {
-      numBuckets=1;
+      numBuckets=estimatedBuckets;
+      if (numBuckets <= 0) {
+        numBuckets=1;
+      }
     }
+  }
+ else {
+    numBuckets=1;
   }
   LOG.info("Estimated number of buckets " + numBuckets);
   int mapJoinConversionPos=mapJoinConversionPos(joinOp,context,numBuckets);
@@ -30,6 +37,10 @@
     }
   }
   LOG.info("Convert to non-bucketed map join");
+  mapJoinConversionPos=mapJoinConversionPos(joinOp,context,1);
+  if (mapJoinConversionPos < 0) {
+    return null;
+  }
   MapJoinOperator mapJoinOp=convertJoinMapJoin(joinOp,context,mapJoinConversionPos);
   mapJoinOp.setOpTraits(new OpTraits(null,-1));
   for (  Operator<? extends OperatorDesc> childOp : mapJoinOp.getChildOperators()) {
