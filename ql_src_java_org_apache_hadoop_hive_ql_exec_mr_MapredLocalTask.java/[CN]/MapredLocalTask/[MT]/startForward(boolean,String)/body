@@ -1,4 +1,10 @@
 {
+  for (  Operator<?> source : work.getAliasToWork().values()) {
+    source.reset();
+  }
+  if (inputFileChangeSenstive) {
+    execContext.setCurrentBigBucketFile(bigTableBucket);
+  }
   for (  Map.Entry<String,FetchOperator> entry : fetchOperators.entrySet()) {
     String alias=entry.getKey();
     FetchOperator fetchOp=entry.getValue();
@@ -7,11 +13,6 @@
       setUpFetchOpContext(fetchOp,alias,bigTableBucket);
     }
     Operator<? extends OperatorDesc> forwardOp=work.getAliasToWork().get(alias);
-    if (fetchOp.isEmptyTable()) {
-      this.generateDummyHashTable(alias,bigTableBucket);
-      forwardOp.close(false);
-      continue;
-    }
     while (!forwardOp.getDone()) {
       InspectableObject row=fetchOp.getNextRow();
       if (row == null) {
@@ -19,10 +20,9 @@
       }
       forwardOp.processOp(row.o,0);
     }
-    if (inputFileChangeSenstive) {
-      execContext.setCurrentBigBucketFile(bigTableBucket);
-      forwardOp.reset();
-    }
-    forwardOp.close(false);
+    forwardOp.flush();
+  }
+  for (  Operator<?> source : work.getAliasToWork().values()) {
+    source.close(false);
   }
 }
