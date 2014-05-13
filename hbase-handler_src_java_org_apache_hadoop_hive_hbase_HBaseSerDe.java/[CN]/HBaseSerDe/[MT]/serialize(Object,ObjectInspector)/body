@@ -1,47 +1,11 @@
 {
-  if (objInspector.getCategory() != Category.STRUCT) {
-    throw new SerDeException(getClass().toString() + " can only serialize struct types, but we got: " + objInspector.getTypeName());
-  }
-  StructObjectInspector soi=(StructObjectInspector)objInspector;
-  List<? extends StructField> fields=soi.getAllStructFieldRefs();
-  List<Object> list=soi.getStructFieldsDataAsList(obj);
-  List<? extends StructField> declaredFields=((StructObjectInspector)getObjectInspector()).getAllStructFieldRefs();
-  int iKey=serdeParams.getKeyIndex();
-  StructField field=fields.get(iKey);
-  Object value=list.get(iKey);
-  StructField declaredField=declaredFields.get(iKey);
-  byte[] key;
   try {
-    key=serializeKeyField(field,value,declaredField,serdeParams);
+    return serializer.serialize(obj,objInspector);
   }
- catch (  IOException ex) {
-    throw new SerDeException(ex);
+ catch (  SerDeException e) {
+    throw e;
   }
-  if (key == null) {
-    throw new SerDeException("HBase row key cannot be NULL");
-  }
-  Put put=null;
-  long putTimestamp=serdeParams.getPutTimestamp();
-  if (putTimestamp >= 0) {
-    put=new Put(key,putTimestamp);
-  }
- else {
-    put=new Put(key);
-  }
-  try {
-    for (int i=0; i < fields.size(); i++) {
-      if (i == iKey) {
-        continue;
-      }
-      field=fields.get(i);
-      value=list.get(i);
-      declaredField=declaredFields.get(i);
-      ColumnMapping colMap=serdeParams.getColumnMapping().get(i);
-      serializeField(put,field,value,declaredField,colMap);
-    }
-  }
- catch (  IOException e) {
+catch (  Exception e) {
     throw new SerDeException(e);
   }
-  return new PutWritable(put);
 }
