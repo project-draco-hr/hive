@@ -1,0 +1,22 @@
+{
+  final long[] oldRefs=refs;
+  long capacity=refs.length << 1;
+  validateCapacity(capacity);
+  long[] newRefs=new long[(int)capacity];
+  int newHashBitCount=hashBitCount + 1;
+  int maxSteps=0;
+  for (int oldSlot=0; oldSlot < oldRefs.length; ++oldSlot) {
+    long oldRef=oldRefs[oldSlot];
+    if (oldRef == 0) {
+      continue;
+    }
+    writeBuffers.setReadPoint(getFirstRecordLengthsOffset(oldRef));
+    int hashCode=writeBuffers.readInt(Ref.getOffset(oldRef) - writeBuffers.readVLong() - writeBuffers.readVLong()- 4);
+    int probeSteps=relocateKeyRef(newRefs,oldRef,hashCode);
+    maxSteps=Math.max(probeSteps,maxSteps);
+  }
+  this.refs=newRefs;
+  this.largestNumberOfSteps=maxSteps;
+  this.hashBitCount=newHashBitCount;
+  this.resizeThreshold=(int)(capacity * loadFactor);
+}

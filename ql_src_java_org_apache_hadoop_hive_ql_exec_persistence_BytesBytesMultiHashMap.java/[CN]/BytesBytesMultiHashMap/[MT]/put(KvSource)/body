@@ -1,0 +1,30 @@
+{
+  if (resizeThreshold <= keysAssigned) {
+    expandAndRehash();
+  }
+  writeBuffers.write(FOUR_ZEROES);
+  long keyOffset=writeBuffers.getWritePoint();
+  kv.writeKey(writeBuffers);
+  int keyLength=(int)(writeBuffers.getWritePoint() - keyOffset);
+  int hashCode=writeBuffers.hashCode(keyOffset,keyLength);
+  int slot=findKeySlotToWrite(keyOffset,keyLength,hashCode);
+  long ref=refs[slot];
+  if (ref == 0) {
+    long tailOffset=writeFirstValueRecord(kv,keyOffset,keyLength,hashCode);
+    byte stateByte=kv.updateStateByte(null);
+    refs[slot]=Ref.makeFirstRef(tailOffset,stateByte,hashCode,startingHashBitCount);
+    ++keysAssigned;
+  }
+ else {
+    writeBuffers.setWritePoint(keyOffset - 4);
+    long lrPtrOffset=createOrGetListRecord(ref);
+    long tailOffset=writeValueAndLength(kv);
+    addRecordToList(lrPtrOffset,tailOffset);
+    byte oldStateByte=Ref.getStateByte(ref);
+    byte stateByte=kv.updateStateByte(oldStateByte);
+    if (oldStateByte != stateByte) {
+      ref=Ref.setStateByte(ref,stateByte);
+    }
+    refs[slot]=Ref.setListFlag(ref);
+  }
+}

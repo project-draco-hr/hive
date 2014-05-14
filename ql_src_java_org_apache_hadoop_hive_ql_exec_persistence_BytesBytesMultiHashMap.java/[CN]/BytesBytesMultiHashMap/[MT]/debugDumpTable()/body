@@ -1,0 +1,45 @@
+{
+  StringBuilder dump=new StringBuilder(keysAssigned + " keys\n");
+  TreeMap<Long,Integer> byteIntervals=new TreeMap<Long,Integer>();
+  List<WriteBuffers.ByteSegmentRef> results=new ArrayList<WriteBuffers.ByteSegmentRef>();
+  int examined=0;
+  for (int slot=0; slot < refs.length; ++slot) {
+    long ref=refs[slot];
+    if (ref == 0) {
+      continue;
+    }
+    ++examined;
+    long recOffset=getFirstRecordLengthsOffset(ref);
+    long tailOffset=Ref.getOffset(ref);
+    writeBuffers.setReadPoint(recOffset);
+    int valueLength=(int)writeBuffers.readVLong(), keyLength=(int)writeBuffers.readVLong();
+    long ptrOffset=writeBuffers.getReadPoint();
+    if (Ref.hasList(ref)) {
+      byteIntervals.put(recOffset,(int)(ptrOffset + 5 - recOffset));
+    }
+    long keyOffset=tailOffset - valueLength - keyLength;
+    byte[] key=new byte[keyLength];
+    WriteBuffers.ByteSegmentRef fakeRef=new WriteBuffers.ByteSegmentRef(keyOffset,keyLength);
+    byteIntervals.put(keyOffset - 4,keyLength + 4);
+    writeBuffers.populateValue(fakeRef);
+    System.arraycopy(fakeRef.getBytes(),(int)fakeRef.getOffset(),key,0,keyLength);
+    getValueRefs(key,key.length,results);
+    dump.append(Utils.toStringBinary(key,0,key.length)).append(" ref [").append(dumpRef(ref)).append("]: ").append(results.size()).append(" rows\n");
+    for (int i=0; i < results.size(); ++i) {
+      WriteBuffers.ByteSegmentRef segment=results.get(i);
+      byteIntervals.put(segment.getOffset(),segment.getLength() + ((i == 0) ? 1 : 0));
+    }
+  }
+  if (examined != keysAssigned) {
+    dump.append("Found " + examined + " keys!\n");
+  }
+  long currentOffset=0;
+  for (  Map.Entry<Long,Integer> e : byteIntervals.entrySet()) {
+    long start=e.getKey(), len=e.getValue();
+    if (start - currentOffset > 4) {
+      dump.append("Gap! [" + currentOffset + ", "+ start+ ")\n");
+    }
+    currentOffset=start + len;
+  }
+  LOG.info("Hashtable dump:\n " + dump.toString());
+}

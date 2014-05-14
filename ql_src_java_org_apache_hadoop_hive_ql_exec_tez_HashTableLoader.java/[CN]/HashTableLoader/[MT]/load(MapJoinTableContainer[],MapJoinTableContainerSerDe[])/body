@@ -1,14 +1,9 @@
 {
   TezContext tezContext=(TezContext)MapredContext.get();
   Map<Integer,String> parentToInput=desc.getParentToInput();
-  int hashTableThreshold=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVEHASHTABLETHRESHOLD);
-  float hashTableLoadFactor=HiveConf.getFloatVar(hconf,HiveConf.ConfVars.HIVEHASHTABLELOADFACTOR);
-  boolean useLazyRows=HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVEMAPJOINLAZYHASHTABLE);
+  boolean useOptimizedTables=HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVEMAPJOINUSEOPTIMIZEDTABLE);
+  boolean isFirstKey=true;
   TezCacheAccess tezCacheAccess=TezCacheAccess.createInstance(hconf);
-  if (!HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVEMAPJOINUSEOPTIMIZEDKEYS)) {
-    lastKey=new MapJoinKeyObject();
-  }
-  Output output=new Output();
   for (int pos=0; pos < mapJoinTables.length; pos++) {
     if (pos == desc.getPosBigTable()) {
       continue;
@@ -17,16 +12,24 @@
     LogicalInput input=tezContext.getInput(inputName);
     try {
       KeyValueReader kvReader=(KeyValueReader)input.getReader();
-      MapJoinTableContainer tableContainer=new HashMapWrapper(hashTableThreshold,hashTableLoadFactor);
-      while (kvReader.next()) {
-        lastKey=MapJoinKey.read(output,lastKey,mapJoinTableSerdes[pos].getKeyContext(),(Writable)kvReader.getCurrentKey(),false);
-        LazyFlatRowContainer values=(LazyFlatRowContainer)tableContainer.get(lastKey);
-        if (values == null) {
-          values=new LazyFlatRowContainer();
-          tableContainer.put(lastKey,values);
+      MapJoinObjectSerDeContext keyCtx=mapJoinTableSerdes[pos].getKeyContext(), valCtx=mapJoinTableSerdes[pos].getValueContext();
+      if (useOptimizedTables) {
+        ObjectInspector keyOi=keyCtx.getSerDe().getObjectInspector();
+        if (!MapJoinBytesTableContainer.isSupportedKey(keyOi)) {
+          if (isFirstKey) {
+            useOptimizedTables=false;
+          }
+ else {
+            throw new HiveException(describeOi("Only a subset of mapjoin keys is supported. Unsupported key: ",keyOi));
+          }
         }
-        values.add(mapJoinTableSerdes[pos].getValueContext(),(BytesWritable)kvReader.getCurrentValue(),useLazyRows);
       }
+      isFirstKey=false;
+      MapJoinTableContainer tableContainer=useOptimizedTables ? new MapJoinBytesTableContainer(hconf,valCtx) : new HashMapWrapper(hconf);
+      while (kvReader.next()) {
+        lastKey=tableContainer.putRow(keyCtx,(Writable)kvReader.getCurrentKey(),valCtx,(Writable)kvReader.getCurrentValue());
+      }
+      tableContainer.seal();
       mapJoinTables[pos]=tableContainer;
     }
  catch (    IOException e) {
@@ -43,8 +46,5 @@ catch (    Exception e) {
       tezCacheAccess.registerCachedInput(inputName);
       LOG.info("Setting Input: " + inputName + " as cached");
     }
-  }
-  if (lastKey == null) {
-    lastKey=new MapJoinKeyObject();
   }
 }
