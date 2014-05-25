@@ -2,7 +2,7 @@
   HashSet<ReadEntity> inputs=sem.getInputs();
   HashSet<WriteEntity> outputs=sem.getOutputs();
   SessionState ss=SessionState.get();
-  HiveOperation op=ss.getHiveOperation();
+  HiveOperation op=sem.getHiveOperation();
   Hive db=sem.getDb();
   if (ss.isAuthorizationModeV2()) {
     doAuthorizationV2(ss,op,inputs,outputs);
@@ -11,17 +11,18 @@
   if (op == null) {
     throw new HiveException("Operation should not be null");
   }
+  HiveAuthorizationProvider authorizer=ss.getAuthorizer();
   if (op.equals(HiveOperation.CREATEDATABASE)) {
-    ss.getAuthorizer().authorize(op.getInputRequiredPrivileges(),op.getOutputRequiredPrivileges());
+    authorizer.authorize(op.getInputRequiredPrivileges(),op.getOutputRequiredPrivileges());
   }
  else   if (op.equals(HiveOperation.CREATETABLE_AS_SELECT) || op.equals(HiveOperation.CREATETABLE)) {
-    ss.getAuthorizer().authorize(db.getDatabase(SessionState.get().getCurrentDatabase()),null,HiveOperation.CREATETABLE_AS_SELECT.getOutputRequiredPrivileges());
+    authorizer.authorize(db.getDatabase(SessionState.get().getCurrentDatabase()),null,HiveOperation.CREATETABLE_AS_SELECT.getOutputRequiredPrivileges());
   }
  else {
     if (op.equals(HiveOperation.IMPORT)) {
       ImportSemanticAnalyzer isa=(ImportSemanticAnalyzer)sem;
       if (!isa.existsTable()) {
-        ss.getAuthorizer().authorize(db.getDatabase(SessionState.get().getCurrentDatabase()),null,HiveOperation.CREATETABLE_AS_SELECT.getOutputRequiredPrivileges());
+        authorizer.authorize(db.getDatabase(SessionState.get().getCurrentDatabase()),null,HiveOperation.CREATETABLE_AS_SELECT.getOutputRequiredPrivileges());
       }
     }
   }
@@ -31,18 +32,18 @@
         continue;
       }
       if (write.getType() == Entity.Type.DATABASE) {
-        ss.getAuthorizer().authorize(write.getDatabase(),null,op.getOutputRequiredPrivileges());
+        authorizer.authorize(write.getDatabase(),null,op.getOutputRequiredPrivileges());
         continue;
       }
       if (write.getType() == WriteEntity.Type.PARTITION) {
         Partition part=db.getPartition(write.getTable(),write.getPartition().getSpec(),false);
         if (part != null) {
-          ss.getAuthorizer().authorize(write.getPartition(),null,op.getOutputRequiredPrivileges());
+          authorizer.authorize(write.getPartition(),null,op.getOutputRequiredPrivileges());
           continue;
         }
       }
       if (write.getTable() != null) {
-        ss.getAuthorizer().authorize(write.getTable(),null,op.getOutputRequiredPrivileges());
+        authorizer.authorize(write.getTable(),null,op.getOutputRequiredPrivileges());
       }
     }
   }
@@ -113,7 +114,7 @@
         continue;
       }
       if (read.getType() == Entity.Type.DATABASE) {
-        ss.getAuthorizer().authorize(read.getDatabase(),op.getInputRequiredPrivileges(),null);
+        authorizer.authorize(read.getDatabase(),op.getInputRequiredPrivileges(),null);
         continue;
       }
       Table tbl=read.getTable();
@@ -123,10 +124,10 @@
         if (tableUsePartLevelAuth.get(tbl.getTableName()) == Boolean.TRUE) {
           List<String> cols=part2Cols.get(partition);
           if (cols != null && cols.size() > 0) {
-            ss.getAuthorizer().authorize(partition.getTable(),partition,cols,op.getInputRequiredPrivileges(),null);
+            authorizer.authorize(partition.getTable(),partition,cols,op.getInputRequiredPrivileges(),null);
           }
  else {
-            ss.getAuthorizer().authorize(partition,op.getInputRequiredPrivileges(),null);
+            authorizer.authorize(partition,op.getInputRequiredPrivileges(),null);
           }
           continue;
         }
@@ -134,10 +135,10 @@
       if (tbl != null && !tableAuthChecked.contains(tbl.getTableName()) && !(tableUsePartLevelAuth.get(tbl.getTableName()) == Boolean.TRUE)) {
         List<String> cols=tab2Cols.get(tbl);
         if (cols != null && cols.size() > 0) {
-          ss.getAuthorizer().authorize(tbl,null,cols,op.getInputRequiredPrivileges(),null);
+          authorizer.authorize(tbl,null,cols,op.getInputRequiredPrivileges(),null);
         }
  else {
-          ss.getAuthorizer().authorize(tbl,op.getInputRequiredPrivileges(),null);
+          authorizer.authorize(tbl,op.getInputRequiredPrivileges(),null);
         }
         tableAuthChecked.add(tbl.getTableName());
       }
