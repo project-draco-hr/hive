@@ -1,0 +1,50 @@
+{
+  Map<String,List<IndexSearchCondition>> fieldConds=new HashMap<String,List<IndexSearchCondition>>();
+  for (  IndexSearchCondition condition : searchConditions) {
+    String fieldName=condition.getFields()[0];
+    List<IndexSearchCondition> fieldCond=fieldConds.get(fieldName);
+    if (fieldCond == null) {
+      fieldConds.put(fieldName,fieldCond=new ArrayList<IndexSearchCondition>());
+    }
+    fieldCond.add(condition);
+  }
+  Filter filter=null;
+  HBaseScanRange range=new HBaseScanRange();
+  StructTypeInfo type=(StructTypeInfo)keyMapping.columnType;
+  for (  String name : type.getAllStructFieldNames()) {
+    List<IndexSearchCondition> fieldCond=fieldConds.get(name);
+    if (fieldCond == null || fieldCond.size() > 2) {
+      continue;
+    }
+    for (    IndexSearchCondition condition : fieldCond) {
+      if (condition.getConstantDesc().getValue() == null) {
+        continue;
+      }
+      String comparisonOp=condition.getComparisonOp();
+      String constantVal=String.valueOf(condition.getConstantDesc().getValue());
+      byte[] valueAsBytes=toBinary(constantVal,FIXED_LENGTH,false,false);
+      if (comparisonOp.endsWith("UDFOPEqual")) {
+        filter=new RowFilter(CompareOp.EQUAL,new BinaryComparator(valueAsBytes));
+      }
+ else       if (comparisonOp.endsWith("UDFOPEqualOrGreaterThan")) {
+        filter=new RowFilter(CompareOp.GREATER_OR_EQUAL,new BinaryComparator(valueAsBytes));
+      }
+ else       if (comparisonOp.endsWith("UDFOPGreaterThan")) {
+        filter=new RowFilter(CompareOp.GREATER,new BinaryComparator(valueAsBytes));
+      }
+ else       if (comparisonOp.endsWith("UDFOPEqualOrLessThan")) {
+        filter=new RowFilter(CompareOp.LESS_OR_EQUAL,new BinaryComparator(valueAsBytes));
+      }
+ else       if (comparisonOp.endsWith("UDFOPLessThan")) {
+        filter=new RowFilter(CompareOp.LESS,new BinaryComparator(valueAsBytes));
+      }
+ else {
+        throw new IOException(comparisonOp + " is not a supported comparison operator");
+      }
+    }
+  }
+  if (filter != null) {
+    range.addFilter(filter);
+  }
+  return range;
+}
