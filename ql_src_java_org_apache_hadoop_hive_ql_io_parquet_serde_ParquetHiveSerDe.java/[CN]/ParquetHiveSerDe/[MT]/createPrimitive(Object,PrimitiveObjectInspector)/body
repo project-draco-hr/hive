@@ -24,7 +24,16 @@ return new BinaryWritable(Binary.fromString(((StringObjectInspector)inspector).g
 case DECIMAL:
 HiveDecimal hd=(HiveDecimal)inspector.getPrimitiveJavaObject(obj);
 DecimalTypeInfo decTypeInfo=(DecimalTypeInfo)inspector.getTypeInfo();
-return new BinaryWritable(Binary.fromByteArray(hd.setScale(decTypeInfo.scale()).unscaledValue().toByteArray()));
+int prec=decTypeInfo.precision();
+int scale=decTypeInfo.scale();
+byte[] src=hd.setScale(scale).unscaledValue().toByteArray();
+int bytes=PRECISION_TO_BYTE_COUNT[prec - 1];
+if (bytes == src.length) {
+return new BinaryWritable(Binary.fromByteArray(src));
+}
+byte[] tgt=new byte[bytes];
+System.arraycopy(src,0,tgt,bytes - src.length,src.length);
+return new BinaryWritable(Binary.fromByteArray(tgt));
 default :
 throw new SerDeException("Unknown primitive : " + inspector.getPrimitiveCategory());
 }
