@@ -1,17 +1,21 @@
 {
   String origUmask=null;
+  LOG.debug("Create dirs " + mkdirPath + " with permission "+ fsPermission+ " recursive "+ recursive);
   if (recursive) {
     origUmask=conf.get("fs.permissions.umask-mode");
     conf.set("fs.permissions.umask-mode","000");
   }
-  FileSystem fs=mkdir.getFileSystem(conf);
-  boolean retval=fs.mkdirs(mkdir,fsPermission);
-  if (recursive) {
-    if (origUmask != null) {
-      conf.set("fs.permissions.umask-mode",origUmask);
+  FileSystem fs=ShimLoader.getHadoopShims().getNonCachedFileSystem(mkdirPath.toUri(),conf);
+  boolean retval=false;
+  try {
+    retval=fs.mkdirs(mkdirPath,fsPermission);
+    resetConfAndCloseFS(conf,recursive,origUmask,fs);
+  }
+ catch (  IOException ioe) {
+    try {
+      resetConfAndCloseFS(conf,recursive,origUmask,fs);
     }
- else {
-      conf.unset("fs.permissions.umask-mode");
+ catch (    IOException e) {
     }
   }
   return retval;
