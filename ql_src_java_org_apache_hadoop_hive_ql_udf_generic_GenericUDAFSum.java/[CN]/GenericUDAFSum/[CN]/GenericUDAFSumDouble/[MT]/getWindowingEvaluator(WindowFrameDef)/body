@@ -1,0 +1,27 @@
+{
+  BoundaryDef start=wFrmDef.getStart();
+  BoundaryDef end=wFrmDef.getEnd();
+  if (start instanceof ValueBoundaryDef || end instanceof ValueBoundaryDef) {
+    return null;
+  }
+  if (end.getAmt() == BoundarySpec.UNBOUNDED_AMOUNT) {
+    return null;
+  }
+  return new GenericUDAFStreamingEnhancer<DoubleWritable,Double>(this,start.getAmt(),end.getAmt()){
+    @Override protected DoubleWritable getNextResult(    org.apache.hadoop.hive.ql.udf.generic.GenericUDAFStreamingEnhancer<DoubleWritable,Double>.StreamingState ss) throws HiveException {
+      SumDoubleAgg myagg=(SumDoubleAgg)ss.wrappedBuf;
+      Double r=myagg.empty ? null : myagg.sum;
+      if (ss.numPreceding != BoundarySpec.UNBOUNDED_AMOUNT && (ss.numRows - ss.numFollowing) >= (ss.numPreceding + 1)) {
+        Double d=(Double)ss.intermediateVals.remove(0);
+        d=d == null ? 0.0 : d;
+        r=r == null ? null : r - d;
+      }
+      return r == null ? null : new DoubleWritable(r);
+    }
+    @Override protected Double getCurrentIntermediateResult(    org.apache.hadoop.hive.ql.udf.generic.GenericUDAFStreamingEnhancer<DoubleWritable,Double>.StreamingState ss) throws HiveException {
+      SumDoubleAgg myagg=(SumDoubleAgg)ss.wrappedBuf;
+      return myagg.empty ? null : new Double(myagg.sum);
+    }
+  }
+;
+}

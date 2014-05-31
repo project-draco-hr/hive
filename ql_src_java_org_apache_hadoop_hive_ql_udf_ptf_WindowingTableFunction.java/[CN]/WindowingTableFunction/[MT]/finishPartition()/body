@@ -1,0 +1,41 @@
+{
+  WindowTableFunctionDef tabDef=(WindowTableFunctionDef)getTableDef();
+  for (int i=0; i < tabDef.getWindowFunctions().size(); i++) {
+    WindowFunctionDef wFn=tabDef.getWindowFunctions().get(i);
+    GenericUDAFEvaluator fnEval=wFn.getWFnEval();
+    int numRowsRemaining=wFn.getWindowFrame().getEnd().getAmt();
+    if (fnEval instanceof ISupportStreamingModeForWindowing) {
+      fnEval.terminate(streamingState.aggBuffers[i]);
+      if (numRowsRemaining != BoundarySpec.UNBOUNDED_AMOUNT) {
+        while (numRowsRemaining > 0) {
+          Object out=((ISupportStreamingModeForWindowing)fnEval).getNextResult(streamingState.aggBuffers[i]);
+          if (out != null) {
+            streamingState.fnOutputs[i].add(out == ISupportStreamingModeForWindowing.NULL_RESULT ? null : out);
+          }
+          numRowsRemaining--;
+        }
+      }
+    }
+ else {
+      while (numRowsRemaining > 0) {
+        int rowToProcess=streamingState.rollingPart.size() - numRowsRemaining;
+        Range rng=getRange(wFn,rowToProcess,streamingState.rollingPart,streamingState.order);
+        PTFPartitionIterator<Object> rItr=rng.iterator();
+        PTFOperator.connectLeadLagFunctionsToPartition(ptfDesc,rItr);
+        Object out=evaluateWindowFunction(wFn,rItr);
+        streamingState.fnOutputs[i].add(out);
+        numRowsRemaining--;
+      }
+    }
+  }
+  List<Object> oRows=new ArrayList<Object>();
+  while (!streamingState.rollingPart.processedAllRows()) {
+    boolean hasRow=streamingState.hasOutputRow();
+    ;
+    if (!hasRow) {
+      throw new HiveException("Internal Error: cannot generate all output rows for a Partition");
+    }
+    oRows.add(streamingState.nextOutputRow());
+  }
+  return oRows.size() == 0 ? null : oRows;
+}

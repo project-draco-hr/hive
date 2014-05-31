@@ -1,0 +1,25 @@
+{
+  GenericUDAFEvaluator fn=fnR.getEvaluator(inputTypes);
+  fn.init(Mode.COMPLETE,inputOIs);
+  fn=fn.getWindowingEvaluator(wdwFrame(numPreceding,numFollowing));
+  AggregationBuffer agg=fn.getNewAggregationBuffer();
+  ISupportStreamingModeForWindowing oS=(ISupportStreamingModeForWindowing)fn;
+  int outSz=0;
+  while (inVals.hasNext()) {
+    typeHandler.set(inVals.next(),in[0]);
+    fn.aggregate(agg,in);
+    Object out=oS.getNextResult(agg);
+    if (out != null) {
+      out=out == ISupportStreamingModeForWindowing.NULL_RESULT ? null : typeHandler.get((TW)out);
+      Assert.assertEquals(out,outVals.next());
+      outSz++;
+    }
+  }
+  fn.terminate(agg);
+  while (outSz < inSz) {
+    Object out=oS.getNextResult(agg);
+    out=out == ISupportStreamingModeForWindowing.NULL_RESULT ? null : typeHandler.get((TW)out);
+    Assert.assertEquals(out,outVals.next());
+    outSz++;
+  }
+}

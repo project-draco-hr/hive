@@ -1,0 +1,41 @@
+{
+  streamingState.rollingPart.append(row);
+  row=streamingState.rollingPart.getAt(streamingState.rollingPart.size() - 1);
+  WindowTableFunctionDef tabDef=(WindowTableFunctionDef)getTableDef();
+  for (int i=0; i < tabDef.getWindowFunctions().size(); i++) {
+    WindowFunctionDef wFn=tabDef.getWindowFunctions().get(i);
+    GenericUDAFEvaluator fnEval=wFn.getWFnEval();
+    int a=0;
+    if (wFn.getArgs() != null) {
+      for (      PTFExpressionDef arg : wFn.getArgs()) {
+        streamingState.funcArgs[i][a++]=arg.getExprEvaluator().evaluate(row);
+      }
+    }
+    if (fnEval instanceof ISupportStreamingModeForWindowing) {
+      fnEval.aggregate(streamingState.aggBuffers[i],streamingState.funcArgs[i]);
+      Object out=((ISupportStreamingModeForWindowing)fnEval).getNextResult(streamingState.aggBuffers[i]);
+      if (out != null) {
+        streamingState.fnOutputs[i].add(out == ISupportStreamingModeForWindowing.NULL_RESULT ? null : out);
+      }
+    }
+ else {
+      int rowToProcess=streamingState.rollingPart.rowToProcess(wFn);
+      if (rowToProcess >= 0) {
+        Range rng=getRange(wFn,rowToProcess,streamingState.rollingPart,streamingState.order);
+        PTFPartitionIterator<Object> rItr=rng.iterator();
+        PTFOperator.connectLeadLagFunctionsToPartition(ptfDesc,rItr);
+        Object out=evaluateWindowFunction(wFn,rItr);
+        streamingState.fnOutputs[i].add(out);
+      }
+    }
+  }
+  List<Object> oRows=new ArrayList<Object>();
+  while (true) {
+    boolean hasRow=streamingState.hasOutputRow();
+    if (!hasRow) {
+      break;
+    }
+    oRows.add(streamingState.nextOutputRow());
+  }
+  return oRows.size() == 0 ? null : oRows;
+}

@@ -1,0 +1,29 @@
+{
+  BoundaryDef start=wFrmDef.getStart();
+  BoundaryDef end=wFrmDef.getEnd();
+  if (start instanceof ValueBoundaryDef || end instanceof ValueBoundaryDef) {
+    return null;
+  }
+  if (end.getAmt() == BoundarySpec.UNBOUNDED_AMOUNT) {
+    return null;
+  }
+  return new GenericUDAFStreamingEnhancer<DoubleWritable,Object[]>(this,start.getAmt(),end.getAmt()){
+    @Override protected DoubleWritable getNextResult(    org.apache.hadoop.hive.ql.udf.generic.GenericUDAFStreamingEnhancer<DoubleWritable,Object[]>.StreamingState ss) throws HiveException {
+      AverageAggregationBuffer<Double> myagg=(AverageAggregationBuffer<Double>)ss.wrappedBuf;
+      Double r=myagg.count == 0 ? null : myagg.sum;
+      long cnt=myagg.count;
+      if (ss.numPreceding != BoundarySpec.UNBOUNDED_AMOUNT && (ss.numRows - ss.numFollowing) >= (ss.numPreceding + 1)) {
+        Object[] o=ss.intermediateVals.remove(0);
+        Double d=o == null ? 0.0 : (Double)o[0];
+        r=r == null ? null : r - d;
+        cnt=cnt - ((Long)o[1]);
+      }
+      return r == null ? null : new DoubleWritable(r / cnt);
+    }
+    @Override protected Object[] getCurrentIntermediateResult(    org.apache.hadoop.hive.ql.udf.generic.GenericUDAFStreamingEnhancer<DoubleWritable,Object[]>.StreamingState ss) throws HiveException {
+      AverageAggregationBuffer<Double> myagg=(AverageAggregationBuffer<Double>)ss.wrappedBuf;
+      return myagg.count == 0 ? null : new Object[]{new Double(myagg.sum),myagg.count};
+    }
+  }
+;
+}
