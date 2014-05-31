@@ -4,17 +4,16 @@
   try {
     MRInputUserPayloadProto protoPayload=MRHelpers.parseMRInputPayload(inputDescriptor.getUserPayload());
     this.conf=MRHelpers.createConfFromByteString(protoPayload.getConfigurationBytes());
-    if (conf.getBoolean(GROUP_SPLITS,true)) {
-      this.conf.set("mapred.input.format.class",TezGroupedSplitsInputFormat.class.getName());
-      MRInputUserPayloadProto updatedPayload=MRInputUserPayloadProto.newBuilder(protoPayload).setConfigurationBytes(MRHelpers.createByteStringFromConf(conf)).build();
-      inputDescriptor.setUserPayload(updatedPayload.toByteArray());
-    }
+    this.conf.set("mapred.input.format.class",TezGroupedSplitsInputFormat.class.getName());
+    MRInputUserPayloadProto updatedPayload=MRInputUserPayloadProto.newBuilder(protoPayload).setConfigurationBytes(MRHelpers.createByteStringFromConf(conf)).build();
+    inputDescriptor.setUserPayload(updatedPayload.toByteArray());
   }
  catch (  IOException e) {
     e.printStackTrace();
     throw new RuntimeException(e);
   }
   boolean dataInformationEventSeen=false;
+  Map<Path,List<FileSplit>> pathFileSplitsMap=new TreeMap<Path,List<FileSplit>>();
   for (  Event event : events) {
     if (event instanceof RootInputConfigureVertexTasksEvent) {
       Preconditions.checkState(dataInformationEventSeen == false);
@@ -45,10 +44,15 @@
       fsList.add(fileSplit);
     }
   }
-  setBucketNumForPath(pathFileSplitsMap);
+  Multimap<Integer,InputSplit> bucketToInitialSplitMap=getBucketSplitMapForPath(pathFileSplitsMap);
   try {
-    groupSplits();
-    processAllEvents(inputName);
+    int totalResource=context.getTotalAVailableResource().getMemory();
+    int taskResource=context.getVertexTaskResource().getMemory();
+    float waves=conf.getFloat(TezConfiguration.TEZ_AM_GROUPING_SPLIT_WAVES,TezConfiguration.TEZ_AM_GROUPING_SPLIT_WAVES_DEFAULT);
+    int availableSlots=totalResource / taskResource;
+    LOG.info("Grouping splits. " + availableSlots + " available slots, "+ waves+ " waves.");
+    Multimap<Integer,InputSplit> bucketToGroupedSplitMap=grouper.group(conf,bucketToInitialSplitMap,availableSlots,waves);
+    processAllEvents(inputName,bucketToGroupedSplitMap);
   }
  catch (  IOException e) {
     throw new RuntimeException(e);
