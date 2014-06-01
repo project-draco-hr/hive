@@ -37,6 +37,7 @@
     FileSystem fs=resFile.getFileSystem(conf);
     outStream=fs.create(resFile);
     List<FieldSchema> cols=null;
+    List<ColumnStatisticsObj> colStats=null;
     if (colPath.equals(tableName)) {
       cols=(part == null || tbl.getTableType() == TableType.VIRTUAL_VIEW) ? tbl.getCols() : part.getCols();
       if (!descTbl.isFormatted()) {
@@ -45,10 +46,17 @@
     }
  else {
       cols=Hive.getFieldsFromDeserializer(colPath,tbl.getDeserializer());
+      if (descTbl.isFormatted()) {
+        String colName=colPath.split("\\.")[1];
+        String[] dbTab=splitTableName(tableName);
+        List<String> colNames=new ArrayList<String>();
+        colNames.add(colName.toLowerCase());
+        colStats=db.getTableColumnStatistics(dbTab[0].toLowerCase(),dbTab[1].toLowerCase(),colNames);
+      }
     }
     fixDecimalColumnTypeName(cols);
     boolean isOutputPadded=!SessionState.get().isHiveServerQuery();
-    formatter.describeTable(outStream,colPath,tableName,tbl,part,cols,descTbl.isFormatted(),descTbl.isExt(),descTbl.isPretty(),isOutputPadded);
+    formatter.describeTable(outStream,colPath,tableName,tbl,part,cols,descTbl.isFormatted(),descTbl.isExt(),descTbl.isPretty(),isOutputPadded,colStats);
     LOG.info("DDLTask: written data for " + tbl.getTableName());
     outStream.close();
     outStream=null;
