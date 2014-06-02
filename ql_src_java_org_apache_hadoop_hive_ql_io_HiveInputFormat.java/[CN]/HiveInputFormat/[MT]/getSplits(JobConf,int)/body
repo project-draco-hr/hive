@@ -23,6 +23,10 @@
   Class<? extends InputFormat> currentInputFormatClass=null;
   TableDesc currentTable=null;
   TableScanOperator currentTableScan=null;
+  boolean pushDownProjection=false;
+  StringBuilder readColumnsBuffer=new StringBuilder(newjob.get(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR,""));
+  ;
+  StringBuilder readColumnNamesBuffer=new StringBuilder(newjob.get(ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR,""));
   for (  Path dir : dirs) {
     PartitionDesc part=getPartitionDescFromPath(pathToPartitionInfo,dir);
     Class<? extends InputFormat> inputFormatClass=part.getInputFileFormatClass();
@@ -33,7 +37,10 @@
       Operator op=mrwork.getAliasToWork().get(aliases.get(0));
       if ((op != null) && (op instanceof TableScanOperator)) {
         tableScan=(TableScanOperator)op;
-        ColumnProjectionUtils.appendReadColumns(newjob,tableScan.getNeededColumnIDs(),tableScan.getNeededColumns());
+        readColumnsBuffer.setLength(0);
+        readColumnNamesBuffer.setLength(0);
+        ColumnProjectionUtils.appendReadColumns(readColumnsBuffer,readColumnNamesBuffer,tableScan.getNeededColumnIDs(),tableScan.getNeededColumns());
+        pushDownProjection=true;
         pushFilters(newjob,tableScan);
       }
     }
@@ -50,6 +57,13 @@
     currentTableScan=tableScan;
     currentTable=table;
     currentInputFormatClass=inputFormatClass;
+  }
+  if (pushDownProjection) {
+    newjob.setBoolean(ColumnProjectionUtils.READ_ALL_COLUMNS,false);
+    newjob.set(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR,readColumnsBuffer.toString());
+    newjob.set(ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR,readColumnNamesBuffer.toString());
+    LOG.info(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR + "=" + readColumnsBuffer.toString());
+    LOG.info(ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR + "=" + readColumnNamesBuffer.toString());
   }
   if (dirs.length != 0) {
     LOG.info("Generating splits");
