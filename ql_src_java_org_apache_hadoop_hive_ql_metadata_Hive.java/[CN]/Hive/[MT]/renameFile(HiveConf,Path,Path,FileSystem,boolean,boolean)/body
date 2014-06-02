@@ -1,25 +1,19 @@
 {
   boolean success=false;
   boolean inheritPerms=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_WAREHOUSE_SUBDIR_INHERIT_PERMS);
-  String group=null;
-  String permission=null;
+  HadoopShims shims=ShimLoader.getHadoopShims();
+  HadoopShims.HdfsFileStatus destStatus=null;
   try {
     if (inheritPerms || replace) {
       try {
-        FileStatus deststatus=fs.getFileStatus(destf);
-        if (inheritPerms) {
-          group=deststatus.getGroup();
-          permission=Integer.toString(deststatus.getPermission().toShort(),8);
-        }
-        if (replace && deststatus.isDir()) {
+        destStatus=shims.getFullFileStatus(conf,fs,destf);
+        if (replace && destStatus.getFileStatus().isDir()) {
           fs.delete(destf,true);
         }
       }
  catch (      FileNotFoundException ignore) {
         if (inheritPerms) {
-          FileStatus deststatus=fs.getFileStatus(destf.getParent());
-          group=deststatus.getGroup();
-          permission=Integer.toString(deststatus.getPermission().toShort(),8);
+          destStatus=shims.getFullFileStatus(conf,fs,destf.getParent());
         }
       }
     }
@@ -37,13 +31,10 @@
   }
   if (success && inheritPerms) {
     try {
-      FsShell fshell=new FsShell();
-      fshell.setConf(conf);
-      fshell.run(new String[]{"-chgrp","-R",group,destf.toString()});
-      fshell.run(new String[]{"-chmod","-R",permission,destf.toString()});
+      ShimLoader.getHadoopShims().setFullFileStatus(conf,destStatus,fs,destf);
     }
- catch (    Exception e) {
-      throw new HiveException("Unable to set permissions of " + destf,e);
+ catch (    IOException e) {
+      LOG.warn("Error setting permission of file " + destf + ": "+ StringUtils.stringifyException(e));
     }
   }
   return success;
