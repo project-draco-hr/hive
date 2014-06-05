@@ -1,51 +1,56 @@
 {
   BucketingSortingCtx bctx=(BucketingSortingCtx)procCtx;
   JoinOperator jop=(JoinOperator)nd;
-  List<ColumnInfo> colInfos=jop.getSchema().getSignature();
-  Byte[] order=jop.getConf().getTagOrder();
+  JoinDesc joinDesc=jop.getConf();
+  Byte[] order=joinDesc.getTagOrder();
+  Map<Byte,List<ExprNodeDesc>> expressions=joinDesc.getExprs();
+  List<String> outputValNames=joinDesc.getOutputColumnNames();
   BucketCol[] newBucketCols=null;
   SortCol[] newSortCols=null;
   for (int i=0; i < jop.getParentOperators().size(); i++) {
     Operator<? extends OperatorDesc> parent=jop.getParentOperators().get(i);
     assert(parent instanceof ReduceSinkOperator);
     ReduceSinkOperator rop=(ReduceSinkOperator)jop.getParentOperators().get(i);
-    String sortOrder=rop.getConf().getOrder();
-    List<BucketCol> bucketCols=new ArrayList<BucketCol>();
-    List<SortCol> sortCols=new ArrayList<SortCol>();
-    for (int keyIndex=0; keyIndex < rop.getConf().getKeyCols().size(); keyIndex++) {
-      for (int valueIndex=0; valueIndex < rop.getConf().getValueCols().size(); valueIndex++) {
-        if (new ExprNodeDescEqualityWrapper(rop.getConf().getValueCols().get(valueIndex)).equals(new ExprNodeDescEqualityWrapper(rop.getConf().getKeyCols().get(keyIndex)))) {
-          String colName=rop.getSchema().getSignature().get(valueIndex).getInternalName();
-          bucketCols.add(new BucketCol(colName,keyIndex));
-          sortCols.add(new SortCol(colName,keyIndex,sortOrder.charAt(keyIndex)));
-          break;
+    ReduceSinkDesc rsDesc=rop.getConf();
+    byte tag=(byte)rsDesc.getTag();
+    List<ExprNodeDesc> joinValues=expressions.get(tag);
+    int offset=0;
+    for (byte orderIndex=0; orderIndex < order.length; orderIndex++) {
+      if (order[orderIndex] < order[tag]) {
+        offset+=expressions.get(orderIndex).size();
+      }
+    }
+    String sortOrder=rsDesc.getOrder();
+    List<ExprNodeDesc> keyCols=rsDesc.getKeyCols();
+    List<ExprNodeDesc> valCols=ExprNodeDescUtils.backtrack(joinValues,jop,parent);
+    if (newBucketCols == null) {
+      newBucketCols=new BucketCol[keyCols.size()];
+      newSortCols=new SortCol[keyCols.size()];
+    }
+    for (int keyIndex=0; keyIndex < keyCols.size(); keyIndex++) {
+      ExprNodeDesc key=keyCols.get(keyIndex);
+      int index=ExprNodeDescUtils.indexOf(key,valCols);
+      if (index >= 0) {
+        int vindex=offset + index;
+        String vname=outputValNames.get(vindex);
+        if (newBucketCols[keyIndex] != null) {
+          newBucketCols[keyIndex].addAlias(vname,vindex);
+          newSortCols[keyIndex].addAlias(vname,vindex);
+        }
+ else {
+          newBucketCols[keyIndex]=new BucketCol(vname,vindex);
+          newSortCols[keyIndex]=new SortCol(vname,vindex,sortOrder.charAt(keyIndex));
         }
       }
     }
-    if (bucketCols.isEmpty()) {
-      assert(sortCols.isEmpty());
-      continue;
-    }
-    if (newBucketCols == null) {
-      assert(newSortCols == null);
-      newBucketCols=new BucketCol[rop.getConf().getKeyCols().size()];
-      newSortCols=new SortCol[rop.getConf().getKeyCols().size()];
-    }
- else {
-      assert(newSortCols != null);
-    }
-    byte tag=(byte)rop.getConf().getTag();
-    List<ExprNodeDesc> exprs=jop.getConf().getExprs().get(tag);
-    int colInfosOffset=0;
-    int orderValue=order[tag];
-    for (byte orderIndex=0; orderIndex < order.length; orderIndex++) {
-      if (order[orderIndex] < orderValue) {
-        colInfosOffset+=jop.getConf().getExprs().get(orderIndex).size();
-      }
-    }
-    findBucketingSortingColumns(exprs,colInfos,bucketCols,sortCols,newBucketCols,newSortCols,colInfosOffset);
   }
-  setBucketingColsIfComplete(bctx,jop,newBucketCols);
-  setSortingColsIfComplete(bctx,jop,newSortCols);
+  List<BucketCol> bucketCols=Arrays.asList(newBucketCols);
+  if (!bucketCols.contains(null)) {
+    bctx.setBucketedCols(jop,bucketCols);
+  }
+  List<SortCol> sortCols=Arrays.asList(newSortCols);
+  if (!sortCols.contains(null)) {
+    bctx.setSortedCols(jop,sortCols);
+  }
   return null;
 }
