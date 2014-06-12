@@ -20,7 +20,13 @@ return new LongWritable(((LongObjectInspector)inspector).get(obj));
 case SHORT:
 return new ShortWritable((short)((ShortObjectInspector)inspector).get(obj));
 case STRING:
-return new BinaryWritable(Binary.fromString(((StringObjectInspector)inspector).getPrimitiveJavaObject(obj)));
+String v=((StringObjectInspector)inspector).getPrimitiveJavaObject(obj);
+try {
+return new BytesWritable(v.getBytes("UTF-8"));
+}
+ catch (UnsupportedEncodingException e) {
+throw new SerDeException("Failed to encode string in UTF-8",e);
+}
 case DECIMAL:
 HiveDecimal hd=(HiveDecimal)inspector.getPrimitiveJavaObject(obj);
 DecimalTypeInfo decTypeInfo=(DecimalTypeInfo)inspector.getTypeInfo();
@@ -29,7 +35,7 @@ int scale=decTypeInfo.scale();
 byte[] src=hd.setScale(scale).unscaledValue().toByteArray();
 int bytes=PRECISION_TO_BYTE_COUNT[prec - 1];
 if (bytes == src.length) {
-return new BinaryWritable(Binary.fromByteArray(src));
+return new BytesWritable(src);
 }
 byte[] tgt=new byte[bytes];
 if (hd.signum() == -1) {
@@ -38,7 +44,7 @@ tgt[i]|=0xFF;
 }
 }
 System.arraycopy(src,0,tgt,bytes - src.length,src.length);
-return new BinaryWritable(Binary.fromByteArray(tgt));
+return new BytesWritable(tgt);
 default :
 throw new SerDeException("Unknown primitive : " + inspector.getPrimitiveCategory());
 }
