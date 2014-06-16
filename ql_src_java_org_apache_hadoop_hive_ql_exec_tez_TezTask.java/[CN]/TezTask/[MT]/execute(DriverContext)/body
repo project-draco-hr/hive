@@ -18,25 +18,27 @@
     String[] inputOutputJars=work.configureJobConfAndExtractJars(jobConf);
     Path scratchDir=ctx.getMRScratchDir();
     scratchDir=utils.createTezDir(scratchDir,conf);
-    boolean hasResources=session.hasResources(inputOutputJars);
-    if (ss.hasAddedResource()) {
-      hasResources=false;
-      ss.setAddedResource(false);
-    }
-    if (!hasResources && session.isOpen()) {
-      LOG.info("Tez session being reopened to pass custom jars to AM");
-      TezSessionPoolManager.getInstance().close(session);
-      session=TezSessionPoolManager.getInstance().getSession(null,conf,false);
-      ss.setTezSession(session);
-    }
     if (!session.isOpen()) {
       LOG.info("Tez session hasn't been created yet. Opening session");
       session.open(conf,inputOutputJars);
     }
+ else {
+      session.refreshLocalResourcesFromConf(conf);
+    }
     List<LocalResource> additionalLr=session.getLocalizedResources();
+    if (LOG.isDebugEnabled()) {
+      if (additionalLr == null || additionalLr.size() == 0) {
+        LOG.debug("No local resources to process (other than hive-exec)");
+      }
+ else {
+        for (        LocalResource lr : additionalLr) {
+          LOG.debug("Adding local resource: " + lr.getResource());
+        }
+      }
+    }
     LocalResource appJarLr=session.getAppJarLr();
     DAG dag=build(jobConf,work,scratchDir,appJarLr,additionalLr,ctx);
-    client=submit(jobConf,dag,scratchDir,appJarLr,session);
+    client=submit(jobConf,dag,scratchDir,appJarLr,session,additionalLr);
     TezJobMonitor monitor=new TezJobMonitor();
     rc=monitor.monitorExecution(client,ctx.getHiveTxnManager(),conf);
     Set<StatusGetOpts> statusGetOpts=EnumSet.of(StatusGetOpts.GET_COUNTERS);
