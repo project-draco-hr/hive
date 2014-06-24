@@ -1,0 +1,153 @@
+{
+  if (isRedundantConversionFunction(expr,isFunction,children)) {
+    assert(children.size() == 1);
+    assert(children.get(0) != null);
+    return children.get(0);
+  }
+  String funcText=getFunctionText(expr,isFunction);
+  ExprNodeDesc desc;
+  if (funcText.equals(".")) {
+    throw new SemanticException(ErrorMsg.INVALID_FUNCTION.getMsg(expr));
+  }
+ else   if (funcText.equals("[")) {
+    throw new SemanticException(ErrorMsg.INVALID_FUNCTION.getMsg(expr));
+  }
+ else {
+    FunctionInfo fi=FunctionRegistry.getFunctionInfo(funcText);
+    if (fi == null) {
+      if (isFunction) {
+        throw new SemanticException(ErrorMsg.INVALID_FUNCTION.getMsg((ASTNode)expr.getChild(0)));
+      }
+ else {
+        throw new SemanticException(ErrorMsg.INVALID_FUNCTION.getMsg(expr));
+      }
+    }
+    GenericUDF genericUDF=fi.getGenericUDF();
+    if (genericUDF instanceof GenericUDFOPOr) {
+      throw new SemanticException(ErrorMsg.INVALID_FUNCTION.getMsg((ASTNode)expr.getChild(0)));
+    }
+    if (isFunction) {
+      ASTNode funcNameNode=(ASTNode)expr.getChild(0);
+switch (funcNameNode.getType()) {
+case HiveParser.TOK_CHAR:
+        CharTypeInfo charTypeInfo=ParseUtils.getCharTypeInfo(funcNameNode);
+      if (genericUDF != null) {
+        ((SettableUDF)genericUDF).setTypeInfo(charTypeInfo);
+      }
+    break;
+case HiveParser.TOK_VARCHAR:
+  VarcharTypeInfo varcharTypeInfo=ParseUtils.getVarcharTypeInfo(funcNameNode);
+if (genericUDF != null) {
+  ((SettableUDF)genericUDF).setTypeInfo(varcharTypeInfo);
+}
+break;
+case HiveParser.TOK_DECIMAL:
+DecimalTypeInfo decTypeInfo=ParseUtils.getDecimalTypeTypeInfo(funcNameNode);
+if (genericUDF != null) {
+((SettableUDF)genericUDF).setTypeInfo(decTypeInfo);
+}
+break;
+default :
+break;
+}
+}
+if (fi.getGenericUDTF() != null) {
+throw new SemanticException(ErrorMsg.UDTF_INVALID_LOCATION.getMsg());
+}
+if (fi.isGenericUDAF()) {
+if (isFunction) {
+throw new SemanticException(ErrorMsg.UDAF_INVALID_LOCATION.getMsg((ASTNode)expr.getChild(0)));
+}
+ else {
+throw new SemanticException(ErrorMsg.UDAF_INVALID_LOCATION.getMsg(expr));
+}
+}
+if (genericUDF != null) {
+if (FunctionRegistry.isStateful(genericUDF)) {
+throw new SemanticException(ErrorMsg.UDF_STATEFUL_INVALID_LOCATION.getMsg());
+}
+}
+if (!(genericUDF instanceof GenericUDFOPAnd)) {
+if (!(genericUDF instanceof GenericUDFBaseCompare)) {
+if (genericUDFargsRefersToBothInput(genericUDF,children,ctx.getInputRRList())) {
+ctx.setError(ErrorMsg.INVALID_JOIN_CONDITION_1.getMsg(expr),expr);
+}
+}
+ else if (genericUDF instanceof GenericUDFBaseCompare) {
+if (children.size() == 2 && !(children.get(0) instanceof ExprNodeConstantDesc) && !(children.get(1) instanceof ExprNodeConstantDesc)) {
+if (comparisonUDFargsRefersToBothInput((GenericUDFBaseCompare)genericUDF,children,ctx.getInputRRList())) {
+ctx.setError(ErrorMsg.INVALID_JOIN_CONDITION_1.getMsg(expr),expr);
+return null;
+}
+if (argsRefersToNeither((GenericUDFBaseCompare)genericUDF,children,ctx.getInputRRList())) {
+ctx.setError(ErrorMsg.INVALID_JOIN_CONDITION_2.getMsg(expr),expr);
+return null;
+}
+if (!(genericUDF instanceof GenericUDFOPEqual)) {
+ctx.setError(ErrorMsg.INVALID_FUNCTION.getMsg(expr),expr);
+return null;
+}
+}
+ else if (children.size() == 2 && ((children.get(0) instanceof ExprNodeConstantDesc && children.get(1) instanceof ExprNodeColumnDesc) || (children.get(0) instanceof ExprNodeColumnDesc && children.get(1) instanceof ExprNodeConstantDesc))) {
+int constIdx=children.get(0) instanceof ExprNodeConstantDesc ? 0 : 1;
+Set<String> inferTypes=new HashSet<String>(Arrays.asList(serdeConstants.TINYINT_TYPE_NAME.toLowerCase(),serdeConstants.SMALLINT_TYPE_NAME.toLowerCase(),serdeConstants.INT_TYPE_NAME.toLowerCase(),serdeConstants.BIGINT_TYPE_NAME.toLowerCase(),serdeConstants.FLOAT_TYPE_NAME.toLowerCase(),serdeConstants.DOUBLE_TYPE_NAME.toLowerCase(),serdeConstants.STRING_TYPE_NAME.toLowerCase()));
+String constType=children.get(constIdx).getTypeString().toLowerCase();
+String columnType=children.get(1 - constIdx).getTypeString().toLowerCase();
+if (inferTypes.contains(constType) && inferTypes.contains(columnType) && !columnType.equalsIgnoreCase(constType)) {
+Object originalValue=((ExprNodeConstantDesc)children.get(constIdx)).getValue();
+String constValue=originalValue.toString();
+boolean triedDouble=false;
+Number value=null;
+try {
+if (columnType.equalsIgnoreCase(serdeConstants.TINYINT_TYPE_NAME)) {
+value=new Byte(constValue);
+}
+ else if (columnType.equalsIgnoreCase(serdeConstants.SMALLINT_TYPE_NAME)) {
+value=new Short(constValue);
+}
+ else if (columnType.equalsIgnoreCase(serdeConstants.INT_TYPE_NAME)) {
+value=new Integer(constValue);
+}
+ else if (columnType.equalsIgnoreCase(serdeConstants.BIGINT_TYPE_NAME)) {
+value=new Long(constValue);
+}
+ else if (columnType.equalsIgnoreCase(serdeConstants.FLOAT_TYPE_NAME)) {
+value=new Float(constValue);
+}
+ else if (columnType.equalsIgnoreCase(serdeConstants.DOUBLE_TYPE_NAME)) {
+triedDouble=true;
+value=new Double(constValue);
+}
+ else if (columnType.equalsIgnoreCase(serdeConstants.STRING_TYPE_NAME)) {
+boolean isNumber=(originalValue instanceof Number);
+triedDouble=!isNumber;
+value=isNumber ? (Number)originalValue : new Double(constValue);
+}
+}
+ catch (NumberFormatException nfe) {
+if (triedDouble || (genericUDF instanceof GenericUDFOPEqual && !columnType.equals(serdeConstants.STRING_TYPE_NAME))) {
+return new ExprNodeConstantDesc(false);
+}
+try {
+value=new Double(constValue);
+}
+ catch (NumberFormatException ex) {
+return new ExprNodeConstantDesc(false);
+}
+}
+if (value != null) {
+children.set(constIdx,new ExprNodeConstantDesc(value));
+}
+}
+}
+}
+}
+desc=ExprNodeGenericFuncDesc.newInstance(genericUDF,funcText,children);
+}
+if (FunctionRegistry.isOpPositive(desc)) {
+assert(desc.getChildren().size() == 1);
+desc=desc.getChildren().get(0);
+}
+assert(desc != null);
+return desc;
+}

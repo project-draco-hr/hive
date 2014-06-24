@@ -1,0 +1,60 @@
+{
+  RelNode srcRel=null;
+  RelNode filterRel=null;
+  RelNode gbRel=null;
+  RelNode gbHavingRel=null;
+  RelNode havingRel=null;
+  RelNode selectRel=null;
+  RelNode obRel=null;
+  RelNode limitRel=null;
+  RelNode rootRel=null;
+  Map<String,RelNode> aliasToRel=new HashMap<String,RelNode>();
+  for (  String subqAlias : qb.getSubqAliases()) {
+    QBExpr qbexpr=qb.getSubqForAlias(subqAlias);
+    aliasToRel.put(subqAlias,genLogicalPlan(qbexpr));
+    qbexpr.setAlias(subqAlias);
+  }
+  for (  String tableAlias : qb.getTabAliases()) {
+    RelNode op=genTableLogicalPlan(tableAlias,qb);
+    aliasToRel.put(tableAlias,op);
+  }
+  if (qb.getParseInfo().getJoinExpr() != null) {
+    srcRel=genJoinLogicalPlan(qb.getParseInfo().getJoinExpr(),aliasToRel);
+  }
+ else {
+    srcRel=aliasToRel.values().iterator().next();
+  }
+  filterRel=genFilterLogicalPlan(qb,srcRel);
+  srcRel=(filterRel == null) ? srcRel : filterRel;
+  gbRel=genGBLogicalPlan(qb,srcRel);
+  srcRel=(gbRel == null) ? srcRel : gbRel;
+  gbHavingRel=genGBHavingLogicalPlan(qb,srcRel);
+  srcRel=(gbHavingRel == null) ? srcRel : gbHavingRel;
+  selectRel=genSelectLogicalPlan(qb,srcRel);
+  srcRel=(selectRel == null) ? srcRel : selectRel;
+  if (qb.getParseInfo().getAlias() != null) {
+    RowResolver rr=this.m_relToHiveRR.get(srcRel);
+    RowResolver newRR=new RowResolver();
+    String alias=qb.getParseInfo().getAlias();
+    for (    ColumnInfo colInfo : rr.getColumnInfos()) {
+      String name=colInfo.getInternalName();
+      String[] tmp=rr.reverseLookup(name);
+      if ("".equals(tmp[0]) || tmp[1] == null) {
+        tmp[1]=colInfo.getInternalName();
+      }
+      ColumnInfo newCi=new ColumnInfo(colInfo);
+      newCi.setTabAlias(alias);
+      newRR.put(alias,tmp[1],newCi);
+    }
+    m_relToHiveRR.put(srcRel,newRR);
+    m_relToHiveColNameOptiqPosMap.put(srcRel,buildHiveToOptiqColumnMap(newRR,srcRel));
+  }
+  obRel=genOBLogicalPlan(qb,srcRel);
+  srcRel=(obRel == null) ? srcRel : obRel;
+  limitRel=genLimitLogicalPlan(qb,srcRel);
+  srcRel=(limitRel == null) ? srcRel : limitRel;
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Created Plan for Query Block " + qb.getId());
+  }
+  return srcRel;
+}

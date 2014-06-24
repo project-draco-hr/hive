@@ -1,0 +1,32 @@
+{
+  RowResolver gbInputRR=this.m_relToHiveRR.get(srcRel);
+  ArrayList<ColumnInfo> signature=gbInputRR.getRowSchema().getSignature();
+  ImmutableMap<String,Integer> posMap=this.m_relToHiveColNameOptiqPosMap.get(srcRel);
+  RexNodeConverter converter=new RexNodeConverter(this.m_cluster,srcRel.getRowType(),posMap,0,false);
+  final List<RexNode> gbChildProjLst=Lists.newArrayList();
+  final HashMap<RexNode,Integer> rexNodeToPosMap=new HashMap<RexNode,Integer>();
+  final BitSet groupSet=new BitSet();
+  Integer gbIndx=0;
+  RexNode rnd;
+  for (  ExprNodeDesc key : gbExprs) {
+    rnd=converter.convert(key);
+    gbChildProjLst.add(rnd);
+    groupSet.set(gbIndx);
+    rexNodeToPosMap.put(rnd,gbIndx);
+    gbIndx++;
+  }
+  List<AggregateCall> aggregateCalls=Lists.newArrayList();
+  int i=aggInfoLst.size();
+  for (  AggInfo agg : aggInfoLst) {
+    aggregateCalls.add(convertAgg(agg,srcRel,gbChildProjLst,converter,rexNodeToPosMap,gbChildProjLst.size()));
+  }
+  RelNode gbInputRel=HiveProjectRel.create(srcRel,gbChildProjLst,null);
+  HiveRel aggregateRel=null;
+  try {
+    aggregateRel=new HiveAggregateRel(m_cluster,m_cluster.traitSetOf(HiveRel.CONVENTION),gbInputRel,groupSet,aggregateCalls);
+  }
+ catch (  InvalidRelException e) {
+    throw new SemanticException(e);
+  }
+  return aggregateRel;
+}

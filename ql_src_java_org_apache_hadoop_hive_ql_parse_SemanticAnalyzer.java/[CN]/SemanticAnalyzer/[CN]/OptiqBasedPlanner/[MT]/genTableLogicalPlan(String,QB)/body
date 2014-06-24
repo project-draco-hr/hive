@@ -1,0 +1,44 @@
+{
+  RowResolver rr=new RowResolver();
+  HiveTableScanRel tableRel=null;
+  try {
+    String alias_id=getAliasId(tableAlias,qb);
+    Table tab=qb.getMetaData().getSrcForAlias(tableAlias);
+    StructObjectInspector rowObjectInspector=(StructObjectInspector)tab.getDeserializer().getObjectInspector();
+    List<? extends StructField> fields=rowObjectInspector.getAllStructFieldRefs();
+    ColumnInfo colInfo;
+    String colName;
+    ArrayList<ColumnInfo> cInfoLst=new ArrayList<ColumnInfo>();
+    for (int i=0; i < fields.size(); i++) {
+      colName=fields.get(i).getFieldName();
+      colInfo=new ColumnInfo(fields.get(i).getFieldName(),TypeInfoUtils.getTypeInfoFromObjectInspector(fields.get(i).getFieldObjectInspector()),tableAlias,false);
+      colInfo.setSkewedCol((isSkewedCol(tableAlias,qb,colName)) ? true : false);
+      rr.put(tableAlias,colName,colInfo);
+      cInfoLst.add(colInfo);
+    }
+    ArrayList<ColumnInfo> columnsThatNeedsStats=new ArrayList<ColumnInfo>(cInfoLst);
+    for (    FieldSchema part_col : tab.getPartCols()) {
+      colName=part_col.getName();
+      colInfo=new ColumnInfo(colName,TypeInfoFactory.getPrimitiveTypeInfo(part_col.getType()),tableAlias,true);
+      rr.put(tableAlias,colName,colInfo);
+      cInfoLst.add(colInfo);
+    }
+    Iterator<VirtualColumn> vcs=VirtualColumn.getRegistry(conf).iterator();
+    while (vcs.hasNext()) {
+      VirtualColumn vc=vcs.next();
+      colInfo=new ColumnInfo(vc.getName(),vc.getTypeInfo(),tableAlias,true,vc.getIsHidden());
+      rr.put(tableAlias,vc.getName(),colInfo);
+      cInfoLst.add(colInfo);
+    }
+    RelDataType rowType=TypeConverter.getType(m_cluster,rr,null);
+    RelOptHiveTable optTable=new RelOptHiveTable(m_relOptSchema,tableAlias,rowType,tab,columnsThatNeedsStats);
+    tableRel=new HiveTableScanRel(m_cluster,m_cluster.traitSetOf(HiveRel.CONVENTION),optTable,rowType);
+    ImmutableMap<String,Integer> hiveToOptiqColMap=buildHiveToOptiqColumnMap(rr,tableRel);
+    m_relToHiveRR.put(tableRel,rr);
+    m_relToHiveColNameOptiqPosMap.put(tableRel,hiveToOptiqColMap);
+  }
+ catch (  Exception e) {
+    throw (new RuntimeException(e));
+  }
+  return tableRel;
+}

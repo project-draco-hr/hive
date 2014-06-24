@@ -1,0 +1,56 @@
+{
+  RelNode gbRel=null;
+  QBParseInfo qbp=getQBParseInfo(qb);
+  String detsClauseName=qbp.getClauseNames().iterator().next();
+  List<ASTNode> grpByAstExprs=getGroupByForClause(qbp,detsClauseName);
+  if (grpByAstExprs != null && !grpByAstExprs.isEmpty()) {
+    RowResolver groupByInputRowResolver=this.m_relToHiveRR.get(srcRel);
+    RowResolver groupByOutputRowResolver=new RowResolver();
+    groupByOutputRowResolver.setIsExprResolver(true);
+    ArrayList<ExprNodeDesc> gbExprNDescLst=new ArrayList<ExprNodeDesc>();
+    ArrayList<String> outputColumnNames=new ArrayList<String>();
+    for (int i=0; i < grpByAstExprs.size(); ++i) {
+      ASTNode grpbyExpr=grpByAstExprs.get(i);
+      Map<ASTNode,ExprNodeDesc> astToExprNDescMap=TypeCheckProcFactory.genExprNode(grpbyExpr,new TypeCheckCtx(groupByInputRowResolver));
+      ExprNodeDesc grpbyExprNDesc=astToExprNDescMap.get(grpbyExpr);
+      if (grpbyExprNDesc == null)       throw new RuntimeException("Invalid Column Reference: " + grpbyExpr.dump());
+      gbExprNDescLst.add(grpbyExprNDesc);
+      String field=getColumnInternalName(i);
+      outputColumnNames.add(field);
+      ColumnInfo oColInfo=new ColumnInfo(field,grpbyExprNDesc.getTypeInfo(),null,false);
+      groupByOutputRowResolver.putExpression(grpbyExpr,oColInfo);
+      addAlternateGByKeyMappings(grpbyExpr,oColInfo,groupByInputRowResolver,groupByOutputRowResolver);
+    }
+    ArrayList<AggInfo> aggregations=new ArrayList<AggInfo>();
+    HashMap<String,ASTNode> aggregationTrees=qbp.getAggregationExprsForClause(detsClauseName);
+    assert(aggregationTrees != null);
+    int numDistinctUDFs=0;
+    for (    ASTNode value : aggregationTrees.values()) {
+      ArrayList<ExprNodeDesc> aggParameters=new ArrayList<ExprNodeDesc>();
+      for (int i=1; i < value.getChildCount(); i++) {
+        ASTNode paraExpr=(ASTNode)value.getChild(i);
+        ExprNodeDesc paraExprNode=genExprNodeDesc(paraExpr,groupByInputRowResolver);
+        aggParameters.add(paraExprNode);
+      }
+      String aggName=unescapeIdentifier(value.getChild(0).getText());
+      boolean isDistinct=value.getType() == HiveParser.TOK_FUNCTIONDI;
+      boolean isAllColumns=value.getType() == HiveParser.TOK_FUNCTIONSTAR;
+      if (isDistinct) {
+        numDistinctUDFs++;
+      }
+      Mode amode=groupByDescModeToUDAFMode(GroupByDesc.Mode.COMPLETE,isDistinct);
+      GenericUDAFEvaluator genericUDAFEvaluator=getGenericUDAFEvaluator(aggName,aggParameters,value,isDistinct,isAllColumns);
+      assert(genericUDAFEvaluator != null);
+      GenericUDAFInfo udaf=getGenericUDAFInfo(genericUDAFEvaluator,amode,aggParameters);
+      AggInfo aInfo=new AggInfo(aggParameters,udaf.returnType,aggName,isDistinct);
+      aggregations.add(aInfo);
+      String field=getColumnInternalName(gbExprNDescLst.size() + aggregations.size() - 1);
+      outputColumnNames.add(field);
+      groupByOutputRowResolver.putExpression(value,new ColumnInfo(field,aInfo.m_returnType,"",false));
+    }
+    gbRel=genGBRelNode(gbExprNDescLst,aggregations,srcRel);
+    m_relToHiveColNameOptiqPosMap.put(gbRel,buildHiveToOptiqColumnMap(groupByOutputRowResolver,gbRel));
+    this.m_relToHiveRR.put(gbRel,groupByOutputRowResolver);
+  }
+  return gbRel;
+}

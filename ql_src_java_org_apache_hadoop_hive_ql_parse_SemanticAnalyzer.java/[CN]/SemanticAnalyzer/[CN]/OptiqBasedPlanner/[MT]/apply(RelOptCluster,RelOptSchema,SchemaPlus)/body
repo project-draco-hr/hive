@@ -1,0 +1,38 @@
+{
+  RelOptPlanner planner=HiveVolcanoPlanner.createPlanner();
+  final RelOptQuery query=new RelOptQuery(planner);
+  final RexBuilder rexBuilder=cluster.getRexBuilder();
+  cluster=query.createCluster(rexBuilder.getTypeFactory(),rexBuilder);
+  m_cluster=cluster;
+  m_relOptSchema=relOptSchema;
+  m_rootSchema=rootSchema;
+  RelNode optiqPlan=null;
+  try {
+    optiqPlan=genLogicalPlan(qb);
+  }
+ catch (  SemanticException e) {
+    m_semanticException=e;
+    throw new RuntimeException(e);
+  }
+  List<RelMetadataProvider> list=Lists.newArrayList();
+  list.add(HiveDefaultRelMetadataProvider.INSTANCE);
+  planner.registerMetadataProviders(list);
+  RelMetadataProvider chainedProvider=ChainedRelMetadataProvider.of(list);
+  cluster.setMetadataProvider(new CachingRelMetadataProvider(chainedProvider,planner));
+  planner.addRule(HiveSwapJoinRule.INSTANCE);
+  planner.addRule(HivePushJoinThroughJoinRule.LEFT);
+  planner.addRule(HivePushJoinThroughJoinRule.RIGHT);
+  if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_CBO_PULLPROJECTABOVEJOIN_RULE)) {
+    planner.addRule(HivePullUpProjectsAboveJoinRule.BOTH_PROJECT);
+    planner.addRule(HivePullUpProjectsAboveJoinRule.LEFT_PROJECT);
+    planner.addRule(HivePullUpProjectsAboveJoinRule.RIGHT_PROJECT);
+    planner.addRule(HiveMergeProjectRule.INSTANCE);
+  }
+  RelTraitSet desiredTraits=cluster.traitSetOf(HiveRel.CONVENTION,RelCollationImpl.EMPTY);
+  RelNode rootRel=optiqPlan;
+  if (!optiqPlan.getTraitSet().equals(desiredTraits)) {
+    rootRel=planner.changeTraits(optiqPlan,desiredTraits);
+  }
+  planner.setRoot(rootRel);
+  return planner.findBestExp();
+}

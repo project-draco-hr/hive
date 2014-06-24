@@ -1,0 +1,50 @@
+{
+  RelNode leftRel=null;
+  RelNode rightRel=null;
+  JoinType hiveJoinType=null;
+  if (joinParseTree.getToken().getType() == HiveParser.TOK_UNIQUEJOIN) {
+    throw new RuntimeException("CBO does not support Unique Join");
+  }
+switch (joinParseTree.getToken().getType()) {
+case HiveParser.TOK_LEFTOUTERJOIN:
+    hiveJoinType=JoinType.LEFTOUTER;
+  break;
+case HiveParser.TOK_RIGHTOUTERJOIN:
+hiveJoinType=JoinType.RIGHTOUTER;
+break;
+case HiveParser.TOK_FULLOUTERJOIN:
+hiveJoinType=JoinType.FULLOUTER;
+break;
+case HiveParser.TOK_LEFTSEMIJOIN:
+hiveJoinType=JoinType.LEFTSEMI;
+break;
+default :
+hiveJoinType=JoinType.INNER;
+break;
+}
+ASTNode left=(ASTNode)joinParseTree.getChild(0);
+if ((left.getToken().getType() == HiveParser.TOK_TABREF) || (left.getToken().getType() == HiveParser.TOK_SUBQUERY) || (left.getToken().getType() == HiveParser.TOK_PTBLFUNCTION)) {
+String tableName=getUnescapedUnqualifiedTableName((ASTNode)left.getChild(0)).toLowerCase();
+String leftTableAlias=left.getChildCount() == 1 ? tableName : unescapeIdentifier(left.getChild(left.getChildCount() - 1).getText().toLowerCase());
+leftTableAlias=(left.getToken().getType() == HiveParser.TOK_PTBLFUNCTION) ? unescapeIdentifier(left.getChild(1).getText().toLowerCase()) : leftTableAlias;
+leftRel=aliasToRel.get(leftTableAlias);
+}
+ else if (isJoinToken(left)) {
+leftRel=genJoinLogicalPlan(left,aliasToRel);
+}
+ else {
+assert(false);
+}
+ASTNode right=(ASTNode)joinParseTree.getChild(1);
+if ((right.getToken().getType() == HiveParser.TOK_TABREF) || (right.getToken().getType() == HiveParser.TOK_SUBQUERY) || (right.getToken().getType() == HiveParser.TOK_PTBLFUNCTION)) {
+String tableName=getUnescapedUnqualifiedTableName((ASTNode)right.getChild(0)).toLowerCase();
+String rightTableAlias=right.getChildCount() == 1 ? tableName : unescapeIdentifier(right.getChild(right.getChildCount() - 1).getText().toLowerCase());
+rightTableAlias=(right.getToken().getType() == HiveParser.TOK_PTBLFUNCTION) ? unescapeIdentifier(right.getChild(1).getText().toLowerCase()) : rightTableAlias;
+rightRel=aliasToRel.get(rightTableAlias);
+}
+ else {
+assert(false);
+}
+ASTNode joinCond=(ASTNode)joinParseTree.getChild(2);
+return genJoinRelNode(leftRel,rightRel,hiveJoinType,joinCond);
+}

@@ -1,0 +1,63 @@
+{
+  JoinTypeCheckCtx ctx=(JoinTypeCheckCtx)procCtx;
+  if (ctx.getError() != null) {
+    return null;
+  }
+  ASTNode expr=(ASTNode)nd;
+  if (windowingTokens.contains(expr.getType())) {
+    ctx.setError(ErrorMsg.INVALID_FUNCTION.getMsg(expr,"Windowing is not supported in Join Condition"),expr);
+    return null;
+  }
+  if (expr.getType() == HiveParser.TOK_TABNAME) {
+    return null;
+  }
+  if (expr.getType() == HiveParser.TOK_ALLCOLREF) {
+    ctx.setError(ErrorMsg.INVALID_COLUMN.getMsg(expr,"Join Condition does not support * syntax"),expr);
+    return null;
+  }
+  if (expr.getType() == HiveParser.DOT && expr.getChild(0).getType() == HiveParser.TOK_TABLE_OR_COL && nodeOutputs[0] == null) {
+    String tableAlias=BaseSemanticAnalyzer.unescapeIdentifier(expr.getChild(0).getChild(0).getText());
+    ColumnInfo colInfo=getColInfo(ctx,tableAlias,((ExprNodeConstantDesc)nodeOutputs[1]).getValue().toString(),expr);
+    if (colInfo == null) {
+      ctx.setError(ErrorMsg.INVALID_COLUMN.getMsg(expr.getChild(1)),expr);
+      return null;
+    }
+    return new ExprNodeColumnDesc(colInfo.getType(),colInfo.getInternalName(),tableAlias,colInfo.getIsVirtualCol());
+  }
+  if (conversionFunctionTextHashMap.keySet().contains(expr.getType()) || specialFunctionTextHashMap.keySet().contains(expr.getType()) || expr.getToken().getType() == HiveParser.CharSetName || expr.getToken().getType() == HiveParser.CharSetLiteral) {
+    return null;
+  }
+  boolean isFunction=(expr.getType() == HiveParser.TOK_FUNCTION || expr.getType() == HiveParser.TOK_FUNCTIONSTAR || expr.getType() == HiveParser.TOK_FUNCTIONDI);
+  int childrenBegin=(isFunction ? 1 : 0);
+  ArrayList<ExprNodeDesc> children=new ArrayList<ExprNodeDesc>(expr.getChildCount() - childrenBegin);
+  for (int ci=childrenBegin; ci < expr.getChildCount(); ci++) {
+    if (nodeOutputs[ci] instanceof ExprNodeColumnListDesc) {
+      children.addAll(((ExprNodeColumnListDesc)nodeOutputs[ci]).getChildren());
+    }
+ else {
+      children.add((ExprNodeDesc)nodeOutputs[ci]);
+    }
+  }
+  if (expr.getType() == HiveParser.TOK_FUNCTIONSTAR) {
+    ctx.setError(ErrorMsg.INVALID_COLUMN.getMsg(expr.getChild(1)),expr);
+    return null;
+  }
+  if (children.contains(null)) {
+    List<String> possibleColumnNames=getReferenceableColumnAliases(ctx);
+    String reason=String.format("(possible column names are: %s)",StringUtils.join(possibleColumnNames,", "));
+    ctx.setError(ErrorMsg.INVALID_COLUMN.getMsg(expr.getChild(0),reason),expr);
+    return null;
+  }
+  try {
+    return getXpathOrFuncExprNodeDesc(expr,isFunction,children,ctx);
+  }
+ catch (  UDFArgumentTypeException e) {
+    throw new SemanticException(ErrorMsg.INVALID_ARGUMENT_TYPE.getMsg(expr.getChild(childrenBegin + e.getArgumentId()),e.getMessage()));
+  }
+catch (  UDFArgumentLengthException e) {
+    throw new SemanticException(ErrorMsg.INVALID_ARGUMENT_LENGTH.getMsg(expr,e.getMessage()));
+  }
+catch (  UDFArgumentException e) {
+    throw new SemanticException(ErrorMsg.INVALID_ARGUMENT.getMsg(expr,e.getMessage()));
+  }
+}

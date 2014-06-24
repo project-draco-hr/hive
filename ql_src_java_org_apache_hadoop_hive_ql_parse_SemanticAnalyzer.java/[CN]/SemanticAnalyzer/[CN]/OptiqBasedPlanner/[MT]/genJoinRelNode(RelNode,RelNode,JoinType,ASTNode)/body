@@ -1,0 +1,50 @@
+{
+  RelNode joinRel=null;
+  RowResolver leftRR=this.m_relToHiveRR.get(leftRel);
+  RowResolver rightRR=this.m_relToHiveRR.get(rightRel);
+  RowResolver joinRR=null;
+  if (hiveJoinType != JoinType.LEFTSEMI) {
+    joinRR=RowResolver.getCombinedRR(leftRR,rightRR);
+  }
+ else {
+    joinRR=new RowResolver();
+    RowResolver.add(joinRR,leftRR,0);
+  }
+  RexNode optiqJoinCond=null;
+  if (joinCond != null) {
+    Map<ASTNode,ExprNodeDesc> exprNodes=JoinCondnTypeCheckProcFactory.genExprNode(joinCond,new JoinTypeCheckCtx(leftRR,rightRR));
+    ExprNodeDesc joinCondnExprNode=exprNodes.get(joinCond);
+    List<RelNode> inputRels=new ArrayList<RelNode>();
+    inputRels.add(leftRel);
+    inputRels.add(rightRel);
+    optiqJoinCond=RexNodeConverter.convert(m_cluster,joinCondnExprNode,inputRels,m_relToHiveRR,m_relToHiveColNameOptiqPosMap,false);
+  }
+ else {
+    optiqJoinCond=RexNodeConverter.getAlwaysTruePredicate(m_cluster);
+  }
+  boolean leftSemiJoin=false;
+  JoinRelType optiqJoinType;
+switch (hiveJoinType) {
+case LEFTOUTER:
+    optiqJoinType=JoinRelType.LEFT;
+  break;
+case RIGHTOUTER:
+optiqJoinType=JoinRelType.RIGHT;
+break;
+case FULLOUTER:
+optiqJoinType=JoinRelType.FULL;
+break;
+case LEFTSEMI:
+optiqJoinType=JoinRelType.INNER;
+leftSemiJoin=true;
+break;
+case INNER:
+default :
+optiqJoinType=JoinRelType.INNER;
+break;
+}
+joinRel=HiveJoinRel.getJoin(m_cluster,leftRel,rightRel,optiqJoinCond,optiqJoinType,leftSemiJoin);
+m_relToHiveColNameOptiqPosMap.put(joinRel,this.buildHiveToOptiqColumnMap(joinRR,joinRel));
+m_relToHiveRR.put(joinRel,joinRR);
+return joinRel;
+}
