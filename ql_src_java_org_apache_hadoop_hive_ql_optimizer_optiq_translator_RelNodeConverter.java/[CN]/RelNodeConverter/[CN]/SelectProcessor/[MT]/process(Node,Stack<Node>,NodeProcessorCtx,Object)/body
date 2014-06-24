@@ -1,0 +1,20 @@
+{
+  Context ctx=(Context)procCtx;
+  HiveRel inputRelNode=(HiveRel)ctx.getParentNode((Operator<? extends OperatorDesc>)nd,0);
+  SelectOperator selectOp=(SelectOperator)nd;
+  List<ExprNodeDesc> colLst=selectOp.getConf().getColList();
+  List<RexNode> optiqColLst=new LinkedList<RexNode>();
+  for (  ExprNodeDesc colExpr : colLst) {
+    optiqColLst.add(ctx.convertToOptiqExpr(colExpr,inputRelNode,false));
+  }
+  List<String> oFieldNames=Lists.transform(selectOp.getConf().getOutputColumnNames(),new Function<String,String>(){
+    public String apply(    String hName){
+      return "_o_" + hName;
+    }
+  }
+);
+  HiveRel selRel=HiveProjectRel.create(inputRelNode,optiqColLst,oFieldNames);
+  ctx.buildColumnMap(selectOp,selRel);
+  ctx.hiveOpToRelNode.put(selectOp,selRel);
+  return selRel;
+}

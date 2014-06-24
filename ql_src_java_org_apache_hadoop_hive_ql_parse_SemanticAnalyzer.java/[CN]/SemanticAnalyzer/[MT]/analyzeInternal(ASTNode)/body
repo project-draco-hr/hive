@@ -29,9 +29,68 @@
   LOG.info("Completed phase 1 of Semantic Analysis");
   getMetaData(qb);
   LOG.info("Completed getting MetaData in Semantic Analysis");
+  if (runCBO) {
+    boolean tokenTypeIsQuery=ast.getToken().getType() == HiveParser.TOK_QUERY || ast.getToken().getType() == HiveParser.TOK_EXPLAIN;
+    if (!tokenTypeIsQuery || createVwDesc != null || !HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_CBO_ENABLED)) {
+      runCBO=false;
+    }
+    if (runCBO) {
+      disableJoinMerge=true;
+    }
+  }
   Operator sinkOp=genPlan(qb);
   if (createVwDesc != null)   resultSchema=convertRowSchemaToViewSchema(opParseCtx.get(sinkOp).getRowResolver());
  else   resultSchema=convertRowSchemaToResultSetSchema(opParseCtx.get(sinkOp).getRowResolver(),HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_RESULTSET_USE_UNIQUE_COLUMN_NAMES));
+  if (runCBO) {
+    boolean reAnalyzeAST=false;
+    try {
+      if (CostBasedOptimizer.canHandleOpTree(sinkOp,conf,queryProperties)) {
+        ASTNode newAST=null;
+        ParseContext pCtx=new ParseContext(conf,qb,child,opToPartPruner,opToPartList,topOps,topSelOps,opParseCtx,joinContext,smbMapJoinContext,topToTable,topToTableProps,fsopToTable,loadTableWork,loadFileWork,ctx,idToTableNameMap,destTableId,uCtx,listMapJoinOpsNoReducer,groupOpToInputTables,prunedPartitions,opToSamplePruner,globalLimitCtx,nameToSplitSample,inputs,rootTasks,opToPartToSkewedPruner,viewAliasToInput,reduceSinkOperatorsAddedByEnforceBucketingSorting,queryProperties);
+        PreCBOOptimizer preCBOOptm=new PreCBOOptimizer();
+        preCBOOptm.setPctx(pCtx);
+        preCBOOptm.initialize(conf);
+        pCtx=preCBOOptm.optimize();
+        CBOTableStatsValidator tableStatsValidator=new CBOTableStatsValidator();
+        if (tableStatsValidator.validStats(sinkOp,pCtx)) {
+          newAST=CostBasedOptimizer.optimize(sinkOp,this,pCtx,resultSchema);
+          if (LOG.isDebugEnabled()) {
+            String newAstExpanded=newAST.dump();
+            LOG.debug("CBO rewritten query: \n" + newAstExpanded);
+          }
+          init();
+          ctx_1=initPhase1Ctx();
+          if (!doPhase1(newAST,qb,ctx_1)) {
+            throw new RuntimeException("Couldn't do phase1 on CBO optimized query plan");
+          }
+          getMetaData(qb);
+          disableJoinMerge=true;
+          sinkOp=genPlan(qb);
+        }
+ else {
+          reAnalyzeAST=true;
+          LOG.warn("Skipping CBO. Incomplete column stats for Tables: " + tableStatsValidator.getIncompleteStatsTabNames());
+        }
+      }
+ else {
+        if (queryProperties.getJoinCount() > 1)         reAnalyzeAST=true;
+        LOG.info("Skipping CBO as CBO can not handle OP tree.");
+      }
+    }
+ catch (    Exception e) {
+      reAnalyzeAST=true;
+      LOG.warn("CBO failed, skipping CBO. ",e);
+    }
+ finally {
+      runCBO=false;
+      disableJoinMerge=false;
+      if (reAnalyzeAST) {
+        init();
+        analyzeInternal(ast);
+        return;
+      }
+    }
+  }
   ParseContext pCtx=new ParseContext(conf,qb,child,opToPartPruner,opToPartList,topOps,topSelOps,opParseCtx,joinContext,smbMapJoinContext,topToTable,topToTableProps,fsopToTable,loadTableWork,loadFileWork,ctx,idToTableNameMap,destTableId,uCtx,listMapJoinOpsNoReducer,groupOpToInputTables,prunedPartitions,opToSamplePruner,globalLimitCtx,nameToSplitSample,inputs,rootTasks,opToPartToSkewedPruner,viewAliasToInput,reduceSinkOperatorsAddedByEnforceBucketingSorting,queryProperties);
   if (createVwDesc != null) {
     saveViewDefinition();

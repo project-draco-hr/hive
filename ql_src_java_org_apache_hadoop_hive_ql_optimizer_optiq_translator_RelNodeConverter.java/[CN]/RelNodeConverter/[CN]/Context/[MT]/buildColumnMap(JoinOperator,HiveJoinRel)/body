@@ -1,0 +1,33 @@
+{
+  RowResolver rr=sA.getRowResolver(jOp);
+  QBJoinTree hTree=parseCtx.getJoinContext().get(jOp);
+  Map<String,Integer> leftMap=opPositionMap.get(jRel.getLeft());
+  Map<String,Integer> rightMap=opPositionMap.get(jRel.getRight());
+  leftMap=reducerMap(leftMap,(ReduceSinkOperator)jOp.getParentOperators().get(0));
+  rightMap=reducerMap(rightMap,(ReduceSinkOperator)jOp.getParentOperators().get(1));
+  int leftColCount=jRel.getLeft().getRowType().getFieldCount();
+  ImmutableMap.Builder<String,Integer> b=new ImmutableMap.Builder<String,Integer>();
+  for (  Map.Entry<String,LinkedHashMap<String,ColumnInfo>> tableEntry : rr.getRslvMap().entrySet()) {
+    String table=tableEntry.getKey();
+    LinkedHashMap<String,ColumnInfo> cols=tableEntry.getValue();
+    Map<String,Integer> posMap=leftMap;
+    int offset=0;
+    if (hTree.getRightAliases() != null) {
+      for (      String rAlias : hTree.getRightAliases()) {
+        if (table.equals(rAlias)) {
+          posMap=rightMap;
+          offset=leftColCount;
+          break;
+        }
+      }
+    }
+    for (    Map.Entry<String,ColumnInfo> colEntry : cols.entrySet()) {
+      ColumnInfo ci=colEntry.getValue();
+      ExprNodeDesc e=jOp.getColumnExprMap().get(ci.getInternalName());
+      String cName=((ExprNodeColumnDesc)e).getColumn();
+      int pos=posMap.get(cName);
+      b.put(ci.getInternalName(),pos + offset);
+    }
+  }
+  opPositionMap.put(jRel,b.build());
+}

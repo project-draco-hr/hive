@@ -1,0 +1,20 @@
+{
+  final Aggregation aggregation=AGG_MAP.get(agg.getGenericUDAFName());
+  if (aggregation == null) {
+    throw new AssertionError("agg not found: " + agg.getGenericUDAFName());
+  }
+  List<Integer> argList=new ArrayList<Integer>();
+  RelDataType type=TypeConverter.convert(cI.getType(),ctx.cluster.getTypeFactory());
+  if (aggregation.equals(SqlStdOperatorTable.AVG)) {
+    type=type.getField("sum",false).getType();
+  }
+  for (  ExprNodeDesc expr : agg.getParameters()) {
+    int index=convertExpr(ctx,input,expr,extraExprs);
+    argList.add(index);
+  }
+  if (argList.size() > 0) {
+    RexNode rex=ctx.convertToOptiqExpr(agg.getParameters().get(0),input,false);
+    type=rex.getType();
+  }
+  return new AggregateCall(aggregation,agg.getDistinct(),argList,type,null);
+}

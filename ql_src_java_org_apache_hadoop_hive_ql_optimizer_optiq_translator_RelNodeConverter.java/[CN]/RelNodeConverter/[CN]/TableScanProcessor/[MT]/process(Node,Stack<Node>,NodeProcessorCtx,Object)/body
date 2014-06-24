@@ -1,0 +1,22 @@
+{
+  Context ctx=(Context)procCtx;
+  TableScanOperator tableScanOp=(TableScanOperator)nd;
+  RowResolver rr=ctx.sA.getRowResolver(tableScanOp);
+  List<String> neededCols=new ArrayList<String>(tableScanOp.getNeededColumns());
+  Statistics stats=tableScanOp.getStatistics();
+  try {
+    stats=addPartitionColumns(ctx,tableScanOp,tableScanOp.getConf().getAlias(),ctx.sA.getTable(tableScanOp),stats,neededCols);
+  }
+ catch (  CloneNotSupportedException ce) {
+    throw new SemanticException(ce);
+  }
+  if (stats.getColumnStats().size() != neededCols.size()) {
+    throw new SemanticException("Incomplete Col stats for table: " + tableScanOp.getConf().getAlias());
+  }
+  RelDataType rowType=TypeConverter.getType(ctx.cluster,rr,neededCols);
+  RelOptHiveTable optTable=new RelOptHiveTable(ctx.schema,tableScanOp.getConf().getAlias(),rowType,ctx.sA.getTable(tableScanOp),stats);
+  TableAccessRelBase tableRel=new HiveTableScanRel(ctx.cluster,ctx.cluster.traitSetOf(HiveRel.CONVENTION),optTable,rowType);
+  ctx.buildColumnMap(tableScanOp,tableRel);
+  ctx.hiveOpToRelNode.put(tableScanOp,tableRel);
+  return tableRel;
+}

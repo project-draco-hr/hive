@@ -1,0 +1,25 @@
+{
+  Schema s;
+  ASTNode ast;
+  if (r instanceof TableAccessRelBase) {
+    TableAccessRelBase f=(TableAccessRelBase)r;
+    s=new Schema(f);
+    ast=ASTBuilder.table(f);
+  }
+ else   if (r instanceof JoinRelBase) {
+    JoinRelBase join=(JoinRelBase)r;
+    QueryBlockInfo left=convertSource(join.getLeft());
+    QueryBlockInfo right=convertSource(join.getRight());
+    s=new Schema(left.schema,right.schema);
+    ASTNode cond=join.getCondition().accept(new RexVisitor(s));
+    ast=ASTBuilder.join(left.ast,right.ast,join.getJoinType(),cond);
+  }
+ else {
+    ASTConverter src=new ASTConverter(r);
+    ASTNode srcAST=src.convert(order);
+    String sqAlias=ASTConverter.nextAlias();
+    s=src.getRowSchema(sqAlias);
+    ast=ASTBuilder.subQuery(srcAST,sqAlias);
+  }
+  return new QueryBlockInfo(s,ast);
+}

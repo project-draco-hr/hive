@@ -1,0 +1,40 @@
+{
+  double ndvCrossProduct=1;
+  RexNode combinedPredicate=getCombinedPredicateForJoin(j,predicate);
+  JoinPredicateInfo jpi=JoinPredicateInfo.constructJoinPredicateInfo(j,combinedPredicate);
+  ImmutableMap.Builder<Integer,Double> colStatMapBuilder=ImmutableMap.builder();
+  ImmutableMap<Integer,Double> colStatMap;
+  int rightOffSet=j.getLeft().getRowType().getFieldCount();
+  for (  Integer ljk : jpi.getProjsFromLeftPartOfJoinKeysInChildSchema()) {
+    colStatMapBuilder.put(ljk,HiveRelMdDistinctRowCount.getDistinctRowCount(j.getLeft(),ljk));
+  }
+  for (  Integer rjk : jpi.getProjsFromRightPartOfJoinKeysInChildSchema()) {
+    colStatMapBuilder.put(rjk + rightOffSet,HiveRelMdDistinctRowCount.getDistinctRowCount(j.getRight(),rjk));
+  }
+  colStatMap=colStatMapBuilder.build();
+  List<JoinLeafPredicateInfo> peLst=jpi.getEquiJoinPredicateElements();
+  int noOfPE=peLst.size();
+  if (noOfPE > 0) {
+    ndvCrossProduct=getMaxNDVForJoinSelectivity(peLst.get(0),colStatMap);
+    if (noOfPE > 1) {
+      double maxNDVSoFar=ndvCrossProduct;
+      double ndvToBeSmoothed;
+      double tmpNDV;
+      for (int i=1; i < noOfPE; i++) {
+        tmpNDV=getMaxNDVForJoinSelectivity(peLst.get(i),colStatMap);
+        if (tmpNDV > maxNDVSoFar) {
+          ndvToBeSmoothed=maxNDVSoFar;
+          maxNDVSoFar=tmpNDV;
+          ndvCrossProduct=(ndvCrossProduct / ndvToBeSmoothed) * tmpNDV;
+        }
+ else {
+          ndvToBeSmoothed=tmpNDV;
+        }
+        if (ndvToBeSmoothed > 3)         ndvCrossProduct*=Math.log(ndvToBeSmoothed);
+ else         ndvCrossProduct*=ndvToBeSmoothed;
+      }
+      ndvCrossProduct=Math.min(RelMetadataQuery.getRowCount(j.getLeft()) * RelMetadataQuery.getRowCount(j.getRight()),ndvCrossProduct);
+    }
+  }
+  return (1 / ndvCrossProduct);
+}
