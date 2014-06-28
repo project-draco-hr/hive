@@ -22,5 +22,31 @@
     setBoolVar(ConfVars.METASTORE_AUTO_CREATE_SCHEMA,false);
     setBoolVar(ConfVars.METASTORE_FIXED_DATASTORE,true);
   }
+  if (getBoolVar(HiveConf.ConfVars.HIVECONFVALIDATION)) {
+    List<String> trimmed=new ArrayList<String>();
+    for (    Map.Entry<String,String> entry : this) {
+      String key=entry.getKey();
+      if (key == null || !key.startsWith("hive.")) {
+        continue;
+      }
+      ConfVars var=HiveConf.getConfVars(key);
+      if (var == null) {
+        var=HiveConf.getConfVars(key.trim());
+        if (var != null) {
+          trimmed.add(key);
+        }
+      }
+      if (var == null) {
+        l4j.warn("HiveConf of name " + key + " does not exist");
+      }
+ else       if (!var.isType(entry.getValue())) {
+        l4j.warn("HiveConf " + var.varname + " expects "+ var.typeString()+ " type value");
+      }
+    }
+    for (    String key : trimmed) {
+      set(key.trim(),getRaw(key));
+      unset(key);
+    }
+  }
   setupRestrictList();
 }

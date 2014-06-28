@@ -1,23 +1,29 @@
 {
   if (txnid == 0)   return;
-  Statement stmt=dbConn.createStatement();
-  long now=getDbTime(dbConn);
-  String s="select txn_state from TXNS where txn_id = " + txnid;
-  LOG.debug("Going to execute query <" + s + ">");
-  ResultSet rs=stmt.executeQuery(s);
-  if (!rs.next()) {
-    LOG.debug("Going to rollback");
-    dbConn.rollback();
-    throw new NoSuchTxnException("No such transaction: " + txnid);
+  Statement stmt=null;
+  try {
+    stmt=dbConn.createStatement();
+    long now=getDbTime(dbConn);
+    String s="select txn_state from TXNS where txn_id = " + txnid;
+    LOG.debug("Going to execute query <" + s + ">");
+    ResultSet rs=stmt.executeQuery(s);
+    if (!rs.next()) {
+      LOG.debug("Going to rollback");
+      dbConn.rollback();
+      throw new NoSuchTxnException("No such transaction: " + txnid);
+    }
+    if (rs.getString(1).charAt(0) == TXN_ABORTED) {
+      LOG.debug("Going to rollback");
+      dbConn.rollback();
+      throw new TxnAbortedException("Transaction " + txnid + " already aborted");
+    }
+    s="update TXNS set txn_last_heartbeat = " + now + " where txn_id = "+ txnid;
+    LOG.debug("Going to execute update <" + s + ">");
+    stmt.executeUpdate(s);
+    LOG.debug("Going to commit");
+    dbConn.commit();
   }
-  if (rs.getString(1).charAt(0) == TXN_ABORTED) {
-    LOG.debug("Going to rollback");
-    dbConn.rollback();
-    throw new TxnAbortedException("Transaction " + txnid + " already aborted");
+  finally {
+    closeStmt(stmt);
   }
-  s="update TXNS set txn_last_heartbeat = " + now + " where txn_id = "+ txnid;
-  LOG.debug("Going to execute update <" + s + ">");
-  stmt.executeUpdate(s);
-  LOG.debug("Going to commit");
-  dbConn.commit();
 }

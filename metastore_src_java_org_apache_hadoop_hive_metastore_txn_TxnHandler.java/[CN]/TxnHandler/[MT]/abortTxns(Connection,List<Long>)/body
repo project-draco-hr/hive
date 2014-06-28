@@ -1,26 +1,33 @@
 {
-  Statement stmt=dbConn.createStatement();
-  StringBuilder buf=new StringBuilder("delete from HIVE_LOCKS where hl_txnid in (");
-  boolean first=true;
-  for (  Long id : txnids) {
-    if (first)     first=false;
- else     buf.append(',');
-    buf.append(id);
+  Statement stmt=null;
+  int updateCnt=0;
+  try {
+    stmt=dbConn.createStatement();
+    StringBuilder buf=new StringBuilder("delete from HIVE_LOCKS where hl_txnid in (");
+    boolean first=true;
+    for (    Long id : txnids) {
+      if (first)       first=false;
+ else       buf.append(',');
+      buf.append(id);
+    }
+    buf.append(')');
+    LOG.debug("Going to execute update <" + buf.toString() + ">");
+    stmt.executeUpdate(buf.toString());
+    buf=new StringBuilder("update TXNS set txn_state = '" + TXN_ABORTED + "' where txn_id in (");
+    first=true;
+    for (    Long id : txnids) {
+      if (first)       first=false;
+ else       buf.append(',');
+      buf.append(id);
+    }
+    buf.append(')');
+    LOG.debug("Going to execute update <" + buf.toString() + ">");
+    updateCnt=stmt.executeUpdate(buf.toString());
+    LOG.debug("Going to commit");
+    dbConn.commit();
   }
-  buf.append(')');
-  LOG.debug("Going to execute update <" + buf.toString() + ">");
-  stmt.executeUpdate(buf.toString());
-  buf=new StringBuilder("update TXNS set txn_state = '" + TXN_ABORTED + "' where txn_id in (");
-  first=true;
-  for (  Long id : txnids) {
-    if (first)     first=false;
- else     buf.append(',');
-    buf.append(id);
+  finally {
+    closeStmt(stmt);
   }
-  buf.append(')');
-  LOG.debug("Going to execute update <" + buf.toString() + ">");
-  int updateCnt=stmt.executeUpdate(buf.toString());
-  LOG.debug("Going to commit");
-  dbConn.commit();
   return updateCnt;
 }
