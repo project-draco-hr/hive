@@ -1,0 +1,36 @@
+{
+  if (!isEnabled) {
+    return FORWARD;
+  }
+  if (topN == 0) {
+    return EXCLUDE;
+  }
+  Key pk=new Key(partColsIsNull,key.hashCode());
+  TopNHash partHeap=partitionHeaps.get(pk);
+  if (partHeap == null) {
+    partHeap=new TopNHash();
+    partHeap.initialize(topN,memUsage,isMapGroupBy,collector);
+    if (batchIndex >= 0) {
+      partHeap.startVectorizedBatch(batchSize);
+    }
+    partitionHeaps.put(pk,partHeap);
+  }
+  usage=usage - partHeap.usage;
+  int r=0;
+  if (batchIndex >= 0) {
+    partHeap.tryStoreVectorizedKey(key,false,batchIndex);
+  }
+ else {
+    r=partHeap.tryStoreKey(key,false);
+  }
+  usage=usage + partHeap.usage;
+  updateLargest(partHeap);
+  if (usage > threshold) {
+    usage-=largestPartition.usage;
+    largestPartition.flush();
+    usage+=largestPartition.usage;
+    largestPartition=null;
+    findLargest();
+  }
+  return r;
+}
