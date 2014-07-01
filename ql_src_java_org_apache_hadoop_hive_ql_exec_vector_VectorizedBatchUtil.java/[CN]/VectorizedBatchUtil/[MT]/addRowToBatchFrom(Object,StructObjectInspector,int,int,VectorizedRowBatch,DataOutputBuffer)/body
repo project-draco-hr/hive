@@ -1,0 +1,165 @@
+{
+  List<? extends StructField> fieldRefs=oi.getAllStructFieldRefs();
+  final int off=colOffset;
+  for (int i=0; i < fieldRefs.size(); i++) {
+    Object fieldData=oi.getStructFieldData(row,fieldRefs.get(i));
+    ObjectInspector foi=fieldRefs.get(i).getFieldObjectInspector();
+    assert(foi.getCategory() == Category.PRIMITIVE);
+    PrimitiveObjectInspector poi=(PrimitiveObjectInspector)foi;
+    Object writableCol=poi.getPrimitiveWritableObject(fieldData);
+switch (poi.getPrimitiveCategory()) {
+case BOOLEAN:
+{
+        LongColumnVector lcv=(LongColumnVector)batch.cols[off + i];
+        if (writableCol != null) {
+          lcv.vector[rowIndex]=((BooleanWritable)writableCol).get() ? 1 : 0;
+          lcv.isNull[rowIndex]=false;
+        }
+ else {
+          lcv.vector[rowIndex]=1;
+          setNullColIsNullValue(lcv,rowIndex);
+        }
+      }
+    break;
+case BYTE:
+{
+    LongColumnVector lcv=(LongColumnVector)batch.cols[off + i];
+    if (writableCol != null) {
+      lcv.vector[rowIndex]=((ByteWritable)writableCol).get();
+      lcv.isNull[rowIndex]=false;
+    }
+ else {
+      lcv.vector[rowIndex]=1;
+      setNullColIsNullValue(lcv,rowIndex);
+    }
+  }
+break;
+case SHORT:
+{
+LongColumnVector lcv=(LongColumnVector)batch.cols[off + i];
+if (writableCol != null) {
+  lcv.vector[rowIndex]=((ShortWritable)writableCol).get();
+  lcv.isNull[rowIndex]=false;
+}
+ else {
+  lcv.vector[rowIndex]=1;
+  setNullColIsNullValue(lcv,rowIndex);
+}
+}
+break;
+case INT:
+{
+LongColumnVector lcv=(LongColumnVector)batch.cols[off + i];
+if (writableCol != null) {
+lcv.vector[rowIndex]=((IntWritable)writableCol).get();
+lcv.isNull[rowIndex]=false;
+}
+ else {
+lcv.vector[rowIndex]=1;
+setNullColIsNullValue(lcv,rowIndex);
+}
+}
+break;
+case LONG:
+{
+LongColumnVector lcv=(LongColumnVector)batch.cols[off + i];
+if (writableCol != null) {
+lcv.vector[rowIndex]=((LongWritable)writableCol).get();
+lcv.isNull[rowIndex]=false;
+}
+ else {
+lcv.vector[rowIndex]=1;
+setNullColIsNullValue(lcv,rowIndex);
+}
+}
+break;
+case DATE:
+{
+LongColumnVector lcv=(LongColumnVector)batch.cols[off + i];
+if (writableCol != null) {
+lcv.vector[rowIndex]=((DateWritable)writableCol).getDays();
+lcv.isNull[rowIndex]=false;
+}
+ else {
+lcv.vector[rowIndex]=1;
+setNullColIsNullValue(lcv,rowIndex);
+}
+}
+break;
+case FLOAT:
+{
+DoubleColumnVector dcv=(DoubleColumnVector)batch.cols[off + i];
+if (writableCol != null) {
+dcv.vector[rowIndex]=((FloatWritable)writableCol).get();
+dcv.isNull[rowIndex]=false;
+}
+ else {
+dcv.vector[rowIndex]=Double.NaN;
+setNullColIsNullValue(dcv,rowIndex);
+}
+}
+break;
+case DOUBLE:
+{
+DoubleColumnVector dcv=(DoubleColumnVector)batch.cols[off + i];
+if (writableCol != null) {
+dcv.vector[rowIndex]=((DoubleWritable)writableCol).get();
+dcv.isNull[rowIndex]=false;
+}
+ else {
+dcv.vector[rowIndex]=Double.NaN;
+setNullColIsNullValue(dcv,rowIndex);
+}
+}
+break;
+case TIMESTAMP:
+{
+LongColumnVector lcv=(LongColumnVector)batch.cols[off + i];
+if (writableCol != null) {
+Timestamp t=((TimestampWritable)writableCol).getTimestamp();
+lcv.vector[rowIndex]=TimestampUtils.getTimeNanoSec(t);
+lcv.isNull[rowIndex]=false;
+}
+ else {
+lcv.vector[rowIndex]=1;
+setNullColIsNullValue(lcv,rowIndex);
+}
+}
+break;
+case STRING:
+{
+BytesColumnVector bcv=(BytesColumnVector)batch.cols[off + i];
+if (writableCol != null) {
+bcv.isNull[rowIndex]=false;
+Text colText=(Text)writableCol;
+int start=buffer.getLength();
+int length=colText.getLength();
+try {
+buffer.write(colText.getBytes(),0,length);
+}
+ catch (IOException ioe) {
+throw new IllegalStateException("bad write",ioe);
+}
+bcv.setRef(rowIndex,buffer.getData(),start,length);
+}
+ else {
+setNullColIsNullValue(bcv,rowIndex);
+}
+}
+break;
+case DECIMAL:
+DecimalColumnVector dcv=(DecimalColumnVector)batch.cols[off + i];
+if (writableCol != null) {
+dcv.isNull[rowIndex]=false;
+HiveDecimalWritable wobj=(HiveDecimalWritable)writableCol;
+dcv.vector[rowIndex].update(wobj.getHiveDecimal().unscaledValue(),(short)wobj.getScale());
+}
+ else {
+setNullColIsNullValue(dcv,rowIndex);
+}
+break;
+default :
+throw new HiveException("Vectorizaton is not supported for datatype:" + poi.getPrimitiveCategory());
+}
+}
+}
