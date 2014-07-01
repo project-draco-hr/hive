@@ -1,4 +1,7 @@
 {
+  if (streamingState.rankLimitReached()) {
+    return null;
+  }
   WindowTableFunctionDef tabDef=(WindowTableFunctionDef)getTableDef();
   for (int i=0; i < tabDef.getWindowFunctions().size(); i++) {
     WindowFunctionDef wFn=tabDef.getWindowFunctions().get(i);
@@ -33,13 +36,14 @@
     }
   }
   List<Object> oRows=new ArrayList<Object>();
-  while (!streamingState.rollingPart.processedAllRows()) {
+  while (!streamingState.rollingPart.processedAllRows() && !streamingState.rankLimitReached()) {
     boolean hasRow=streamingState.hasOutputRow();
-    ;
-    if (!hasRow) {
+    if (!hasRow && !streamingState.rankLimitReached()) {
       throw new HiveException("Internal Error: cannot generate all output rows for a Partition");
     }
-    oRows.add(streamingState.nextOutputRow());
+    if (hasRow) {
+      oRows.add(streamingState.nextOutputRow());
+    }
   }
   return oRows.size() == 0 ? null : oRows;
 }
