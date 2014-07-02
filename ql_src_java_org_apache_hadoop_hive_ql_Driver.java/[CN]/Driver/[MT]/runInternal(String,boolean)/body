@@ -3,7 +3,7 @@
   SQLState=null;
   downstreamError=null;
   if (!validateConfVariables()) {
-    return new CommandProcessorResponse(12,errorMessage,SQLState);
+    return createProcessorResponse(12);
   }
   HiveDriverRunHookContext hookContext=new HiveDriverRunHookContextImpl(conf,command);
   List<HiveDriverRunHook> driverRunHooks;
@@ -18,12 +18,11 @@
     SQLState=ErrorMsg.findSQLState(e.getMessage());
     downstreamError=e;
     console.printError(errorMessage + "\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
-    return new CommandProcessorResponse(12,errorMessage,SQLState);
+    return createProcessorResponse(12);
   }
   PerfLogger perfLogger=PerfLogger.getPerfLogger(true);
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.DRIVER_RUN);
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TIME_TO_SUBMIT);
-  int ret;
   boolean requireLock=false;
   boolean ckLock=false;
   try {
@@ -35,15 +34,16 @@
     SQLState=ErrorMsg.findSQLState(e.getMessage());
     downstreamError=e;
     console.printError(errorMessage,"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
-    ret=10;
-    return new CommandProcessorResponse(ret,errorMessage,SQLState);
+    return createProcessorResponse(10);
   }
-  ret=recordValidTxns();
-  if (ret != 0)   return new CommandProcessorResponse(ret,errorMessage,SQLState);
+  int ret=recordValidTxns();
+  if (ret != 0) {
+    return createProcessorResponse(ret);
+  }
   if (!alreadyCompiled) {
     ret=compileInternal(command);
     if (ret != 0) {
-      return new CommandProcessorResponse(ret,errorMessage,SQLState);
+      return createProcessorResponse(ret);
     }
   }
   ctx.setHiveTxnManager(txnMgr);
@@ -78,7 +78,7 @@
       }
  catch (      LockException e) {
       }
-      return new CommandProcessorResponse(ret,errorMessage,SQLState);
+      return createProcessorResponse(ret);
     }
   }
   ret=execute();
@@ -88,7 +88,7 @@
     }
  catch (    LockException e) {
     }
-    return new CommandProcessorResponse(ret,errorMessage,SQLState);
+    return createProcessorResponse(ret);
   }
   try {
     releaseLocks(ctx.getHiveLocks());
@@ -98,7 +98,7 @@
     SQLState=ErrorMsg.findSQLState(e.getMessage());
     downstreamError=e;
     console.printError(errorMessage + "\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
-    return new CommandProcessorResponse(12,errorMessage,SQLState);
+    return createProcessorResponse(12);
   }
   perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.DRIVER_RUN);
   perfLogger.close(LOG,plan);
@@ -112,7 +112,7 @@
     SQLState=ErrorMsg.findSQLState(e.getMessage());
     downstreamError=e;
     console.printError(errorMessage + "\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
-    return new CommandProcessorResponse(12,errorMessage,SQLState);
+    return createProcessorResponse(12);
   }
-  return new CommandProcessorResponse(ret);
+  return createProcessorResponse(ret);
 }
