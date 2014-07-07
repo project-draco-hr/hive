@@ -29,16 +29,32 @@
     }
     OrcProto.StripeFooter footer=builder.build();
     long start=rawWriter.getPos();
-    long stripeSize=indexSize + dataSize + footer.getSerializedSize();
-    if (addBlockPadding && stripeSize < blockSize && (start % blockSize) + stripeSize > blockSize) {
+    final long currentStripeSize=indexSize + dataSize + footer.getSerializedSize();
+    final long available=blockSize - (start % blockSize);
+    final long overflow=currentStripeSize - adjustedStripeSize;
+    final float availRatio=(float)available / (float)defaultStripeSize;
+    if (availRatio > 0.0f && availRatio < 1.0f && availRatio > paddingTolerance) {
+      float correction=overflow > 0 ? (float)overflow / (float)adjustedStripeSize : 0.0f;
+      correction=correction > paddingTolerance ? paddingTolerance : correction;
+      adjustedStripeSize=(long)((1.0f - correction) * (availRatio * defaultStripeSize));
+    }
+ else     if (availRatio >= 1.0) {
+      adjustedStripeSize=defaultStripeSize;
+    }
+    if (availRatio < paddingTolerance && addBlockPadding) {
       long padding=blockSize - (start % blockSize);
       byte[] pad=new byte[(int)Math.min(HDFS_BUFFER_SIZE,padding)];
+      LOG.info(String.format("Padding ORC by %d bytes (<=  %0.2f * %d)",padding,availRatio,defaultStripeSize));
       start+=padding;
       while (padding > 0) {
         int writeLen=(int)Math.min(padding,pad.length);
         rawWriter.write(pad,0,writeLen);
         padding-=writeLen;
       }
+      adjustedStripeSize=defaultStripeSize;
+    }
+ else     if (currentStripeSize < blockSize && (start % blockSize) + currentStripeSize > blockSize) {
+      adjustedStripeSize=defaultStripeSize;
     }
     for (    Map.Entry<StreamName,BufferedStream> pair : streams.entrySet()) {
       BufferedStream stream=pair.getValue();
