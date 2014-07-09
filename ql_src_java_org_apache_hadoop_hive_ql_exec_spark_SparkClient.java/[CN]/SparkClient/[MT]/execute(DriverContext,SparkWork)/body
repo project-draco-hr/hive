@@ -1,0 +1,82 @@
+{
+  int rc=1;
+  MapWork mapWork=sparkWork.getMapWork();
+  ReduceWork redWork=sparkWork.getReduceWork();
+  Configuration hiveConf=driverContext.getCtx().getConf();
+  JobConf jobConf=new JobConf(hiveConf);
+  Context ctx=driverContext.getCtx();
+  Path emptyScratchDir;
+  try {
+    if (ctx == null) {
+      ctx=new Context(jobConf);
+    }
+    emptyScratchDir=ctx.getMRTmpPath();
+    FileSystem fs=emptyScratchDir.getFileSystem(jobConf);
+    fs.mkdirs(emptyScratchDir);
+  }
+ catch (  IOException e) {
+    e.printStackTrace();
+    System.err.println("Error launching map-reduce job" + "\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
+    return 5;
+  }
+  List<Path> inputPaths;
+  try {
+    inputPaths=Utilities.getInputPaths(jobConf,mapWork,emptyScratchDir,ctx);
+  }
+ catch (  Exception e2) {
+    e2.printStackTrace();
+    return -1;
+  }
+  Utilities.setInputPaths(jobConf,inputPaths);
+  Utilities.setMapWork(jobConf,mapWork,emptyScratchDir,true);
+  if (redWork != null)   Utilities.setReduceWork(jobConf,redWork,emptyScratchDir,true);
+  try {
+    Utilities.createTmpDirs(jobConf,mapWork);
+    Utilities.createTmpDirs(jobConf,redWork);
+  }
+ catch (  IOException e1) {
+    e1.printStackTrace();
+  }
+  try {
+    Path planPath=new Path(jobConf.getWorkingDirectory(),"plan.xml");
+    System.out.println("Serializing plan to path: " + planPath);
+    OutputStream os2=planPath.getFileSystem(jobConf).create(planPath);
+    Utilities.serializePlan(mapWork,os2,jobConf);
+  }
+ catch (  IOException e1) {
+    e1.printStackTrace();
+    return 1;
+  }
+  JavaPairRDD rdd=createRDD(sc,jobConf,mapWork);
+  byte[] confBytes=KryoSerializer.serializeJobConf(jobConf);
+  HiveMapFunction mf=new HiveMapFunction(confBytes);
+  JavaPairRDD rdd2=rdd.mapPartitionsToPair(mf);
+  if (redWork == null) {
+    rdd2.foreach(HiveVoidFunction.getInstance());
+    if (mapWork.getAliasToWork() != null) {
+      for (      Operator<? extends OperatorDesc> op : mapWork.getAliasToWork().values()) {
+        try {
+          op.jobClose(jobConf,true);
+        }
+ catch (        HiveException e) {
+          System.out.println("Calling jobClose() failed: " + e);
+          e.printStackTrace();
+        }
+      }
+    }
+  }
+ else {
+    JavaPairRDD rdd3=rdd2.partitionBy(new HashPartitioner(reducerCount));
+    HiveReduceFunction rf=new HiveReduceFunction(confBytes);
+    JavaPairRDD rdd4=rdd3.mapPartitionsToPair(rf);
+    rdd4.foreach(HiveVoidFunction.getInstance());
+    try {
+      redWork.getReducer().jobClose(jobConf,true);
+    }
+ catch (    HiveException e) {
+      System.out.println("Calling jobClose() failed: " + e);
+      e.printStackTrace();
+    }
+  }
+  return 0;
+}
