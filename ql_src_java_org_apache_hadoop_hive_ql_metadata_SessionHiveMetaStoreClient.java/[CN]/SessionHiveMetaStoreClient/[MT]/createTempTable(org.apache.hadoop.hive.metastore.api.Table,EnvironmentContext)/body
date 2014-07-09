@@ -1,0 +1,31 @@
+{
+  SessionState ss=SessionState.get();
+  if (ss == null) {
+    throw new MetaException("No current SessionState, cannot create temporary table" + tbl.getDbName() + "."+ tbl.getTableName());
+  }
+  tbl=deepCopyAndLowerCaseTable(tbl);
+  String dbName=tbl.getDbName();
+  String tblName=tbl.getTableName();
+  Map<String,Table> tables=getTempTablesForDatabase(dbName);
+  if (tables != null && tables.containsKey(tblName)) {
+    throw new MetaException("Temporary table " + dbName + "."+ tblName+ " already exists");
+  }
+  Warehouse wh=getWh();
+  Path tblPath=wh.getDnsPath(new Path(tbl.getSd().getLocation()));
+  if (tblPath == null) {
+    throw new MetaException("Temp table path not set for " + tbl.getTableName());
+  }
+ else {
+    if (!wh.isDir(tblPath)) {
+      if (!wh.mkdirs(tblPath,true)) {
+        throw new MetaException(tblPath + " is not a directory or unable to create one");
+      }
+    }
+  }
+  Table tTable=new Table(tbl);
+  if (tables == null) {
+    tables=new HashMap<String,Table>();
+    ss.getTempTables().put(dbName,tables);
+  }
+  tables.put(tblName,tTable);
+}
