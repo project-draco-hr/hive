@@ -1,0 +1,59 @@
+{
+  List<String> nonPartColNamesThatRqrStats=new ArrayList<String>();
+  List<Integer> nonPartColIndxsThatRqrStats=new ArrayList<Integer>();
+  List<String> partColNamesThatRqrStats=new ArrayList<String>();
+  List<Integer> partColIndxsThatRqrStats=new ArrayList<Integer>();
+  Set<String> colNamesFailedStats=new HashSet<String>();
+  ColumnInfo tmp;
+  for (  Integer pi : projIndxLst) {
+    if (m_hiveColStatsMap.get(pi) == null) {
+      if ((tmp=m_hiveNonPartitionColsMap.get(pi)) != null) {
+        nonPartColNamesThatRqrStats.add(tmp.getInternalName());
+        nonPartColIndxsThatRqrStats.add(pi);
+      }
+ else       if ((tmp=m_hivePartitionColsMap.get(pi)) != null) {
+        partColNamesThatRqrStats.add(tmp.getInternalName());
+        partColIndxsThatRqrStats.add(pi);
+      }
+ else {
+        String logMsg="Unable to find Column Index: " + pi + ", in "+ m_hiveTblMetadata.getCompleteName();
+        LOG.error(logMsg);
+        throw new RuntimeException(logMsg);
+      }
+    }
+  }
+  if (nonPartColNamesThatRqrStats.size() > 0) {
+    List<ColStatistics> colStats=StatsUtils.getTableColumnStats(m_hiveTblMetadata,m_hiveNonPartitionCols,nonPartColNamesThatRqrStats);
+    if (colStats != null && colStats.size() == nonPartColNamesThatRqrStats.size()) {
+      for (int i=0; i < colStats.size(); i++) {
+        m_hiveColStatsMap.put(nonPartColIndxsThatRqrStats.get(i),colStats.get(i));
+      }
+    }
+ else {
+      colNamesFailedStats.addAll(nonPartColNamesThatRqrStats);
+    }
+  }
+  if (!partColNamesThatRqrStats.isEmpty()) {
+    if (m_numPartitions == null) {
+      try {
+        m_numPartitions=Hive.get().getPartitionNames(m_hiveTblMetadata.getDbName(),m_hiveTblMetadata.getTableName(),(short)-1).size();
+      }
+ catch (      HiveException e) {
+        String logMsg="Could not get stats, number of Partitions for " + m_hiveTblMetadata.getCompleteName();
+        LOG.error(logMsg);
+        throw new RuntimeException(logMsg);
+      }
+    }
+    ColStatistics cStats=null;
+    for (int i=0; i < partColNamesThatRqrStats.size(); i++) {
+      cStats=new ColStatistics(m_hiveTblMetadata.getTableName(),partColNamesThatRqrStats.get(i),m_hivePartitionColsMap.get(partColIndxsThatRqrStats.get(i)).getTypeName());
+      cStats.setCountDistint(m_numPartitions);
+      m_hiveColStatsMap.put(partColIndxsThatRqrStats.get(i),cStats);
+    }
+  }
+  if (!colNamesFailedStats.isEmpty()) {
+    String logMsg="No Stats for " + m_hiveTblMetadata.getCompleteName() + ", Columns: "+ getColNamesForLogging(colNamesFailedStats);
+    LOG.error(logMsg);
+    throw new RuntimeException(logMsg);
+  }
+}
