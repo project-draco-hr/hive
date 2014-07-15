@@ -1,0 +1,22 @@
+{
+  RelDataType aggFnRetType=TypeConverter.convert(agg.m_returnType,this.m_cluster.getTypeFactory());
+  Integer inputIndx;
+  List<Integer> argList=new ArrayList<Integer>();
+  RexNode rexNd=null;
+  RelDataTypeFactory dtFactory=this.m_cluster.getTypeFactory();
+  ImmutableList.Builder<RelDataType> aggArgRelDTBldr=new ImmutableList.Builder<RelDataType>();
+  for (  ExprNodeDesc expr : agg.m_aggParams) {
+    rexNd=converter.convert(expr);
+    inputIndx=rexNodeToPosMap.get(rexNd.toString());
+    if (inputIndx == null) {
+      gbChildProjLst.add(rexNd);
+      rexNodeToPosMap.put(rexNd.toString(),childProjLstIndx);
+      inputIndx=childProjLstIndx;
+      childProjLstIndx++;
+    }
+    argList.add(inputIndx);
+    aggArgRelDTBldr.add(TypeConverter.convert(expr.getTypeInfo(),dtFactory));
+  }
+  final Aggregation aggregation=SqlFunctionConverter.getOptiqAggFn(agg.m_udfName,aggArgRelDTBldr.build(),aggFnRetType);
+  return new AggregateCall(aggregation,agg.m_distinct,argList,aggFnRetType,null);
+}
