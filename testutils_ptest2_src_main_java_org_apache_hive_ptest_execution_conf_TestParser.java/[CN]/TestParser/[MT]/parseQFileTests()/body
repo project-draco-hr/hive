@@ -1,4 +1,5 @@
 {
+  Map<String,Properties> properties=parseQTestProperties();
   Splitter splitter=Splitter.on(" ").trimResults().omitEmptyStrings();
   List<QFileTestBatch> result=Lists.newArrayList();
   for (  String alias : context.getString("qFileTests","").split(" ")) {
@@ -9,18 +10,19 @@
     Set<String> excludedTests=Sets.newHashSet();
     for (    String excludedTestGroup : splitter.split(testContext.getString("exclude",""))) {
       excludedTests.addAll(Arrays.asList(testContext.getString(Joiner.on(".").join("groups",excludedTestGroup),"").trim().split(" ")));
+      expandTestProperties(excludedTests,properties);
     }
     Set<String> isolatedTests=Sets.newHashSet();
     for (    String ioslatedTestGroup : splitter.split(testContext.getString("isolate",""))) {
       isolatedTests.addAll(Arrays.asList(testContext.getString(Joiner.on(".").join("groups",ioslatedTestGroup),"").trim().split(" ")));
+      expandTestProperties(isolatedTests,properties);
     }
     Set<String> includedTests=Sets.newHashSet();
     for (    String includedTestGroup : splitter.split(testContext.getString("include",""))) {
       includedTests.addAll(Arrays.asList(testContext.getString(Joiner.on(".").join("groups",includedTestGroup),"").trim().split(" ")));
+      expandTestProperties(includedTests,properties);
     }
-    if (!includedTests.isEmpty() && !excludedTests.isEmpty()) {
-      throw new IllegalArgumentException(String.format("Included and excluded mutally exclusive." + " Included = %s, excluded = %s",includedTests.toString(),excludedTests.toString()));
-    }
+    includedTests.removeAll(excludedTests);
     result.addAll(createQFileTestBatches(driver,checkNotNull(testContext.getString("queryFilesProperty"),"queryFilesProperty").trim(),directory,testContext.getInteger("batchSize",30),isParallel,excludedTests,includedTests,isolatedTests));
   }
   return result;
