@@ -23,20 +23,51 @@
     }
   }
   if (nonPartColNamesThatRqrStats.size() > 0) {
-    List<ColStatistics> colStats=StatsUtils.getTableColumnStats(m_hiveTblMetadata,m_hiveNonPartitionCols,nonPartColNamesThatRqrStats);
-    if (colStats != null && colStats.size() == nonPartColNamesThatRqrStats.size()) {
-      for (int i=0; i < colStats.size(); i++) {
-        m_hiveColStatsMap.put(nonPartColIndxsThatRqrStats.get(i),colStats.get(i));
+    List<ColStatistics> hiveColStats;
+    if (partitionList == null) {
+      hiveColStats=StatsUtils.getTableColumnStats(m_hiveTblMetadata,m_hiveNonPartitionCols,nonPartColNamesThatRqrStats);
+      if (hiveColStats == null) {
+        colNamesFailedStats.addAll(nonPartColNamesThatRqrStats);
+      }
+ else       if (hiveColStats.size() != nonPartColNamesThatRqrStats.size()) {
+        Set<String> setOfFiledCols=new HashSet<String>(nonPartColNamesThatRqrStats);
+        Set<String> setOfObtainedColStats=new HashSet<String>();
+        for (        ColStatistics cs : hiveColStats) {
+          setOfObtainedColStats.add(cs.getColumnName());
+        }
+        setOfFiledCols.removeAll(setOfObtainedColStats);
+        colNamesFailedStats.addAll(setOfFiledCols);
       }
     }
  else {
-      colNamesFailedStats.addAll(nonPartColNamesThatRqrStats);
+      Statistics stats=StatsUtils.collectStatistics(m_hiveConf,partitionList,m_hiveTblMetadata,m_hiveNonPartitionCols,nonPartColNamesThatRqrStats);
+      m_rowCount=stats.getNumRows();
+      hiveColStats=new ArrayList<ColStatistics>();
+      for (      String c : nonPartColNamesThatRqrStats) {
+        ColStatistics cs=stats.getColumnStatisticsFromColName(c);
+        if (cs != null) {
+          hiveColStats.add(cs);
+        }
+ else {
+          colNamesFailedStats.add(c);
+        }
+      }
+    }
+    if (hiveColStats != null && hiveColStats.size() == nonPartColNamesThatRqrStats.size()) {
+      for (int i=0; i < hiveColStats.size(); i++) {
+        m_hiveColStatsMap.put(nonPartColIndxsThatRqrStats.get(i),hiveColStats.get(i));
+      }
     }
   }
-  if (!partColNamesThatRqrStats.isEmpty()) {
+  if (colNamesFailedStats.isEmpty() && !partColNamesThatRqrStats.isEmpty()) {
     if (m_numPartitions == null) {
       try {
-        m_numPartitions=Hive.get().getPartitionNames(m_hiveTblMetadata.getDbName(),m_hiveTblMetadata.getTableName(),(short)-1).size();
+        if (partitionList != null) {
+          m_numPartitions=partitionList.getPartitions().size();
+        }
+ else {
+          m_numPartitions=Hive.get().getPartitionNames(m_hiveTblMetadata.getDbName(),m_hiveTblMetadata.getTableName(),(short)-1).size();
+        }
       }
  catch (      HiveException e) {
         String logMsg="Could not get stats, number of Partitions for " + m_hiveTblMetadata.getCompleteName();
