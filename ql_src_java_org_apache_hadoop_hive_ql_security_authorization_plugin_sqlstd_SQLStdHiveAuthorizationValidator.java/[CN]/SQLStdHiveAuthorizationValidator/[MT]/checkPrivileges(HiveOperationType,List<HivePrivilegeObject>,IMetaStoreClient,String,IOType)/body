@@ -1,17 +1,26 @@
 {
+  if (hiveObjects == null) {
+    return;
+  }
   for (  HivePrivilegeObject hiveObj : hiveObjects) {
     RequiredPrivileges requiredPrivs=Operation2Privilege.getRequiredPrivs(hiveOpType,hiveObj,ioType);
-    RequiredPrivileges availPrivs;
-    if (hiveObj.getType() == HivePrivilegeObjectType.LOCAL_URI || hiveObj.getType() == HivePrivilegeObjectType.DFS_URI) {
+    RequiredPrivileges availPrivs=new RequiredPrivileges();
+switch (hiveObj.getType()) {
+case LOCAL_URI:
+case DFS_URI:
       availPrivs=SQLAuthorizationUtils.getPrivilegesFromFS(new Path(hiveObj.getTableViewURI()),conf,userName);
-    }
- else     if (hiveObj.getType() == HivePrivilegeObjectType.PARTITION) {
-      continue;
-    }
- else {
-      availPrivs=SQLAuthorizationUtils.getPrivilegesFromMetaStore(metastoreClient,userName,hiveObj,privController.getCurrentRoleNames(),privController.isUserAdmin());
-    }
-    Collection<SQLPrivTypeGrant> missingPriv=requiredPrivs.findMissingPrivs(availPrivs);
-    SQLAuthorizationUtils.assertNoMissingPrivilege(missingPriv,new HivePrincipal(userName,HivePrincipalType.USER),hiveObj);
-  }
+    break;
+case PARTITION:
+  continue;
+case COMMAND_PARAMS:
+if (privController.isUserAdmin()) {
+  availPrivs.addPrivilege(SQLPrivTypeGrant.ADMIN_PRIV);
+}
+break;
+default :
+availPrivs=SQLAuthorizationUtils.getPrivilegesFromMetaStore(metastoreClient,userName,hiveObj,privController.getCurrentRoleNames(),privController.isUserAdmin());
+}
+Collection<SQLPrivTypeGrant> missingPriv=requiredPrivs.findMissingPrivs(availPrivs);
+SQLAuthorizationUtils.assertNoMissingPrivilege(missingPriv,new HivePrincipal(userName,HivePrincipalType.USER),hiveObj,hiveOpType);
+}
 }
