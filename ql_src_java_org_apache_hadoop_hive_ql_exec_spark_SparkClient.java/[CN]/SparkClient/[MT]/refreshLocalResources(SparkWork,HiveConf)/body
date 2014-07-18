@@ -1,0 +1,43 @@
+{
+  String hiveJar=conf.getJar();
+  if (!localJars.contains(hiveJar)) {
+    localJars.add(hiveJar);
+    sc.addJar(hiveJar);
+  }
+  String auxJars=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEAUXJARS);
+  if (StringUtils.isNotEmpty(auxJars) && StringUtils.isNotBlank(auxJars)) {
+    addResources(auxJars,localJars);
+  }
+  String addedJars=Utilities.getResourceFiles(conf,SessionState.ResourceType.JAR);
+  if (StringUtils.isNotEmpty(addedJars) && StringUtils.isNotBlank(addedJars)) {
+    HiveConf.setVar(conf,HiveConf.ConfVars.HIVEADDEDJARS,addedJars);
+    addResources(addedJars,localJars);
+  }
+  final String MR_JAR_PROPERTY="tmpjars";
+  JobConf jobConf=new JobConf(conf);
+  jobConf.setStrings(MR_JAR_PROPERTY,new String[0]);
+  sparkWork.getMapWork().configureJobConf(jobConf);
+  ReduceWork redWork=sparkWork.getReduceWork();
+  if (redWork != null) {
+    redWork.configureJobConf(jobConf);
+  }
+  String[] newTmpJars=jobConf.getStrings(MR_JAR_PROPERTY);
+  if (newTmpJars != null && newTmpJars.length > 0) {
+    for (    String tmpJar : newTmpJars) {
+      if (StringUtils.isNotEmpty(tmpJar) && StringUtils.isNotBlank(tmpJar) && !localJars.contains(tmpJar)) {
+        localJars.add(tmpJar);
+        sc.addJar(tmpJar);
+      }
+    }
+  }
+  String addedFiles=Utilities.getResourceFiles(conf,SessionState.ResourceType.FILE);
+  if (StringUtils.isNotEmpty(addedFiles) && StringUtils.isNotBlank(addedFiles)) {
+    HiveConf.setVar(conf,HiveConf.ConfVars.HIVEADDEDFILES,addedFiles);
+    addResources(addedFiles,localFiles);
+  }
+  String addedArchives=Utilities.getResourceFiles(conf,SessionState.ResourceType.ARCHIVE);
+  if (StringUtils.isNotEmpty(addedArchives) && StringUtils.isNotBlank(addedArchives)) {
+    HiveConf.setVar(conf,HiveConf.ConfVars.HIVEADDEDARCHIVES,addedArchives);
+    addResources(addedArchives,localFiles);
+  }
+}
