@@ -2,9 +2,6 @@
   Task<? extends Serializable> task=(Task<? extends Serializable>)nd;
   ParseContext parseContext=physicalContext.getParseContext();
   WalkerCtx walkerCtx=new WalkerCtx();
-  Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
-  opRules.put(new RuleRegExp("R1",TableScanOperator.getOperatorName() + "%"),new TableScanProcessor());
-  opRules.put(new RuleRegExp("R2",GroupByOperator.getOperatorName() + "%.*" + FileSinkOperator.getOperatorName()+ "%"),new FileSinkProcessor());
   for (  MapWork mapWork : task.getMapWork()) {
     LOG.debug("Looking at: " + mapWork.getName());
     Collection<Operator<? extends OperatorDesc>> topOperators=mapWork.getAliasToWork().values();
@@ -13,7 +10,7 @@
       return null;
     }
     LOG.info("Looking for table scans where optimization is applicable");
-    Dispatcher disp=new DefaultRuleDispatcher(null,opRules,walkerCtx);
+    Dispatcher disp=new DefaultRuleDispatcher(null,rules,walkerCtx);
     GraphWalker ogw=new PreOrderWalker(disp);
     ArrayList<Node> topNodes=new ArrayList<Node>();
     for (    Operator<? extends OperatorDesc> workOperator : topOperators) {
@@ -26,13 +23,13 @@
       topNodes.add(reducer);
     }
     ogw.startWalking(topNodes,null);
-    LOG.info(String.format("Found %d metadata only table scans",walkerCtx.getMetadataOnlyTableScans().size()));
+    LOG.info(String.format("Found %d null table scans",walkerCtx.getMetadataOnlyTableScans().size()));
     Iterator<TableScanOperator> iterator=walkerCtx.getMetadataOnlyTableScans().iterator();
     while (iterator.hasNext()) {
       TableScanOperator tso=iterator.next();
-      ((TableScanDesc)tso.getConf()).setIsMetadataOnly(true);
+      tso.getConf().setIsMetadataOnly(true);
       String alias=getAliasForTableScanOperator(mapWork,tso);
-      LOG.info("Metadata only table scan for " + alias);
+      LOG.info("Null table scan for " + alias);
       processAlias(mapWork,alias);
     }
   }
