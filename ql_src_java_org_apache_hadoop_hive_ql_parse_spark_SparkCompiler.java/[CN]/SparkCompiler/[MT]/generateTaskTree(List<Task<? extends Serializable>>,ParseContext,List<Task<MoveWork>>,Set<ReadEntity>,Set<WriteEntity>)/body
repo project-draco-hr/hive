@@ -1,0 +1,20 @@
+{
+  GenSparkUtils.getUtils().resetSequenceNumber();
+  ParseContext tempParseContext=getParseContext(pCtx,rootTasks);
+  GenSparkWork genSparkWork=new GenSparkWork(GenSparkUtils.getUtils());
+  GenSparkProcContext procCtx=new GenSparkProcContext(conf,tempParseContext,mvTask,rootTasks,inputs,outputs);
+  Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
+  opRules.put(new RuleRegExp("Split Work - ReduceSink",ReduceSinkOperator.getOperatorName() + "%"),genSparkWork);
+  opRules.put(new RuleRegExp("Split Work + Move/Merge - FileSink",FileSinkOperator.getOperatorName() + "%"),new CompositeProcessor(new SparkFileSinkProcessor(),genSparkWork));
+  Dispatcher disp=new DefaultRuleDispatcher(null,opRules,procCtx);
+  List<Node> topNodes=new ArrayList<Node>();
+  topNodes.addAll(pCtx.getTopOps().values());
+  GraphWalker ogw=new GenSparkWorkWalker(disp,procCtx);
+  ogw.startWalking(topNodes,null);
+  for (  BaseWork w : procCtx.workWithUnionOperators) {
+    GenSparkUtils.getUtils().removeUnionOperators(conf,procCtx,w);
+  }
+  for (  FileSinkOperator fileSink : procCtx.fileSinkSet) {
+    GenSparkUtils.getUtils().processFileSink(procCtx,fileSink);
+  }
+}
