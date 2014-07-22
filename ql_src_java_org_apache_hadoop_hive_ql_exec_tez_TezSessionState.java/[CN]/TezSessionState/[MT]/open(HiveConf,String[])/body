@@ -12,8 +12,6 @@
     }
   }
   refreshLocalResourcesFromConf(conf);
-  TezConfiguration tezConfig=new TezConfiguration(conf);
-  tezConfig.set(TezConfiguration.TEZ_AM_STAGING_DIR,tezScratchDir.toUri().toString());
   appJarLr=createJarLocalResource(utils.getExecJarPathLocal());
   Map<String,LocalResource> commonLocalResources=new HashMap<String,LocalResource>();
   commonLocalResources.put(utils.getBaseName(appJarLr),appJarLr);
@@ -22,15 +20,15 @@
   }
   Map<String,String> amEnv=new HashMap<String,String>();
   MRHelpers.updateEnvironmentForMRAM(conf,amEnv);
-  AMConfiguration amConfig=new AMConfiguration(amEnv,commonLocalResources,tezConfig,null);
-  TezSessionConfiguration sessionConfig=new TezSessionConfiguration(amConfig,tezConfig);
-  session=new TezSession("HIVE-" + sessionId,sessionConfig);
+  TezConfiguration tezConfig=new TezConfiguration(conf);
+  tezConfig.set(TezConfiguration.TEZ_AM_STAGING_DIR,tezScratchDir.toUri().toString());
+  session=new TezClient("HIVE-" + sessionId,tezConfig,true,commonLocalResources,null);
   LOG.info("Opening new Tez Session (id: " + sessionId + ", scratch dir: "+ tezScratchDir+ ")");
   session.start();
   if (HiveConf.getBoolVar(conf,ConfVars.HIVE_PREWARM_ENABLED)) {
     int n=HiveConf.getIntVar(conf,ConfVars.HIVE_PREWARM_NUM_CONTAINERS);
     LOG.info("Prewarming " + n + " containers  (id: "+ sessionId+ ", scratch dir: "+ tezScratchDir+ ")");
-    PreWarmContext context=utils.createPreWarmContext(sessionConfig,n,commonLocalResources);
+    PreWarmContext context=utils.createPreWarmContext(tezConfig,n,commonLocalResources);
     try {
       session.preWarm(context);
     }
@@ -40,7 +38,8 @@
       }
     }
   }
+  session.waitTillReady();
   conf.set("mapreduce.framework.name","yarn-tez");
-  conf.set("mapreduce.tez.session.tokill-application-id",session.getApplicationId().toString());
+  conf.set("mapreduce.tez.session.tokill-application-id",session.getAppMasterApplicationId().toString());
   openSessions.add(this);
 }
