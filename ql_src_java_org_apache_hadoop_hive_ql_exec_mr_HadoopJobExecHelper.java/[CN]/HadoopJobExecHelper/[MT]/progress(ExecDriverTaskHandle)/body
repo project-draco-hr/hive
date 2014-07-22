@@ -1,7 +1,6 @@
 {
   JobClient jc=th.getJobClient();
   RunningJob rj=th.getRunningJob();
-  String lastReport="";
   SimpleDateFormat dateFormat=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS");
   long reportTime=System.currentTimeMillis();
   long maxReportInterval=HiveConf.getLongVar(job,HiveConf.ConfVars.HIVE_LOG_INCREMENTAL_PLAN_PROGRESS_INTERVAL);
@@ -14,12 +13,14 @@
   int numMap=-1;
   int numReduce=-1;
   List<ClientStatsPublisher> clientStatPublishers=getClientStatPublishers();
+  Heartbeater heartbeater=new Heartbeater(th.getTxnManager(),job);
   while (!rj.isComplete()) {
     try {
       Thread.sleep(pullInterval);
     }
  catch (    InterruptedException e) {
     }
+    heartbeater.heartbeat();
     if (initializing && rj.getJobState() == JobStatus.PREP) {
       continue;
     }
@@ -30,7 +31,7 @@
       SessionState ss=SessionState.get();
       String logMapper;
       String logReducer;
-      TaskReport[] mappers=jc.getMapTaskReports(rj.getJobID());
+      TaskReport[] mappers=jc.getMapTaskReports(rj.getID());
       if (mappers == null) {
         logMapper="no information for number of mappers; ";
       }
@@ -41,7 +42,7 @@
         }
         logMapper="number of mappers: " + numMap + "; ";
       }
-      TaskReport[] reducers=jc.getReduceTaskReports(rj.getJobID());
+      TaskReport[] reducers=jc.getReduceTaskReports(rj.getID());
       if (reducers == null) {
         logReducer="no information for number of reducers. ";
       }
@@ -55,9 +56,9 @@
       console.printInfo("Hadoop job information for " + getId() + ": "+ logMapper+ logReducer);
       initOutputPrinted=true;
     }
-    RunningJob newRj=jc.getJob(rj.getJobID());
+    RunningJob newRj=jc.getJob(rj.getID());
     if (newRj == null) {
-      throw new IOException("Could not find status of job:" + rj.getJobID());
+      throw new IOException("Could not find status of job:" + rj.getID());
     }
  else {
       th.setRunningJob(newRj);
@@ -85,32 +86,36 @@
         }
       }
     }
-    String report=" " + getId() + " map = "+ mapProgress+ "%,  reduce = "+ reduceProgress+ "%";
-    if (!report.equals(lastReport) || System.currentTimeMillis() >= reportTime + maxReportInterval) {
-      if (ctrs != null) {
-        Counter counterCpuMsec=ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","CPU_MILLISECONDS");
-        if (counterCpuMsec != null) {
-          long newCpuMSec=counterCpuMsec.getValue();
-          if (newCpuMSec > 0) {
-            cpuMsec=newCpuMSec;
-            report+=", Cumulative CPU " + (cpuMsec / 1000D) + " sec";
-          }
-        }
-      }
-      String output=dateFormat.format(Calendar.getInstance().getTime()) + report;
-      SessionState ss=SessionState.get();
-      if (ss != null) {
-        ss.getHiveHistory().setTaskCounters(SessionState.get().getQueryId(),getId(),ctrs);
-        ss.getHiveHistory().setTaskProperty(SessionState.get().getQueryId(),getId(),Keys.TASK_HADOOP_PROGRESS,output);
-        if (ss.getConf().getBoolVar(HiveConf.ConfVars.HIVE_LOG_INCREMENTAL_PLAN_PROGRESS)) {
-          ss.getHiveHistory().progressTask(SessionState.get().getQueryId(),this.task);
-          this.callBackObj.logPlanProgress(ss);
-        }
-      }
-      console.printInfo(output);
-      lastReport=report;
-      reportTime=System.currentTimeMillis();
+    if (mapProgress == lastMapProgress && reduceProgress == lastReduceProgress && System.currentTimeMillis() < reportTime + maxReportInterval) {
+      continue;
     }
+    StringBuilder report=new StringBuilder();
+    report.append(dateFormat.format(Calendar.getInstance().getTime()));
+    report.append(' ').append(getId());
+    report.append(" map = ").append(mapProgress).append("%, ");
+    report.append(" reduce = ").append(reduceProgress).append('%');
+    if (ctrs != null) {
+      Counter counterCpuMsec=ctrs.findCounter("org.apache.hadoop.mapred.Task$Counter","CPU_MILLISECONDS");
+      if (counterCpuMsec != null) {
+        long newCpuMSec=counterCpuMsec.getValue();
+        if (newCpuMSec > 0) {
+          cpuMsec=newCpuMSec;
+          report.append(", Cumulative CPU ").append((cpuMsec / 1000D)).append(" sec");
+        }
+      }
+    }
+    String output=report.toString();
+    SessionState ss=SessionState.get();
+    if (ss != null) {
+      ss.getHiveHistory().setTaskCounters(SessionState.get().getQueryId(),getId(),ctrs);
+      ss.getHiveHistory().setTaskProperty(SessionState.get().getQueryId(),getId(),Keys.TASK_HADOOP_PROGRESS,output);
+      if (ss.getConf().getBoolVar(HiveConf.ConfVars.HIVE_LOG_INCREMENTAL_PLAN_PROGRESS)) {
+        ss.getHiveHistory().progressTask(SessionState.get().getQueryId(),this.task);
+        this.callBackObj.logPlanProgress(ss);
+      }
+    }
+    console.printInfo(output);
+    reportTime=System.currentTimeMillis();
   }
   if (cpuMsec > 0) {
     console.printInfo("MapReduce Total cumulative CPU time: " + Utilities.formatMsecToStr(cpuMsec));

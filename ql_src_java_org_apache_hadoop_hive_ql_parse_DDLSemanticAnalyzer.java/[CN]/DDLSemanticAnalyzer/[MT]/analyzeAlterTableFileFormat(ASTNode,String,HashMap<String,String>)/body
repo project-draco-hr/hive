@@ -1,53 +1,10 @@
 {
-  String inputFormat=null;
-  String outputFormat=null;
-  String storageHandler=null;
-  String serde=null;
+  StorageFormat format=new StorageFormat(conf);
   ASTNode child=(ASTNode)ast.getChild(0);
-switch (child.getToken().getType()) {
-case HiveParser.TOK_TABLEFILEFORMAT:
-    inputFormat=unescapeSQLString(((ASTNode)child.getChild(0)).getToken().getText());
-  outputFormat=unescapeSQLString(((ASTNode)child.getChild(1)).getToken().getText());
-try {
-  Class.forName(inputFormat);
-  Class.forName(outputFormat);
-}
- catch (ClassNotFoundException e) {
-  throw new SemanticException(e);
-}
-break;
-case HiveParser.TOK_STORAGEHANDLER:
-storageHandler=unescapeSQLString(((ASTNode)child.getChild(1)).getToken().getText());
-try {
-Class.forName(storageHandler);
-}
- catch (ClassNotFoundException e) {
-throw new SemanticException(e);
-}
-break;
-case HiveParser.TOK_TBLSEQUENCEFILE:
-inputFormat=SEQUENCEFILE_INPUT;
-outputFormat=SEQUENCEFILE_OUTPUT;
-break;
-case HiveParser.TOK_TBLTEXTFILE:
-inputFormat=TEXTFILE_INPUT;
-outputFormat=TEXTFILE_OUTPUT;
-break;
-case HiveParser.TOK_TBLRCFILE:
-inputFormat=RCFILE_INPUT;
-outputFormat=RCFILE_OUTPUT;
-serde=conf.getVar(HiveConf.ConfVars.HIVEDEFAULTRCFILESERDE);
-break;
-case HiveParser.TOK_TBLORCFILE:
-inputFormat=ORCFILE_INPUT;
-outputFormat=ORCFILE_OUTPUT;
-serde=ORCFILE_SERDE;
-break;
-case HiveParser.TOK_FILEFORMAT_GENERIC:
-handleGenericFileFormat(child);
-break;
-}
-AlterTableDesc alterTblDesc=new AlterTableDesc(tableName,inputFormat,outputFormat,serde,storageHandler,partSpec);
-addInputsOutputsAlterTable(tableName,partSpec,alterTblDesc);
-rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),alterTblDesc),conf));
+  if (!format.fillStorageFormat(child)) {
+    throw new AssertionError("Unknown token " + child.getText());
+  }
+  AlterTableDesc alterTblDesc=new AlterTableDesc(tableName,format.getInputFormat(),format.getOutputFormat(),format.getSerde(),format.getStorageHandler(),partSpec);
+  addInputsOutputsAlterTable(tableName,partSpec,alterTblDesc);
+  rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),alterTblDesc),conf));
 }

@@ -2,15 +2,31 @@
   this.hiveConf=hiveConf;
   sessionManager=new SessionManager();
   addService(sessionManager);
-  try {
-    HiveAuthFactory.loginFromKeytab(hiveConf);
-    serverUserName=ShimLoader.getHadoopShims().getShortUserName(ShimLoader.getHadoopShims().getUGIForConf(hiveConf));
-  }
- catch (  IOException e) {
-    throw new ServiceException("Unable to login to kerberos with given principal/keytab",e);
-  }
-catch (  LoginException e) {
-    throw new ServiceException("Unable to login to kerberos with given principal/keytab",e);
+  if (hiveConf.getVar(ConfVars.HIVE_SERVER2_AUTHENTICATION).equalsIgnoreCase(HiveAuthFactory.AuthTypes.KERBEROS.toString())) {
+    try {
+      HiveAuthFactory.loginFromKeytab(hiveConf);
+      this.serviceUGI=ShimLoader.getHadoopShims().getUGIForConf(hiveConf);
+    }
+ catch (    IOException e) {
+      throw new ServiceException("Unable to login to kerberos with given principal/keytab",e);
+    }
+catch (    LoginException e) {
+      throw new ServiceException("Unable to login to kerberos with given principal/keytab",e);
+    }
+    String principal=hiveConf.getVar(ConfVars.HIVE_SERVER2_SPNEGO_PRINCIPAL);
+    String keyTabFile=hiveConf.getVar(ConfVars.HIVE_SERVER2_SPNEGO_KEYTAB);
+    if (principal.isEmpty() || keyTabFile.isEmpty()) {
+      LOG.info("SPNego httpUGI not created, spNegoPrincipal: " + principal + ", ketabFile: "+ keyTabFile);
+    }
+ else {
+      try {
+        this.httpUGI=HiveAuthFactory.loginFromSpnegoKeytabAndReturnUGI(hiveConf);
+        LOG.info("SPNego httpUGI successfully created.");
+      }
+ catch (      IOException e) {
+        LOG.warn("SPNego httpUGI creation failed: ",e);
+      }
+    }
   }
   super.init(hiveConf);
 }

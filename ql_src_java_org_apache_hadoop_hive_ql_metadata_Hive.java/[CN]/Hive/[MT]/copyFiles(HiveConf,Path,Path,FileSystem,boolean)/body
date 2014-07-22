@@ -1,0 +1,38 @@
+{
+  boolean inheritPerms=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_WAREHOUSE_SUBDIR_INHERIT_PERMS);
+  try {
+    if (!fs.exists(destf)) {
+      FileUtils.mkdir(fs,destf,inheritPerms,conf);
+    }
+  }
+ catch (  IOException e) {
+    throw new HiveException("copyFiles: error while checking/creating destination directory!!!",e);
+  }
+  FileStatus[] srcs;
+  FileSystem srcFs;
+  try {
+    srcFs=srcf.getFileSystem(conf);
+    srcs=srcFs.globStatus(srcf);
+  }
+ catch (  IOException e) {
+    LOG.error(StringUtils.stringifyException(e));
+    throw new HiveException("addFiles: filesystem error in check phase",e);
+  }
+  if (srcs == null) {
+    LOG.info("No sources specified to move: " + srcf);
+    return;
+  }
+  List<List<Path[]>> result=checkPaths(conf,fs,srcs,srcFs,destf,false);
+  try {
+    for (    List<Path[]> sdpairs : result) {
+      for (      Path[] sdpair : sdpairs) {
+        if (!renameFile(conf,sdpair[0],sdpair[1],fs,false,isSrcLocal)) {
+          throw new IOException("Cannot move " + sdpair[0] + " to "+ sdpair[1]);
+        }
+      }
+    }
+  }
+ catch (  IOException e) {
+    throw new HiveException("copyFiles: error while moving files!!!",e);
+  }
+}

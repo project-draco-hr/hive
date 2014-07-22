@@ -3,17 +3,18 @@
   if (tbl.getSd().getLocation() != null) {
     throw new MetaException("LOCATION may not be specified for HBase.");
   }
+  HTable htable=null;
   try {
     String tableName=getHBaseTableName(tbl);
     Map<String,String> serdeParam=tbl.getSd().getSerdeInfo().getParameters();
     String hbaseColumnsMapping=serdeParam.get(HBaseSerDe.HBASE_COLUMNS_MAPPING);
-    List<ColumnMapping> columnsMapping=HBaseSerDe.parseColumnsMapping(hbaseColumnsMapping);
+    ColumnMappings columnMappings=HBaseSerDe.parseColumnsMapping(hbaseColumnsMapping);
     HTableDescriptor tableDesc;
     if (!getHBaseAdmin().tableExists(tableName)) {
       if (!isExternal) {
         tableDesc=new HTableDescriptor(tableName);
         Set<String> uniqueColumnFamilies=new HashSet<String>();
-        for (        ColumnMapping colMap : columnsMapping) {
+        for (        ColumnMapping colMap : columnMappings) {
           if (!colMap.hbaseRowKey) {
             uniqueColumnFamilies.add(colMap.familyName);
           }
@@ -32,8 +33,7 @@
         throw new MetaException("Table " + tableName + " already exists"+ " within HBase; use CREATE EXTERNAL TABLE instead to"+ " register it in Hive.");
       }
       tableDesc=getHBaseAdmin().getTableDescriptor(Bytes.toBytes(tableName));
-      for (int i=0; i < columnsMapping.size(); i++) {
-        ColumnMapping colMap=columnsMapping.get(i);
+      for (      ColumnMapping colMap : columnMappings) {
         if (colMap.hbaseRowKey) {
           continue;
         }
@@ -42,9 +42,14 @@
         }
       }
     }
-    new HTable(hbaseConf,tableDesc.getName());
+    htable=new HTable(hbaseConf,tableDesc.getName());
   }
  catch (  Exception se) {
     throw new MetaException(StringUtils.stringifyException(se));
+  }
+ finally {
+    if (htable != null) {
+      IOUtils.closeQuietly(htable);
+    }
   }
 }

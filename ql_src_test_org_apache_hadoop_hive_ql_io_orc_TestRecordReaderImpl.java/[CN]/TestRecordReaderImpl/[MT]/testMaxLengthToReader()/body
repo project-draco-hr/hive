@@ -1,0 +1,19 @@
+{
+  Configuration conf=new Configuration();
+  OrcProto.Type rowType=OrcProto.Type.newBuilder().setKind(OrcProto.Type.Kind.STRUCT).build();
+  OrcProto.Footer footer=OrcProto.Footer.newBuilder().setHeaderLength(0).setContentLength(0).setNumberOfRows(0).setRowIndexStride(0).addTypes(rowType).build();
+  OrcProto.PostScript ps=OrcProto.PostScript.newBuilder().setCompression(OrcProto.CompressionKind.NONE).setFooterLength(footer.getSerializedSize()).setMagic("ORC").addVersion(0).addVersion(11).build();
+  DataOutputBuffer buffer=new DataOutputBuffer();
+  footer.writeTo(buffer);
+  ps.writeTo(buffer);
+  buffer.write(ps.getSerializedSize());
+  FileSystem fs=Mockito.mock(FileSystem.class,settings);
+  FSDataInputStream file=new FSDataInputStream(new BufferInStream(buffer.getData(),buffer.getLength()));
+  Path p=new Path("/dir/file.orc");
+  Mockito.when(fs.open(p)).thenReturn(file);
+  OrcFile.ReaderOptions options=OrcFile.readerOptions(conf);
+  options.filesystem(fs);
+  options.maxLength(buffer.getLength());
+  Mockito.when(fs.getFileStatus(p)).thenReturn(new FileStatus(10,false,3,3000,0,p));
+  Reader reader=OrcFile.createReader(p,options);
+}

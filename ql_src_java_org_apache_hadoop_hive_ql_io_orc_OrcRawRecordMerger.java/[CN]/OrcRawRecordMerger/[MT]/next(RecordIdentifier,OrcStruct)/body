@@ -1,0 +1,41 @@
+{
+  boolean keysSame=true;
+  while (keysSame && primary != null) {
+    OrcStruct current=primary.nextRecord;
+    recordIdentifier.set(primary.key);
+    primary.next(extraValue);
+    extraValue=current;
+    if (primary.nextRecord == null || primary.key.compareTo(secondaryKey) > 0) {
+      if (primary.nextRecord != null) {
+        readers.put(primary.key,primary);
+      }
+      Map.Entry<ReaderKey,ReaderPair> entry=readers.pollFirstEntry();
+      if (entry != null) {
+        primary=entry.getValue();
+        if (readers.isEmpty()) {
+          secondaryKey=null;
+        }
+ else {
+          secondaryKey=readers.firstKey();
+        }
+      }
+ else {
+        primary=null;
+      }
+    }
+    if (!validTxnList.isTxnCommitted(((ReaderKey)recordIdentifier).getCurrentTransactionId())) {
+      continue;
+    }
+    if (collapse) {
+      keysSame=prevKey.compareRow(recordIdentifier) == 0;
+      if (!keysSame) {
+        prevKey.set(recordIdentifier);
+      }
+    }
+ else {
+      keysSame=false;
+    }
+    prev.linkFields(current);
+  }
+  return !keysSame;
+}

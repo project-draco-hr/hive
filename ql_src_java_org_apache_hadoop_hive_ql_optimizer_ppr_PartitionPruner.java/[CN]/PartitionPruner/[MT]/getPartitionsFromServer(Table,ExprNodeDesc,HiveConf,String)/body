@@ -1,21 +1,22 @@
 {
   try {
     if (!tab.isPartitioned()) {
-      return new PrunedPartitionList(tab,getAllPartitions(tab),false);
+      return new PrunedPartitionList(tab,getAllPartitions(tab),null,false);
     }
     LOG.debug("tabname = " + tab.getTableName() + " is partitioned");
     if ("strict".equalsIgnoreCase(HiveConf.getVar(conf,HiveConf.ConfVars.HIVEMAPREDMODE)) && !hasColumnExpr(prunerExpr)) {
       throw new SemanticException(ErrorMsg.NO_PARTITION_PREDICATE.getMsg("for Alias \"" + alias + "\" Table \""+ tab.getTableName()+ "\""));
     }
     if (prunerExpr == null) {
-      return new PrunedPartitionList(tab,getAllPartitions(tab),false);
+      return new PrunedPartitionList(tab,getAllPartitions(tab),null,false);
     }
-    prunerExpr=removeNonPartCols(prunerExpr,extractPartColNames(tab));
+    Set<String> referred=new LinkedHashSet<String>();
+    prunerExpr=removeNonPartCols(prunerExpr,extractPartColNames(tab),referred);
     ExprNodeGenericFuncDesc compactExpr=(ExprNodeGenericFuncDesc)compactExpr(prunerExpr.clone());
     String oldFilter=prunerExpr.getExprString();
     if (compactExpr == null) {
       LOG.debug("Filter " + oldFilter + " was null after compacting");
-      return new PrunedPartitionList(tab,getAllPartitions(tab),true);
+      return new PrunedPartitionList(tab,getAllPartitions(tab),null,true);
     }
     LOG.debug("Filter w/ compacting: " + compactExpr.getExprString() + "; filter w/o compacting: "+ oldFilter);
     boolean doEvalClientSide=hasUserFunctions(compactExpr);
@@ -39,7 +40,7 @@
       hasUnknownPartitions=pruneBySequentialScan(tab,partitions,compactExpr,conf);
     }
     boolean isPruningByExactFilter=oldFilter.equals(compactExpr.getExprString());
-    return new PrunedPartitionList(tab,new LinkedHashSet<Partition>(partitions),hasUnknownPartitions || !isPruningByExactFilter);
+    return new PrunedPartitionList(tab,new LinkedHashSet<Partition>(partitions),new ArrayList<String>(referred),hasUnknownPartitions || !isPruningByExactFilter);
   }
  catch (  HiveException e) {
     throw e;

@@ -1,4 +1,5 @@
 {
+  HiveConf.setLoadMetastoreConfig(true);
   HiveMetastoreCli cli=new HiveMetastoreCli();
   cli.parse(args);
   final boolean isCliVerbose=cli.isVerbose();
@@ -31,7 +32,11 @@
       }
     }
 );
-    startMetaStore(cli.port,ShimLoader.getHadoopThriftAuthBridge(),conf);
+    Lock startLock=new ReentrantLock();
+    Condition startCondition=startLock.newCondition();
+    MetaStoreThread.BooleanPointer startedServing=new MetaStoreThread.BooleanPointer();
+    startMetaStoreThreads(conf,startLock,startCondition,startedServing);
+    startMetaStore(cli.port,ShimLoader.getHadoopThriftAuthBridge(),conf,startLock,startCondition,startedServing);
   }
  catch (  Throwable t) {
     HMSHandler.LOG.error("Metastore Thrift Server threw an exception...",t);

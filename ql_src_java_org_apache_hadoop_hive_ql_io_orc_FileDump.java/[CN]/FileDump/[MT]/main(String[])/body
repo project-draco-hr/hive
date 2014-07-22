@@ -1,10 +1,29 @@
 {
   Configuration conf=new Configuration();
-  for (  String filename : args) {
+  List<String> files=new ArrayList<String>();
+  List<Integer> rowIndexCols=null;
+  for (  String arg : args) {
+    if (arg.startsWith("--")) {
+      if (arg.startsWith(ROWINDEX_PREFIX)) {
+        String[] colStrs=arg.substring(ROWINDEX_PREFIX.length()).split(",");
+        rowIndexCols=new ArrayList<Integer>(colStrs.length);
+        for (        String colStr : colStrs) {
+          rowIndexCols.add(Integer.parseInt(colStr));
+        }
+      }
+ else {
+        System.err.println("Unknown argument " + arg);
+      }
+    }
+ else {
+      files.add(arg);
+    }
+  }
+  for (  String filename : files) {
     System.out.println("Structure for " + filename);
     Path path=new Path(filename);
-    Reader reader=OrcFile.createReader(path.getFileSystem(conf),path,conf);
-    RecordReaderImpl rows=(RecordReaderImpl)reader.rows(null);
+    Reader reader=OrcFile.createReader(path,OrcFile.readerOptions(conf));
+    RecordReaderImpl rows=(RecordReaderImpl)reader.rows();
     System.out.println("Rows: " + reader.getNumberOfRows());
     System.out.println("Compression: " + reader.getCompression());
     if (reader.getCompression() != CompressionKind.NONE) {
@@ -26,7 +45,9 @@
       System.out.println("  Column " + i + ": "+ stats[i].toString());
     }
     System.out.println("\nStripes:");
+    int stripeIx=-1;
     for (    StripeInformation stripe : reader.getStripes()) {
+      ++stripeIx;
       long stripeStart=stripe.getOffset();
       System.out.println("  Stripe: " + stripe.toString());
       OrcProto.StripeFooter footer=rows.readStripeFooter(stripe);
@@ -49,7 +70,52 @@
         }
         System.out.println(buf);
       }
+      if (rowIndexCols != null) {
+        RowIndex[] indices=rows.readRowIndex(stripeIx);
+        for (        int col : rowIndexCols) {
+          StringBuilder buf=new StringBuilder();
+          buf.append("    Column ").append(col).append(": row index");
+          RowIndex index=null;
+          if ((col >= indices.length) || ((index=indices[col]) == null)) {
+            buf.append(" not found\n");
+            continue;
+          }
+          for (int entryIx=0; entryIx < index.getEntryCount(); ++entryIx) {
+            buf.append("      RG ").append(entryIx).append(": ");
+            RowIndexEntry entry=index.getEntry(entryIx);
+            if (entry == null) {
+              buf.append("unknown\n");
+              continue;
+            }
+            OrcProto.ColumnStatistics colStats=entry.getStatistics();
+            if (colStats == null) {
+              buf.append("no stats at ");
+            }
+ else {
+              ColumnStatistics cs=ColumnStatisticsImpl.deserialize(colStats);
+              Object min=RecordReaderImpl.getMin(cs), max=RecordReaderImpl.getMax(cs);
+              buf.append("[").append(min).append(", ").append(max).append(") at ");
+            }
+            for (int posIx=0; posIx < entry.getPositionsCount(); ++posIx) {
+              if (posIx != 0) {
+                buf.append(",");
+              }
+              buf.append(entry.getPositions(posIx));
+            }
+            buf.append("\n");
+          }
+          System.out.println(buf);
+        }
+      }
     }
+    FileSystem fs=path.getFileSystem(conf);
+    long fileLen=fs.getContentSummary(path).getLength();
+    long paddedBytes=getTotalPaddingSize(reader);
+    double percentPadding=((double)paddedBytes / (double)fileLen) * 100;
+    DecimalFormat format=new DecimalFormat("##.##");
+    System.out.println("\nFile length: " + fileLen + " bytes");
+    System.out.println("Padding length: " + paddedBytes + " bytes");
+    System.out.println("Padding ratio: " + format.format(percentPadding) + "%");
     rows.close();
   }
 }

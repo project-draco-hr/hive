@@ -8,9 +8,6 @@
       try {
         List<Path> paths=Utilities.getInputPathsTez(job,mrwork);
         dirs=paths.toArray(new Path[paths.size()]);
-        if (dirs.length == 0) {
-          throw new IOException("No input paths specified in job");
-        }
       }
  catch (      Exception e) {
         throw new IOException("Could not create input files",e);
@@ -26,6 +23,10 @@
   Class<? extends InputFormat> currentInputFormatClass=null;
   TableDesc currentTable=null;
   TableScanOperator currentTableScan=null;
+  boolean pushDownProjection=false;
+  StringBuilder readColumnsBuffer=new StringBuilder(newjob.get(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR,""));
+  ;
+  StringBuilder readColumnNamesBuffer=new StringBuilder(newjob.get(ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR,""));
   for (  Path dir : dirs) {
     PartitionDesc part=getPartitionDescFromPath(pathToPartitionInfo,dir);
     Class<? extends InputFormat> inputFormatClass=part.getInputFileFormatClass();
@@ -36,7 +37,10 @@
       Operator op=mrwork.getAliasToWork().get(aliases.get(0));
       if ((op != null) && (op instanceof TableScanOperator)) {
         tableScan=(TableScanOperator)op;
-        ColumnProjectionUtils.appendReadColumns(newjob,tableScan.getNeededColumnIDs(),tableScan.getNeededColumns());
+        readColumnsBuffer.setLength(0);
+        readColumnNamesBuffer.setLength(0);
+        ColumnProjectionUtils.appendReadColumns(readColumnsBuffer,readColumnNamesBuffer,tableScan.getNeededColumnIDs(),tableScan.getNeededColumns());
+        pushDownProjection=true;
         pushFilters(newjob,tableScan);
       }
     }
@@ -54,8 +58,18 @@
     currentTable=table;
     currentInputFormatClass=inputFormatClass;
   }
-  LOG.info("Generating splits");
-  addSplitsForGroup(currentDirs,currentTableScan,newjob,getInputFormatFromCache(currentInputFormatClass,job),currentInputFormatClass,currentDirs.size() * (numSplits / dirs.length),currentTable,result);
+  if (pushDownProjection) {
+    newjob.setBoolean(ColumnProjectionUtils.READ_ALL_COLUMNS,false);
+    newjob.set(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR,readColumnsBuffer.toString());
+    newjob.set(ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR,readColumnNamesBuffer.toString());
+    LOG.info(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR + "=" + readColumnsBuffer.toString());
+    LOG.info(ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR + "=" + readColumnNamesBuffer.toString());
+  }
+  if (dirs.length != 0) {
+    LOG.info("Generating splits");
+    addSplitsForGroup(currentDirs,currentTableScan,newjob,getInputFormatFromCache(currentInputFormatClass,job),currentInputFormatClass,currentDirs.size() * (numSplits / dirs.length),currentTable,result);
+  }
+  Utilities.clearWorkMapForConf(job);
   LOG.info("number of splits " + result.size());
   perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.GET_SPLITS);
   return result.toArray(new HiveInputSplit[result.size()]);

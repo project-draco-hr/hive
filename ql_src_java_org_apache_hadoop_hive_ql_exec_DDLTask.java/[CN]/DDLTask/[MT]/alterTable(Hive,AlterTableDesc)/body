@@ -101,7 +101,7 @@
       console.printInfo("Replacing columns for columnsetSerDe and changing to LazySimpleSerDe");
       tbl.setSerializationLib(LazySimpleSerDe.class.getName());
     }
- else     if (!tbl.getSerializationLib().equals(MetadataTypedColumnsetSerDe.class.getName()) && !tbl.getSerializationLib().equals(LazySimpleSerDe.class.getName()) && !tbl.getSerializationLib().equals(ColumnarSerDe.class.getName())&& !tbl.getSerializationLib().equals(DynamicSerDe.class.getName())) {
+ else     if (!tbl.getSerializationLib().equals(MetadataTypedColumnsetSerDe.class.getName()) && !tbl.getSerializationLib().equals(LazySimpleSerDe.class.getName()) && !tbl.getSerializationLib().equals(ColumnarSerDe.class.getName())&& !tbl.getSerializationLib().equals(DynamicSerDe.class.getName())&& !tbl.getSerializationLib().equals(ParquetHiveSerDe.class.getName())) {
       throw new HiveException(ErrorMsg.CANNOT_REPLACE_COLUMNS,alterTbl.getOldName());
     }
     tbl.getTTable().getSd().setCols(alterTbl.getNewCols());
@@ -137,7 +137,9 @@
       if ((alterTbl.getProps() != null) && (alterTbl.getProps().size() > 0)) {
         tbl.getTTable().getSd().getSerdeInfo().getParameters().putAll(alterTbl.getProps());
       }
-      tbl.setFields(Hive.getFieldsFromDeserializer(tbl.getTableName(),tbl.getDeserializer()));
+      if (!Table.hasMetastoreBasedSchema(conf,serdeName)) {
+        tbl.setFields(Hive.getFieldsFromDeserializer(tbl.getTableName(),tbl.getDeserializer()));
+      }
     }
   }
  else   if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.ADDFILEFORMAT) {
@@ -304,17 +306,17 @@
   }
   if (part != null) {
     work.getInputs().add(new ReadEntity(part));
-    work.getOutputs().add(new WriteEntity(part));
+    work.getOutputs().add(new WriteEntity(part,WriteEntity.WriteType.DDL_NO_LOCK));
   }
  else   if (allPartitions != null) {
     for (    Partition tmpPart : allPartitions) {
       work.getInputs().add(new ReadEntity(tmpPart));
-      work.getOutputs().add(new WriteEntity(tmpPart));
+      work.getOutputs().add(new WriteEntity(tmpPart,WriteEntity.WriteType.DDL_NO_LOCK));
     }
   }
  else {
     work.getInputs().add(new ReadEntity(oldTbl));
-    work.getOutputs().add(new WriteEntity(tbl));
+    work.getOutputs().add(new WriteEntity(tbl,WriteEntity.WriteType.DDL_NO_LOCK));
   }
   return 0;
 }

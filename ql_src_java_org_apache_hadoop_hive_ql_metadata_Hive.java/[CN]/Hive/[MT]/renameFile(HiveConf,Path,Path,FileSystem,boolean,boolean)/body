@@ -1,0 +1,41 @@
+{
+  boolean success=false;
+  boolean inheritPerms=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_WAREHOUSE_SUBDIR_INHERIT_PERMS);
+  HadoopShims shims=ShimLoader.getHadoopShims();
+  HadoopShims.HdfsFileStatus destStatus=null;
+  try {
+    if (inheritPerms || replace) {
+      try {
+        destStatus=shims.getFullFileStatus(conf,fs,destf);
+        if (replace && destStatus.getFileStatus().isDir()) {
+          fs.delete(destf,true);
+        }
+      }
+ catch (      FileNotFoundException ignore) {
+        if (inheritPerms) {
+          destStatus=shims.getFullFileStatus(conf,fs,destf.getParent());
+        }
+      }
+    }
+    if (!isSrcLocal) {
+      success=fs.rename(srcf,destf);
+    }
+ else {
+      fs.copyFromLocalFile(srcf,destf);
+      success=true;
+    }
+    LOG.info((replace ? "Replacing src:" : "Renaming src:") + srcf.toString() + ";dest: "+ destf.toString()+ ";Status:"+ success);
+  }
+ catch (  IOException ioe) {
+    throw new HiveException("Unable to move source " + srcf + " to destination "+ destf,ioe);
+  }
+  if (success && inheritPerms) {
+    try {
+      ShimLoader.getHadoopShims().setFullFileStatus(conf,destStatus,fs,destf);
+    }
+ catch (    IOException e) {
+      LOG.warn("Error setting permission of file " + destf + ": "+ StringUtils.stringifyException(e));
+    }
+  }
+  return success;
+}

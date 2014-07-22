@@ -3,6 +3,11 @@
     tsDesc.setGatherStats(false);
   }
  else {
+    if (HiveConf.getVar(conf,HIVESTATSDBCLASS).equalsIgnoreCase(StatDB.fs.name())) {
+      String statsTmpLoc=ctx.getExternalTmpPath(tab.getPath().toUri()).toString();
+      LOG.info("Set stats collection dir : " + statsTmpLoc);
+      conf.set(StatsSetupConst.STATS_TMP_LOC,statsTmpLoc);
+    }
     tsDesc.setGatherStats(true);
     tsDesc.setStatsReliable(conf.getBoolVar(HiveConf.ConfVars.HIVE_STATS_RELIABLE));
     tsDesc.setMaxStatsKeyPrefixLength(StatsFactory.getMaxPrefixLength(conf));
@@ -24,7 +29,7 @@
     }
     String k=tblName + Path.SEPARATOR;
     tsDesc.setStatsAggPrefix(tab.getDbName() + "." + k);
-    outputs.add(new WriteEntity(tab));
+    outputs.add(new WriteEntity(tab,WriteEntity.WriteType.DDL_SHARED));
     if (tab.isPartitioned()) {
       if (partSpec == null) {
         throw new SemanticException(ErrorMsg.NEED_PARTITION_SPECIFICATION.getMsg());
@@ -32,7 +37,7 @@
       List<Partition> partitions=qbp.getTableSpec().partitions;
       if (partitions != null) {
         for (        Partition partn : partitions) {
-          outputs.add(new WriteEntity(partn));
+          outputs.add(new WriteEntity(partn,WriteEntity.WriteType.DDL_NO_LOCK));
         }
       }
     }

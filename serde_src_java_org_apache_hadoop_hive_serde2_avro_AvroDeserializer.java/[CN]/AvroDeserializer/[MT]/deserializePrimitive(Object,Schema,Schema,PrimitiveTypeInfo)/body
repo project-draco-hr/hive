@@ -1,0 +1,33 @@
+{
+switch (columnType.getPrimitiveCategory()) {
+case STRING:
+    return datum.toString();
+case BINARY:
+  if (recordSchema.getType() == Type.FIXED) {
+    Fixed fixed=(Fixed)datum;
+    return fixed.bytes();
+  }
+ else   if (recordSchema.getType() == Type.BYTES) {
+    return AvroSerdeUtils.getBytesFromByteBuffer((ByteBuffer)datum);
+  }
+ else {
+    throw new AvroSerdeException("Unexpected Avro schema for Binary TypeInfo: " + recordSchema.getType());
+  }
+case DECIMAL:
+if (fileSchema == null) {
+  throw new AvroSerdeException("File schema is missing for decimal field. Reader schema is " + columnType);
+}
+int scale=0;
+try {
+scale=fileSchema.getJsonProp(AvroSerDe.AVRO_PROP_SCALE).getIntValue();
+}
+ catch (Exception ex) {
+throw new AvroSerdeException("Failed to obtain scale value from file schema: " + fileSchema,ex);
+}
+HiveDecimal dec=AvroSerdeUtils.getHiveDecimalFromByteBuffer((ByteBuffer)datum,scale);
+JavaHiveDecimalObjectInspector oi=(JavaHiveDecimalObjectInspector)PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector((DecimalTypeInfo)columnType);
+return oi.set(null,dec);
+default :
+return datum;
+}
+}

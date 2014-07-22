@@ -28,34 +28,44 @@
   }
   StringBuilder colNameBuf=new StringBuilder();
   StringBuilder colTypeBuf=new StringBuilder();
+  StringBuilder colComment=new StringBuilder();
   boolean first=true;
   for (  FieldSchema col : tblsd.getCols()) {
     if (!first) {
       colNameBuf.append(",");
       colTypeBuf.append(":");
+      colComment.append('\0');
     }
     colNameBuf.append(col.getName());
     colTypeBuf.append(col.getType());
+    colComment.append((null != col.getComment()) ? col.getComment() : "");
     first=false;
   }
   String colNames=colNameBuf.toString();
   String colTypes=colTypeBuf.toString();
   schema.setProperty(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_COLUMNS,colNames);
   schema.setProperty(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_COLUMN_TYPES,colTypes);
+  schema.setProperty("columns.comments",colComment.toString());
   if (sd.getCols() != null) {
     schema.setProperty(org.apache.hadoop.hive.serde.serdeConstants.SERIALIZATION_DDL,getDDLFromFieldSchema(tableName,sd.getCols()));
   }
   String partString="";
   String partStringSep="";
+  String partTypesString="";
+  String partTypesStringSep="";
   for (  FieldSchema partKey : partitionKeys) {
     partString=partString.concat(partStringSep);
     partString=partString.concat(partKey.getName());
+    partTypesString=partTypesString.concat(partTypesStringSep);
+    partTypesString=partTypesString.concat(partKey.getType());
     if (partStringSep.length() == 0) {
       partStringSep="/";
+      partTypesStringSep=":";
     }
   }
   if (partString.length() > 0) {
     schema.setProperty(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS,partString);
+    schema.setProperty(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_PARTITION_COLUMN_TYPES,partTypesString);
   }
   if (parameters != null) {
     for (    Entry<String,String> e : parameters.entrySet()) {

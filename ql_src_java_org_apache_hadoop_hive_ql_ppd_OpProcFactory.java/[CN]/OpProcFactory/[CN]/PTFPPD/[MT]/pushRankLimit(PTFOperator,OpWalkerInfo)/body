@@ -1,0 +1,44 @@
+{
+  PTFDesc conf=ptfOp.getConf();
+  if (!conf.forWindowing()) {
+    return;
+  }
+  float threshold=owi.getParseContext().getConf().getFloatVar(HiveConf.ConfVars.HIVELIMITPUSHDOWNMEMORYUSAGE);
+  if (threshold <= 0 || threshold >= 1) {
+    return;
+  }
+  WindowTableFunctionDef wTFn=(WindowTableFunctionDef)conf.getFuncDef();
+  List<Integer> rFnIdxs=rankingFunctions(wTFn);
+  if (rFnIdxs.size() == 0) {
+    return;
+  }
+  ExprWalkerInfo childInfo=getChildWalkerInfo(ptfOp,owi);
+  if (childInfo == null) {
+    return;
+  }
+  List<ExprNodeDesc> preds=new ArrayList<ExprNodeDesc>();
+  Iterator<List<ExprNodeDesc>> iterator=childInfo.getFinalCandidates().values().iterator();
+  while (iterator.hasNext()) {
+    for (    ExprNodeDesc pred : iterator.next()) {
+      preds=ExprNodeDescUtils.split(pred,preds);
+    }
+  }
+  int rLimit=-1;
+  int fnIdx=-1;
+  for (  ExprNodeDesc pred : preds) {
+    int[] pLimit=getLimit(wTFn,rFnIdxs,pred);
+    if (pLimit != null) {
+      if (rLimit == -1 || rLimit >= pLimit[0]) {
+        rLimit=pLimit[0];
+        fnIdx=pLimit[1];
+      }
+    }
+  }
+  if (rLimit != -1) {
+    wTFn.setRankLimit(rLimit);
+    wTFn.setRankLimitFunction(fnIdx);
+    if (canPushLimitToReduceSink(wTFn)) {
+      pushRankLimitToRedSink(ptfOp,owi.getParseContext().getConf(),rLimit);
+    }
+  }
+}

@@ -1,0 +1,81 @@
+{
+  DbLockManager lockMgr;
+  if (!(lm instanceof DbLockManager)) {
+    throw new RuntimeException("New lock format only supported with db lock manager.");
+  }
+  lockMgr=(DbLockManager)lm;
+  ShowLocksResponse rsp=lockMgr.getLocks();
+  DataOutputStream os=null;
+  try {
+    Path resFile=new Path(showLocks.getResFile());
+    FileSystem fs=resFile.getFileSystem(conf);
+    os=fs.create(resFile);
+    os.writeBytes("Lock ID");
+    os.write(separator);
+    os.writeBytes("Database");
+    os.write(separator);
+    os.writeBytes("Table");
+    os.write(separator);
+    os.writeBytes("Partition");
+    os.write(separator);
+    os.writeBytes("State");
+    os.write(separator);
+    os.writeBytes("Type");
+    os.write(separator);
+    os.writeBytes("Transaction ID");
+    os.write(separator);
+    os.writeBytes("Last Hearbeat");
+    os.write(separator);
+    os.writeBytes("Acquired At");
+    os.write(separator);
+    os.writeBytes("User");
+    os.write(separator);
+    os.writeBytes("Hostname");
+    os.write(terminator);
+    List<ShowLocksResponseElement> locks=rsp.getLocks();
+    if (locks != null) {
+      for (      ShowLocksResponseElement lock : locks) {
+        os.writeBytes(Long.toString(lock.getLockid()));
+        os.write(separator);
+        os.writeBytes(lock.getDbname());
+        os.write(separator);
+        os.writeBytes((lock.getTablename() == null) ? "NULL" : lock.getTablename());
+        os.write(separator);
+        os.writeBytes((lock.getPartname() == null) ? "NULL" : lock.getPartname());
+        os.write(separator);
+        os.writeBytes(lock.getState().toString());
+        os.write(separator);
+        os.writeBytes(lock.getType().toString());
+        os.write(separator);
+        os.writeBytes((lock.getTxnid() == 0) ? "NULL" : Long.toString(lock.getTxnid()));
+        os.write(separator);
+        os.writeBytes(Long.toString(lock.getLastheartbeat()));
+        os.write(separator);
+        os.writeBytes((lock.getAcquiredat() == 0) ? "NULL" : Long.toString(lock.getAcquiredat()));
+        os.write(separator);
+        os.writeBytes(lock.getUser());
+        os.write(separator);
+        os.writeBytes(lock.getHostname());
+        os.write(separator);
+        os.write(terminator);
+      }
+    }
+    os.close();
+    os=null;
+  }
+ catch (  FileNotFoundException e) {
+    LOG.warn("show function: " + stringifyException(e));
+    return 1;
+  }
+catch (  IOException e) {
+    LOG.warn("show function: " + stringifyException(e));
+    return 1;
+  }
+catch (  Exception e) {
+    throw new HiveException(e.toString());
+  }
+ finally {
+    IOUtils.closeStream(os);
+  }
+  return 0;
+}

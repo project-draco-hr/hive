@@ -3,6 +3,40 @@
   String tabName=alterPartitionDesc.getTableName();
   assert(tbl.isPartitioned());
   List<FieldSchema> newPartitionKeys=new ArrayList<FieldSchema>();
+  try {
+    Set<Partition> partitions=db.getAllPartitionsOf(tbl);
+    int colIndex=-1;
+    for (    FieldSchema col : tbl.getTTable().getPartitionKeys()) {
+      colIndex++;
+      if (col.getName().compareTo(alterPartitionDesc.getPartKeySpec().getName()) == 0) {
+        break;
+      }
+    }
+    if (colIndex == -1 || colIndex == tbl.getTTable().getPartitionKeys().size()) {
+      throw new HiveException("Cannot find partition column " + alterPartitionDesc.getPartKeySpec().getName());
+    }
+    TypeInfo expectedType=TypeInfoUtils.getTypeInfoFromTypeString(alterPartitionDesc.getPartKeySpec().getType());
+    ObjectInspector outputOI=TypeInfoUtils.getStandardWritableObjectInspectorFromTypeInfo(expectedType);
+    Converter converter=ObjectInspectorConverters.getConverter(PrimitiveObjectInspectorFactory.javaStringObjectInspector,outputOI);
+    for (    Partition part : partitions) {
+      if (part.getName().equals(conf.getVar(HiveConf.ConfVars.DEFAULTPARTITIONNAME))) {
+        continue;
+      }
+      try {
+        String value=part.getValues().get(colIndex);
+        Object convertedValue=converter.convert(value);
+        if (convertedValue == null) {
+          throw new HiveException(" Converting from " + TypeInfoFactory.stringTypeInfo + " to "+ expectedType+ " for value : "+ value+ " resulted in NULL object");
+        }
+      }
+ catch (      Exception e) {
+        throw new HiveException("Exception while converting " + TypeInfoFactory.stringTypeInfo + " to "+ expectedType+ " for value : "+ part.getValues().get(colIndex));
+      }
+    }
+  }
+ catch (  Exception e) {
+    throw new HiveException("Exception while checking type conversion of existing partition values to " + alterPartitionDesc.getPartKeySpec() + " : "+ e.getMessage());
+  }
   for (  FieldSchema col : tbl.getTTable().getPartitionKeys()) {
     if (col.getName().compareTo(alterPartitionDesc.getPartKeySpec().getName()) == 0) {
       newPartitionKeys.add(alterPartitionDesc.getPartKeySpec());
@@ -19,6 +53,6 @@
     throw new HiveException(e,ErrorMsg.GENERIC_ERROR,"Unable to alter " + tabName);
   }
   work.getInputs().add(new ReadEntity(tbl));
-  work.getOutputs().add(new WriteEntity(tbl));
+  work.getOutputs().add(new WriteEntity(tbl,WriteEntity.WriteType.DDL_NO_LOCK));
   return 0;
 }

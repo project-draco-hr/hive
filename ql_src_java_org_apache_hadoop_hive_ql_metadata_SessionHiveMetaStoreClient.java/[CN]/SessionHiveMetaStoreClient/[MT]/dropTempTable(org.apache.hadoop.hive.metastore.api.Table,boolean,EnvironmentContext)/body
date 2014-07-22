@@ -1,0 +1,31 @@
+{
+  String dbName=table.getDbName().toLowerCase();
+  String tableName=table.getTableName().toLowerCase();
+  Path tablePath=null;
+  String pathStr=table.getSd().getLocation();
+  if (pathStr != null) {
+    try {
+      tablePath=new Path(table.getSd().getLocation());
+      if (!getWh().isWritable(tablePath.getParent())) {
+        throw new MetaException("Table metadata not deleted since " + tablePath.getParent() + " is not writable by "+ conf.getUser());
+      }
+    }
+ catch (    IOException err) {
+      MetaException metaException=new MetaException("Error checking temp table path for " + table.getTableName());
+      metaException.initCause(err);
+      throw metaException;
+    }
+  }
+  Map<String,Table> tables=getTempTablesForDatabase(dbName);
+  if (tables == null || tables.remove(tableName) == null) {
+    throw new MetaException("Could not find temp table entry for " + dbName + "."+ tableName);
+  }
+  if (deleteData && !MetaStoreUtils.isExternalTable(table)) {
+    try {
+      getWh().deleteDir(tablePath,true);
+    }
+ catch (    Exception err) {
+      LOG.error("Failed to delete temp table directory: " + tablePath,err);
+    }
+  }
+}

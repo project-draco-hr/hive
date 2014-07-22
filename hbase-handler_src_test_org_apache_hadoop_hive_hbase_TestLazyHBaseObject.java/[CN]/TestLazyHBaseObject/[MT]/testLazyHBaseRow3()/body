@@ -3,15 +3,16 @@
   List<String> fieldNames=Arrays.asList(new String[]{"key","c_int","c_byte","c_short","c_long","c_float","c_double","c_string","c_bool"});
   Text nullSequence=new Text("\\N");
   String hbaseColumnsMapping=":key#str,cf-int:cq-int#bin,cf-byte:cq-byte#bin," + "cf-short:cq-short#bin,cf-long:cq-long#bin,cf-float:cq-float#bin,cf-double:cq-double#bin," + "cf-string:cq-string#str,cf-bool:cq-bool#bin";
-  List<ColumnMapping> columnsMapping=null;
+  ColumnMappings columnMappings=null;
   try {
-    columnsMapping=HBaseSerDe.parseColumnsMapping(hbaseColumnsMapping);
+    columnMappings=HBaseSerDe.parseColumnsMapping(hbaseColumnsMapping);
   }
- catch (  SerDeException sde) {
-    fail(sde.toString());
+ catch (  SerDeException e) {
+    fail(e.toString());
   }
-  for (int i=0; i < columnsMapping.size(); i++) {
-    ColumnMapping colMap=columnsMapping.get(i);
+  ColumnMapping[] columnsMapping=columnMappings.getColumnsMapping();
+  for (int i=0; i < columnsMapping.length; i++) {
+    ColumnMapping colMap=columnsMapping[i];
     if (i == 0 || i == 7) {
       colMap.binaryStorage.add(false);
     }
@@ -24,7 +25,7 @@
   byte[] rowKey="row-key".getBytes();
   List<KeyValue> kvs=new ArrayList<KeyValue>();
   byte[] value;
-  for (int i=1; i < columnsMapping.size(); i++) {
+  for (int i=1; i < columnsMapping.length; i++) {
 switch (i) {
 case 1:
       value=Bytes.toBytes(1);
@@ -53,12 +54,12 @@ break;
 default :
 throw new RuntimeException("Not expected: " + i);
 }
-ColumnMapping colMap=columnsMapping.get(i);
+ColumnMapping colMap=columnsMapping[i];
 kvs.add(new KeyValue(rowKey,colMap.familyNameBytes,colMap.qualifierNameBytes,value));
 }
 Collections.sort(kvs,KeyValue.COMPARATOR);
 Result result=new Result(kvs);
-o.init(result,columnsMapping);
+o.init(result,columnMappings);
 List<? extends StructField> fieldRefs=((StructObjectInspector)oi).getAllStructFieldRefs();
 for (int i=0; i < fieldRefs.size(); i++) {
 Object fieldData=((StructObjectInspector)oi).getStructFieldData(o,fieldRefs.get(i));

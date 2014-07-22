@@ -18,8 +18,13 @@
     for (    String colName : conf.getOutputKeyColumnNames()) {
       colNames=String.format("%s %s",colNames,colName);
     }
-    LOG.debug(String.format("keyObjectInspector [%s]%s => %s",keyObjectInspector.getClass(),keyObjectInspector,colNames));
+    if (isDebugEnabled) {
+      LOG.debug(String.format("keyObjectInspector [%s]%s => %s",keyObjectInspector.getClass(),keyObjectInspector,colNames));
+    }
     partitionWriters=VectorExpressionWriterFactory.getExpressionWriters(conf.getPartitionCols());
+    if (conf.getBucketCols() != null && !conf.getBucketCols().isEmpty()) {
+      bucketWriters=VectorExpressionWriterFactory.getExpressionWriters(conf.getBucketCols());
+    }
     TableDesc valueTableDesc=conf.getValueSerializeInfo();
     valueSerializer=(Serializer)valueTableDesc.getDeserializerClass().newInstance();
     valueSerializer.initialize(null,valueTableDesc.getProperties());
@@ -30,11 +35,15 @@
       }
     }
 );
-    colNames="";
-    for (    String colName : conf.getOutputValueColumnNames()) {
-      colNames=String.format("%s %s",colNames,colName);
+    if (isDebugEnabled) {
+      colNames="";
+      for (      String colName : conf.getOutputValueColumnNames()) {
+        colNames=String.format("%s %s",colNames,colName);
+      }
     }
-    LOG.debug(String.format("valueObjectInspector [%s]%s => %s",valueObjectInspector.getClass(),valueObjectInspector,colNames));
+    if (isDebugEnabled) {
+      LOG.debug(String.format("valueObjectInspector [%s]%s => %s",valueObjectInspector.getClass(),valueObjectInspector,colNames));
+    }
     int numKeys=numDistinctExprs > 0 ? numDistinctExprs : 1;
     int keyLen=numDistinctExprs > 0 ? numDistributionKeys + 1 : numDistributionKeys;
     cachedKeys=new Object[numKeys][keyLen];
@@ -45,8 +54,10 @@
     int limit=conf.getTopN();
     float memUsage=conf.getTopNMemoryUsage();
     if (limit >= 0 && memUsage > 0) {
+      reducerHash=conf.isPTFReduceSink() ? new PTFTopNHash() : reducerHash;
       reducerHash.initialize(limit,memUsage,conf.isMapGroupBy(),this);
     }
+    autoParallel=conf.isAutoParallel();
   }
  catch (  Exception e) {
     throw new HiveException(e);

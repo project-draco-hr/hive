@@ -1,0 +1,79 @@
+{
+  try {
+    do {
+      CompactionInfo ci=txnHandler.findNextToCompact(name);
+      if (ci == null && !stop.boolVal) {
+        try {
+          Thread.sleep(SLEEP_TIME);
+          continue;
+        }
+ catch (        InterruptedException e) {
+          LOG.warn("Worker thread sleep interrupted " + e.getMessage());
+          continue;
+        }
+      }
+      Table t1=null;
+      try {
+        t1=resolveTable(ci);
+      }
+ catch (      MetaException e) {
+        txnHandler.markCleaned(ci);
+        continue;
+      }
+      final Table t=t1;
+      Partition p=null;
+      try {
+        p=resolvePartition(ci);
+      }
+ catch (      Exception e) {
+        txnHandler.markCleaned(ci);
+        continue;
+      }
+      final StorageDescriptor sd=resolveStorageDescriptor(t,p);
+      if (sd.getSortCols() != null && !sd.getSortCols().isEmpty()) {
+        LOG.error("Attempt to compact sorted table, which is not yet supported!");
+        txnHandler.markCleaned(ci);
+        continue;
+      }
+      final boolean isMajor=(ci.type == CompactionType.MAJOR);
+      final ValidTxnList txns=TxnHandler.createValidTxnList(txnHandler.getOpenTxns());
+      final StringBuffer jobName=new StringBuffer(name);
+      jobName.append("-compactor-");
+      jobName.append(ci.getFullPartitionName());
+      String runAs;
+      if (ci.runAs == null) {
+        runAs=findUserToRunAs(sd.getLocation(),t);
+        txnHandler.setRunAs(ci.id,runAs);
+      }
+ else {
+        runAs=ci.runAs;
+      }
+      LOG.info("Starting " + ci.type.toString() + " compaction for "+ ci.getFullPartitionName());
+      final CompactorMR mr=new CompactorMR();
+      try {
+        if (runJobAsSelf(runAs)) {
+          mr.run(conf,jobName.toString(),t,sd,txns,isMajor);
+        }
+ else {
+          UserGroupInformation ugi=UserGroupInformation.createProxyUser(t.getOwner(),UserGroupInformation.getLoginUser());
+          ugi.doAs(new PrivilegedExceptionAction<Object>(){
+            @Override public Object run() throws Exception {
+              mr.run(conf,jobName.toString(),t,sd,txns,isMajor);
+              return null;
+            }
+          }
+);
+        }
+        txnHandler.markCompacted(ci);
+      }
+ catch (      Exception e) {
+        LOG.error("Caught exception while trying to compact " + ci.getFullPartitionName() + ".  Marking clean to avoid repeated failures, "+ StringUtils.stringifyException(e));
+        txnHandler.markCleaned(ci);
+      }
+    }
+ while (!stop.boolVal);
+  }
+ catch (  Throwable t) {
+    LOG.error("Caught an exception in the main loop of compactor worker " + name + ", exiting "+ StringUtils.stringifyException(t));
+  }
+}

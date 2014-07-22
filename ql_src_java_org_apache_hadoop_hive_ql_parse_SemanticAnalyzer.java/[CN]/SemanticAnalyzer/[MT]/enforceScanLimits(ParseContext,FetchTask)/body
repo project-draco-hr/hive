@@ -1,0 +1,23 @@
+{
+  int scanLimit=HiveConf.getIntVar(conf,HiveConf.ConfVars.HIVELIMITTABLESCANPARTITION);
+  if (scanLimit > -1) {
+    if (fTask != null) {
+      if (!fTask.getWork().isNotPartitioned() && fTask.getWork().getLimit() == -1 && scanLimit < fTask.getWork().getPartDir().size()) {
+        throw new SemanticException(ErrorMsg.PARTITION_SCAN_LIMIT_EXCEEDED,"" + fTask.getWork().getPartDir().size(),"" + fTask.getWork().getTblDesc().getTableName(),"" + scanLimit);
+      }
+    }
+ else {
+      for (      Operator<?> topOp : topOps.values()) {
+        if (topOp instanceof TableScanOperator) {
+          if (((TableScanDesc)topOp.getConf()).getIsMetadataOnly()) {
+            continue;
+          }
+          PrunedPartitionList parts=pCtx.getOpToPartList().get((TableScanOperator)topOp);
+          if (parts.getPartitions().size() > scanLimit) {
+            throw new SemanticException(ErrorMsg.PARTITION_SCAN_LIMIT_EXCEEDED,"" + parts.getPartitions().size(),"" + parts.getSourceTable().getTableName(),"" + scanLimit);
+          }
+        }
+      }
+    }
+  }
+}

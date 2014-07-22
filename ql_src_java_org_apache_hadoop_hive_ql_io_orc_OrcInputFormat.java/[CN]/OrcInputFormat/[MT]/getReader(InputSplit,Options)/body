@@ -1,0 +1,69 @@
+{
+  final OrcSplit split=(OrcSplit)inputSplit;
+  final Path path=split.getPath();
+  Path root;
+  if (split.hasBase()) {
+    if (split.isOriginal()) {
+      root=path.getParent();
+    }
+ else {
+      root=path.getParent().getParent();
+    }
+  }
+ else {
+    root=path;
+  }
+  final Path[] deltas=AcidUtils.deserializeDeltas(root,split.getDeltas());
+  final Configuration conf=options.getConfiguration();
+  final Reader reader;
+  final int bucket;
+  Reader.Options readOptions=new Reader.Options();
+  readOptions.range(split.getStart(),split.getLength());
+  if (split.hasBase()) {
+    bucket=AcidUtils.parseBaseBucketFilename(split.getPath(),conf).getBucket();
+    reader=OrcFile.createReader(path,OrcFile.readerOptions(conf));
+    final List<OrcProto.Type> types=reader.getTypes();
+    setIncludedColumns(readOptions,types,conf,split.isOriginal());
+    setSearchArgument(readOptions,types,conf,split.isOriginal());
+  }
+ else {
+    bucket=(int)split.getStart();
+    reader=null;
+  }
+  String txnString=conf.get(ValidTxnList.VALID_TXNS_KEY,Long.MAX_VALUE + ":");
+  ValidTxnList validTxnList=new ValidTxnListImpl(txnString);
+  final OrcRawRecordMerger records=new OrcRawRecordMerger(conf,true,reader,split.isOriginal(),bucket,validTxnList,readOptions,deltas);
+  return new RowReader<OrcStruct>(){
+    OrcStruct innerRecord=records.createValue();
+    @Override public ObjectInspector getObjectInspector(){
+      return ((StructObjectInspector)reader.getObjectInspector()).getAllStructFieldRefs().get(OrcRecordUpdater.ROW).getFieldObjectInspector();
+    }
+    @Override public boolean next(    RecordIdentifier recordIdentifier,    OrcStruct orcStruct) throws IOException {
+      boolean result;
+      do {
+        result=records.next(recordIdentifier,innerRecord);
+      }
+ while (result && OrcRecordUpdater.getOperation(innerRecord) == OrcRecordUpdater.DELETE_OPERATION);
+      if (result) {
+        orcStruct.linkFields(OrcRecordUpdater.getRow(innerRecord));
+      }
+      return result;
+    }
+    @Override public RecordIdentifier createKey(){
+      return records.createKey();
+    }
+    @Override public OrcStruct createValue(){
+      return new OrcStruct(records.getColumns());
+    }
+    @Override public long getPos() throws IOException {
+      return records.getPos();
+    }
+    @Override public void close() throws IOException {
+      records.close();
+    }
+    @Override public float getProgress() throws IOException {
+      return records.getProgress();
+    }
+  }
+;
+}

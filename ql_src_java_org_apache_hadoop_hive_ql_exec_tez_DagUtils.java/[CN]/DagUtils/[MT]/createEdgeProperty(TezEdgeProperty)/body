@@ -1,0 +1,41 @@
+{
+  DataMovementType dataMovementType;
+  Class logicalInputClass;
+  Class logicalOutputClass;
+  EdgeProperty edgeProperty=null;
+  EdgeType edgeType=edgeProp.getEdgeType();
+switch (edgeType) {
+case BROADCAST_EDGE:
+    dataMovementType=DataMovementType.BROADCAST;
+  logicalOutputClass=OnFileUnorderedKVOutput.class;
+logicalInputClass=ShuffledUnorderedKVInput.class;
+break;
+case CUSTOM_EDGE:
+dataMovementType=DataMovementType.CUSTOM;
+logicalOutputClass=OnFileUnorderedPartitionedKVOutput.class;
+logicalInputClass=ShuffledUnorderedKVInput.class;
+EdgeManagerDescriptor edgeDesc=new EdgeManagerDescriptor(CustomPartitionEdge.class.getName());
+CustomEdgeConfiguration edgeConf=new CustomEdgeConfiguration(edgeProp.getNumBuckets(),null);
+DataOutputBuffer dob=new DataOutputBuffer();
+edgeConf.write(dob);
+byte[] userPayload=dob.getData();
+edgeDesc.setUserPayload(userPayload);
+edgeProperty=new EdgeProperty(edgeDesc,DataSourceType.PERSISTED,SchedulingType.SEQUENTIAL,new OutputDescriptor(logicalOutputClass.getName()),new InputDescriptor(logicalInputClass.getName()));
+break;
+case CUSTOM_SIMPLE_EDGE:
+dataMovementType=DataMovementType.SCATTER_GATHER;
+logicalOutputClass=OnFileUnorderedPartitionedKVOutput.class;
+logicalInputClass=ShuffledUnorderedKVInput.class;
+break;
+case SIMPLE_EDGE:
+default :
+dataMovementType=DataMovementType.SCATTER_GATHER;
+logicalOutputClass=OnFileSortedOutput.class;
+logicalInputClass=ShuffledMergedInputLegacy.class;
+break;
+}
+if (edgeProperty == null) {
+edgeProperty=new EdgeProperty(dataMovementType,DataSourceType.PERSISTED,SchedulingType.SEQUENTIAL,new OutputDescriptor(logicalOutputClass.getName()),new InputDescriptor(logicalInputClass.getName()));
+}
+return edgeProperty;
+}

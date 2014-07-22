@@ -1,0 +1,28 @@
+{
+  try {
+    Connection dbConn=getDbConn(Connection.TRANSACTION_SERIALIZABLE);
+    try {
+      heartbeatLock(dbConn,ids.getLockid());
+      heartbeatTxn(dbConn,ids.getTxnid());
+    }
+ catch (    SQLException e) {
+      try {
+        LOG.debug("Going to rollback");
+        dbConn.rollback();
+      }
+ catch (      SQLException e1) {
+      }
+      detectDeadlock(e,"heartbeat");
+      throw new MetaException("Unable to select from transaction database " + StringUtils.stringifyException(e));
+    }
+ finally {
+      closeDbConn(dbConn);
+    }
+  }
+ catch (  DeadlockException e) {
+    heartbeat(ids);
+  }
+ finally {
+    deadlockCnt=0;
+  }
+}

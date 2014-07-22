@@ -1,0 +1,35 @@
+{
+  do {
+    try {
+      long startedAt=System.currentTimeMillis();
+      List<CompactionInfo> toClean=txnHandler.findReadyToClean();
+      for (      CompactionInfo ci : toClean) {
+        LockComponent comp=null;
+        comp=new LockComponent(LockType.EXCLUSIVE,LockLevel.TABLE,ci.dbname);
+        comp.setTablename(ci.tableName);
+        if (ci.partName != null)         comp.setPartitionname(ci.partName);
+        List<LockComponent> components=new ArrayList<LockComponent>(1);
+        components.add(comp);
+        LockRequest rqst=new LockRequest(components,System.getProperty("user.name"),Worker.hostname());
+        LockResponse rsp=txnHandler.lockNoWait(rqst);
+        try {
+          if (rsp.getState() == LockState.ACQUIRED) {
+            clean(ci);
+          }
+        }
+  finally {
+          if (rsp.getState() == LockState.ACQUIRED) {
+            txnHandler.unlock(new UnlockRequest(rsp.getLockid()));
+          }
+        }
+      }
+      long elapsedTime=System.currentTimeMillis() - startedAt;
+      if (elapsedTime >= cleanerCheckInterval || stop.boolVal)       continue;
+ else       Thread.sleep(cleanerCheckInterval - elapsedTime);
+    }
+ catch (    Throwable t) {
+      LOG.error("Caught an exception in the main loop of compactor cleaner, " + StringUtils.stringifyException(t));
+    }
+  }
+ while (!stop.boolVal);
+}

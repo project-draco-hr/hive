@@ -1,0 +1,39 @@
+{
+  try {
+    Connection dbConn=getDbConn(Connection.TRANSACTION_SERIALIZABLE);
+    Statement stmt=null;
+    try {
+      stmt=dbConn.createStatement();
+      String s="update COMPACTION_QUEUE set cq_state = '" + READY_FOR_CLEANING + "', "+ "cq_worker_id = null where cq_id = "+ info.id;
+      LOG.debug("Going to execute update <" + s + ">");
+      if (stmt.executeUpdate(s) != 1) {
+        LOG.error("Unable to update compaction record");
+        LOG.debug("Going to rollback");
+        dbConn.rollback();
+      }
+      LOG.debug("Going to commit");
+      dbConn.commit();
+    }
+ catch (    SQLException e) {
+      try {
+        LOG.error("Unable to update compaction queue " + e.getMessage());
+        LOG.debug("Going to rollback");
+        dbConn.rollback();
+      }
+ catch (      SQLException e1) {
+      }
+      detectDeadlock(e,"markCompacted");
+      throw new MetaException("Unable to connect to transaction database " + StringUtils.stringifyException(e));
+    }
+ finally {
+      closeDbConn(dbConn);
+      closeStmt(stmt);
+    }
+  }
+ catch (  DeadlockException e) {
+    markCompacted(info);
+  }
+ finally {
+    deadlockCnt=0;
+  }
+}

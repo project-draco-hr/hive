@@ -20,8 +20,18 @@
       int index=ExprNodeDescUtils.indexOf(e,keys);
       partitionEval[i++]=index < 0 ? ExprNodeEvaluatorFactory.get(e) : keyEval[index];
     }
+    if (conf.getBucketCols() != null && !conf.getBucketCols().isEmpty()) {
+      bucketEval=new ExprNodeEvaluator[conf.getBucketCols().size()];
+      i=0;
+      for (      ExprNodeDesc e : conf.getBucketCols()) {
+        int index=ExprNodeDescUtils.indexOf(e,keys);
+        bucketEval[i++]=index < 0 ? ExprNodeEvaluatorFactory.get(e) : keyEval[index];
+      }
+      buckColIdxInKey=conf.getPartitionCols().size();
+    }
     tag=conf.getTag();
     tagByte[0]=(byte)tag;
+    skipTag=conf.getSkipTag();
     LOG.info("Using tag = " + tag);
     TableDesc keyTableDesc=conf.getKeySerializeInfo();
     keySerializer=(Serializer)keyTableDesc.getDeserializerClass().newInstance();
@@ -33,8 +43,10 @@
     int limit=conf.getTopN();
     float memUsage=conf.getTopNMemoryUsage();
     if (limit >= 0 && memUsage > 0) {
+      reducerHash=conf.isPTFReduceSink() ? new PTFTopNHash() : reducerHash;
       reducerHash.initialize(limit,memUsage,conf.isMapGroupBy(),this);
     }
+    autoParallel=conf.isAutoParallel();
     firstRow=true;
     initializeChildren(hconf);
   }

@@ -1,0 +1,49 @@
+{
+  super.setUp();
+  if (tests > 0) {
+    return;
+  }
+  tests=new JUnit4TestAdapter(this.getClass()).countTestCases();
+  try {
+    conf=new HiveConf(ExecDriver.class);
+    SessionState.start(conf);
+    int port=MetaStoreUtils.findFreePort();
+    MetaStoreUtils.startMetaStore(port,ShimLoader.getHadoopThriftAuthBridge());
+    conf.setVar(HiveConf.ConfVars.METASTOREURIS,"thrift://localhost:" + port);
+    conf.setIntVar(HiveConf.ConfVars.METASTORETHRIFTCONNECTIONRETRIES,3);
+    conf.set(HiveConf.ConfVars.HIVE_SUPPORT_CONCURRENCY.varname,"false");
+    conf.setVar(HiveConf.ConfVars.METASTOREWAREHOUSE,new URI(tmppath + "/warehouse").getPath());
+    jobConf=new HiveConf(conf);
+    miniDfs=new MiniDFSCluster(new Configuration(),1,true,null);
+    fs2=miniDfs.getFileSystem();
+    try {
+      fs2.delete(tmppathFs2,true);
+    }
+ catch (    IOException e) {
+    }
+    fs2.mkdirs(tmppathFs2);
+    fs2Uri=fs2.getUri().toString();
+    jobConf.setVar(HiveConf.ConfVars.HADOOPFS,fs2Uri);
+    driver=new Driver(jobConf);
+    fs=FileSystem.get(conf);
+    if (fs.exists(tmppath) && !fs.getFileStatus(tmppath).isDir()) {
+      throw new RuntimeException(tmpdir + " exists but is not a directory");
+    }
+    if (!fs.exists(tmppath)) {
+      if (!fs.mkdirs(tmppath)) {
+        throw new RuntimeException("Could not make scratch directory " + tmpdir);
+      }
+    }
+    db=Hive.get(conf);
+    cleanup();
+    isInitialized=true;
+  }
+ catch (  Exception e) {
+    throw new RuntimeException("Encountered exception " + e.getMessage() + (e.getCause() == null ? "" : ", caused by: " + e.getCause().getMessage()),e);
+  }
+ finally {
+    if (!isInitialized) {
+      shutdownMiniDfs();
+    }
+  }
+}

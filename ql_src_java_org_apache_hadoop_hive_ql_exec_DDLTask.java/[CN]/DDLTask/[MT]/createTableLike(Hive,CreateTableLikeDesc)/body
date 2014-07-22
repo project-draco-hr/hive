@@ -37,9 +37,9 @@
  else {
     tbl=oldtbl;
     String targetTableName=crtTbl.getTableName();
-    Table newTable=db.newTable(targetTableName);
-    tbl.setDbName(newTable.getDbName());
-    tbl.setTableName(newTable.getTableName());
+    String[] names=Utilities.getDbTableName(targetTableName);
+    tbl.setDbName(names[0]);
+    tbl.setTableName(names[1]);
     if (crtTbl.getLocation() != null) {
       tbl.setDataLocation(new Path(crtTbl.getLocation()));
     }
@@ -58,6 +58,7 @@
     if (crtTbl.getTblProps() != null) {
       params.putAll(crtTbl.getTblProps());
     }
+    tbl.getTTable().setTemporary(crtTbl.isTemporary());
     if (crtTbl.isExternal()) {
       tbl.setProperty("EXTERNAL","TRUE");
       tbl.setTableType(TableType.EXTERNAL_TABLE);
@@ -66,11 +67,10 @@
       tbl.getParameters().remove("EXTERNAL");
     }
   }
-  int rc=setGenericTableAttributes(tbl);
-  if (rc != 0) {
-    return rc;
+  if (!Utilities.isDefaultNameNode(conf)) {
+    makeLocationQualified(tbl.getDbName(),tbl.getTTable().getSd(),tbl.getTableName());
   }
   db.createTable(tbl,crtTbl.getIfNotExists());
-  work.getOutputs().add(new WriteEntity(tbl));
+  work.getOutputs().add(new WriteEntity(tbl,WriteEntity.WriteType.DDL_NO_LOCK));
   return 0;
 }

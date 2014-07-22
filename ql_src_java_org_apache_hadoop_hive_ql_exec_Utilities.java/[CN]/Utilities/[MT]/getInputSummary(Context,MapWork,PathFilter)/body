@@ -2,7 +2,7 @@
   PerfLogger perfLogger=PerfLogger.getPerfLogger();
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.INPUT_SUMMARY);
   long[] summary={0,0,0};
-  List<String> pathNeedProcess=new ArrayList<String>();
+  final List<String> pathNeedProcess=new ArrayList<String>();
 synchronized (INPUT_SUMMARY_LOCK) {
     for (    String path : work.getPathToAliases().keySet()) {
       Path p=new Path(path);
@@ -36,6 +36,14 @@ synchronized (INPUT_SUMMARY_LOCK) {
     }
     HiveInterruptCallback interrup=HiveInterruptUtils.add(new HiveInterruptCallback(){
       @Override public void interrupt(){
+        for (        String path : pathNeedProcess) {
+          try {
+            new Path(path).getFileSystem(ctx.getConf()).close();
+          }
+ catch (          IOException ignore) {
+            LOG.debug(ignore);
+          }
+        }
         if (executor != null) {
           executor.shutdownNow();
         }
@@ -54,7 +62,7 @@ synchronized (INPUT_SUMMARY_LOCK) {
         final Map<String,ArrayList<String>> pathToAlias=work.getPathToAliases();
         final PartitionDesc partDesc=work.getPathToPartitionInfo().get(p.toString());
         Runnable r=new Runnable(){
-          public void run(){
+          @Override public void run(){
             try {
               Class<? extends InputFormat> inputFormatCls=partDesc.getInputFileFormatClass();
               InputFormat inputFormatObj=HiveInputFormat.getInputFormatFromCache(inputFormatCls,myJobConf);
@@ -63,7 +71,7 @@ synchronized (INPUT_SUMMARY_LOCK) {
                 resultMap.put(pathStr,cs.getContentSummary(p,myJobConf));
                 return;
               }
-              HiveStorageHandler handler=HiveUtils.getStorageHandler(myConf,partDesc.getOverlayedProperties().getProperty(hive_metastoreConstants.META_TABLE_STORAGE));
+              HiveStorageHandler handler=HiveUtils.getStorageHandler(myConf,SerDeUtils.createOverlayedProperties(partDesc.getTableDesc().getProperties(),partDesc.getProperties()).getProperty(hive_metastoreConstants.META_TABLE_STORAGE));
               if (handler instanceof InputEstimator) {
                 long total=0;
                 TableDesc tableDesc=partDesc.getTableDesc();

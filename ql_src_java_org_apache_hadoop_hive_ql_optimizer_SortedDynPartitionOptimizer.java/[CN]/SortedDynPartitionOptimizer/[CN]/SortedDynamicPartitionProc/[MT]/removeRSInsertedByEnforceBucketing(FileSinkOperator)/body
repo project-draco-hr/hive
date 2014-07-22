@@ -1,0 +1,37 @@
+{
+  HiveConf hconf=parseCtx.getConf();
+  boolean enforceBucketing=HiveConf.getBoolVar(hconf,ConfVars.HIVEENFORCEBUCKETING);
+  boolean enforceSorting=HiveConf.getBoolVar(hconf,ConfVars.HIVEENFORCESORTING);
+  if (enforceBucketing || enforceSorting) {
+    Set<ReduceSinkOperator> reduceSinks=OperatorUtils.findOperatorsUpstream(fsOp,ReduceSinkOperator.class);
+    Operator<? extends OperatorDesc> rsToRemove=null;
+    List<ReduceSinkOperator> rsOps=parseCtx.getReduceSinkOperatorsAddedByEnforceBucketingSorting();
+    boolean found=false;
+    for (    ReduceSinkOperator reduceSink : reduceSinks) {
+      for (      ReduceSinkOperator rsOp : rsOps) {
+        if (reduceSink.equals(rsOp)) {
+          rsToRemove=reduceSink;
+          found=true;
+          break;
+        }
+      }
+      if (found) {
+        break;
+      }
+    }
+    if (found) {
+      Operator<? extends OperatorDesc> rsParent=rsToRemove.getParentOperators().get(0);
+      Operator<? extends OperatorDesc> rsChild=rsToRemove.getChildOperators().get(0);
+      Operator<? extends OperatorDesc> rsGrandChild=rsChild.getChildOperators().get(0);
+      if (rsChild instanceof ExtractOperator) {
+        rsParent.getChildOperators().clear();
+        rsParent.getChildOperators().add(rsGrandChild);
+        rsGrandChild.getParentOperators().clear();
+        rsGrandChild.getParentOperators().add(rsParent);
+        parseCtx.removeOpParseCtx(rsToRemove);
+        parseCtx.removeOpParseCtx(rsChild);
+        LOG.info("Removed " + rsParent.getOperatorId() + " and "+ rsChild.getOperatorId()+ " as it was introduced by enforce bucketing/sorting.");
+      }
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  String dbName=SessionState.get().getCurrentDatabase();
+  String tableName=work.getColStats().getTableName();
+  String partName=null;
+  List<String> colName=work.getColStats().getColName();
+  List<String> colType=work.getColStats().getColType();
+  boolean isTblLevel=work.getColStats().isTblLevel();
+  List<ColumnStatistics> stats=new ArrayList<ColumnStatistics>();
+  InspectableObject packedRow;
+  while ((packedRow=ftOp.getNextRow()) != null) {
+    if (packedRow.oi.getCategory() != ObjectInspector.Category.STRUCT) {
+      throw new HiveException("Unexpected object type encountered while unpacking row");
+    }
+    List<ColumnStatisticsObj> statsObjs=new ArrayList<ColumnStatisticsObj>();
+    StructObjectInspector soi=(StructObjectInspector)packedRow.oi;
+    List<? extends StructField> fields=soi.getAllStructFieldRefs();
+    List<Object> list=soi.getStructFieldsDataAsList(packedRow.o);
+    Table tbl=db.getTable(dbName,tableName);
+    List<FieldSchema> partColSchema=tbl.getPartCols();
+    int numOfStatCols=isTblLevel ? fields.size() : fields.size() - partColSchema.size();
+    for (int i=0; i < numOfStatCols; i++) {
+      ObjectInspector foi=fields.get(i).getFieldObjectInspector();
+      Object f=(list == null ? null : list.get(i));
+      String fieldName=fields.get(i).getFieldName();
+      ColumnStatisticsObj statsObj=new ColumnStatisticsObj();
+      statsObj.setColName(colName.get(i));
+      statsObj.setColType(colType.get(i));
+      unpackStructObject(foi,f,fieldName,statsObj);
+      statsObjs.add(statsObj);
+    }
+    if (!isTblLevel) {
+      List<String> partVals=new ArrayList<String>();
+      for (int i=fields.size() - partColSchema.size(); i < fields.size(); i++) {
+        partVals.add(((PrimitiveObjectInspector)fields.get(i).getFieldObjectInspector()).getPrimitiveJavaObject(list.get(i)).toString());
+      }
+      partName=Warehouse.makePartName(partColSchema,partVals);
+    }
+    ColumnStatisticsDesc statsDesc=getColumnStatsDesc(dbName,tableName,partName,isTblLevel);
+    ColumnStatistics colStats=new ColumnStatistics();
+    colStats.setStatsDesc(statsDesc);
+    colStats.setStatsObj(statsObjs);
+    stats.add(colStats);
+  }
+  ftOp.clearFetchContext();
+  return stats;
+}

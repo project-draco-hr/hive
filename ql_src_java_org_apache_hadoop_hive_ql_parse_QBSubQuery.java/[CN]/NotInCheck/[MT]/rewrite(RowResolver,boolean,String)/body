@@ -23,8 +23,12 @@
       String exprAlias=getNextCorrExprAlias();
       ASTNode sqExprAlias=SubQueryUtils.createAliasAST(exprAlias);
       ASTNode sqExprForCorr=SubQueryUtils.createColRefAST(alias,exprAlias);
+      boolean corrCondLeftIsRewritten=false;
+      boolean corrCondRightIsRewritten=false;
       if (conjunct.getLeftExprType().refersSubQuery()) {
+        corrCondLeftIsRewritten=true;
         if (forHavingClause && conjunct.getRightOuterColInfo() != null) {
+          corrCondRightIsRewritten=true;
           rewriteCorrConjunctForHaving(conjunctAST,false,outerQueryAlias,parentQueryRR,conjunct.getRightOuterColInfo());
         }
         ASTNode joinPredciate=SubQueryUtils.alterCorrelatedPredicate(conjunctAST,sqExprForCorr,true);
@@ -32,17 +36,22 @@
         subQueryJoinAliasExprs.add(sqExprForCorr);
         ASTNode selExpr=SubQueryUtils.createSelectItem(conjunct.getLeftExpr(),sqExprAlias);
         selectClause.addChild(selExpr);
+        subQueryDiagnostic.addSelectClauseRewrite(conjunct.getLeftExpr(),exprAlias);
         numOfCorrelationExprsAddedToSQSelect++;
         if (containsAggregationExprs) {
           ASTNode gBy=getSubQueryGroupByAST();
           SubQueryUtils.addGroupExpressionToFront(gBy,conjunct.getLeftExpr());
+          subQueryDiagnostic.addGByClauseRewrite(conjunct.getLeftExpr());
         }
         if (notInCheck != null) {
           notInCheck.addCorrExpr((ASTNode)conjunctAST.getChild(0));
         }
+        subQueryDiagnostic.addJoinCondition(conjunctAST,corrCondLeftIsRewritten,corrCondRightIsRewritten);
       }
  else {
+        corrCondRightIsRewritten=true;
         if (forHavingClause && conjunct.getLeftOuterColInfo() != null) {
+          corrCondLeftIsRewritten=true;
           rewriteCorrConjunctForHaving(conjunctAST,true,outerQueryAlias,parentQueryRR,conjunct.getLeftOuterColInfo());
         }
         ASTNode joinPredciate=SubQueryUtils.alterCorrelatedPredicate(conjunctAST,sqExprForCorr,false);
@@ -50,23 +59,28 @@
         subQueryJoinAliasExprs.add(sqExprForCorr);
         ASTNode selExpr=SubQueryUtils.createSelectItem(conjunct.getRightExpr(),sqExprAlias);
         selectClause.addChild(selExpr);
+        subQueryDiagnostic.addSelectClauseRewrite(conjunct.getRightExpr(),exprAlias);
         numOfCorrelationExprsAddedToSQSelect++;
         if (containsAggregationExprs) {
           ASTNode gBy=getSubQueryGroupByAST();
           SubQueryUtils.addGroupExpressionToFront(gBy,conjunct.getRightExpr());
+          subQueryDiagnostic.addGByClauseRewrite(conjunct.getRightExpr());
         }
         if (notInCheck != null) {
           notInCheck.addCorrExpr((ASTNode)conjunctAST.getChild(1));
         }
+        subQueryDiagnostic.addJoinCondition(conjunctAST,corrCondLeftIsRewritten,corrCondRightIsRewritten);
       }
     }
  else {
       sqNewSearchCond=SubQueryUtils.andAST(sqNewSearchCond,conjunctAST);
+      subQueryDiagnostic.addWhereClauseRewrite(conjunctAST);
     }
   }
   if (sqNewSearchCond != searchCond) {
     if (sqNewSearchCond == null) {
       sqNewSearchCond=SubQueryUtils.constructTrueCond();
+      subQueryDiagnostic.addWhereClauseRewrite("1 = 1");
     }
     whereClause.setChild(0,sqNewSearchCond);
   }

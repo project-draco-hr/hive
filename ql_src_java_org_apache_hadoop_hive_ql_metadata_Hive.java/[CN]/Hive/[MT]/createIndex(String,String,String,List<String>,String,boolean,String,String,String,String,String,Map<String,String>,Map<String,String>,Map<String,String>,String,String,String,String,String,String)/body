@@ -14,6 +14,9 @@
     if (baseTbl.getTableType() == TableType.VIRTUAL_VIEW.toString()) {
       throw new HiveException("tableName=" + tableName + " is a VIRTUAL VIEW. Index on VIRTUAL VIEW is not supported.");
     }
+    if (baseTbl.isTemporary()) {
+      throw new HiveException("tableName=" + tableName + " is a TEMPORARY TABLE. Index on TEMPORARY TABLE is not supported.");
+    }
     if (indexTblName == null) {
       indexTblName=MetaStoreUtils.getIndexTableName(dbName,tableName,indexName);
     }
@@ -103,6 +106,15 @@
         for (        Entry<String,String> prop : tblProps.entrySet()) {
           tt.putToParameters(prop.getKey(),prop.getValue());
         }
+      }
+      SessionState ss=SessionState.get();
+      CreateTableAutomaticGrant grants;
+      if (ss != null && ((grants=ss.getCreateTableGrants()) != null)) {
+        PrincipalPrivilegeSet principalPrivs=new PrincipalPrivilegeSet();
+        principalPrivs.setUserPrivileges(grants.getUserGrants());
+        principalPrivs.setGroupPrivileges(grants.getGroupGrants());
+        principalPrivs.setRolePrivileges(grants.getRoleGrants());
+        tt.setPrivileges(principalPrivs);
       }
     }
     if (!deferredRebuild) {

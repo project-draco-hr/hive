@@ -1,0 +1,43 @@
+{
+switch (hivePrivObject.getType()) {
+case TABLE_OR_VIEW:
+{
+      Table thriftTableObj=null;
+      try {
+        thriftTableObj=metastoreClient.getTable(hivePrivObject.getDbname(),hivePrivObject.getTableViewURI());
+      }
+ catch (      Exception e) {
+        throwGetObjErr(e,hivePrivObject);
+      }
+      return userName.equals(thriftTableObj.getOwner());
+    }
+case DATABASE:
+{
+    if (MetaStoreUtils.DEFAULT_DATABASE_NAME.equalsIgnoreCase(hivePrivObject.getDbname())) {
+      return true;
+    }
+    Database db=null;
+    try {
+      db=metastoreClient.getDatabase(hivePrivObject.getDbname());
+    }
+ catch (    Exception e) {
+      throwGetObjErr(e,hivePrivObject);
+    }
+    if (db.getOwnerType() == PrincipalType.USER) {
+      return userName.equals(db.getOwnerName());
+    }
+ else     if (db.getOwnerType() == PrincipalType.ROLE) {
+      return curRoles.contains(db.getOwnerName());
+    }
+ else {
+      LOG.warn("Owner of database " + db.getName() + " is of unsupported type "+ db.getOwnerType());
+      return false;
+    }
+  }
+case DFS_URI:
+case LOCAL_URI:
+case PARTITION:
+default :
+return false;
+}
+}

@@ -1,0 +1,82 @@
+{
+  if ((this.getCols() == null) || (this.getCols().size() == 0)) {
+    if (Table.hasMetastoreBasedSchema(conf,getSerName())) {
+      throw new SemanticException(ErrorMsg.INVALID_TBL_DDL_SERDE.getMsg());
+    }
+    return;
+  }
+  if (this.getStorageHandler() == null) {
+    try {
+      Class<?> origin=Class.forName(this.getOutputFormat(),true,JavaUtils.getClassLoader());
+      Class<? extends HiveOutputFormat> replaced=HiveFileFormatUtils.getOutputFormatSubstitute(origin,false);
+      if (replaced == null) {
+        throw new SemanticException(ErrorMsg.INVALID_OUTPUT_FORMAT_TYPE.getMsg());
+      }
+    }
+ catch (    ClassNotFoundException e) {
+      throw new SemanticException(ErrorMsg.INVALID_OUTPUT_FORMAT_TYPE.getMsg());
+    }
+  }
+  List<String> colNames=ParseUtils.validateColumnNameUniqueness(this.getCols());
+  if (this.getBucketCols() != null) {
+    Iterator<String> bucketCols=this.getBucketCols().iterator();
+    while (bucketCols.hasNext()) {
+      String bucketCol=bucketCols.next();
+      boolean found=false;
+      Iterator<String> colNamesIter=colNames.iterator();
+      while (colNamesIter.hasNext()) {
+        String colName=colNamesIter.next();
+        if (bucketCol.equalsIgnoreCase(colName)) {
+          found=true;
+          break;
+        }
+      }
+      if (!found) {
+        throw new SemanticException(ErrorMsg.INVALID_COLUMN.getMsg());
+      }
+    }
+  }
+  if (this.getSortCols() != null) {
+    Iterator<Order> sortCols=this.getSortCols().iterator();
+    while (sortCols.hasNext()) {
+      String sortCol=sortCols.next().getCol();
+      boolean found=false;
+      Iterator<String> colNamesIter=colNames.iterator();
+      while (colNamesIter.hasNext()) {
+        String colName=colNamesIter.next();
+        if (sortCol.equalsIgnoreCase(colName)) {
+          found=true;
+          break;
+        }
+      }
+      if (!found) {
+        throw new SemanticException(ErrorMsg.INVALID_COLUMN.getMsg());
+      }
+    }
+  }
+  if (this.getPartCols() != null) {
+    Iterator<FieldSchema> partColsIter=this.getPartCols().iterator();
+    while (partColsIter.hasNext()) {
+      FieldSchema fs=partColsIter.next();
+      String partCol=fs.getName();
+      TypeInfo pti=null;
+      try {
+        pti=TypeInfoFactory.getPrimitiveTypeInfo(fs.getType());
+      }
+ catch (      Exception err) {
+        LOG.error(err);
+      }
+      if (null == pti) {
+        throw new SemanticException(ErrorMsg.PARTITION_COLUMN_NON_PRIMITIVE.getMsg() + " Found " + partCol+ " of type: "+ fs.getType());
+      }
+      Iterator<String> colNamesIter=colNames.iterator();
+      while (colNamesIter.hasNext()) {
+        String colName=BaseSemanticAnalyzer.unescapeIdentifier(colNamesIter.next());
+        if (partCol.equalsIgnoreCase(colName)) {
+          throw new SemanticException(ErrorMsg.COLUMN_REPEATED_IN_PARTITIONING_COLS.getMsg());
+        }
+      }
+    }
+  }
+  ValidationUtility.validateSkewedInformation(colNames,this.getSkewedColNames(),this.getSkewedColValues());
+}

@@ -1,0 +1,27 @@
+{
+  Table t=newTable("default","camitc",false);
+  HiveConf conf=new HiveConf();
+  addBaseFile(conf,t,null,20L,20);
+  addDeltaFile(conf,t,null,21L,22L,2);
+  addDeltaFile(conf,t,null,23L,24L,2);
+  addDeltaFile(conf,t,null,21L,24L,4);
+  burnThroughTransactions(25);
+  CompactionRequest rqst=new CompactionRequest("default","camitc",CompactionType.MINOR);
+  txnHandler.compact(rqst);
+  CompactionInfo ci=txnHandler.findNextToCompact("fred");
+  txnHandler.markCompacted(ci);
+  txnHandler.setRunAs(ci.id,System.getProperty("user.name"));
+  startCleaner(conf);
+  ShowCompactResponse rsp=txnHandler.showCompact(new ShowCompactRequest());
+  Assert.assertEquals(0,rsp.getCompactsSize());
+  List<Path> paths=getDirectories(conf,t,null);
+  Assert.assertEquals(2,paths.size());
+  boolean sawBase=false, sawDelta=false;
+  for (  Path p : paths) {
+    if (p.getName().equals("base_20"))     sawBase=true;
+ else     if (p.getName().equals("delta_21_24"))     sawDelta=true;
+ else     Assert.fail("Unexpected file " + p.getName());
+  }
+  Assert.assertTrue(sawBase);
+  Assert.assertTrue(sawDelta);
+}

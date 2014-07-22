@@ -1,0 +1,57 @@
+{
+  boolean noBase=false;
+  Path location=new Path(sd.getLocation());
+  FileSystem fs=location.getFileSystem(conf);
+  AcidUtils.Directory dir=AcidUtils.getAcidState(location,conf,txns);
+  Path base=dir.getBaseDirectory();
+  long baseSize=0;
+  FileStatus stat=null;
+  if (base != null) {
+    stat=fs.getFileStatus(base);
+    if (!stat.isDir()) {
+      LOG.error("Was assuming base " + base.toString() + " is directory, but it's a file!");
+      return null;
+    }
+    baseSize=sumDirSize(fs,base);
+  }
+  List<FileStatus> originals=dir.getOriginalFiles();
+  for (  FileStatus origStat : originals) {
+    baseSize+=origStat.getLen();
+  }
+  long deltaSize=0;
+  List<AcidUtils.ParsedDelta> deltas=dir.getCurrentDirectories();
+  for (  AcidUtils.ParsedDelta delta : deltas) {
+    stat=fs.getFileStatus(delta.getPath());
+    if (!stat.isDir()) {
+      LOG.error("Was assuming delta " + delta.getPath().toString() + " is a directory, "+ "but it's a file!");
+      return null;
+    }
+    deltaSize+=sumDirSize(fs,delta.getPath());
+  }
+  if (baseSize == 0 && deltaSize > 0) {
+    noBase=true;
+  }
+ else {
+    float deltaPctThreshold=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVE_COMPACTOR_DELTA_PCT_THRESHOLD);
+    boolean bigEnough=(float)deltaSize / (float)baseSize > deltaPctThreshold;
+    if (LOG.isDebugEnabled()) {
+      StringBuffer msg=new StringBuffer("delta size: ");
+      msg.append(deltaSize);
+      msg.append(" base size: ");
+      msg.append(baseSize);
+      msg.append(" threshold: ");
+      msg.append(deltaPctThreshold);
+      msg.append(" will major compact: ");
+      msg.append(bigEnough);
+      LOG.debug(msg);
+    }
+    if (bigEnough)     return CompactionType.MAJOR;
+  }
+  int deltaNumThreshold=HiveConf.getIntVar(conf,HiveConf.ConfVars.HIVE_COMPACTOR_DELTA_NUM_THRESHOLD);
+  boolean enough=deltas.size() > deltaNumThreshold;
+  if (enough) {
+    LOG.debug("Found " + deltas.size() + " delta files, threshold is "+ deltaNumThreshold+ (enough ? "" : "not")+ " and no base, requesting "+ (noBase ? "major" : "minor")+ " compaction");
+    return noBase ? CompactionType.MAJOR : CompactionType.MINOR;
+  }
+  return null;
+}

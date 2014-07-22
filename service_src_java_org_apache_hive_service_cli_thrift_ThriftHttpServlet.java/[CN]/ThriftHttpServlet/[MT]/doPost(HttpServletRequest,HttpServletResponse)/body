@@ -1,4 +1,35 @@
 {
-  logRequestHeader(request);
-  super.doPost(request,response);
+  String clientUserName;
+  String clientIpAddress;
+  try {
+    if (isKerberosAuthMode(authType)) {
+      clientUserName=doKerberosAuth(request);
+      String doAsQueryParam=getDoAsQueryParam(request.getQueryString());
+      if (doAsQueryParam != null) {
+        SessionManager.setProxyUserName(doAsQueryParam);
+      }
+    }
+ else {
+      clientUserName=doPasswdAuth(request,authType);
+    }
+    LOG.debug("Client username: " + clientUserName);
+    SessionManager.setUserName(clientUserName);
+    clientIpAddress=request.getRemoteAddr();
+    LOG.debug("Client IP Address: " + clientIpAddress);
+    SessionManager.setIpAddress(clientIpAddress);
+    super.doPost(request,response);
+  }
+ catch (  HttpAuthenticationException e) {
+    LOG.error("Error: ",e);
+    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    if (isKerberosAuthMode(authType)) {
+      response.addHeader(HttpAuthUtils.WWW_AUTHENTICATE,HttpAuthUtils.NEGOTIATE);
+    }
+    response.getWriter().println("Authentication Error: " + e.getMessage());
+  }
+ finally {
+    SessionManager.clearUserName();
+    SessionManager.clearIpAddress();
+    SessionManager.clearProxyUserName();
+  }
 }

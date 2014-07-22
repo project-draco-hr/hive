@@ -1,0 +1,47 @@
+{
+  this.options=options;
+  this.bucket.set(options.getBucket());
+  this.path=AcidUtils.createFilename(path,options);
+  FileSystem fs=options.getFilesystem();
+  if (fs == null) {
+    fs=path.getFileSystem(options.getConfiguration());
+  }
+  this.fs=fs;
+  try {
+    FSDataOutputStream strm=fs.create(new Path(path,ACID_FORMAT),false);
+    strm.writeInt(ORC_ACID_VERSION);
+    strm.close();
+  }
+ catch (  IOException ioe) {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Failed to create " + path + "/"+ ACID_FORMAT+ " with "+ ioe);
+    }
+  }
+  if (options.getMinimumTransactionId() != options.getMaximumTransactionId() && !options.isWritingBase()) {
+    flushLengths=fs.create(getSideFile(this.path),true,8,options.getReporter());
+  }
+ else {
+    flushLengths=null;
+  }
+  OrcFile.WriterOptions writerOptions=null;
+  if (options instanceof OrcOptions) {
+    writerOptions=((OrcOptions)options).getOrcOptions();
+  }
+  if (writerOptions == null) {
+    writerOptions=OrcFile.writerOptions(options.getConfiguration());
+  }
+  writerOptions.fileSystem(fs).callback(indexBuilder);
+  if (!options.isWritingBase()) {
+    writerOptions.blockPadding(false);
+    writerOptions.bufferSize(DELTA_BUFFER_SIZE);
+    writerOptions.stripeSize(DELTA_STRIPE_SIZE);
+  }
+  writerOptions.inspector(createEventSchema(options.getInspector()));
+  this.writer=OrcFile.createWriter(this.path,writerOptions);
+  item=new OrcStruct(FIELDS);
+  item.setFieldValue(OPERATION,operation);
+  item.setFieldValue(CURRENT_TRANSACTION,currentTransaction);
+  item.setFieldValue(ORIGINAL_TRANSACTION,originalTransaction);
+  item.setFieldValue(BUCKET,bucket);
+  item.setFieldValue(ROW_ID,rowId);
+}

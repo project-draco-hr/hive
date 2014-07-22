@@ -3,7 +3,7 @@
   SQLState=null;
   downstreamError=null;
   if (!validateConfVariables()) {
-    return new CommandProcessorResponse(12,errorMessage,SQLState);
+    return createProcessorResponse(12);
   }
   HiveDriverRunHookContext hookContext=new HiveDriverRunHookContextImpl(conf,command);
   List<HiveDriverRunHook> driverRunHooks;
@@ -18,31 +18,35 @@
     SQLState=ErrorMsg.findSQLState(e.getMessage());
     downstreamError=e;
     console.printError(errorMessage + "\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
-    return new CommandProcessorResponse(12,errorMessage,SQLState);
+    return createProcessorResponse(12);
   }
   PerfLogger perfLogger=PerfLogger.getPerfLogger(true);
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.DRIVER_RUN);
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TIME_TO_SUBMIT);
-  int ret;
-  if (!alreadyCompiled) {
-    ret=compileInternal(command);
-    if (ret != 0) {
-      return new CommandProcessorResponse(ret,errorMessage,SQLState);
-    }
-  }
   boolean requireLock=false;
   boolean ckLock=false;
   try {
     ckLock=checkConcurrency();
+    createTxnManager();
   }
  catch (  SemanticException e) {
     errorMessage="FAILED: Error in semantic analysis: " + e.getMessage();
     SQLState=ErrorMsg.findSQLState(e.getMessage());
     downstreamError=e;
     console.printError(errorMessage,"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
-    ret=10;
-    return new CommandProcessorResponse(ret,errorMessage,SQLState);
+    return createProcessorResponse(10);
   }
+  int ret=recordValidTxns();
+  if (ret != 0) {
+    return createProcessorResponse(ret);
+  }
+  if (!alreadyCompiled) {
+    ret=compileInternal(command);
+    if (ret != 0) {
+      return createProcessorResponse(ret);
+    }
+  }
+  ctx.setHiveTxnManager(txnMgr);
   if (ckLock) {
     boolean lockOnlyMapred=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_LOCK_MAPRED_ONLY);
     if (lockOnlyMapred) {
@@ -69,16 +73,33 @@
   if (requireLock) {
     ret=acquireReadWriteLocks();
     if (ret != 0) {
-      releaseLocks(ctx.getHiveLocks());
-      return new CommandProcessorResponse(ret,errorMessage,SQLState);
+      try {
+        releaseLocks(ctx.getHiveLocks());
+      }
+ catch (      LockException e) {
+      }
+      return createProcessorResponse(ret);
     }
   }
   ret=execute();
   if (ret != 0) {
-    releaseLocks(ctx.getHiveLocks());
-    return new CommandProcessorResponse(ret,errorMessage,SQLState);
+    try {
+      releaseLocks(ctx.getHiveLocks());
+    }
+ catch (    LockException e) {
+    }
+    return createProcessorResponse(ret);
   }
-  releaseLocks(ctx.getHiveLocks());
+  try {
+    releaseLocks(ctx.getHiveLocks());
+  }
+ catch (  LockException e) {
+    errorMessage="FAILED: Hive Internal Error: " + Utilities.getNameMessage(e);
+    SQLState=ErrorMsg.findSQLState(e.getMessage());
+    downstreamError=e;
+    console.printError(errorMessage + "\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
+    return createProcessorResponse(12);
+  }
   perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.DRIVER_RUN);
   perfLogger.close(LOG,plan);
   try {
@@ -91,7 +112,7 @@
     SQLState=ErrorMsg.findSQLState(e.getMessage());
     downstreamError=e;
     console.printError(errorMessage + "\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
-    return new CommandProcessorResponse(12,errorMessage,SQLState);
+    return createProcessorResponse(12);
   }
-  return new CommandProcessorResponse(ret);
+  return createProcessorResponse(ret);
 }

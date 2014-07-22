@@ -1,20 +1,37 @@
 {
   setState(OperationState.PENDING);
-  prepare(getConfigForOperation());
+  final HiveConf opConfig=getConfigForOperation();
+  prepare(opConfig);
   if (!shouldRunAsync()) {
-    runInternal(getConfigForOperation());
+    runInternal(opConfig);
   }
  else {
+    final SessionState parentSessionState=SessionState.get();
+    final Hive sessionHive=getCurrentHive();
+    final UserGroupInformation currentUGI=getCurrentUGI(opConfig);
     Runnable backgroundOperation=new Runnable(){
-      SessionState ss=SessionState.get();
       @Override public void run(){
-        SessionState.setCurrentSessionState(ss);
-        try {
-          runInternal(getConfigForOperation());
+        PrivilegedExceptionAction<Object> doAsAction=new PrivilegedExceptionAction<Object>(){
+          @Override public Object run() throws HiveSQLException {
+            Hive.set(sessionHive);
+            SessionState.setCurrentSessionState(parentSessionState);
+            try {
+              runInternal(opConfig);
+            }
+ catch (            HiveSQLException e) {
+              setOperationException(e);
+              LOG.error("Error running hive query: ",e);
+            }
+            return null;
+          }
         }
- catch (        HiveSQLException e) {
-          setOperationException(e);
-          LOG.error("Error: ",e);
+;
+        try {
+          ShimLoader.getHadoopShims().doAs(currentUGI,doAsAction);
+        }
+ catch (        Exception e) {
+          setOperationException(new HiveSQLException(e));
+          LOG.error("Error running hive query as user : " + currentUGI.getShortUserName(),e);
         }
       }
     }
@@ -25,7 +42,7 @@
     }
  catch (    RejectedExecutionException rejected) {
       setState(OperationState.ERROR);
-      throw new HiveSQLException("All the asynchronous threads are currently busy, " + "please retry the operation",rejected);
+      throw new HiveSQLException("The background threadpool cannot accept" + " new task for execution, please retry the operation",rejected);
     }
   }
 }

@@ -1,0 +1,215 @@
+{
+  if (o == null) {
+    writeByte(buffer,(byte)0,invert);
+    return;
+  }
+  writeByte(buffer,(byte)1,invert);
+switch (oi.getCategory()) {
+case PRIMITIVE:
+{
+      PrimitiveObjectInspector poi=(PrimitiveObjectInspector)oi;
+switch (poi.getPrimitiveCategory()) {
+case VOID:
+{
+          return;
+        }
+case BOOLEAN:
+{
+        boolean v=((BooleanObjectInspector)poi).get(o);
+        writeByte(buffer,(byte)(v ? 2 : 1),invert);
+        return;
+      }
+case BYTE:
+{
+      ByteObjectInspector boi=(ByteObjectInspector)poi;
+      byte v=boi.get(o);
+      writeByte(buffer,(byte)(v ^ 0x80),invert);
+      return;
+    }
+case SHORT:
+{
+    ShortObjectInspector spoi=(ShortObjectInspector)poi;
+    short v=spoi.get(o);
+    writeByte(buffer,(byte)((v >> 8) ^ 0x80),invert);
+    writeByte(buffer,(byte)v,invert);
+    return;
+  }
+case INT:
+{
+  IntObjectInspector ioi=(IntObjectInspector)poi;
+  int v=ioi.get(o);
+  serializeInt(buffer,v,invert);
+  return;
+}
+case LONG:
+{
+LongObjectInspector loi=(LongObjectInspector)poi;
+long v=loi.get(o);
+writeByte(buffer,(byte)((v >> 56) ^ 0x80),invert);
+writeByte(buffer,(byte)(v >> 48),invert);
+writeByte(buffer,(byte)(v >> 40),invert);
+writeByte(buffer,(byte)(v >> 32),invert);
+writeByte(buffer,(byte)(v >> 24),invert);
+writeByte(buffer,(byte)(v >> 16),invert);
+writeByte(buffer,(byte)(v >> 8),invert);
+writeByte(buffer,(byte)v,invert);
+return;
+}
+case FLOAT:
+{
+FloatObjectInspector foi=(FloatObjectInspector)poi;
+int v=Float.floatToIntBits(foi.get(o));
+if ((v & (1 << 31)) != 0) {
+v=~v;
+}
+ else {
+v=v ^ (1 << 31);
+}
+writeByte(buffer,(byte)(v >> 24),invert);
+writeByte(buffer,(byte)(v >> 16),invert);
+writeByte(buffer,(byte)(v >> 8),invert);
+writeByte(buffer,(byte)v,invert);
+return;
+}
+case DOUBLE:
+{
+DoubleObjectInspector doi=(DoubleObjectInspector)poi;
+long v=Double.doubleToLongBits(doi.get(o));
+if ((v & (1L << 63)) != 0) {
+v=~v;
+}
+ else {
+v=v ^ (1L << 63);
+}
+writeByte(buffer,(byte)(v >> 56),invert);
+writeByte(buffer,(byte)(v >> 48),invert);
+writeByte(buffer,(byte)(v >> 40),invert);
+writeByte(buffer,(byte)(v >> 32),invert);
+writeByte(buffer,(byte)(v >> 24),invert);
+writeByte(buffer,(byte)(v >> 16),invert);
+writeByte(buffer,(byte)(v >> 8),invert);
+writeByte(buffer,(byte)v,invert);
+return;
+}
+case STRING:
+{
+StringObjectInspector soi=(StringObjectInspector)poi;
+Text t=soi.getPrimitiveWritableObject(o);
+serializeBytes(buffer,t.getBytes(),t.getLength(),invert);
+return;
+}
+case CHAR:
+{
+HiveCharObjectInspector hcoi=(HiveCharObjectInspector)poi;
+HiveCharWritable hc=hcoi.getPrimitiveWritableObject(o);
+Text t=hc.getStrippedValue();
+serializeBytes(buffer,t.getBytes(),t.getLength(),invert);
+return;
+}
+case VARCHAR:
+{
+HiveVarcharObjectInspector hcoi=(HiveVarcharObjectInspector)poi;
+HiveVarcharWritable hc=hcoi.getPrimitiveWritableObject(o);
+Text t=hc.getTextValue();
+serializeBytes(buffer,t.getBytes(),t.getLength(),invert);
+return;
+}
+case BINARY:
+{
+BinaryObjectInspector baoi=(BinaryObjectInspector)poi;
+BytesWritable ba=baoi.getPrimitiveWritableObject(o);
+byte[] toSer=new byte[ba.getLength()];
+System.arraycopy(ba.getBytes(),0,toSer,0,ba.getLength());
+serializeBytes(buffer,toSer,ba.getLength(),invert);
+return;
+}
+case DATE:
+{
+DateObjectInspector doi=(DateObjectInspector)poi;
+int v=doi.getPrimitiveWritableObject(o).getDays();
+serializeInt(buffer,v,invert);
+return;
+}
+case TIMESTAMP:
+{
+TimestampObjectInspector toi=(TimestampObjectInspector)poi;
+TimestampWritable t=toi.getPrimitiveWritableObject(o);
+byte[] data=t.getBinarySortable();
+for (int i=0; i < data.length; i++) {
+writeByte(buffer,data[i],invert);
+}
+return;
+}
+case DECIMAL:
+{
+HiveDecimalObjectInspector boi=(HiveDecimalObjectInspector)poi;
+HiveDecimal dec=boi.getPrimitiveJavaObject(o);
+int sign=dec.compareTo(HiveDecimal.ZERO);
+dec=dec.abs();
+int factor=dec.precision() - dec.scale();
+factor=sign == 1 ? factor : -factor;
+dec.scaleByPowerOfTen(Math.abs(dec.scale()));
+String digits=dec.unscaledValue().toString();
+writeByte(buffer,(byte)(sign + 1),invert);
+writeByte(buffer,(byte)((factor >> 24) ^ 0x80),invert);
+writeByte(buffer,(byte)(factor >> 16),invert);
+writeByte(buffer,(byte)(factor >> 8),invert);
+writeByte(buffer,(byte)factor,invert);
+serializeBytes(buffer,digits.getBytes(decimalCharSet),digits.length(),sign == -1 ? !invert : invert);
+return;
+}
+default :
+{
+throw new RuntimeException("Unrecognized type: " + poi.getPrimitiveCategory());
+}
+}
+}
+case LIST:
+{
+ListObjectInspector loi=(ListObjectInspector)oi;
+ObjectInspector eoi=loi.getListElementObjectInspector();
+int size=loi.getListLength(o);
+for (int eid=0; eid < size; eid++) {
+writeByte(buffer,(byte)1,invert);
+serialize(buffer,loi.getListElement(o,eid),eoi,invert);
+}
+writeByte(buffer,(byte)0,invert);
+return;
+}
+case MAP:
+{
+MapObjectInspector moi=(MapObjectInspector)oi;
+ObjectInspector koi=moi.getMapKeyObjectInspector();
+ObjectInspector voi=moi.getMapValueObjectInspector();
+Map<?,?> map=moi.getMap(o);
+for (Map.Entry<?,?> entry : map.entrySet()) {
+writeByte(buffer,(byte)1,invert);
+serialize(buffer,entry.getKey(),koi,invert);
+serialize(buffer,entry.getValue(),voi,invert);
+}
+writeByte(buffer,(byte)0,invert);
+return;
+}
+case STRUCT:
+{
+StructObjectInspector soi=(StructObjectInspector)oi;
+List<? extends StructField> fields=soi.getAllStructFieldRefs();
+for (int i=0; i < fields.size(); i++) {
+serialize(buffer,soi.getStructFieldData(o,fields.get(i)),fields.get(i).getFieldObjectInspector(),invert);
+}
+return;
+}
+case UNION:
+{
+UnionObjectInspector uoi=(UnionObjectInspector)oi;
+byte tag=uoi.getTag(o);
+writeByte(buffer,tag,invert);
+serialize(buffer,uoi.getField(o),uoi.getObjectInspectors().get(tag),invert);
+return;
+}
+default :
+{
+throw new RuntimeException("Unrecognized type: " + oi.getCategory());
+}
+}
+}

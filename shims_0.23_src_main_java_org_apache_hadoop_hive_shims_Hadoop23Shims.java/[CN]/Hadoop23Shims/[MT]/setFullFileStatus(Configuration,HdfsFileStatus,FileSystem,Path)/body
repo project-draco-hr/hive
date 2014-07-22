@@ -1,0 +1,33 @@
+{
+  String group=sourceStatus.getFileStatus().getGroup();
+  try {
+    FsShell fsShell=new FsShell();
+    fsShell.setConf(conf);
+    run(fsShell,new String[]{"-chgrp","-R",group,target.toString()});
+    if (isExtendedAclEnabled(conf)) {
+      AclStatus aclStatus=((Hadoop23FileStatus)sourceStatus).getAclStatus();
+      List<AclEntry> aclEntries=aclStatus.getEntries();
+      removeBaseAclEntries(aclEntries);
+      FsPermission sourcePerm=sourceStatus.getFileStatus().getPermission();
+      aclEntries.add(newAclEntry(AclEntryScope.ACCESS,AclEntryType.USER,sourcePerm.getUserAction()));
+      aclEntries.add(newAclEntry(AclEntryScope.ACCESS,AclEntryType.GROUP,sourcePerm.getGroupAction()));
+      aclEntries.add(newAclEntry(AclEntryScope.ACCESS,AclEntryType.OTHER,sourcePerm.getOtherAction()));
+      String aclEntry=Joiner.on(",").join(aclStatus.getEntries());
+      run(fsShell,new String[]{"-setfacl","-R","--set",aclEntry,target.toString()});
+    }
+ else {
+      String permission=Integer.toString(sourceStatus.getFileStatus().getPermission().toShort(),8);
+      run(fsShell,new String[]{"-chmod","-R",permission,target.toString()});
+    }
+  }
+ catch (  Exception e) {
+    throw new IOException("Unable to set permissions of " + target,e);
+  }
+  try {
+    if (LOG.isDebugEnabled()) {
+      getFullFileStatus(conf,fs,target).debugLog();
+    }
+  }
+ catch (  Exception e) {
+  }
+}

@@ -110,8 +110,8 @@
         LOG.info("Archive " + hashtableFiles.length + " hash table files to "+ archivePath);
         Path hdfsFilePath=Utilities.generateTarPath(hdfsPath,stageId);
         short replication=(short)job.getInt("mapred.submit.replication",10);
-        hdfs.setReplication(hdfsFilePath,replication);
         hdfs.copyFromLocalFile(archivePath,hdfsFilePath);
+        hdfs.setReplication(hdfsFilePath,replication);
         LOG.info("Upload 1 archive file  from" + archivePath + " to: "+ hdfsFilePath);
         DistributedCache.createSymlink(job);
         DistributedCache.addCacheArchive(hdfsFilePath.toUri(),job);
@@ -119,7 +119,7 @@
       }
     }
     work.configureJobConf(job);
-    List<Path> inputPaths=Utilities.getInputPaths(job,mWork,emptyScratchDir,ctx);
+    List<Path> inputPaths=Utilities.getInputPaths(job,mWork,emptyScratchDir,ctx,false);
     Utilities.setInputPaths(job,inputPaths);
     Utilities.setMapRedWork(job,work,ctx.getMRTmpPath());
     if (mWork.getSamplingType() > 0 && rWork != null && rWork.getNumReduceTasks() > 1) {
@@ -163,7 +163,7 @@ catch (      Exception e) {
     if (pwd != null) {
       HiveConf.setVar(job,HiveConf.ConfVars.METASTOREPWD,pwd);
     }
-    returnVal=jobExecHelper.progress(rj,jc);
+    returnVal=jobExecHelper.progress(rj,jc,ctx.getHiveTxnManager());
     success=(returnVal == 0);
   }
  catch (  Exception e) {
@@ -189,7 +189,7 @@ catch (      Exception e) {
         if (returnVal != 0) {
           rj.killJob();
         }
-        HadoopJobExecHelper.runningJobKillURIs.remove(rj.getJobID());
+        HadoopJobExecHelper.runningJobs.remove(rj);
         jobID=rj.getID().toString();
       }
     }

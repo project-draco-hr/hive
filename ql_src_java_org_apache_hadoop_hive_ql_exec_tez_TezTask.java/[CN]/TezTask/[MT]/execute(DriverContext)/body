@@ -12,24 +12,38 @@
     }
     SessionState ss=SessionState.get();
     session=ss.getTezSession();
-    if (session == null) {
-      session=new TezSessionState();
-      ss.setTezSession(session);
-    }
+    session=TezSessionPoolManager.getInstance().getSession(session,conf,false);
+    ss.setTezSession(session);
+    JobConf jobConf=utils.createConfiguration(conf);
+    String[] inputOutputJars=work.configureJobConfAndExtractJars(jobConf);
+    Path scratchDir=ctx.getMRScratchDir();
+    scratchDir=utils.createTezDir(scratchDir,conf);
     if (!session.isOpen()) {
       LOG.info("Tez session hasn't been created yet. Opening session");
-      session.open(ss.getSessionId(),conf);
+      session.open(conf,inputOutputJars);
     }
-    Path scratchDir=ctx.getMRScratchDir();
-    utils.createTezDir(scratchDir,conf);
-    JobConf jobConf=utils.createConfiguration(conf);
+ else {
+      session.refreshLocalResourcesFromConf(conf);
+    }
+    List<LocalResource> additionalLr=session.getLocalizedResources();
+    if (LOG.isDebugEnabled()) {
+      if (additionalLr == null || additionalLr.size() == 0) {
+        LOG.debug("No local resources to process (other than hive-exec)");
+      }
+ else {
+        for (        LocalResource lr : additionalLr) {
+          LOG.debug("Adding local resource: " + lr.getResource());
+        }
+      }
+    }
     LocalResource appJarLr=session.getAppJarLr();
-    DAG dag=build(jobConf,work,scratchDir,appJarLr,ctx);
-    client=submit(jobConf,dag,scratchDir,appJarLr,session);
+    DAG dag=build(jobConf,work,scratchDir,appJarLr,additionalLr,ctx);
+    client=submit(jobConf,dag,scratchDir,appJarLr,session,additionalLr);
     TezJobMonitor monitor=new TezJobMonitor();
-    rc=monitor.monitorExecution(client);
+    rc=monitor.monitorExecution(client,ctx.getHiveTxnManager(),conf);
     Set<StatusGetOpts> statusGetOpts=EnumSet.of(StatusGetOpts.GET_COUNTERS);
     counters=client.getDAGStatus(statusGetOpts).getDAGCounters();
+    TezSessionPoolManager.getInstance().returnSession(session);
     if (LOG.isInfoEnabled()) {
       for (      CounterGroup group : counters) {
         LOG.info(group.getDisplayName() + ":");

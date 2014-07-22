@@ -1,0 +1,41 @@
+{
+  canAcceptInputAsStream=false;
+  if (ptfDesc.getLlInfo().getLeadLagExprs() != null) {
+    return null;
+  }
+  WindowTableFunctionDef tabDef=(WindowTableFunctionDef)getTableDef();
+  int precedingSpan=0;
+  int followingSpan=0;
+  for (int i=0; i < tabDef.getWindowFunctions().size(); i++) {
+    WindowFunctionDef wFnDef=tabDef.getWindowFunctions().get(i);
+    WindowFrameDef wdwFrame=wFnDef.getWindowFrame();
+    GenericUDAFEvaluator fnEval=wFnDef.getWFnEval();
+    boolean streamingPossible=streamingPossible(cfg,wFnDef);
+    GenericUDAFEvaluator streamingEval=streamingPossible ? fnEval.getWindowingEvaluator(wdwFrame) : null;
+    if (streamingEval != null && streamingEval instanceof ISupportStreamingModeForWindowing) {
+      continue;
+    }
+    BoundaryDef start=wdwFrame.getStart();
+    BoundaryDef end=wdwFrame.getEnd();
+    if (!(end instanceof ValueBoundaryDef) && !(start instanceof ValueBoundaryDef)) {
+      if (end.getAmt() != BoundarySpec.UNBOUNDED_AMOUNT && start.getAmt() != BoundarySpec.UNBOUNDED_AMOUNT && end.getDirection() != Direction.PRECEDING && start.getDirection() != Direction.FOLLOWING) {
+        int amt=wdwFrame.getStart().getAmt();
+        if (amt > precedingSpan) {
+          precedingSpan=amt;
+        }
+        amt=wdwFrame.getEnd().getAmt();
+        if (amt > followingSpan) {
+          followingSpan=amt;
+        }
+        continue;
+      }
+    }
+    return null;
+  }
+  int windowLimit=HiveConf.getIntVar(cfg,ConfVars.HIVEJOINCACHESIZE);
+  if (windowLimit < (followingSpan + precedingSpan + 1)) {
+    return null;
+  }
+  canAcceptInputAsStream=true;
+  return new int[]{precedingSpan,followingSpan};
+}

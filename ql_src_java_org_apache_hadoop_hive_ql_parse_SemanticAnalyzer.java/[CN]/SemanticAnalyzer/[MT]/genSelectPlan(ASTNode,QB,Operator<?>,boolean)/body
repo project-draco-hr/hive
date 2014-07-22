@@ -87,10 +87,14 @@ int startPosn=isUDTF ? posn + 1 : posn;
 if (isInTransform) {
 startPosn=0;
 }
+Set<String> colAliases=new HashSet<String>();
+ASTNode[] exprs=new ASTNode[exprList.getChildCount()];
+String[][] aliases=new String[exprList.getChildCount()][];
+boolean[] hasAsClauses=new boolean[exprList.getChildCount()];
 for (int i=startPosn; i < exprList.getChildCount(); ++i) {
 ASTNode child=(ASTNode)exprList.getChild(i);
 boolean hasAsClause=(!isInTransform) && (child.getChildCount() == 2);
-boolean isWindowSpec=child.getChildCount() == 3 ? (child.getChild(2).getType() == HiveParser.TOK_WINDOWSPEC) : false;
+boolean isWindowSpec=child.getChildCount() == 3 && child.getChild(2).getType() == HiveParser.TOK_WINDOWSPEC;
 if (!isWindowSpec && !isInTransform && !isUDTF&& child.getChildCount() > 2) {
 throw new SemanticException(generateErrorMessage((ASTNode)child.getChild(2),ErrorMsg.INVALID_AS.getMsg()));
 }
@@ -111,6 +115,16 @@ if (hasAsClause) {
 unparseTranslator.addIdentifierTranslation((ASTNode)child.getChild(1));
 }
 }
+exprs[i]=expr;
+aliases[i]=new String[]{tabAlias,colAlias};
+hasAsClauses[i]=hasAsClause;
+colAliases.add(colAlias);
+}
+for (int i=startPosn; i < exprList.getChildCount(); ++i) {
+ASTNode expr=exprs[i];
+String tabAlias=aliases[i][0];
+String colAlias=aliases[i][1];
+boolean hasAsClause=hasAsClauses[i];
 if (expr.getType() == HiveParser.TOK_ALLCOLREF) {
 pos=genColListRegex(".*",expr.getChildCount() == 0 ? null : getUnescapedName((ASTNode)expr.getChild(0)).toLowerCase(),expr,col_list,inputRR,pos,out_rwsch,qb.getAliases(),subQuery);
 selectStar=true;
@@ -124,9 +138,10 @@ pos=genColListRegex(unescapeIdentifier(expr.getChild(1).getText()),unescapeIdent
  else {
 TypeCheckCtx tcCtx=new TypeCheckCtx(inputRR);
 tcCtx.setAllowStatefulFunctions(true);
+tcCtx.setAllowDistinctFunctions(false);
 ExprNodeDesc exp=genExprNodeDesc(expr,inputRR,tcCtx);
 String recommended=recommendName(exp,colAlias);
-if (recommended != null && out_rwsch.get(null,recommended) == null) {
+if (recommended != null && !colAliases.contains(recommended) && out_rwsch.get(null,recommended) == null) {
 colAlias=recommended;
 }
 col_list.add(exp);

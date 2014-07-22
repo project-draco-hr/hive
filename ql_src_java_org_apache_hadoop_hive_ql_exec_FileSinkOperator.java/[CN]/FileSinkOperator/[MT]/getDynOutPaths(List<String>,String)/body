@@ -1,14 +1,43 @@
 {
   FSPaths fp;
   String dpDir=getDynPartDirectory(row,dpColNames,numDynParts);
+  String pathKey=null;
   if (dpDir != null) {
-    dpDir=appendListBucketingDirName(lbDirName,dpDir);
-    FSPaths fsp2=valToPaths.get(dpDir);
+    dpDir=appendToSource(lbDirName,dpDir);
+    pathKey=dpDir;
+    if (conf.getDpSortState().equals(DPSortState.PARTITION_BUCKET_SORTED)) {
+      String buckNum=row.get(row.size() - 1);
+      taskId=Utilities.replaceTaskIdFromFilename(Utilities.getTaskId(hconf),buckNum);
+      pathKey=appendToSource(taskId,dpDir);
+    }
+    FSPaths fsp2=valToPaths.get(pathKey);
     if (fsp2 == null) {
       if (valToPaths.size() > maxPartitions) {
         throw new HiveFatalException(ErrorMsg.DYNAMIC_PARTITIONS_TOO_MANY_PER_NODE_ERROR.getErrorCodedMsg() + "Maximum was set to: " + maxPartitions);
       }
+      if (!conf.getDpSortState().equals(DPSortState.NONE) && prevFsp != null) {
+        prevFsp.closeWriters(false);
+        if (conf.isGatherStats() && isCollectRWStats) {
+          RecordWriter outWriter=prevFsp.outWriters[0];
+          if (outWriter != null) {
+            SerDeStats stats=((StatsProvidingRecordWriter)outWriter).getStats();
+            if (stats != null) {
+              prevFsp.stat.addToStat(StatsSetupConst.RAW_DATA_SIZE,stats.getRawDataSize());
+              prevFsp.stat.addToStat(StatsSetupConst.ROW_COUNT,stats.getRowCount());
+            }
+          }
+        }
+        prevFsp.outWriters[0]=null;
+        prevFsp=null;
+      }
       fsp2=createNewPaths(dpDir);
+      if (prevFsp == null) {
+        prevFsp=fsp2;
+      }
+      if (conf.getDpSortState().equals(DPSortState.PARTITION_BUCKET_SORTED)) {
+        createBucketForFileIdx(fsp2,0);
+        valToPaths.put(pathKey,fsp2);
+      }
     }
     fp=fsp2;
   }

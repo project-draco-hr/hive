@@ -1,14 +1,14 @@
 {
-  Reader vreader=OrcFile.createReader(testFilePath.getFileSystem(conf),testFilePath,conf);
-  Reader reader=OrcFile.createReader(testFilePath.getFileSystem(conf),testFilePath,conf);
-  RecordReaderImpl vrr=(RecordReaderImpl)vreader.rows(null);
-  RecordReaderImpl rr=(RecordReaderImpl)reader.rows(null);
+  Reader vreader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf));
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf));
+  RecordReaderImpl vrr=(RecordReaderImpl)vreader.rows();
+  RecordReaderImpl rr=(RecordReaderImpl)reader.rows();
   VectorizedRowBatch batch=null;
   OrcStruct row=null;
   while (vrr.hasNext()) {
     batch=vrr.nextBatch(batch);
     for (int i=0; i < batch.size; i++) {
-      row=(OrcStruct)rr.next((Object)row);
+      row=(OrcStruct)rr.next(row);
       for (int j=0; j < batch.cols.length; j++) {
         Object a=(row.getFieldValue(j));
         Object b=batch.cols[j].getWritableObject(i);
@@ -17,20 +17,20 @@
           Assert.assertEquals(true,temp.toString().equals(b.toString()));
           continue;
         }
-        if (a instanceof Timestamp) {
-          Timestamp t=((Timestamp)a);
-          Long timeInNanoSec=(t.getTime() * 1000000) + (t.getNanos() % 1000000);
+        if (a instanceof TimestampWritable) {
+          TimestampWritable t=((TimestampWritable)a);
+          Long timeInNanoSec=(t.getTimestamp().getTime() * 1000000) + (t.getTimestamp().getNanos() % 1000000);
           Assert.assertEquals(true,timeInNanoSec.toString().equals(b.toString()));
           continue;
         }
-        if (a instanceof Date) {
-          Date adt=(Date)a;
-          Assert.assertEquals(adt.getTime(),DateWritable.daysToMillis((int)((LongWritable)b).get()));
+        if (a instanceof DateWritable) {
+          DateWritable adt=(DateWritable)a;
+          Assert.assertEquals(adt.get().getTime(),DateWritable.daysToMillis((int)((LongWritable)b).get()));
           continue;
         }
-        if (a instanceof HiveDecimal) {
-          HiveDecimalWritable dec=(HiveDecimalWritable)b;
-          Assert.assertEquals(a,dec.getHiveDecimal());
+        if (a instanceof HiveDecimalWritable) {
+          HiveDecimalWritable dec=(HiveDecimalWritable)a;
+          Assert.assertEquals(dec,b);
         }
         if (null == a) {
           Assert.assertEquals(true,(b == null || (b instanceof NullWritable)));

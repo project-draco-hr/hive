@@ -1,0 +1,46 @@
+{
+  Set<Integer> bigTableCandidateSet=MapJoinProcessor.getBigTableCandidates(joinOp.getConf().getConds());
+  long maxSize=context.conf.getLongVar(HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASKTHRESHOLD);
+  int bigTablePosition=-1;
+  Statistics bigInputStat=null;
+  long totalSize=0;
+  int pos=0;
+  boolean bigTableFound=false;
+  for (  Operator<? extends OperatorDesc> parentOp : joinOp.getParentOperators()) {
+    Statistics currInputStat=parentOp.getStatistics();
+    if (currInputStat == null) {
+      LOG.warn("Couldn't get statistics from: " + parentOp);
+      return -1;
+    }
+    long inputSize=currInputStat.getDataSize();
+    if ((bigInputStat == null) || ((bigInputStat != null) && (inputSize > bigInputStat.getDataSize()))) {
+      if (bigTableFound) {
+        return -1;
+      }
+      if (inputSize / buckets > maxSize) {
+        if (!bigTableCandidateSet.contains(pos)) {
+          return -1;
+        }
+        bigTableFound=true;
+      }
+      if (bigInputStat != null) {
+        totalSize+=bigInputStat.getDataSize();
+      }
+      if (totalSize / buckets > maxSize) {
+        return -1;
+      }
+      if (bigTableCandidateSet.contains(pos)) {
+        bigTablePosition=pos;
+        bigInputStat=currInputStat;
+      }
+    }
+ else {
+      totalSize+=currInputStat.getDataSize();
+      if (totalSize / buckets > maxSize) {
+        return -1;
+      }
+    }
+    pos++;
+  }
+  return bigTablePosition;
+}

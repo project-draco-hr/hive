@@ -1,27 +1,38 @@
 {
-  TableScanOperator tsOp=(TableScanOperator)stack.get(0);
-  if (tsOp.getParentOperators() != null && tsOp.getParentOperators().size() > 0) {
-    return null;
-  }
-  SelectOperator selOp=(SelectOperator)tsOp.getChildren().get(0);
-  for (  ExprNodeDesc desc : selOp.getConf().getColList()) {
-    if (!(desc instanceof ExprNodeColumnDesc)) {
+  try {
+    TableScanOperator tsOp=(TableScanOperator)stack.get(0);
+    if (tsOp.getParentOperators() != null && tsOp.getParentOperators().size() > 0) {
       return null;
     }
-  }
-  GroupByOperator gbyOp=(GroupByOperator)selOp.getChildren().get(0);
-  FileSinkOperator fsOp=(FileSinkOperator)(gbyOp.getChildren().get(0).getChildren().get(0).getChildren().get(0).getChildren().get(0));
-  if (fsOp.getChildOperators() != null && fsOp.getChildOperators().size() > 0) {
-    return null;
-  }
-  List<AggregationDesc> aggrs=gbyOp.getConf().getAggregators();
-  Table tbl=pctx.getTopToTable().get(tsOp);
-  List<Object> oneRow=new ArrayList<Object>();
-  List<ObjectInspector> ois=new ArrayList<ObjectInspector>();
-  try {
+    SelectOperator selOp=(SelectOperator)tsOp.getChildren().get(0);
+    for (    ExprNodeDesc desc : selOp.getConf().getColList()) {
+      if (!(desc instanceof ExprNodeColumnDesc)) {
+        return null;
+      }
+    }
+    GroupByOperator gbyOp=(GroupByOperator)selOp.getChildren().get(0);
+    ReduceSinkOperator rsOp=(ReduceSinkOperator)gbyOp.getChildren().get(0);
+    if (rsOp.getConf().getDistinctColumnIndices().size() > 0) {
+      return null;
+    }
+    selOp=(SelectOperator)rsOp.getChildOperators().get(0).getChildOperators().get(0);
+    List<AggregationDesc> aggrs=gbyOp.getConf().getAggregators();
+    if (!(selOp.getConf().getColList().size() == aggrs.size())) {
+      return null;
+    }
+    FileSinkOperator fsOp=(FileSinkOperator)(selOp.getChildren().get(0));
+    if (fsOp.getChildOperators() != null && fsOp.getChildOperators().size() > 0) {
+      return null;
+    }
+    Table tbl=pctx.getTopToTable().get(tsOp);
+    List<Object> oneRow=new ArrayList<Object>();
+    List<ObjectInspector> ois=new ArrayList<ObjectInspector>();
     Hive hive=Hive.get(pctx.getConf());
     for (    AggregationDesc aggr : aggrs) {
-      if (aggr.getGenericUDAFName().equals(GenericUDAFSum.class.getAnnotation(Description.class).name())) {
+      if (aggr.getDistinct()) {
+        return null;
+      }
+      if (aggr.getGenericUDAFName().equals(AnnotationUtils.getAnnotation(GenericUDAFSum.class,Description.class).name())) {
         if (!(aggr.getParameters().get(0) instanceof ExprNodeConstantDesc)) {
           return null;
         }
@@ -32,7 +43,7 @@
         oneRow.add(HiveDecimal.create(((ExprNodeConstantDesc)aggr.getParameters().get(0)).getValue().toString()).multiply(HiveDecimal.create(rowCnt)));
         ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.DECIMAL));
       }
- else       if (aggr.getGenericUDAFName().equals(GenericUDAFCount.class.getAnnotation(Description.class).name())) {
+ else       if (aggr.getGenericUDAFName().equals(AnnotationUtils.getAnnotation(GenericUDAFCount.class,Description.class).name())) {
         Long rowCnt=0L;
         if ((aggr.getParameters().isEmpty() || aggr.getParameters().get(0) instanceof ExprNodeConstantDesc)) {
           rowCnt=getRowCnt(pctx,tsOp,tbl);
@@ -124,13 +135,15 @@
           ColumnStatisticsData statData=stats.get(0).getStatsData();
 switch (type) {
 case Integeral:
-            oneRow.add(statData.getLongStats().getHighValue());
-          ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.LONG));
-        break;
+            LongColumnStatsData lstats=statData.getLongStats();
+          oneRow.add(lstats.isSetHighValue() ? lstats.getHighValue() : null);
+        ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.LONG));
+      break;
 case Double:
-      oneRow.add(statData.getDoubleStats().getHighValue());
-    ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.DOUBLE));
-  break;
+    DoubleColumnStatsData dstats=statData.getDoubleStats();
+  oneRow.add(dstats.isSetHighValue() ? dstats.getHighValue() : null);
+ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.DOUBLE));
+break;
 default :
 Log.debug("Unsupported type: " + colDesc.getTypeString() + " encountered in "+ "metadata optimizer for column : "+ colName);
 return null;
@@ -141,7 +154,7 @@ Set<Partition> parts=pctx.getPrunedPartitions(tsOp.getConf().getAlias(),tsOp).ge
 switch (type) {
 case Integeral:
 {
-long maxVal=Long.MIN_VALUE;
+Long maxVal=null;
 Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartStats(hive,tbl,colName,parts);
 if (result == null) {
 return null;
@@ -149,8 +162,12 @@ return null;
 for (List<ColumnStatisticsObj> statObj : result) {
 ColumnStatisticsData statData=validateSingleColStat(statObj);
 if (statData == null) return null;
-long curVal=statData.getLongStats().getHighValue();
-maxVal=Math.max(maxVal,curVal);
+LongColumnStatsData lstats=statData.getLongStats();
+if (!lstats.isSetHighValue()) {
+continue;
+}
+long curVal=lstats.getHighValue();
+maxVal=maxVal == null ? curVal : Math.max(maxVal,curVal);
 }
 oneRow.add(maxVal);
 ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.LONG));
@@ -158,7 +175,7 @@ break;
 }
 case Double:
 {
-double maxVal=Double.MIN_VALUE;
+Double maxVal=null;
 Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartStats(hive,tbl,colName,parts);
 if (result == null) {
 return null;
@@ -166,8 +183,12 @@ return null;
 for (List<ColumnStatisticsObj> statObj : result) {
 ColumnStatisticsData statData=validateSingleColStat(statObj);
 if (statData == null) return null;
+DoubleColumnStatsData dstats=statData.getDoubleStats();
+if (!dstats.isSetHighValue()) {
+continue;
+}
 double curVal=statData.getDoubleStats().getHighValue();
-maxVal=Math.max(maxVal,curVal);
+maxVal=maxVal == null ? curVal : Math.max(maxVal,curVal);
 }
 oneRow.add(maxVal);
 ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.DOUBLE));
@@ -191,11 +212,13 @@ return null;
 ColumnStatisticsData statData=hive.getMSC().getTableColumnStatistics(tbl.getDbName(),tbl.getTableName(),Lists.newArrayList(colName)).get(0).getStatsData();
 switch (type) {
 case Integeral:
-oneRow.add(statData.getLongStats().getLowValue());
+LongColumnStatsData lstats=statData.getLongStats();
+oneRow.add(lstats.isSetLowValue() ? lstats.getLowValue() : null);
 ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.LONG));
 break;
 case Double:
-oneRow.add(statData.getDoubleStats().getLowValue());
+DoubleColumnStatsData dstats=statData.getDoubleStats();
+oneRow.add(dstats.isSetLowValue() ? dstats.getLowValue() : null);
 ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.DOUBLE));
 break;
 default :
@@ -208,7 +231,7 @@ Set<Partition> parts=pctx.getPrunedPartitions(tsOp.getConf().getAlias(),tsOp).ge
 switch (type) {
 case Integeral:
 {
-long minVal=Long.MAX_VALUE;
+Long minVal=null;
 Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartStats(hive,tbl,colName,parts);
 if (result == null) {
 return null;
@@ -216,8 +239,12 @@ return null;
 for (List<ColumnStatisticsObj> statObj : result) {
 ColumnStatisticsData statData=validateSingleColStat(statObj);
 if (statData == null) return null;
-long curVal=statData.getLongStats().getLowValue();
-minVal=Math.min(minVal,curVal);
+LongColumnStatsData lstats=statData.getLongStats();
+if (!lstats.isSetLowValue()) {
+continue;
+}
+long curVal=lstats.getLowValue();
+minVal=minVal == null ? curVal : Math.min(minVal,curVal);
 }
 oneRow.add(minVal);
 ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.LONG));
@@ -225,7 +252,7 @@ break;
 }
 case Double:
 {
-double minVal=Double.MAX_VALUE;
+Double minVal=null;
 Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartStats(hive,tbl,colName,parts);
 if (result == null) {
 return null;
@@ -233,8 +260,12 @@ return null;
 for (List<ColumnStatisticsObj> statObj : result) {
 ColumnStatisticsData statData=validateSingleColStat(statObj);
 if (statData == null) return null;
+DoubleColumnStatsData dstats=statData.getDoubleStats();
+if (!dstats.isSetLowValue()) {
+continue;
+}
 double curVal=statData.getDoubleStats().getLowValue();
-minVal=Math.min(minVal,curVal);
+minVal=minVal == null ? curVal : Math.min(minVal,curVal);
 }
 oneRow.add(minVal);
 ois.add(PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveCategory.DOUBLE));
@@ -251,11 +282,6 @@ Log.debug("Unsupported aggregation for metadata optimizer: " + aggr.getGenericUD
 return null;
 }
 }
-}
- catch (Exception e) {
-Log.debug("Failed to optimize using metadata optimizer",e);
-return null;
-}
 List<List<Object>> allRows=new ArrayList<List<Object>>();
 allRows.add(oneRow);
 List<String> colNames=new ArrayList<String>();
@@ -268,4 +294,9 @@ FetchTask fTask=(FetchTask)TaskFactory.get(fWork,pctx.getConf());
 fWork.setLimit(allRows.size());
 pctx.setFetchTask(fTask);
 return null;
+}
+ catch (Exception e) {
+Log.debug("Failed to optimize using metadata optimizer",e);
+return null;
+}
 }

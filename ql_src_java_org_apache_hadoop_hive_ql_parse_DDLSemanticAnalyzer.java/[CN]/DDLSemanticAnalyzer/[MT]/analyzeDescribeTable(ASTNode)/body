@@ -12,13 +12,20 @@
     validateTable(tableName,partSpec);
   }
   DescTableDesc descTblDesc=new DescTableDesc(ctx.getResFile(),tableName,partSpec,colPath);
+  boolean showColStats=false;
   if (ast.getChildCount() == 2) {
     int descOptions=ast.getChild(1).getType();
     descTblDesc.setFormatted(descOptions == HiveParser.KW_FORMATTED);
     descTblDesc.setExt(descOptions == HiveParser.KW_EXTENDED);
     descTblDesc.setPretty(descOptions == HiveParser.KW_PRETTY);
+    if (!colPath.equalsIgnoreCase(tableName) && descTblDesc.isFormatted()) {
+      showColStats=true;
+    }
   }
-  rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),descTblDesc),conf));
-  setFetchTask(createFetchTask(DescTableDesc.getSchema()));
+  inputs.add(new ReadEntity(getTable(tableName)));
+  Task ddlTask=TaskFactory.get(new DDLWork(getInputs(),getOutputs(),descTblDesc),conf);
+  rootTasks.add(ddlTask);
+  String schema=DescTableDesc.getSchema(showColStats);
+  setFetchTask(createFetchTask(schema));
   LOG.info("analyzeDescribeTable done");
 }

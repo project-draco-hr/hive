@@ -1,5 +1,14 @@
 {
   List<LogicalInput> shuffleInputs=getShuffleInputs(inputs);
+  if (shuffleInputs != null) {
+    l4j.info("Waiting for ShuffleInputs to become ready");
+    processorContext.waitForAllInputsReady(new ArrayList<Input>(shuffleInputs));
+  }
+  for (  Entry<String,LogicalOutput> outputEntry : outputs.entrySet()) {
+    l4j.info("Starting Output: " + outputEntry.getKey());
+    outputEntry.getValue().start();
+    ((TezKVOutputCollector)outMap.get(outputEntry.getKey())).initialize();
+  }
   KeyValuesReader kvsReader;
   try {
     if (shuffleInputs.size() == 1) {
@@ -15,7 +24,7 @@
   while (kvsReader.next()) {
     Object key=kvsReader.getCurrentKey();
     Iterable<Object> values=kvsReader.getCurrentValues();
-    boolean needMore=processKeyValues(key,values);
+    boolean needMore=processRows(key,values);
     if (!needMore) {
       break;
     }

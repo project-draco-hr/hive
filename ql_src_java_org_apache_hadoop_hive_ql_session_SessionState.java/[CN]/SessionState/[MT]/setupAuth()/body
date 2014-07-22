@@ -3,30 +3,22 @@
     return;
   }
   try {
-    authenticator=HiveUtils.getAuthenticator(getConf(),HiveConf.ConfVars.HIVE_AUTHENTICATOR_MANAGER);
+    authenticator=HiveUtils.getAuthenticator(conf,HiveConf.ConfVars.HIVE_AUTHENTICATOR_MANAGER);
     authenticator.setSessionState(this);
-    authorizer=HiveUtils.getAuthorizeProviderManager(getConf(),HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER,authenticator,true);
+    String clsStr=HiveConf.getVar(conf,HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER);
+    authorizer=HiveUtils.getAuthorizeProviderManager(conf,clsStr,authenticator,true);
     if (authorizer == null) {
-      HiveAuthorizerFactory authorizerFactory=HiveUtils.getAuthorizerFactory(getConf(),HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER);
-      authorizerV2=authorizerFactory.createHiveAuthorizer(new HiveMetastoreClientFactoryImpl(),getConf(),authenticator);
-      getConf().setVar(ConfVars.HIVE_AUTHORIZATION_TABLE_OWNER_GRANTS,"insert,select,update,delete");
-      String hooks=getConf().getVar(ConfVars.PREEXECHOOKS).trim();
-      if (hooks.isEmpty()) {
-        hooks=DisallowTransformHook.class.getName();
-      }
- else {
-        hooks=hooks + "," + DisallowTransformHook.class.getName();
-      }
-      LOG.debug("Configuring hooks : " + hooks);
-      getConf().setVar(ConfVars.PREEXECHOOKS,hooks);
+      HiveAuthorizerFactory authorizerFactory=HiveUtils.getAuthorizerFactory(conf,HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER);
+      authorizerV2=authorizerFactory.createHiveAuthorizer(new HiveMetastoreClientFactoryImpl(),conf,authenticator);
+      authorizerV2.applyAuthorizationConfigPolicy(conf);
+      createTableGrants=CreateTableAutomaticGrant.create(conf);
     }
-    createTableGrants=CreateTableAutomaticGrant.create(getConf());
   }
  catch (  HiveException e) {
     throw new RuntimeException(e);
   }
   if (LOG.isDebugEnabled()) {
-    Object authorizationClass=getAuthorizationMode() == AuthorizationMode.V1 ? getAuthorizer() : getAuthorizerV2();
+    Object authorizationClass=getActiveAuthorizer();
     LOG.debug("Session is using authorization class " + authorizationClass.getClass());
   }
   return;

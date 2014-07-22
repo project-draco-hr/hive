@@ -6,14 +6,14 @@
   String hbaseColumnsMapping=jobConf.get(HBaseSerDe.HBASE_COLUMNS_MAPPING);
   boolean doColumnRegexMatching=jobConf.getBoolean(HBaseSerDe.HBASE_COLUMNS_REGEX_MATCHING,true);
   List<Integer> readColIDs=ColumnProjectionUtils.getReadColumnIDs(jobConf);
-  List<ColumnMapping> columnsMapping=null;
+  ColumnMappings columnMappings;
   try {
-    columnsMapping=HBaseSerDe.parseColumnsMapping(hbaseColumnsMapping,doColumnRegexMatching);
+    columnMappings=HBaseSerDe.parseColumnsMapping(hbaseColumnsMapping,doColumnRegexMatching);
   }
  catch (  SerDeException e) {
     throw new IOException(e);
   }
-  if (columnsMapping.size() < readColIDs.size()) {
+  if (columnMappings.size() < readColIDs.size()) {
     throw new IOException("Cannot read more columns than the given table contains.");
   }
   boolean readAllColumns=ColumnProjectionUtils.isReadAllColumns(jobConf);
@@ -21,8 +21,9 @@
   boolean empty=true;
   List<String> addedFamilies=new ArrayList<String>();
   if (!readAllColumns) {
+    ColumnMapping[] columnsMapping=columnMappings.getColumnsMapping();
     for (    int i : readColIDs) {
-      ColumnMapping colMap=columnsMapping.get(i);
+      ColumnMapping colMap=columnsMapping[i];
       if (colMap.hbaseRowKey) {
         continue;
       }
@@ -39,8 +40,7 @@
     }
   }
   if (empty) {
-    for (int i=0; i < columnsMapping.size(); i++) {
-      ColumnMapping colMap=columnsMapping.get(i);
+    for (    ColumnMapping colMap : columnMappings) {
       if (colMap.hbaseRowKey) {
         continue;
       }

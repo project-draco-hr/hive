@@ -47,16 +47,10 @@ catch (  URISyntaxException e) {
   applyConstraints(fromURI,toURI,fromTree,isLocal);
   inputs.add(new ReadEntity(new Path(fromURI),isLocal));
   Task<? extends Serializable> rTask=null;
-  if (isLocal) {
-    String copyURIStr=ctx.getExternalTmpPath(toURI).toString();
-    URI copyURI=URI.create(copyURIStr);
-    rTask=TaskFactory.get(new CopyWork(new Path(fromURI),new Path(copyURI)),conf);
-    fromURI=copyURI;
-  }
   Map<String,String> partSpec=ts.getPartSpec();
   if (partSpec == null) {
     partSpec=new LinkedHashMap<String,String>();
-    outputs.add(new WriteEntity(ts.tableHandle));
+    outputs.add(new WriteEntity(ts.tableHandle,(isOverWrite ? WriteEntity.WriteType.INSERT_OVERWRITE : WriteEntity.WriteType.INSERT)));
   }
  else {
     try {
@@ -65,10 +59,10 @@ catch (  URISyntaxException e) {
         if (part.isOffline()) {
           throw new SemanticException(ErrorMsg.OFFLINE_TABLE_OR_PARTITION.getMsg(ts.tableName + ":" + part.getName()));
         }
-        outputs.add(new WriteEntity(part));
+        outputs.add(new WriteEntity(part,(isOverWrite ? WriteEntity.WriteType.INSERT_OVERWRITE : WriteEntity.WriteType.INSERT)));
       }
  else {
-        outputs.add(new WriteEntity(ts.tableHandle));
+        outputs.add(new WriteEntity(ts.tableHandle,(isOverWrite ? WriteEntity.WriteType.INSERT_OVERWRITE : WriteEntity.WriteType.INSERT)));
       }
     }
  catch (    HiveException e) {
@@ -77,7 +71,7 @@ catch (  URISyntaxException e) {
   }
   LoadTableDesc loadTableWork;
   loadTableWork=new LoadTableDesc(new Path(fromURI),Utilities.getTableDesc(ts.tableHandle),partSpec,isOverWrite);
-  Task<? extends Serializable> childTask=TaskFactory.get(new MoveWork(getInputs(),getOutputs(),loadTableWork,null,true),conf);
+  Task<? extends Serializable> childTask=TaskFactory.get(new MoveWork(getInputs(),getOutputs(),loadTableWork,null,true,isLocal),conf);
   if (rTask != null) {
     rTask.addDependentTask(childTask);
   }

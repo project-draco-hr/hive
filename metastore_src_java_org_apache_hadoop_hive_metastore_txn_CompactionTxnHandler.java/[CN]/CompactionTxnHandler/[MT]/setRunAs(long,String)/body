@@ -1,0 +1,38 @@
+{
+  try {
+    Connection dbConn=getDbConn(Connection.TRANSACTION_SERIALIZABLE);
+    Statement stmt=null;
+    try {
+      stmt=dbConn.createStatement();
+      String s="update COMPACTION_QUEUE set cq_run_as = '" + user + "' where cq_id = "+ cq_id;
+      LOG.debug("Going to execute update <" + s + ">");
+      if (stmt.executeUpdate(s) != 1) {
+        LOG.error("Unable to update compaction record");
+        LOG.debug("Going to rollback");
+        dbConn.rollback();
+      }
+      LOG.debug("Going to commit");
+      dbConn.commit();
+    }
+ catch (    SQLException e) {
+      LOG.error("Unable to update compaction queue, " + e.getMessage());
+      try {
+        LOG.debug("Going to rollback");
+        dbConn.rollback();
+      }
+ catch (      SQLException e1) {
+      }
+      detectDeadlock(e,"setRunAs");
+    }
+ finally {
+      closeDbConn(dbConn);
+      closeStmt(stmt);
+    }
+  }
+ catch (  DeadlockException e) {
+    setRunAs(cq_id,user);
+  }
+ finally {
+    deadlockCnt=0;
+  }
+}

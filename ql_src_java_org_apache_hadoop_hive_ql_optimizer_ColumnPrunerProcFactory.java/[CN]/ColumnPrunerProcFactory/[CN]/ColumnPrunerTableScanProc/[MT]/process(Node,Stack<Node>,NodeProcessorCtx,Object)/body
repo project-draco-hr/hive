@@ -2,9 +2,15 @@
   TableScanOperator scanOp=(TableScanOperator)nd;
   ColumnPrunerProcCtx cppCtx=(ColumnPrunerProcCtx)ctx;
   List<String> cols=cppCtx.genColLists((Operator<? extends OperatorDesc>)nd);
+  if (cols == null && !scanOp.getConf().isGatherStats()) {
+    scanOp.setNeededColumnIDs(null);
+    return null;
+  }
+  cols=cols == null ? new ArrayList<String>() : cols;
   cppCtx.getPrunedColLists().put((Operator<? extends OperatorDesc>)nd,cols);
   List<Integer> neededColumnIds=new ArrayList<Integer>();
   List<String> neededColumnNames=new ArrayList<String>();
+  List<String> referencedColumnNames=new ArrayList<String>();
   RowResolver inputRR=cppCtx.getOpToParseCtxMap().get(scanOp).getRowResolver();
   TableScanDesc desc=scanOp.getConf();
   List<VirtualColumn> virtualCols=desc.getVirtualCols();
@@ -12,11 +18,12 @@
   if (scanOp.getConf().isGatherStats()) {
     cols.add(VirtualColumn.RAWDATASIZE.getName());
   }
-  for (int i=0; i < cols.size(); i++) {
-    String[] tabCol=inputRR.reverseLookup(cols.get(i));
+  for (  String column : cols) {
+    String[] tabCol=inputRR.reverseLookup(column);
     if (tabCol == null) {
       continue;
     }
+    referencedColumnNames.add(column);
     ColumnInfo colInfo=inputRR.get(tabCol[0],tabCol[1]);
     if (colInfo.getIsVirtualCol()) {
       for (int j=0; j < virtualCols.size(); j++) {
@@ -27,14 +34,15 @@
       }
       continue;
     }
-    int position=inputRR.getPosition(cols.get(i));
+    int position=inputRR.getPosition(column);
     if (position >= 0) {
       neededColumnIds.add(position);
-      neededColumnNames.add(cols.get(i));
+      neededColumnNames.add(column);
     }
   }
   desc.setVirtualCols(newVirtualCols);
   scanOp.setNeededColumnIDs(neededColumnIds);
   scanOp.setNeededColumns(neededColumnNames);
+  scanOp.setReferencedColumns(referencedColumnNames);
   return null;
 }

@@ -1,0 +1,58 @@
+{
+  List<List<Path[]>> result=new ArrayList<List<Path[]>>();
+  try {
+    FileStatus destStatus=!replace && fs.exists(destf) ? fs.getFileStatus(destf) : null;
+    if (destStatus != null && !destStatus.isDir()) {
+      throw new HiveException("checkPaths: destination " + destf + " should be a directory");
+    }
+    for (    FileStatus src : srcs) {
+      FileStatus[] items;
+      if (src.isDir()) {
+        items=srcFs.listStatus(src.getPath(),new PathFilter(){
+          @Override public boolean accept(          Path p){
+            String name=p.getName();
+            return !name.startsWith("_") && !name.startsWith(".");
+          }
+        }
+);
+        Arrays.sort(items);
+      }
+ else {
+        items=new FileStatus[]{src};
+      }
+      List<Path[]> srcToDest=new ArrayList<Path[]>();
+      for (      FileStatus item : items) {
+        Path itemSource=item.getPath();
+        if (Utilities.isTempPath(item)) {
+          srcFs.delete(itemSource,true);
+          continue;
+        }
+        if (!conf.getBoolVar(HiveConf.ConfVars.HIVE_HADOOP_SUPPORTS_SUBDIRECTORIES) && item.isDir()) {
+          throw new HiveException("checkPaths: " + src.getPath() + " has nested directory"+ itemSource);
+        }
+        String name=itemSource.getName();
+        String filetype;
+        int index=name.lastIndexOf('.');
+        if (index >= 0) {
+          filetype=name.substring(index);
+          name=name.substring(0,index);
+        }
+ else {
+          filetype="";
+        }
+        Path itemDest=new Path(destf,itemSource.getName());
+        if (!replace) {
+          for (int counter=1; fs.exists(itemDest) || destExists(result,itemDest); counter++) {
+            itemDest=new Path(destf,name + ("_copy_" + counter) + filetype);
+          }
+        }
+        srcToDest.add(new Path[]{itemSource,itemDest});
+      }
+      result.add(srcToDest);
+    }
+  }
+ catch (  IOException e) {
+    throw new HiveException("checkPaths: filesystem error in check phase",e);
+  }
+  return result;
+}

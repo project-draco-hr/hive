@@ -1,16 +1,31 @@
 {
   try {
+    if (principal == null) {
+      if (!isUserAdmin()) {
+        throw new HiveAccessControlException("User : " + currentUserName + " has to specify"+ " a user name or role in the show grant. "+ ADMIN_ONLY_MSG);
+      }
+    }
+ else {
+      if (!isUserAdmin()) {
+        ensureShowGrantAllowed(principal);
+      }
+    }
     IMetaStoreClient mClient=metastoreClientFactory.getHiveMetastoreClient();
     List<HivePrivilegeInfo> resPrivInfos=new ArrayList<HivePrivilegeInfo>();
-    List<HiveObjectPrivilege> msObjPrivs=mClient.list_privileges(principal.getName(),AuthorizationUtils.getThriftPrincipalType(principal.getType()),SQLAuthorizationUtils.getThriftHiveObjectRef(privObj));
+    String principalName=principal == null ? null : principal.getName();
+    PrincipalType principalType=principal == null ? null : AuthorizationUtils.getThriftPrincipalType(principal.getType());
+    List<HiveObjectPrivilege> msObjPrivs=mClient.list_privileges(principalName,principalType,SQLAuthorizationUtils.getThriftHiveObjectRef(privObj));
     for (    HiveObjectPrivilege msObjPriv : msObjPrivs) {
       HivePrincipal resPrincipal=new HivePrincipal(msObjPriv.getPrincipalName(),AuthorizationUtils.getHivePrincipalType(msObjPriv.getPrincipalType()));
       PrivilegeGrantInfo msGrantInfo=msObjPriv.getGrantInfo();
       HivePrivilege resPrivilege=new HivePrivilege(msGrantInfo.getPrivilege(),null);
       HiveObjectRef msObjRef=msObjPriv.getHiveObject();
+      if (!isSupportedObjectType(msObjRef.getObjectType())) {
+        continue;
+      }
       HivePrivilegeObject resPrivObj=new HivePrivilegeObject(getPluginObjType(msObjRef.getObjectType()),msObjRef.getDbName(),msObjRef.getObjectName());
       HivePrincipal grantorPrincipal=new HivePrincipal(msGrantInfo.getGrantor(),AuthorizationUtils.getHivePrincipalType(msGrantInfo.getGrantorType()));
-      HivePrivilegeInfo resPrivInfo=new HivePrivilegeInfo(resPrincipal,resPrivilege,resPrivObj,grantorPrincipal,msGrantInfo.isGrantOption());
+      HivePrivilegeInfo resPrivInfo=new HivePrivilegeInfo(resPrincipal,resPrivilege,resPrivObj,grantorPrincipal,msGrantInfo.isGrantOption(),msGrantInfo.getCreateTime());
       resPrivInfos.add(resPrivInfo);
     }
     return resPrivInfos;

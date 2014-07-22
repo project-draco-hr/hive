@@ -1,6 +1,8 @@
 {
   VectorizedRowBatch vrg=(VectorizedRowBatch)row;
-  LOG.debug(String.format("sinking %d rows, %d values, %d keys, %d parts",vrg.size,valueEval.length,keyEval.length,partitionEval.length));
+  if (isDebugEnabled) {
+    LOG.debug(String.format("sinking %d rows, %d values, %d keys, %d parts",vrg.size,valueEval.length,keyEval.length,partitionEval.length));
+  }
   try {
     for (int i=0; i < keyEval.length; i++) {
       keyEval[i].evaluate(vrg);
@@ -12,6 +14,11 @@
     for (int i=0; i < partitionEval.length; i++) {
       partitionEval[i].evaluate(vrg);
     }
+    if (bucketEval != null) {
+      for (int i=0; i < bucketEval.length; i++) {
+        bucketEval[i].evaluate(vrg);
+      }
+    }
     for (int i=0; i < valueEval.length; i++) {
       valueEval[i].evaluate(vrg);
     }
@@ -22,18 +29,30 @@
         rowIndex=vrg.selected[batchIndex];
       }
       populatedCachedDistributionKeys(vrg,rowIndex,0);
+      int buckNum=-1;
+      if (bucketEval != null) {
+        buckNum=computeBucketNumber(vrg,rowIndex,conf.getNumBuckets());
+        cachedKeys[0][buckColIdxInKey]=new IntWritable(buckNum);
+      }
       HiveKey firstKey=toHiveKey(cachedKeys[0],tag,null);
       int distKeyLength=firstKey.getDistKeyLength();
       if (numDistinctExprs > 0) {
         populateCachedDistinctKeys(vrg,rowIndex,0);
         firstKey=toHiveKey(cachedKeys[0],tag,distKeyLength);
       }
-      if (useTopN) {
-        reducerHash.tryStoreVectorizedKey(firstKey,batchIndex);
+      final int hashCode;
+      if (autoParallel && partitionEval.length > 0) {
+        hashCode=computeMurmurHash(firstKey);
       }
  else {
-        int hashCode=computeHashCode(vrg,rowIndex);
-        firstKey.setHashCode(hashCode);
+        hashCode=computeHashCode(vrg,rowIndex,buckNum);
+      }
+      firstKey.setHashCode(hashCode);
+      if (useTopN) {
+        boolean partkeysNull=conf.isPTFReduceSink() && partitionKeysAreNull(vrg,rowIndex);
+        reducerHash.tryStoreVectorizedKey(firstKey,partkeysNull,batchIndex);
+      }
+ else {
         BytesWritable value=makeValueWritable(vrg,rowIndex);
         collect(firstKey,value);
         forwardExtraDistinctRows(vrg,rowIndex,hashCode,value,distKeyLength,tag,0);
@@ -47,17 +66,18 @@
       if (vrg.selectedInUse) {
         rowIndex=vrg.selected[batchIndex];
       }
-      int hashCode=computeHashCode(vrg,rowIndex);
       BytesWritable value=makeValueWritable(vrg,rowIndex);
       int distKeyLength=-1;
+      int hashCode;
       if (result == TopNHash.FORWARD) {
         HiveKey firstKey=reducerHash.getVectorizedKeyToForward(batchIndex);
-        firstKey.setHashCode(hashCode);
         distKeyLength=firstKey.getDistKeyLength();
+        hashCode=firstKey.hashCode();
         collect(firstKey,value);
       }
  else {
-        reducerHash.storeValue(result,value,hashCode,true);
+        hashCode=reducerHash.getVectorizedKeyHashCode(batchIndex);
+        reducerHash.storeValue(result,hashCode,value,true);
         distKeyLength=reducerHash.getVectorizedKeyDistLength(batchIndex);
       }
       if (numDistinctExprs > 1) {

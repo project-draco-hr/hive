@@ -1,0 +1,23 @@
+{
+  BoundaryDef start=wFrmDef.getStart();
+  BoundaryDef end=wFrmDef.getEnd();
+  return new GenericUDAFStreamingEvaluator.SumAvgEnhancer<HiveDecimalWritable,Object[]>(this,start.getAmt(),end.getAmt()){
+    @Override protected HiveDecimalWritable getNextResult(    org.apache.hadoop.hive.ql.udf.generic.GenericUDAFStreamingEvaluator.SumAvgEnhancer<HiveDecimalWritable,Object[]>.SumAvgStreamingState ss) throws HiveException {
+      AverageAggregationBuffer<HiveDecimal> myagg=(AverageAggregationBuffer<HiveDecimal>)ss.wrappedBuf;
+      HiveDecimal r=myagg.count == 0 ? null : myagg.sum;
+      long cnt=myagg.count;
+      if (ss.numPreceding != BoundarySpec.UNBOUNDED_AMOUNT && (ss.numRows - ss.numFollowing) >= (ss.numPreceding + 1)) {
+        Object[] o=ss.intermediateVals.remove(0);
+        HiveDecimal d=o == null ? HiveDecimal.ZERO : (HiveDecimal)o[0];
+        r=r == null ? null : r.subtract(d);
+        cnt=cnt - ((Long)o[1]);
+      }
+      return r == null ? null : new HiveDecimalWritable(r.divide(HiveDecimal.create(cnt)));
+    }
+    @Override protected Object[] getCurrentIntermediateResult(    org.apache.hadoop.hive.ql.udf.generic.GenericUDAFStreamingEvaluator.SumAvgEnhancer<HiveDecimalWritable,Object[]>.SumAvgStreamingState ss) throws HiveException {
+      AverageAggregationBuffer<HiveDecimal> myagg=(AverageAggregationBuffer<HiveDecimal>)ss.wrappedBuf;
+      return myagg.count == 0 ? null : new Object[]{myagg.sum,myagg.count};
+    }
+  }
+;
+}

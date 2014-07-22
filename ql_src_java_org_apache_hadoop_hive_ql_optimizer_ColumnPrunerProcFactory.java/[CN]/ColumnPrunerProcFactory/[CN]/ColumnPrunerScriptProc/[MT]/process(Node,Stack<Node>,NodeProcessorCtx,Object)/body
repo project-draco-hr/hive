@@ -1,0 +1,38 @@
+{
+  ColumnPrunerProcCtx cppCtx=(ColumnPrunerProcCtx)ctx;
+  Operator<? extends OperatorDesc> op=(Operator<? extends OperatorDesc>)nd;
+  RowResolver inputRR=cppCtx.getParseContext().getOpParseCtx().get(op).getRowResolver();
+  List<String> prunedCols=cppCtx.getPrunedColList(op.getChildOperators().get(0));
+  Operator<? extends OperatorDesc> parent=op.getParentOperators().get(0);
+  RowResolver parentRR=cppCtx.getParseContext().getOpParseCtx().get(parent).getRowResolver();
+  List<ColumnInfo> sig=parentRR.getRowSchema().getSignature();
+  List<String> colList=new ArrayList<String>();
+  for (  ColumnInfo cI : sig) {
+    colList.add(cI.getInternalName());
+  }
+  if (prunedCols.size() != inputRR.getRowSchema().getSignature().size() && !(op.getChildOperators().get(0) instanceof SelectOperator)) {
+    ArrayList<ExprNodeDesc> exprs=new ArrayList<ExprNodeDesc>();
+    ArrayList<String> outputs=new ArrayList<String>();
+    Map<String,ExprNodeDesc> colExprMap=new HashMap<String,ExprNodeDesc>();
+    RowResolver outputRS=new RowResolver();
+    for (    String internalName : prunedCols) {
+      String[] nm=inputRR.reverseLookup(internalName);
+      ColumnInfo valueInfo=inputRR.get(nm[0],nm[1]);
+      ExprNodeDesc colDesc=new ExprNodeColumnDesc(valueInfo.getType(),valueInfo.getInternalName(),nm[0],valueInfo.getIsVirtualCol());
+      exprs.add(colDesc);
+      outputs.add(internalName);
+      outputRS.put(nm[0],nm[1],new ColumnInfo(internalName,valueInfo.getType(),nm[0],valueInfo.getIsVirtualCol(),valueInfo.isHiddenVirtualCol()));
+      colExprMap.put(internalName,colDesc);
+    }
+    SelectDesc select=new SelectDesc(exprs,outputs,false);
+    Operator<? extends OperatorDesc> child=op.getChildOperators().get(0);
+    op.removeChild(child);
+    SelectOperator sel=(SelectOperator)OperatorFactory.getAndMakeChild(select,new RowSchema(outputRS.getColumnInfos()),op);
+    OperatorFactory.makeChild(sel,child);
+    OpParseContext parseCtx=new OpParseContext(outputRS);
+    cppCtx.getParseContext().getOpParseCtx().put(sel,parseCtx);
+    sel.setColumnExprMap(colExprMap);
+  }
+  cppCtx.getPrunedColLists().put(op,colList);
+  return null;
+}

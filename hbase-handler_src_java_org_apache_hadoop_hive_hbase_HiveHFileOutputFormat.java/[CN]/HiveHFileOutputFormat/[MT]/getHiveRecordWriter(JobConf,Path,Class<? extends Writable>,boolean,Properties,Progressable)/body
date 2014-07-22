@@ -1,5 +1,5 @@
 {
-  String hfilePath=tableProperties.getProperty(HFILE_FAMILY_PATH);
+  String hfilePath=getFamilyPath(jc,tableProperties);
   if (hfilePath == null) {
     throw new RuntimeException("Please set " + HFILE_FAMILY_PATH + " to target location for HFiles");
   }
@@ -22,7 +22,7 @@
     }
     ++i;
   }
-  return new FSRecordWriter(){
+  return new RecordWriter(){
     @Override public void close(    boolean abort) throws IOException {
       try {
         fileWriter.close(null);
@@ -35,10 +35,10 @@
         for (; ; ) {
           FileStatus[] files=fs.listStatus(srcDir);
           if ((files == null) || (files.length == 0)) {
-            throw new IOException("No files found in " + srcDir);
+            throw new IOException("No family directories found in " + srcDir);
           }
           if (files.length != 1) {
-            throw new IOException("Multiple files found in " + srcDir);
+            throw new IOException("Multiple family directories found in " + srcDir);
           }
           srcDir=files[0].getPath();
           if (srcDir.getName().equals(columnFamilyName)) {
@@ -55,8 +55,8 @@
         throw new IOException(ex);
       }
     }
-    @Override public void write(    Writable w) throws IOException {
-      String s=((Text)w).toString();
+    private void writeText(    Text text) throws IOException {
+      String s=text.toString();
       String[] fields=s.split("\u0001");
       assert(fields.length <= (columnMap.size() + 1));
       byte[] rowKeyBytes=Bytes.toBytes(fields[0]);
@@ -78,9 +78,39 @@
         try {
           fileWriter.write(null,kv);
         }
- catch (        InterruptedException ex) {
+ catch (        IOException e) {
+          LOG.error("Failed while writing row: " + s);
+          throw e;
+        }
+catch (        InterruptedException ex) {
           throw new IOException(ex);
         }
+      }
+    }
+    private void writePut(    PutWritable put) throws IOException {
+      ImmutableBytesWritable row=new ImmutableBytesWritable(put.getPut().getRow());
+      SortedMap<byte[],List<Cell>> cells=put.getPut().getFamilyCellMap();
+      for (      Map.Entry<byte[],List<Cell>> entry : cells.entrySet()) {
+        Collections.sort(entry.getValue(),new CellComparator());
+        for (        Cell c : entry.getValue()) {
+          try {
+            fileWriter.write(row,KeyValueUtil.copyToNewKeyValue(c));
+          }
+ catch (          InterruptedException e) {
+            throw (InterruptedIOException)new InterruptedIOException().initCause(e);
+          }
+        }
+      }
+    }
+    @Override public void write(    Writable w) throws IOException {
+      if (w instanceof Text) {
+        writeText((Text)w);
+      }
+ else       if (w instanceof PutWritable) {
+        writePut((PutWritable)w);
+      }
+ else {
+        throw new IOException("Unexpected writable " + w);
       }
     }
   }

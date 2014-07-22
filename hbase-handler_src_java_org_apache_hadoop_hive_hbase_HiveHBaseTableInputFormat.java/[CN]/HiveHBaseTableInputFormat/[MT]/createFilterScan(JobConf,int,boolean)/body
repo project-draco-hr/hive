@@ -1,5 +1,16 @@
 {
   Scan scan=new Scan();
+  String filterObjectSerialized=jobConf.get(TableScanDesc.FILTER_OBJECT_CONF_STR);
+  if (filterObjectSerialized != null) {
+    HBaseScanRange range=Utilities.deserializeObject(filterObjectSerialized,HBaseScanRange.class);
+    try {
+      range.setup(scan,jobConf);
+    }
+ catch (    Exception e) {
+      throw new IOException(e);
+    }
+    return scan;
+  }
   String filterExprSerialized=jobConf.get(TableScanDesc.FILTER_EXPR_CONF_STR);
   if (filterExprSerialized == null) {
     return scan;
@@ -11,10 +22,7 @@
   List<IndexSearchCondition> searchConditions=new ArrayList<IndexSearchCondition>();
   ExprNodeDesc residualPredicate=analyzer.analyzePredicate(filterExpr,searchConditions);
   if (residualPredicate != null) {
-    throw new RuntimeException("Unexpected residual predicate " + residualPredicate.getExprString());
-  }
-  if (searchConditions.size() < 1 || searchConditions.size() > 2) {
-    throw new RuntimeException("Either one or two search conditions expected in push down");
+    LOG.debug("Ignoring residual predicate " + residualPredicate.getExprString());
   }
   byte[] startRow=HConstants.EMPTY_START_ROW, stopRow=HConstants.EMPTY_END_ROW;
   for (  IndexSearchCondition sc : searchConditions) {
@@ -55,5 +63,8 @@ catch (    HiveException e) {
   }
   scan.setStartRow(startRow);
   scan.setStopRow(stopRow);
+  if (LOG.isDebugEnabled()) {
+    LOG.debug(Bytes.toStringBinary(startRow) + " ~ " + Bytes.toStringBinary(stopRow));
+  }
   return scan;
 }

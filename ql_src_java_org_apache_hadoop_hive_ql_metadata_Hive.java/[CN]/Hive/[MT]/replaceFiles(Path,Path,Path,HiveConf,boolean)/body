@@ -1,0 +1,68 @@
+{
+  try {
+    FileSystem destFs=destf.getFileSystem(conf);
+    boolean inheritPerms=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_WAREHOUSE_SUBDIR_INHERIT_PERMS);
+    FileStatus[] srcs;
+    FileSystem srcFs;
+    try {
+      srcFs=srcf.getFileSystem(conf);
+      srcs=srcFs.globStatus(srcf);
+    }
+ catch (    IOException e) {
+      throw new HiveException("Getting globStatus " + srcf.toString(),e);
+    }
+    if (srcs == null) {
+      LOG.info("No sources specified to move: " + srcf);
+      return;
+    }
+    List<List<Path[]>> result=checkPaths(conf,destFs,srcs,srcFs,destf,true);
+    if (oldPath != null) {
+      try {
+        FileSystem fs2=oldPath.getFileSystem(conf);
+        if (fs2.exists(oldPath)) {
+          FileUtils.trashFilesUnderDir(fs2,oldPath,conf);
+        }
+      }
+ catch (      Exception e) {
+        LOG.warn("Directory " + oldPath.toString() + " canot be removed:"+ StringUtils.stringifyException(e));
+      }
+    }
+    if (srcs.length == 1 && srcs[0].isDir()) {
+      Path destfp=destf.getParent();
+      if (!destFs.exists(destfp)) {
+        boolean success=destFs.mkdirs(destfp);
+        if (!success) {
+          LOG.warn("Error creating directory " + destf.toString());
+        }
+        if (inheritPerms && success) {
+          destFs.setPermission(destfp,destFs.getFileStatus(destfp.getParent()).getPermission());
+        }
+      }
+      boolean b=renameFile(conf,srcs[0].getPath(),destf,destFs,true,isSrcLocal);
+      if (!b) {
+        throw new HiveException("Unable to move results from " + srcs[0].getPath() + " to destination directory: "+ destf);
+      }
+    }
+ else {
+      if (!destFs.exists(destf)) {
+        boolean success=destFs.mkdirs(destf);
+        if (!success) {
+          LOG.warn("Error creating directory " + destf.toString());
+        }
+        if (inheritPerms && success) {
+          destFs.setPermission(destf,destFs.getFileStatus(destf.getParent()).getPermission());
+        }
+      }
+      for (      List<Path[]> sdpairs : result) {
+        for (        Path[] sdpair : sdpairs) {
+          if (!renameFile(conf,sdpair[0],sdpair[1],destFs,true,isSrcLocal)) {
+            throw new IOException("Error moving: " + sdpair[0] + " into: "+ sdpair[1]);
+          }
+        }
+      }
+    }
+  }
+ catch (  IOException e) {
+    throw new HiveException(e.getMessage(),e);
+  }
+}

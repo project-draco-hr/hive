@@ -1,0 +1,28 @@
+{
+  LOG.info("Starting cleaning for " + ci.getFullPartitionName());
+  try {
+    StorageDescriptor sd=resolveStorageDescriptor(resolveTable(ci),resolvePartition(ci));
+    final String location=sd.getLocation();
+    final ValidTxnList txnList=new ValidTxnListImpl();
+    if (runJobAsSelf(ci.runAs)) {
+      removeFiles(location,txnList);
+    }
+ else {
+      LOG.info("Cleaning as user " + ci.runAs);
+      UserGroupInformation ugi=UserGroupInformation.createProxyUser(ci.runAs,UserGroupInformation.getLoginUser());
+      ugi.doAs(new PrivilegedExceptionAction<Object>(){
+        @Override public Object run() throws Exception {
+          removeFiles(location,txnList);
+          return null;
+        }
+      }
+);
+    }
+  }
+ catch (  Exception e) {
+    LOG.error("Caught exception when cleaning, unable to complete cleaning " + StringUtils.stringifyException(e));
+  }
+ finally {
+    txnHandler.markCleaned(ci);
+  }
+}

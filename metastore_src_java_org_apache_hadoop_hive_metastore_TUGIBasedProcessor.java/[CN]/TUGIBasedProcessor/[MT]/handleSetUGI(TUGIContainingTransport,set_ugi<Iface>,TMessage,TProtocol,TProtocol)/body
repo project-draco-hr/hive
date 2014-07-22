@@ -1,0 +1,27 @@
+{
+  UserGroupInformation clientUgi=ugiTrans.getClientUGI();
+  if (null != clientUgi) {
+    throw new TException(new IllegalStateException("UGI is already set. Resetting is not " + "allowed. Current ugi is: " + clientUgi.getUserName()));
+  }
+  set_ugi_args args=fn.getEmptyArgsInstance();
+  try {
+    args.read(iprot);
+  }
+ catch (  TProtocolException e) {
+    iprot.readMessageEnd();
+    TApplicationException x=new TApplicationException(TApplicationException.PROTOCOL_ERROR,e.getMessage());
+    oprot.writeMessageBegin(new TMessage(msg.name,TMessageType.EXCEPTION,msg.seqid));
+    x.write(oprot);
+    oprot.writeMessageEnd();
+    oprot.getTransport().flush();
+    return;
+  }
+  iprot.readMessageEnd();
+  set_ugi_result result=fn.getResult(iface,args);
+  List<String> principals=result.getSuccess();
+  ugiTrans.setClientUGI(shim.createRemoteUser(principals.remove(principals.size() - 1),principals));
+  oprot.writeMessageBegin(new TMessage(msg.name,TMessageType.REPLY,msg.seqid));
+  result.write(oprot);
+  oprot.writeMessageEnd();
+  oprot.getTransport().flush();
+}

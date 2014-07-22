@@ -3,27 +3,25 @@
   super.processNoScanCommand(tree);
   super.processPartialScanCommand(tree);
   if (shouldRewrite(tree)) {
-    tableName=new String(getTableName(tree));
+    tbl=getTable(tree);
     colNames=getColumnName(tree);
-    int numCols=getNumColumns(tree);
     originalTree=tree;
     boolean isPartitionStats=isPartitionLevelStats(tree);
-    PartitionList partList=null;
-    checkForPartitionColumns(colNames,getPartitionKeys(tableName));
-    validateSpecifiedColumnNames(tableName,colNames);
+    Map<String,String> partSpec=null;
+    checkIfTemporaryTable();
+    checkForPartitionColumns(colNames,Utilities.getColumnNamesFromFieldSchema(tbl.getPartitionKeys()));
+    validateSpecifiedColumnNames(colNames);
     if (isPartitionStats) {
       isTableLevel=false;
-      partList=getPartKeyValuePairsFromAST(tree);
-      validatePartitionClause(tableName,partList);
-      partName=constructPartitionName(tableName,partList);
-      colType=getPartitionColumnType(tableName,partName,colNames,numCols);
+      partSpec=getPartKeyValuePairsFromAST(tree);
+      handlePartialPartitionSpec(partSpec);
     }
  else {
       isTableLevel=true;
-      colType=getTableColumnType(tableName,colNames,numCols);
     }
+    colType=getColumnTypes(colNames);
     int numBitVectors=getNumBitVectorsForNDVEstimation(conf);
-    rewrittenQuery=genRewrittenQuery(colNames,numBitVectors,partList,isPartitionStats);
+    rewrittenQuery=genRewrittenQuery(colNames,numBitVectors,partSpec,isPartitionStats);
     rewrittenTree=genRewrittenTree(rewrittenQuery);
   }
  else {

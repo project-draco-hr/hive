@@ -1,0 +1,34 @@
+{
+  LOG.debug("Heartbeating lock and transaction " + txnId);
+  List<HiveLock> locks=lockMgr.getLocks(false,false);
+  if (locks.size() == 0) {
+    if (txnId == 0) {
+      return;
+    }
+ else {
+      DbLockManager.DbHiveLock dummyLock=new DbLockManager.DbHiveLock(0L);
+      locks.add(dummyLock);
+    }
+  }
+  for (  HiveLock lock : locks) {
+    long lockId=((DbLockManager.DbHiveLock)lock).lockId;
+    try {
+      client.heartbeat(txnId,lockId);
+    }
+ catch (    NoSuchLockException e) {
+      LOG.error("Unable to find lock " + lockId);
+      throw new LockException(ErrorMsg.LOCK_NO_SUCH_LOCK.getMsg(),e);
+    }
+catch (    NoSuchTxnException e) {
+      LOG.error("Unable to find transaction " + txnId);
+      throw new LockException(ErrorMsg.TXN_NO_SUCH_TRANSACTION.getMsg(),e);
+    }
+catch (    TxnAbortedException e) {
+      LOG.error("Transaction aborted " + txnId);
+      throw new LockException(ErrorMsg.TXN_ABORTED.getMsg(),e);
+    }
+catch (    TException e) {
+      throw new LockException(ErrorMsg.METASTORE_COMMUNICATION_FAILED.getMsg(),e);
+    }
+  }
+}

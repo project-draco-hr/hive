@@ -1,0 +1,34 @@
+{
+  LinkedHashMap<String,String> partSpec=p.getSpec();
+  Properties partProps=p.getSchema();
+  String pcolTypes=partProps.getProperty(hive_metastoreConstants.META_TABLE_PARTITION_COLUMN_TYPES);
+  String[] partKeyTypes=pcolTypes.trim().split(":");
+  if (partSpec.size() != partKeyTypes.length) {
+    throw new HiveException("Internal error : Partition Spec size, " + partProps.size() + " doesn't match partition key definition size, "+ partKeyTypes.length);
+  }
+  boolean hasVC=vcs != null && !vcs.isEmpty();
+  Object[] rowWithPart=new Object[hasVC ? 3 : 2];
+  ArrayList<String> partNames=new ArrayList<String>();
+  ArrayList<Object> partValues=new ArrayList<Object>();
+  ArrayList<ObjectInspector> partObjectInspectors=new ArrayList<ObjectInspector>();
+  int i=0;
+  for (  Map.Entry<String,String> entry : partSpec.entrySet()) {
+    partNames.add(entry.getKey());
+    ObjectInspector oi=PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(TypeInfoFactory.getPrimitiveTypeInfo(partKeyTypes[i++]));
+    partValues.add(ObjectInspectorConverters.getConverter(PrimitiveObjectInspectorFactory.javaStringObjectInspector,oi).convert(entry.getValue()));
+    partObjectInspectors.add(oi);
+  }
+  StructObjectInspector partObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(partNames,partObjectInspectors);
+  rowWithPart[1]=partValues;
+  ArrayList<StructObjectInspector> ois=new ArrayList<StructObjectInspector>(2);
+  ois.add(rowObjectInspector);
+  ois.add(partObjectInspector);
+  if (hasVC) {
+    ois.add(VirtualColumn.getVCSObjectInspector(vcs));
+  }
+  StructObjectInspector rowWithPartObjectInspector=ObjectInspectorFactory.getUnionStructObjectInspector(ois);
+  ExprNodeEvaluator evaluator=ExprNodeEvaluatorFactory.get(expr);
+  ObjectInspector evaluateResultOI=evaluator.initialize(rowWithPartObjectInspector);
+  Object evaluateResultO=evaluator.evaluate(rowWithPart);
+  return ((PrimitiveObjectInspector)evaluateResultOI).getPrimitiveJavaObject(evaluateResultO);
+}

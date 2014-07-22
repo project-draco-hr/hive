@@ -1,15 +1,15 @@
 {
   ExprNodeColumnDesc cd=(ExprNodeColumnDesc)nd;
   ExprProcCtx epc=(ExprProcCtx)procCtx;
-  assert(epc.getInputOperator() != null);
-  ColumnInfo inp_ci=null;
-  for (  ColumnInfo tmp_ci : epc.getInputOperator().getSchema().getSignature()) {
-    if (tmp_ci.getInternalName().equals(cd.getColumn())) {
-      inp_ci=tmp_ci;
-      break;
-    }
+  Operator<? extends OperatorDesc> operator=epc.getInputOperator();
+  assert(operator != null);
+  RowResolver resolver=epc.getResolver();
+  String[] nm=resolver.reverseLookup(cd.getColumn());
+  if (nm == null && operator instanceof ReduceSinkOperator) {
+    nm=resolver.reverseLookup(Utilities.removeValueTag(cd.getColumn()));
   }
+  ColumnInfo ci=nm != null ? resolver.get(nm[0],nm[1]) : null;
   LineageCtx lc=epc.getLineageCtx();
-  Dependency dep=lc.getIndex().getDependency(epc.getInputOperator(),inp_ci);
+  Dependency dep=lc.getIndex().getDependency(operator,ci);
   return dep;
 }

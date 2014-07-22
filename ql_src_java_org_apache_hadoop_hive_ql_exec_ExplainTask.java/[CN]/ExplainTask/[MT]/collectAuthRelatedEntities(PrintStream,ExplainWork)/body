@@ -1,0 +1,50 @@
+{
+  BaseSemanticAnalyzer analyzer=work.getAnalyzer();
+  HiveOperation operation=SessionState.get().getHiveOperation();
+  JSONObject object=new JSONObject();
+  Object jsonInput=toJson("INPUTS",toString(analyzer.getInputs()),out,work);
+  if (work.isFormatted()) {
+    object.put("INPUTS",jsonInput);
+  }
+  Object jsonOutput=toJson("OUTPUTS",toString(analyzer.getOutputs()),out,work);
+  if (work.isFormatted()) {
+    object.put("OUTPUTS",jsonOutput);
+  }
+  String userName=SessionState.get().getAuthenticator().getUserName();
+  Object jsonUser=toJson("CURRENT_USER",userName,out,work);
+  if (work.isFormatted()) {
+    object.put("CURRENT_USER",jsonUser);
+  }
+  Object jsonOperation=toJson("OPERATION",operation.name(),out,work);
+  if (work.isFormatted()) {
+    object.put("OPERATION",jsonOperation);
+  }
+  if (analyzer.skipAuthorization()) {
+    return object;
+  }
+  final List<String> exceptions=new ArrayList<String>();
+  Object delegate=SessionState.get().getActiveAuthorizer();
+  if (delegate != null) {
+    Class itface=SessionState.get().getAuthorizerInterface();
+    Object authorizer=AuthorizationFactory.create(delegate,itface,new AuthorizationFactory.AuthorizationExceptionHandler(){
+      public void exception(      Exception exception){
+        exceptions.add(exception.getMessage());
+      }
+    }
+);
+    SessionState.get().setActiveAuthorizer(authorizer);
+    try {
+      Driver.doAuthorization(analyzer,"");
+    }
+  finally {
+      SessionState.get().setActiveAuthorizer(delegate);
+    }
+  }
+  if (!exceptions.isEmpty()) {
+    Object jsonFails=toJson("AUTHORIZATION_FAILURES",exceptions,out,work);
+    if (work.isFormatted()) {
+      object.put("AUTHORIZATION_FAILURES",jsonFails);
+    }
+  }
+  return object;
+}

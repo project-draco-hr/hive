@@ -6,12 +6,35 @@
       firstRow=false;
     }
     alias=(byte)tag;
-    key=computeMapJoinKey(row,alias);
+    if (hashMapRowGetters == null) {
+      hashMapRowGetters=new ReusableGetAdaptor[mapJoinTables.length];
+      MapJoinKey refKey=getRefKey(alias);
+      for (byte pos=0; pos < order.length; pos++) {
+        if (pos != alias) {
+          hashMapRowGetters[pos]=mapJoinTables[pos].createGetter(refKey);
+        }
+      }
+    }
+    ReusableGetAdaptor firstSetKey=null;
+    int fieldCount=joinKeys[alias].size();
     boolean joinNeeded=false;
     for (byte pos=0; pos < order.length; pos++) {
       if (pos != alias) {
-        MapJoinRowContainer rowContainer=mapJoinTables[pos].get(key);
-        if (rowContainer == null || key.hasAnyNulls(nullsafes)) {
+        ReusableGetAdaptor adaptor;
+        if (firstSetKey == null) {
+          adaptor=firstSetKey=hashMapRowGetters[pos];
+          setMapJoinKey(firstSetKey,row,alias);
+        }
+ else {
+          adaptor=hashMapRowGetters[pos];
+          adaptor.setFromOther(firstSetKey);
+        }
+        MapJoinRowContainer rowContainer=adaptor.getCurrentRows();
+        if (rowContainer != null && unwrapContainer[pos] != null) {
+          Object[] currentKey=firstSetKey.getCurrentKey();
+          rowContainer=unwrapContainer[pos].setInternal(rowContainer,currentKey);
+        }
+        if (rowContainer == null || firstSetKey.hasAnyNulls(fieldCount,nullsafes)) {
           if (!noOuterJoin) {
             joinNeeded=true;
             storage[pos]=dummyObjVectors[pos];
@@ -29,7 +52,7 @@
     }
     if (joinNeeded) {
       List<Object> value=getFilteredValue(alias,row);
-      storage[alias].add(value);
+      storage[alias].addRow(value);
       checkAndGenObject();
     }
     storage[tag].clearRows();
@@ -39,7 +62,9 @@
       }
     }
   }
- catch (  SerDeException e) {
-    throw new HiveException(e);
+ catch (  Exception e) {
+    String msg="Unexpected exception: " + e.getMessage();
+    LOG.error(msg,e);
+    throw new HiveException(msg,e);
   }
 }

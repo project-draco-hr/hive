@@ -1,0 +1,39 @@
+{
+  Connection dbConn=getDbConn(Connection.TRANSACTION_READ_COMMITTED);
+  Set<CompactionInfo> response=new HashSet<CompactionInfo>();
+  Statement stmt=null;
+  try {
+    stmt=dbConn.createStatement();
+    String s="select distinct ctc_database, ctc_table, " + "ctc_partition from COMPLETED_TXN_COMPONENTS";
+    LOG.debug("Going to execute query <" + s + ">");
+    ResultSet rs=stmt.executeQuery(s);
+    while (rs.next()) {
+      CompactionInfo info=new CompactionInfo();
+      info.dbname=rs.getString(1);
+      info.tableName=rs.getString(2);
+      info.partName=rs.getString(3);
+      response.add(info);
+    }
+    s="select tc_database, tc_table, tc_partition " + "from TXNS, TXN_COMPONENTS " + "where txn_id = tc_txnid and txn_state = '" + TXN_ABORTED + "' "+ "group by tc_database, tc_table, tc_partition "+ "having count(*) > "+ maxAborted;
+    LOG.debug("Going to execute query <" + s + ">");
+    rs=stmt.executeQuery(s);
+    while (rs.next()) {
+      CompactionInfo info=new CompactionInfo();
+      info.dbname=rs.getString(1);
+      info.tableName=rs.getString(2);
+      info.partName=rs.getString(3);
+      info.tooManyAborts=true;
+      response.add(info);
+    }
+    LOG.debug("Going to rollback");
+    dbConn.rollback();
+  }
+ catch (  SQLException e) {
+    LOG.error("Unable to connect to transaction database " + e.getMessage());
+  }
+ finally {
+    closeDbConn(dbConn);
+    closeStmt(stmt);
+  }
+  return response;
+}

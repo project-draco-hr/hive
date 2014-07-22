@@ -3,12 +3,24 @@
   boolean formatted=false;
   boolean dependency=false;
   boolean logical=false;
-  if (ast.getChildCount() == 2) {
-    int explainOptions=ast.getChild(1).getType();
-    formatted=(explainOptions == HiveParser.KW_FORMATTED);
-    extended=(explainOptions == HiveParser.KW_EXTENDED);
-    dependency=(explainOptions == HiveParser.KW_DEPENDENCY);
-    logical=(explainOptions == HiveParser.KW_LOGICAL);
+  boolean authorize=false;
+  for (int i=1; i < ast.getChildCount(); i++) {
+    int explainOptions=ast.getChild(i).getType();
+    if (explainOptions == HiveParser.KW_FORMATTED) {
+      formatted=true;
+    }
+ else     if (explainOptions == HiveParser.KW_EXTENDED) {
+      extended=true;
+    }
+ else     if (explainOptions == HiveParser.KW_DEPENDENCY) {
+      dependency=true;
+    }
+ else     if (explainOptions == HiveParser.KW_LOGICAL) {
+      logical=true;
+    }
+ else     if (explainOptions == HiveParser.KW_AUTHORIZATION) {
+      authorize=true;
+    }
   }
   ctx.setExplain(true);
   ctx.setExplainLogical(logical);
@@ -18,15 +30,18 @@
   sem.validate();
   ctx.setResFile(ctx.getLocalTmpPath());
   List<Task<? extends Serializable>> tasks=sem.getRootTasks();
-  Task<? extends Serializable> fetchTask=sem.getFetchTask();
   if (tasks == null) {
     tasks=Collections.emptyList();
+  }
+  FetchTask fetchTask=sem.getFetchTask();
+  if (fetchTask != null) {
+    fetchTask.getWork().initializeForFetch();
   }
   ParseContext pCtx=null;
   if (sem instanceof SemanticAnalyzer) {
     pCtx=((SemanticAnalyzer)sem).getParseContext();
   }
-  ExplainWork work=new ExplainWork(ctx.getResFile(),pCtx,tasks,fetchTask,input.dump(),sem.getInputs(),extended,formatted,dependency,logical);
+  ExplainWork work=new ExplainWork(ctx.getResFile(),pCtx,tasks,fetchTask,input.dump(),sem,extended,formatted,dependency,logical,authorize);
   work.setAppendTaskType(HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVEEXPLAINDEPENDENCYAPPENDTASKTYPES));
   Task<? extends Serializable> explTask=TaskFactory.get(work,conf);
   fieldList=explTask.getResultSchema();

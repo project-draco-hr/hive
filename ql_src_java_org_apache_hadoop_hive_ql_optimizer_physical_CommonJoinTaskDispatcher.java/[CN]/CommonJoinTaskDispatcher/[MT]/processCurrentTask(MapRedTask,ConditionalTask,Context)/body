@@ -7,14 +7,12 @@
   MapWork currWork=currTask.getWork().getMapWork();
   List<Serializable> listWorks=new ArrayList<Serializable>();
   List<Task<? extends Serializable>> listTasks=new ArrayList<Task<? extends Serializable>>();
-  HashMap<String,Task<? extends Serializable>> aliasToTask=new HashMap<String,Task<? extends Serializable>>();
+  HashMap<Task<? extends Serializable>,Set<String>> taskToAliases=new HashMap<Task<? extends Serializable>,Set<String>>();
   HashMap<String,ArrayList<String>> pathToAliases=currWork.getPathToAliases();
   Map<String,Operator<? extends OperatorDesc>> aliasToWork=currWork.getAliasToWork();
   ParseContext parseCtx=physicalContext.getParseContext();
   QBJoinTree joinTree=parseCtx.getJoinContext().get(joinOp);
   JoinDesc joinDesc=joinOp.getConf();
-  Byte[] order=joinDesc.getTagOrder();
-  int numAliases=order.length;
   if (aliasToSize == null) {
     aliasToSize=new HashMap<String,Long>();
   }
@@ -24,6 +22,7 @@
     if (bigTableCandidates.isEmpty()) {
       return null;
     }
+    bigTableCandidates=multiInsertBigTableCheck(joinOp,bigTableCandidates);
     Configuration conf=context.getConf();
     boolean convertJoinMapJoin=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASK);
     int bigTablePosition=-1;
@@ -31,20 +30,18 @@
       long mapJoinSize=HiveConf.getLongVar(conf,HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASKTHRESHOLD);
       Long bigTableSize=null;
       Set<String> aliases=aliasToWork.keySet();
-      for (      String alias : aliases) {
-        int tablePosition=getPosition(currWork,joinOp,alias);
-        if (!bigTableCandidates.contains(tablePosition)) {
-          continue;
-        }
-        long sumOfOthers=Utilities.sumOfExcept(aliasToSize,aliases,alias);
+      for (      int tablePosition : bigTableCandidates) {
+        Operator<?> parent=joinOp.getParentOperators().get(tablePosition);
+        Set<String> participants=GenMapRedUtils.findAliases(currWork,parent);
+        long sumOfOthers=Utilities.sumOfExcept(aliasToSize,aliases,participants);
         if (sumOfOthers < 0 || sumOfOthers > mapJoinSize) {
           continue;
         }
         if (bigTableSize == null && bigTablePosition >= 0 && tablePosition < bigTablePosition) {
           continue;
         }
-        Long aliasSize=aliasToSize.get(alias);
-        if (bigTableSize == null || (aliasSize != null && aliasSize > bigTableSize)) {
+        long aliasSize=Utilities.sumOf(aliasToSize,participants);
+        if (bigTableSize == null || bigTableSize < 0 || (aliasSize >= 0 && aliasSize >= bigTableSize)) {
           bigTablePosition=tablePosition;
           bigTableSize=aliasSize;
         }
@@ -53,8 +50,9 @@
     currWork.setOpParseCtxMap(parseCtx.getOpParseCtx());
     currWork.setJoinTree(joinTree);
     if (bigTablePosition >= 0) {
-      MapRedTask newTask=convertTaskToMapJoinTask(currTask.getWork(),bigTablePosition).getFirst();
+      MapRedTask newTask=convertTaskToMapJoinTask(currTask.getWork(),bigTablePosition);
       newTask.setTaskTag(Task.MAPJOIN_ONLY_NOBACKUP);
+      newTask.setFetchSource(currTask.isFetchSource());
       replaceTask(currTask,newTask,physicalContext);
       if ((newTask.getChildTasks() != null) && (newTask.getChildTasks().size() == 1)) {
         mergeMapJoinTaskIntoItsChildMapRedTask(newTask,conf);
@@ -62,23 +60,25 @@
       return newTask;
     }
     long ThresholdOfSmallTblSizeSum=HiveConf.getLongVar(conf,HiveConf.ConfVars.HIVESMALLTABLESFILESIZE);
-    for (int i=0; i < numAliases; i++) {
-      if (!bigTableCandidates.contains(i)) {
+    for (int pos=0; pos < joinOp.getNumParent(); pos++) {
+      if (!bigTableCandidates.contains(pos)) {
         continue;
       }
       MapredWork newWork=Utilities.clonePlan(currTask.getWork());
-      ObjectPair<MapRedTask,String> newTaskAlias=convertTaskToMapJoinTask(newWork,i);
-      MapRedTask newTask=newTaskAlias.getFirst();
-      String bigTableAlias=newTaskAlias.getSecond();
-      if (cannotConvert(bigTableAlias,aliasToSize,aliasTotalKnownInputSize,ThresholdOfSmallTblSizeSum)) {
+      MapRedTask newTask=convertTaskToMapJoinTask(newWork,pos);
+      Operator<?> startOp=joinOp.getParentOperators().get(pos);
+      Set<String> aliases=GenMapRedUtils.findAliases(currWork,startOp);
+      long aliasKnownSize=Utilities.sumOf(aliasToSize,aliases);
+      if (cannotConvert(aliasKnownSize,aliasTotalKnownInputSize,ThresholdOfSmallTblSizeSum)) {
         continue;
       }
       listWorks.add(newTask.getWork());
       listTasks.add(newTask);
       newTask.setTaskTag(Task.CONVERTED_MAPJOIN);
+      newTask.setFetchSource(currTask.isFetchSource());
       newTask.setBackupTask(currTask);
       newTask.setBackupChildrenTasks(currTask.getChildTasks());
-      aliasToTask.put(bigTableAlias,newTask);
+      taskToAliases.put(newTask,aliases);
     }
   }
  catch (  Exception e) {
@@ -96,7 +96,7 @@
   ConditionalResolverCommonJoinCtx resolverCtx=new ConditionalResolverCommonJoinCtx();
   resolverCtx.setPathToAliases(pathToAliases);
   resolverCtx.setAliasToKnownSize(aliasToSize);
-  resolverCtx.setAliasToTask(aliasToTask);
+  resolverCtx.setTaskToAliases(taskToAliases);
   resolverCtx.setCommonJoinTask(currTask);
   resolverCtx.setLocalTmpDir(context.getLocalScratchDir(false));
   resolverCtx.setHdfsTmpDir(context.getMRScratchDir());

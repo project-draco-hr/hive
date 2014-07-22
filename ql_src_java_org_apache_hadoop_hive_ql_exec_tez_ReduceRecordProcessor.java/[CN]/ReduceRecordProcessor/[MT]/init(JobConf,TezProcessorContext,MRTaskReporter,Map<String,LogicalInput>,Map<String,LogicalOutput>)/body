@@ -1,0 +1,104 @@
+{
+  perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_INIT_OPERATORS);
+  super.init(jconf,processorContext,mrReporter,inputs,outputs);
+  ObjectCache cache=ObjectCacheFactory.getCache(jconf);
+  rowObjectInspector=new ObjectInspector[Byte.MAX_VALUE];
+  ObjectInspector[] valueObjectInspector=new ObjectInspector[Byte.MAX_VALUE];
+  ObjectInspector keyObjectInspector;
+  redWork=(ReduceWork)cache.retrieve(REDUCE_PLAN_KEY);
+  if (redWork == null) {
+    redWork=Utilities.getReduceWork(jconf);
+    cache.cache(REDUCE_PLAN_KEY,redWork);
+  }
+ else {
+    Utilities.setReduceWork(jconf,redWork);
+  }
+  reducer=redWork.getReducer();
+  reducer.setParentOperators(null);
+  isTagged=redWork.getNeedsTagging();
+  vectorized=redWork.getVectorModeOn() != null;
+  try {
+    keyTableDesc=redWork.getKeyDesc();
+    inputKeyDeserializer=(SerDe)ReflectionUtils.newInstance(keyTableDesc.getDeserializerClass(),null);
+    SerDeUtils.initializeSerDe(inputKeyDeserializer,null,keyTableDesc.getProperties(),null);
+    keyObjectInspector=inputKeyDeserializer.getObjectInspector();
+    reducer.setGroupKeyObjectInspector(keyObjectInspector);
+    valueTableDesc=new TableDesc[redWork.getTagToValueDesc().size()];
+    if (vectorized) {
+      final int maxTags=redWork.getTagToValueDesc().size();
+      keyStructInspector=(StructObjectInspector)keyObjectInspector;
+      batches=new VectorizedRowBatch[maxTags];
+      valueStructInspectors=new StructObjectInspector[maxTags];
+      valueStringWriters=(List<VectorExpressionWriter>[])new List[maxTags];
+      keysColumnOffset=keyStructInspector.getAllStructFieldRefs().size();
+      buffer=new DataOutputBuffer();
+    }
+    for (int tag=0; tag < redWork.getTagToValueDesc().size(); tag++) {
+      valueTableDesc[tag]=redWork.getTagToValueDesc().get(tag);
+      inputValueDeserializer[tag]=(SerDe)ReflectionUtils.newInstance(valueTableDesc[tag].getDeserializerClass(),null);
+      SerDeUtils.initializeSerDe(inputValueDeserializer[tag],null,valueTableDesc[tag].getProperties(),null);
+      valueObjectInspector[tag]=inputValueDeserializer[tag].getObjectInspector();
+      ArrayList<ObjectInspector> ois=new ArrayList<ObjectInspector>();
+      if (vectorized) {
+        valueStructInspectors[tag]=(StructObjectInspector)valueObjectInspector[tag];
+        batches[tag]=VectorizedBatchUtil.constructVectorizedRowBatch(keyStructInspector,valueStructInspectors[tag]);
+        final int totalColumns=keysColumnOffset + valueStructInspectors[tag].getAllStructFieldRefs().size();
+        valueStringWriters[tag]=new ArrayList<VectorExpressionWriter>(totalColumns);
+        valueStringWriters[tag].addAll(Arrays.asList(VectorExpressionWriterFactory.genVectorStructExpressionWritables(keyStructInspector)));
+        valueStringWriters[tag].addAll(Arrays.asList(VectorExpressionWriterFactory.genVectorStructExpressionWritables(valueStructInspectors[tag])));
+        ArrayList<String> colNames=new ArrayList<String>();
+        List<? extends StructField> fields=keyStructInspector.getAllStructFieldRefs();
+        for (        StructField field : fields) {
+          colNames.add(Utilities.ReduceField.KEY.toString() + "." + field.getFieldName());
+          ois.add(field.getFieldObjectInspector());
+        }
+        fields=valueStructInspectors[tag].getAllStructFieldRefs();
+        for (        StructField field : fields) {
+          colNames.add(Utilities.ReduceField.VALUE.toString() + "." + field.getFieldName());
+          ois.add(field.getFieldObjectInspector());
+        }
+        rowObjectInspector[tag]=ObjectInspectorFactory.getStandardStructObjectInspector(colNames,ois);
+      }
+ else {
+        ois.add(keyObjectInspector);
+        ois.add(valueObjectInspector[tag]);
+        rowObjectInspector[tag]=ObjectInspectorFactory.getStandardStructObjectInspector(Utilities.reduceFieldNameList,ois);
+      }
+    }
+  }
+ catch (  Exception e) {
+    throw new RuntimeException(e);
+  }
+  MapredContext.init(false,new JobConf(jconf));
+  ((TezContext)MapredContext.get()).setInputs(inputs);
+  try {
+    l4j.info(reducer.dump(0));
+    reducer.initialize(jconf,rowObjectInspector);
+    List<HashTableDummyOperator> dummyOps=redWork.getDummyOps();
+    if (dummyOps != null) {
+      for (      Operator<? extends OperatorDesc> dummyOp : dummyOps) {
+        dummyOp.setExecContext(execContext);
+        dummyOp.initialize(jconf,null);
+      }
+    }
+    List<Operator<? extends OperatorDesc>> children=new LinkedList<Operator<? extends OperatorDesc>>();
+    children.add(reducer);
+    if (dummyOps != null) {
+      children.addAll(dummyOps);
+    }
+    createOutputMap();
+    OperatorUtils.setChildrenCollector(children,outMap);
+    reducer.setReporter(reporter);
+    MapredContext.get().setReporter(reporter);
+  }
+ catch (  Throwable e) {
+    abort=true;
+    if (e instanceof OutOfMemoryError) {
+      throw (OutOfMemoryError)e;
+    }
+ else {
+      throw new RuntimeException("Reduce operator initialization failed",e);
+    }
+  }
+  perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.TEZ_INIT_OPERATORS);
+}

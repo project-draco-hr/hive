@@ -1,0 +1,30 @@
+{
+  TOpenSessionReq openReq=new TOpenSessionReq();
+  Map<String,String> openConf=new HashMap<String,String>();
+  for (  Entry<String,String> hiveConf : connParams.getHiveConfs().entrySet()) {
+    openConf.put("set:hiveconf:" + hiveConf.getKey(),hiveConf.getValue());
+  }
+  for (  Entry<String,String> hiveVar : connParams.getHiveVars().entrySet()) {
+    openConf.put("set:hivevar:" + hiveVar.getKey(),hiveVar.getValue());
+  }
+  openConf.put("use:database",connParams.getDbName());
+  Map<String,String> sessVars=connParams.getSessionVars();
+  if (sessVars.containsKey(HiveAuthFactory.HS2_PROXY_USER)) {
+    openConf.put(HiveAuthFactory.HS2_PROXY_USER,sessVars.get(HiveAuthFactory.HS2_PROXY_USER));
+  }
+  openReq.setConfiguration(openConf);
+  try {
+    TOpenSessionResp openResp=client.OpenSession(openReq);
+    Utils.verifySuccess(openResp.getStatus());
+    if (!supportedProtocols.contains(openResp.getServerProtocolVersion())) {
+      throw new TException("Unsupported Hive2 protocol");
+    }
+    protocol=openResp.getServerProtocolVersion();
+    sessHandle=openResp.getSessionHandle();
+  }
+ catch (  TException e) {
+    LOG.error("Error opening session",e);
+    throw new SQLException("Could not establish connection to " + jdbcURI + ": "+ e.getMessage()," 08S01",e);
+  }
+  isClosed=false;
+}

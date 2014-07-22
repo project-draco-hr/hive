@@ -1,0 +1,72 @@
+{
+  FileSystem fs=directory.getFileSystem(conf);
+  FileStatus bestBase=null;
+  long bestBaseTxn=0;
+  final List<ParsedDelta> deltas=new ArrayList<ParsedDelta>();
+  List<ParsedDelta> working=new ArrayList<ParsedDelta>();
+  final List<FileStatus> original=new ArrayList<FileStatus>();
+  final List<FileStatus> obsolete=new ArrayList<FileStatus>();
+  List<FileStatus> children=SHIMS.listLocatedStatus(fs,directory,hiddenFileFilter);
+  for (  FileStatus child : children) {
+    Path p=child.getPath();
+    String fn=p.getName();
+    if (fn.startsWith(BASE_PREFIX) && child.isDir()) {
+      long txn=parseBase(p);
+      if (bestBase == null) {
+        bestBase=child;
+        bestBaseTxn=txn;
+      }
+ else       if (bestBaseTxn < txn) {
+        obsolete.add(bestBase);
+        bestBase=child;
+        bestBaseTxn=txn;
+      }
+ else {
+        obsolete.add(child);
+      }
+    }
+ else     if (fn.startsWith(DELTA_PREFIX) && child.isDir()) {
+      ParsedDelta delta=parseDelta(child);
+      if (txnList.isTxnRangeCommitted(delta.minTransaction,delta.maxTransaction) != ValidTxnList.RangeResponse.NONE) {
+        working.add(delta);
+      }
+    }
+ else {
+      findOriginals(fs,child,original);
+    }
+  }
+  if (bestBase != null) {
+    obsolete.addAll(original);
+    original.clear();
+  }
+  Collections.sort(working);
+  long current=bestBaseTxn;
+  for (  ParsedDelta next : working) {
+    if (next.maxTransaction > current) {
+      if (txnList.isTxnRangeCommitted(current + 1,next.maxTransaction) != ValidTxnList.RangeResponse.NONE) {
+        deltas.add(next);
+        current=next.maxTransaction;
+      }
+    }
+ else {
+      obsolete.add(next.path);
+    }
+  }
+  final Path base=bestBase == null ? null : bestBase.getPath();
+  LOG.debug("base = " + base + " deltas = "+ deltas.size());
+  return new Directory(){
+    @Override public Path getBaseDirectory(){
+      return base;
+    }
+    @Override public List<FileStatus> getOriginalFiles(){
+      return original;
+    }
+    @Override public List<ParsedDelta> getCurrentDirectories(){
+      return deltas;
+    }
+    @Override public List<FileStatus> getObsolete(){
+      return obsolete;
+    }
+  }
+;
+}

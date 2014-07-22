@@ -1,0 +1,41 @@
+{
+  String[] hosts;
+  if ((offset % blockSize) + length <= blockSize) {
+    hosts=locations[(int)(offset / blockSize)].getHosts();
+  }
+ else {
+    Map<String,LongWritable> sizes=new HashMap<String,LongWritable>();
+    long maxSize=0;
+    for (    BlockLocation block : locations) {
+      long overlap=getOverlap(offset,length,block.getOffset(),block.getLength());
+      if (overlap > 0) {
+        for (        String host : block.getHosts()) {
+          LongWritable val=sizes.get(host);
+          if (val == null) {
+            val=new LongWritable();
+            sizes.put(host,val);
+          }
+          val.set(val.get() + overlap);
+          maxSize=Math.max(maxSize,val.get());
+        }
+      }
+    }
+    long threshold=(long)(maxSize * MIN_INCLUDED_LOCATION);
+    List<String> hostList=new ArrayList<String>();
+    for (    BlockLocation block : locations) {
+      for (      String host : block.getHosts()) {
+        if (sizes.containsKey(host)) {
+          if (sizes.get(host).get() >= threshold) {
+            hostList.add(host);
+          }
+          sizes.remove(host);
+        }
+      }
+    }
+    hosts=new String[hostList.size()];
+    hostList.toArray(hosts);
+  }
+synchronized (context.splits) {
+    context.splits.add(new OrcSplit(file.getPath(),offset,length,hosts,fileMetaInfo,isOriginal,hasBase,deltas));
+  }
+}

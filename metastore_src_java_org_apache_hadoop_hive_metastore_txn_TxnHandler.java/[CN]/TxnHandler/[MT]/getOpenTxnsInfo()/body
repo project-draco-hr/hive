@@ -1,0 +1,52 @@
+{
+  Connection dbConn=getDbConn(Connection.TRANSACTION_READ_COMMITTED);
+  Statement stmt=null;
+  try {
+    stmt=dbConn.createStatement();
+    String s="select ntxn_next - 1 from NEXT_TXN_ID";
+    LOG.debug("Going to execute query <" + s + ">");
+    ResultSet rs=stmt.executeQuery(s);
+    if (!rs.next()) {
+      throw new MetaException("Transaction tables not properly " + "initialized, no record found in next_txn_id");
+    }
+    long hwm=rs.getLong(1);
+    if (rs.wasNull()) {
+      throw new MetaException("Transaction tables not properly " + "initialized, null record found in next_txn_id");
+    }
+    List<TxnInfo> txnInfo=new ArrayList<TxnInfo>();
+    s="select txn_id, txn_state, txn_user, txn_host from TXNS";
+    LOG.debug("Going to execute query<" + s + ">");
+    rs=stmt.executeQuery(s);
+    while (rs.next()) {
+      char c=rs.getString(2).charAt(0);
+      TxnState state;
+switch (c) {
+case TXN_ABORTED:
+        state=TxnState.ABORTED;
+      break;
+case TXN_OPEN:
+    state=TxnState.OPEN;
+  break;
+default :
+throw new MetaException("Unexpected transaction state " + c + " found in txns table");
+}
+txnInfo.add(new TxnInfo(rs.getLong(1),state,rs.getString(3),rs.getString(4)));
+}
+LOG.debug("Going to rollback");
+dbConn.rollback();
+return new GetOpenTxnsInfoResponse(hwm,txnInfo);
+}
+ catch (SQLException e) {
+try {
+LOG.debug("Going to rollback");
+dbConn.rollback();
+}
+ catch (SQLException e1) {
+}
+throw new MetaException("Unable to select from transaction database, " + StringUtils.stringifyException(e));
+}
+ finally {
+closeStmt(stmt);
+closeDbConn(dbConn);
+}
+}

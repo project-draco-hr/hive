@@ -1,0 +1,69 @@
+{
+  int ret=0;
+  try {
+    List<Partition> partitions=getPartitionsList();
+    if (partitions == null) {
+      org.apache.hadoop.hive.metastore.api.Table tTable=table.getTTable();
+      Map<String,String> parameters=tTable.getParameters();
+      try {
+        Path dir=new Path(tTable.getSd().getLocation());
+        long numRows=0;
+        long rawDataSize=0;
+        long fileSize=0;
+        long numFiles=0;
+        FileSystem fs=dir.getFileSystem(conf);
+        List<FileStatus> fileList=ShimLoader.getHadoopShims().listLocatedStatus(fs,dir,hiddenFileFilter);
+        boolean statsAvailable=false;
+        for (        FileStatus file : fileList) {
+          if (!file.isDir()) {
+            InputFormat<?,?> inputFormat=(InputFormat<?,?>)ReflectionUtils.newInstance(table.getInputFormatClass(),jc);
+            InputSplit dummySplit=new FileSplit(file.getPath(),0,0,new String[]{table.getDataLocation().toString()});
+            org.apache.hadoop.mapred.RecordReader<?,?> recordReader=(org.apache.hadoop.mapred.RecordReader<?,?>)inputFormat.getRecordReader(dummySplit,jc,Reporter.NULL);
+            StatsProvidingRecordReader statsRR;
+            if (recordReader instanceof StatsProvidingRecordReader) {
+              statsRR=(StatsProvidingRecordReader)recordReader;
+              numRows+=statsRR.getStats().getRowCount();
+              rawDataSize+=statsRR.getStats().getRawDataSize();
+              fileSize+=file.getLen();
+              numFiles+=1;
+              statsAvailable=true;
+            }
+          }
+        }
+        if (statsAvailable) {
+          parameters.put(StatsSetupConst.ROW_COUNT,String.valueOf(numRows));
+          parameters.put(StatsSetupConst.RAW_DATA_SIZE,String.valueOf(rawDataSize));
+          parameters.put(StatsSetupConst.TOTAL_SIZE,String.valueOf(fileSize));
+          parameters.put(StatsSetupConst.NUM_FILES,String.valueOf(numFiles));
+          parameters.put(StatsSetupConst.STATS_GENERATED_VIA_STATS_TASK,StatsSetupConst.TRUE);
+          db.alterTable(tableFullName,new Table(tTable));
+          String msg="Table " + tableFullName + " stats: ["+ toString(parameters)+ ']';
+          LOG.debug(msg);
+          console.printInfo(msg);
+        }
+ else {
+          String msg="Table " + tableFullName + " does not provide stats.";
+          LOG.debug(msg);
+        }
+      }
+ catch (      Exception e) {
+        console.printInfo("[Warning] could not update stats for " + tableFullName + ".","Failed with exception " + e.getMessage() + "\n"+ StringUtils.stringifyException(e));
+      }
+    }
+ else {
+      for (      Partition partn : partitions) {
+        threadPool.execute(new StatsCollection(partn));
+      }
+      LOG.debug("Stats collection waiting for threadpool to shutdown..");
+      shutdownAndAwaitTermination(threadPool);
+      LOG.debug("Stats collection threadpool shutdown successful.");
+      ret=updatePartitions();
+    }
+  }
+ catch (  Exception e) {
+    if (work.isStatsReliable()) {
+      ret=-1;
+    }
+  }
+  return ret;
+}

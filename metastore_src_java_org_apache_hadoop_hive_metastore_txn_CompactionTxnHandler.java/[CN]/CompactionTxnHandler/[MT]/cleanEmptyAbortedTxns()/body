@@ -1,0 +1,50 @@
+{
+  try {
+    Connection dbConn=getDbConn(Connection.TRANSACTION_SERIALIZABLE);
+    Statement stmt=null;
+    try {
+      stmt=dbConn.createStatement();
+      String s="select txn_id from TXNS where " + "txn_id not in (select tc_txnid from TXN_COMPONENTS) and " + "txn_state = '" + TXN_ABORTED + "'";
+      LOG.debug("Going to execute query <" + s + ">");
+      ResultSet rs=stmt.executeQuery(s);
+      Set<Long> txnids=new HashSet<Long>();
+      while (rs.next())       txnids.add(rs.getLong(1));
+      if (txnids.size() > 0) {
+        StringBuffer buf=new StringBuffer("delete from TXNS where txn_id in (");
+        boolean first=true;
+        for (        long tid : txnids) {
+          if (first)           first=false;
+ else           buf.append(", ");
+          buf.append(tid);
+        }
+        buf.append(")");
+        LOG.debug("Going to execute update <" + buf.toString() + ">");
+        int rc=stmt.executeUpdate(buf.toString());
+        LOG.debug("Removed " + rc + " records from txns");
+        LOG.debug("Going to commit");
+        dbConn.commit();
+      }
+    }
+ catch (    SQLException e) {
+      LOG.error("Unable to delete from txns table " + e.getMessage());
+      LOG.debug("Going to rollback");
+      try {
+        dbConn.rollback();
+      }
+ catch (      SQLException e1) {
+      }
+      detectDeadlock(e,"cleanEmptyAbortedTxns");
+      throw new MetaException("Unable to connect to transaction database " + StringUtils.stringifyException(e));
+    }
+ finally {
+      closeDbConn(dbConn);
+      closeStmt(stmt);
+    }
+  }
+ catch (  DeadlockException e) {
+    cleanEmptyAbortedTxns();
+  }
+ finally {
+    deadlockCnt=0;
+  }
+}

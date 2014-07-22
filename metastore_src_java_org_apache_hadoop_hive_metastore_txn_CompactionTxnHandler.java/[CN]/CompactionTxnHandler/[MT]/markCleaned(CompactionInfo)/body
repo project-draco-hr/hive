@@ -1,0 +1,76 @@
+{
+  try {
+    Connection dbConn=getDbConn(Connection.TRANSACTION_SERIALIZABLE);
+    Statement stmt=null;
+    try {
+      stmt=dbConn.createStatement();
+      String s="delete from COMPACTION_QUEUE where cq_id = " + info.id;
+      LOG.debug("Going to execute update <" + s + ">");
+      if (stmt.executeUpdate(s) != 1) {
+        LOG.error("Unable to delete compaction record");
+        LOG.debug("Going to rollback");
+        dbConn.rollback();
+      }
+      s="delete from COMPLETED_TXN_COMPONENTS where ctc_database = '" + info.dbname + "' and "+ "ctc_table = '"+ info.tableName+ "'";
+      if (info.partName != null) {
+        s+=" and ctc_partition = '" + info.partName + "'";
+      }
+      LOG.debug("Going to execute update <" + s + ">");
+      if (stmt.executeUpdate(s) < 1) {
+        LOG.error("Expected to remove at least one row from completed_txn_components when " + "marking compaction entry as clean!");
+      }
+      s="select txn_id from TXNS, TXN_COMPONENTS where txn_id = tc_txnid and txn_state = '" + TXN_ABORTED + "' and tc_database = '"+ info.dbname+ "' and tc_table = '"+ info.tableName+ "'";
+      if (info.partName != null)       s+=" and tc_partition = '" + info.partName + "'";
+      LOG.debug("Going to execute update <" + s + ">");
+      ResultSet rs=stmt.executeQuery(s);
+      Set<Long> txnids=new HashSet<Long>();
+      while (rs.next())       txnids.add(rs.getLong(1));
+      if (txnids.size() > 0) {
+        StringBuffer buf=new StringBuffer();
+        buf.append("delete from TXN_COMPONENTS where tc_txnid in (");
+        boolean first=true;
+        for (        long id : txnids) {
+          if (first)           first=false;
+ else           buf.append(", ");
+          buf.append(id);
+        }
+        buf.append(") and tc_database = '");
+        buf.append(info.dbname);
+        buf.append("' and tc_table = '");
+        buf.append(info.tableName);
+        buf.append("'");
+        if (info.partName != null) {
+          buf.append(" and tc_partition = '");
+          buf.append(info.partName);
+          buf.append("'");
+        }
+        LOG.debug("Going to execute update <" + buf.toString() + ">");
+        int rc=stmt.executeUpdate(buf.toString());
+        LOG.debug("Removed " + rc + " records from txn_components");
+      }
+      LOG.debug("Going to commit");
+      dbConn.commit();
+    }
+ catch (    SQLException e) {
+      try {
+        LOG.error("Unable to delete from compaction queue " + e.getMessage());
+        LOG.debug("Going to rollback");
+        dbConn.rollback();
+      }
+ catch (      SQLException e1) {
+      }
+      detectDeadlock(e,"markCleaned");
+      throw new MetaException("Unable to connect to transaction database " + StringUtils.stringifyException(e));
+    }
+ finally {
+      closeDbConn(dbConn);
+      closeStmt(stmt);
+    }
+  }
+ catch (  DeadlockException e) {
+    markCleaned(info);
+  }
+ finally {
+    deadlockCnt=0;
+  }
+}

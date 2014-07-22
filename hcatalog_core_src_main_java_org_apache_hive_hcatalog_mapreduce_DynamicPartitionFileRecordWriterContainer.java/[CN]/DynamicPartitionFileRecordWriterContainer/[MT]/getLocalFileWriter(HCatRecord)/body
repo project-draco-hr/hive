@@ -1,0 +1,40 @@
+{
+  OutputJobInfo localJobInfo=null;
+  List<String> dynamicPartValues=new ArrayList<String>();
+  for (  Integer colToAppend : dynamicPartCols) {
+    dynamicPartValues.add(value.get(colToAppend).toString());
+  }
+  String dynKey=dynamicPartValues.toString();
+  if (!baseDynamicWriters.containsKey(dynKey)) {
+    if ((maxDynamicPartitions != -1) && (baseDynamicWriters.size() > maxDynamicPartitions)) {
+      throw new HCatException(ErrorType.ERROR_TOO_MANY_DYNAMIC_PTNS,"Number of dynamic partitions being created " + "exceeds configured max allowable partitions[" + maxDynamicPartitions + "], increase parameter ["+ HiveConf.ConfVars.DYNAMICPARTITIONMAXPARTS.varname+ "] if needed.");
+    }
+    org.apache.hadoop.mapred.TaskAttemptContext currTaskContext=HCatMapRedUtil.createTaskAttemptContext(context);
+    configureDynamicStorageHandler(currTaskContext,dynamicPartValues);
+    localJobInfo=HCatBaseOutputFormat.getJobInfo(currTaskContext.getConfiguration());
+    SerDe currSerDe=ReflectionUtils.newInstance(storageHandler.getSerDeClass(),currTaskContext.getJobConf());
+    try {
+      InternalUtil.initializeOutputSerDe(currSerDe,currTaskContext.getConfiguration(),localJobInfo);
+    }
+ catch (    SerDeException e) {
+      throw new IOException("Failed to initialize SerDe",e);
+    }
+    org.apache.hadoop.mapred.OutputFormat baseOF=ReflectionUtils.newInstance(storageHandler.getOutputFormatClass(),currTaskContext.getJobConf());
+    org.apache.hadoop.mapred.OutputCommitter baseOutputCommitter=currTaskContext.getJobConf().getOutputCommitter();
+    org.apache.hadoop.mapred.JobContext currJobContext=HCatMapRedUtil.createJobContext(currTaskContext);
+    baseOutputCommitter.setupJob(currJobContext);
+    currTaskContext=HCatMapRedUtil.createTaskAttemptContext(currJobContext.getJobConf(),currTaskContext.getTaskAttemptID(),currTaskContext.getProgressible());
+    currTaskContext.getConfiguration().set("mapred.work.output.dir",new FileOutputCommitter(new Path(localJobInfo.getLocation()),currTaskContext).getWorkPath().toString());
+    baseOutputCommitter.setupTask(currTaskContext);
+    Path parentDir=new Path(currTaskContext.getConfiguration().get("mapred.work.output.dir"));
+    Path childPath=new Path(parentDir,FileOutputFormat.getUniqueFile(currTaskContext,"part",""));
+    RecordWriter baseRecordWriter=baseOF.getRecordWriter(parentDir.getFileSystem(currTaskContext.getConfiguration()),currTaskContext.getJobConf(),childPath.toString(),InternalUtil.createReporter(currTaskContext));
+    baseDynamicWriters.put(dynKey,baseRecordWriter);
+    baseDynamicSerDe.put(dynKey,currSerDe);
+    baseDynamicCommitters.put(dynKey,baseOutputCommitter);
+    dynamicContexts.put(dynKey,currTaskContext);
+    dynamicObjectInspectors.put(dynKey,InternalUtil.createStructObjectInspector(jobInfo.getOutputSchema()));
+    dynamicOutputJobInfo.put(dynKey,HCatOutputFormat.getJobInfo(dynamicContexts.get(dynKey).getConfiguration()));
+  }
+  return new LocalFileWriter(baseDynamicWriters.get(dynKey),dynamicObjectInspectors.get(dynKey),baseDynamicSerDe.get(dynKey),dynamicOutputJobInfo.get(dynKey));
+}

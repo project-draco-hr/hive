@@ -1,0 +1,39 @@
+{
+  Table tab=getTable(tblName);
+  Iterator<Map<String,String>> i;
+  int index;
+  for (i=partSpecs.iterator(), index=1; i.hasNext(); ++index) {
+    Map<String,String> partSpec=i.next();
+    List<Partition> parts=null;
+    if (allowMany) {
+      try {
+        parts=db.getPartitions(tab,partSpec);
+      }
+ catch (      HiveException e) {
+        LOG.error("Got HiveException during obtaining list of partitions" + StringUtils.stringifyException(e));
+        throw new SemanticException(e.getMessage(),e);
+      }
+    }
+ else {
+      parts=new ArrayList<Partition>();
+      try {
+        Partition p=db.getPartition(tab,partSpec,false);
+        if (p != null) {
+          parts.add(p);
+        }
+      }
+ catch (      HiveException e) {
+        LOG.debug("Wrong specification" + StringUtils.stringifyException(e));
+        throw new SemanticException(e.getMessage(),e);
+      }
+    }
+    if (parts.isEmpty()) {
+      if (throwIfNonExistent) {
+        throw new SemanticException(ErrorMsg.INVALID_PARTITION.getMsg(ast.getChild(index)));
+      }
+    }
+    for (    Partition p : parts) {
+      outputs.add(new WriteEntity(p,writeType));
+    }
+  }
+}

@@ -7,6 +7,7 @@
   List<String> outputKeyColumnNames=new ArrayList<String>();
   List<String> outputValueColumnNames=new ArrayList<String>();
   ArrayList<ExprNodeDesc> reduceKeys=getReduceKeysForReduceSink(grpByExprs,dest,reduceSinkInputRowResolver,reduceSinkOutputRowResolver,outputKeyColumnNames,colExprMap);
+  int keyLength=reduceKeys.size();
   if (groupingSetsPresent) {
     processGroupingSetReduceSinkOperator(reduceSinkInputRowResolver,reduceSinkOutputRowResolver,reduceKeys,outputKeyColumnNames,colExprMap);
     if (changeNumPartitionFields) {
@@ -26,13 +27,14 @@
       ExprNodeColumnDesc exprDesc=new ExprNodeColumnDesc(type,getColumnInternalName(inputField),"",false);
       reduceValues.add(exprDesc);
       inputField++;
-      outputValueColumnNames.add(getColumnInternalName(reduceValues.size() - 1));
-      String field=Utilities.ReduceField.VALUE.toString() + "." + getColumnInternalName(reduceValues.size() - 1);
-      reduceSinkOutputRowResolver.putExpression(entry.getValue(),new ColumnInfo(field,type,null,false));
-      colExprMap.put(field,exprDesc);
+      String outputColName=getColumnInternalName(reduceValues.size() - 1);
+      outputValueColumnNames.add(outputColName);
+      String internalName=Utilities.ReduceField.VALUE.toString() + "." + outputColName;
+      reduceSinkOutputRowResolver.putExpression(entry.getValue(),new ColumnInfo(internalName,type,null,false));
+      colExprMap.put(internalName,exprDesc);
     }
   }
-  ReduceSinkOperator rsOp=(ReduceSinkOperator)putOpInsertMap(OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(reduceKeys,groupingSetsPresent ? grpByExprs.size() + 1 : grpByExprs.size(),reduceValues,distinctColIndices,outputKeyColumnNames,outputValueColumnNames,true,-1,numPartitionFields,numReducers),new RowSchema(reduceSinkOutputRowResolver.getColumnInfos()),inputOperatorInfo),reduceSinkOutputRowResolver);
+  ReduceSinkOperator rsOp=(ReduceSinkOperator)putOpInsertMap(OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(reduceKeys,groupingSetsPresent ? keyLength + 1 : keyLength,reduceValues,distinctColIndices,outputKeyColumnNames,outputValueColumnNames,true,-1,numPartitionFields,numReducers),new RowSchema(reduceSinkOutputRowResolver.getColumnInfos()),inputOperatorInfo),reduceSinkOutputRowResolver);
   rsOp.setColumnExprMap(colExprMap);
   return rsOp;
 }

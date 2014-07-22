@@ -1,0 +1,51 @@
+{
+  getLockManager();
+  if (lockMgr == null)   return;
+  List<HiveLockObj> lockObjects=new ArrayList<HiveLockObj>();
+  for (  ReadEntity input : plan.getInputs()) {
+    LOG.debug("Adding " + input.getName() + " to list of lock inputs");
+    if (input.getType() == ReadEntity.Type.DATABASE) {
+      lockObjects.addAll(getLockObjects(plan,input.getDatabase(),null,null,HiveLockMode.SHARED));
+    }
+ else     if (input.getType() == ReadEntity.Type.TABLE) {
+      lockObjects.addAll(getLockObjects(plan,null,input.getTable(),null,HiveLockMode.SHARED));
+    }
+ else {
+      lockObjects.addAll(getLockObjects(plan,null,null,input.getPartition(),HiveLockMode.SHARED));
+    }
+  }
+  for (  WriteEntity output : plan.getOutputs()) {
+    LOG.debug("Adding " + output.getName() + " to list of lock outputs");
+    List<HiveLockObj> lockObj=null;
+    if (output.getType() == WriteEntity.Type.DATABASE) {
+      lockObjects.addAll(getLockObjects(plan,output.getDatabase(),null,null,output.isComplete() ? HiveLockMode.EXCLUSIVE : HiveLockMode.SHARED));
+    }
+ else     if (output.getTyp() == WriteEntity.Type.TABLE) {
+      lockObj=getLockObjects(plan,null,output.getTable(),null,output.isComplete() ? HiveLockMode.EXCLUSIVE : HiveLockMode.SHARED);
+    }
+ else     if (output.getTyp() == WriteEntity.Type.PARTITION) {
+      lockObj=getLockObjects(plan,null,null,output.getPartition(),HiveLockMode.EXCLUSIVE);
+    }
+ else     if (output.getTyp() == WriteEntity.Type.DUMMYPARTITION) {
+      lockObj=getLockObjects(plan,null,null,output.getPartition(),HiveLockMode.SHARED);
+    }
+    if (lockObj != null) {
+      lockObjects.addAll(lockObj);
+      ctx.getOutputLockObjects().put(output,lockObj);
+    }
+  }
+  if (lockObjects.isEmpty() && !ctx.isNeedLockMgr()) {
+    return;
+  }
+  HiveLockObject.HiveLockObjectData lockData=new HiveLockObject.HiveLockObjectData(plan.getQueryId(),String.valueOf(System.currentTimeMillis()),"IMPLICIT",plan.getQueryStr());
+  String currentDb=SessionState.get().getCurrentDatabase();
+  lockObjects.add(new HiveLockObj(new HiveLockObject(currentDb,lockData),HiveLockMode.SHARED));
+  dedupLockObjects(lockObjects);
+  List<HiveLock> hiveLocks=lockMgr.lock(lockObjects,false);
+  if (hiveLocks == null) {
+    throw new LockException(ErrorMsg.LOCK_CANNOT_BE_ACQUIRED.getMsg());
+  }
+ else {
+    ctx.setHiveLocks(hiveLocks);
+  }
+}

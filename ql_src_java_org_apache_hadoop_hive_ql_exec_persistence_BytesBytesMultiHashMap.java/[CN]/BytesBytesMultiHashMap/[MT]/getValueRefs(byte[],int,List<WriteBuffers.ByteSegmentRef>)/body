@@ -1,0 +1,25 @@
+{
+  result.clear();
+  long ref=findKeyRefToRead(key,length);
+  if (ref == 0) {
+    return 0;
+  }
+  boolean hasList=Ref.hasList(ref);
+  long lrPtrOffset=hasList ? writeBuffers.getReadPoint() : 0;
+  writeBuffers.setReadPoint(getFirstRecordLengthsOffset(ref));
+  int valueLength=(int)writeBuffers.readVLong();
+  result.add(new WriteBuffers.ByteSegmentRef(Ref.getOffset(ref) - valueLength,valueLength));
+  byte stateByte=Ref.getStateByte(ref);
+  if (!hasList) {
+    return stateByte;
+  }
+  long nextTailOffset=writeBuffers.readFiveByteULong(lrPtrOffset);
+  while (nextTailOffset > 0) {
+    writeBuffers.setReadPoint(nextTailOffset);
+    valueLength=(int)writeBuffers.readVLong();
+    result.add(new WriteBuffers.ByteSegmentRef(nextTailOffset - valueLength,valueLength));
+    long delta=writeBuffers.readVLong();
+    nextTailOffset=delta == 0 ? 0 : (nextTailOffset - delta);
+  }
+  return stateByte;
+}

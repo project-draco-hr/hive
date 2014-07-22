@@ -1,5 +1,5 @@
 {
-  RowResolver outputRS=new RowResolver();
+  RowResolver outputRR=new RowResolver();
   ArrayList<String> outputColumnNames=new ArrayList<String>();
   Operator<?>[] rightOps=new Operator[right.length];
   int outputPos=0;
@@ -9,45 +9,63 @@
   HashMap<Integer,Set<String>> posToAliasMap=new HashMap<Integer,Set<String>>();
   HashMap<Byte,List<ExprNodeDesc>> filterMap=new HashMap<Byte,List<ExprNodeDesc>>();
   for (int pos=0; pos < right.length; ++pos) {
-    Operator input=right[pos];
+    Operator<?> input=right[pos] == null ? left : right[pos];
     if (input == null) {
       input=left;
     }
-    ArrayList<ExprNodeDesc> keyDesc=new ArrayList<ExprNodeDesc>();
-    ArrayList<ExprNodeDesc> filterDesc=new ArrayList<ExprNodeDesc>();
-    Byte tag=Byte.valueOf((byte)(((ReduceSinkDesc)(input.getConf())).getTag()));
-    if (omitOpts == null || !omitOpts.contains(pos)) {
-      RowResolver inputRS=opParseCtx.get(input).getRowResolver();
-      Iterator<String> keysIter=inputRS.getTableNames().iterator();
-      Set<String> aliases=posToAliasMap.get(pos);
-      if (aliases == null) {
-        aliases=new HashSet<String>();
-        posToAliasMap.put(pos,aliases);
-      }
-      while (keysIter.hasNext()) {
-        String key=keysIter.next();
-        aliases.add(key);
-        HashMap<String,ColumnInfo> map=inputRS.getFieldMap(key);
-        Iterator<String> fNamesIter=map.keySet().iterator();
-        while (fNamesIter.hasNext()) {
-          String field=fNamesIter.next();
-          ColumnInfo valueInfo=inputRS.get(key,field);
-          keyDesc.add(new ExprNodeColumnDesc(valueInfo.getType(),valueInfo.getInternalName(),valueInfo.getTabAlias(),valueInfo.getIsVirtualCol()));
-          if (outputRS.get(key,field) == null) {
-            String colName=getColumnInternalName(outputPos);
-            outputPos++;
-            outputColumnNames.add(colName);
-            colExprMap.put(colName,keyDesc.get(keyDesc.size() - 1));
-            outputRS.put(key,field,new ColumnInfo(colName,valueInfo.getType(),key,valueInfo.getIsVirtualCol(),valueInfo.isHiddenVirtualCol()));
-            reversedExprs.put(colName,tag);
-          }
-        }
-      }
-      for (      ASTNode cond : join.getFilters().get(tag)) {
-        filterDesc.add(genExprNodeDesc(cond,inputRS));
-      }
+    ReduceSinkOperator rs=(ReduceSinkOperator)input;
+    if (rs.getNumParent() != 1) {
+      throw new SemanticException("RS should have single parent");
     }
-    exprMap.put(tag,keyDesc);
+    Operator<?> parent=rs.getParentOperators().get(0);
+    ReduceSinkDesc rsDesc=(ReduceSinkDesc)(input.getConf());
+    int[] index=rs.getValueIndex();
+    ArrayList<ExprNodeDesc> valueDesc=new ArrayList<ExprNodeDesc>();
+    ArrayList<ExprNodeDesc> filterDesc=new ArrayList<ExprNodeDesc>();
+    Byte tag=(byte)rsDesc.getTag();
+    if (omitOpts != null && omitOpts.contains(pos)) {
+      exprMap.put(tag,valueDesc);
+      filterMap.put(tag,filterDesc);
+      rightOps[pos]=input;
+      continue;
+    }
+    List<String> keyColNames=rsDesc.getOutputKeyColumnNames();
+    List<String> valColNames=rsDesc.getOutputValueColumnNames();
+    RowResolver inputRR=opParseCtx.get(input).getRowResolver();
+    RowResolver parentRR=opParseCtx.get(parent).getRowResolver();
+    posToAliasMap.put(pos,new HashSet<String>(inputRR.getTableNames()));
+    List<ColumnInfo> columns=parentRR.getColumnInfos();
+    for (int i=0; i < index.length; i++) {
+      ColumnInfo prev=columns.get(i);
+      String[] nm=parentRR.reverseLookup(prev.getInternalName());
+      String[] nm2=parentRR.getAlternateMappings(prev.getInternalName());
+      if (outputRR.get(nm[0],nm[1]) != null) {
+        continue;
+      }
+      ColumnInfo info=new ColumnInfo(prev);
+      String field;
+      if (index[i] >= 0) {
+        field=Utilities.ReduceField.KEY + "." + keyColNames.get(index[i]);
+      }
+ else {
+        field=Utilities.ReduceField.VALUE + "." + valColNames.get(-index[i] - 1);
+      }
+      String internalName=getColumnInternalName(outputColumnNames.size());
+      ExprNodeColumnDesc desc=new ExprNodeColumnDesc(info.getType(),field,info.getTabAlias(),info.getIsVirtualCol());
+      info.setInternalName(internalName);
+      colExprMap.put(internalName,desc);
+      outputRR.put(nm[0],nm[1],info);
+      if (nm2 != null) {
+        outputRR.addMappingOnly(nm2[0],nm2[1],info);
+      }
+      valueDesc.add(desc);
+      outputColumnNames.add(internalName);
+      reversedExprs.put(internalName,tag);
+    }
+    for (    ASTNode cond : join.getFilters().get(tag)) {
+      filterDesc.add(genExprNodeDesc(cond,inputRR));
+    }
+    exprMap.put(tag,valueDesc);
     filterMap.put(tag,filterDesc);
     rightOps[pos]=input;
   }
@@ -59,7 +77,7 @@
   JoinDesc desc=new JoinDesc(exprMap,outputColumnNames,join.getNoOuterJoin(),joinCondns,filterMap);
   desc.setReversedExprs(reversedExprs);
   desc.setFilterMap(join.getFilterMap());
-  JoinOperator joinOp=(JoinOperator)OperatorFactory.getAndMakeChild(desc,new RowSchema(outputRS.getColumnInfos()),rightOps);
+  JoinOperator joinOp=(JoinOperator)OperatorFactory.getAndMakeChild(desc,new RowSchema(outputRR.getColumnInfos()),rightOps);
   joinOp.setColumnExprMap(colExprMap);
   joinOp.setPosToAliasMap(posToAliasMap);
   if (join.getNullSafes() != null) {
@@ -69,5 +87,5 @@
     }
     desc.setNullSafes(nullsafes);
   }
-  return putOpInsertMap(joinOp,outputRS);
+  return putOpInsertMap(joinOp,outputRR);
 }
