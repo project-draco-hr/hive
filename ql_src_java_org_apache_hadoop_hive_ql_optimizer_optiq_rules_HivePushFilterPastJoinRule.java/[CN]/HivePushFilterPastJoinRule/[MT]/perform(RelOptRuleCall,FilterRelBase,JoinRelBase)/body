@@ -18,9 +18,25 @@
   final List<RexNode> aboveFilters=filter != null ? RelOptUtil.conjunctions(filter.getCondition()) : ImmutableList.<RexNode>of();
   List<RexNode> leftFilters=new ArrayList<RexNode>();
   List<RexNode> rightFilters=new ArrayList<RexNode>();
+  int origJoinFiltersSz=joinFilters.size();
   boolean filterPushed=false;
-  if (RelOptUtil.classifyFilters(join,aboveFilters,false,!join.getJoinType().generatesNullsOnLeft(),!join.getJoinType().generatesNullsOnRight(),joinFilters,leftFilters,rightFilters)) {
+  if (RelOptUtil.classifyFilters(join,aboveFilters,join.getJoinType() == JoinRelType.INNER,!join.getJoinType().generatesNullsOnLeft(),!join.getJoinType().generatesNullsOnRight(),joinFilters,leftFilters,rightFilters)) {
     filterPushed=true;
+  }
+  ListIterator<RexNode> filterIter=joinFilters.listIterator();
+  while (filterIter.hasNext()) {
+    RexNode exp=filterIter.next();
+    if (exp instanceof RexCall) {
+      RexCall c=(RexCall)exp;
+      if (c.getOperator().getKind() == SqlKind.EQUALS) {
+        continue;
+      }
+    }
+    aboveFilters.add(exp);
+    filterIter.remove();
+  }
+  if (leftFilters.size() == 0 && rightFilters.size() == 0 && joinFilters.size() == origJoinFiltersSz) {
+    filterPushed=false;
   }
   if (RelOptUtil.classifyFilters(join,joinFilters,false,!join.getJoinType().generatesNullsOnRight(),!join.getJoinType().generatesNullsOnLeft(),joinFilters,leftFilters,rightFilters)) {
     filterPushed=true;
@@ -28,6 +44,9 @@
   if (!filterPushed) {
     return;
   }
+  removeAlwaysTruePredicates(leftFilters);
+  removeAlwaysTruePredicates(rightFilters);
+  removeAlwaysTruePredicates(joinFilters);
   RexBuilder rexBuilder=join.getCluster().getRexBuilder();
   RelNode leftRel=createFilterOnRel(rexBuilder,join.getLeft(),leftFilters);
   RelNode rightRel=createFilterOnRel(rexBuilder,join.getRight(),rightFilters);
