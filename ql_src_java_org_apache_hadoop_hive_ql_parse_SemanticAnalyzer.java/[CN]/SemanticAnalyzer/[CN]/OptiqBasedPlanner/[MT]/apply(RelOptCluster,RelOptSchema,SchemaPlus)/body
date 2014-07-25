@@ -1,4 +1,7 @@
 {
+  RelNode optiqGenPlan=null;
+  RelNode optiqPreCboPlan=null;
+  RelNode optiqOptimizedPlan=null;
   RelOptPlanner planner=HiveVolcanoPlanner.createPlanner();
   final RelOptQuery query=new RelOptQuery(planner);
   final RexBuilder rexBuilder=cluster.getRexBuilder();
@@ -6,34 +9,45 @@
   m_cluster=cluster;
   m_relOptSchema=relOptSchema;
   m_rootSchema=rootSchema;
-  RelNode optiqPlan=null;
   try {
-    optiqPlan=genLogicalPlan(qb);
+    optiqGenPlan=genLogicalPlan(qb);
   }
  catch (  SemanticException e) {
     m_semanticException=e;
     throw new RuntimeException(e);
   }
-  optiqPlan=applyPreCBOTransforms(optiqPlan,HiveDefaultRelMetadataProvider.INSTANCE);
+  optiqPreCboPlan=applyPreCBOTransforms(optiqGenPlan,HiveDefaultRelMetadataProvider.INSTANCE);
   List<RelMetadataProvider> list=Lists.newArrayList();
   list.add(HiveDefaultRelMetadataProvider.INSTANCE);
-  planner.registerMetadataProviders(list);
-  RelMetadataProvider chainedProvider=ChainedRelMetadataProvider.of(list);
-  cluster.setMetadataProvider(new CachingRelMetadataProvider(chainedProvider,planner));
-  planner.addRule(HiveSwapJoinRule.INSTANCE);
-  planner.addRule(HivePushJoinThroughJoinRule.LEFT);
-  planner.addRule(HivePushJoinThroughJoinRule.RIGHT);
-  if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_CBO_PULLPROJECTABOVEJOIN_RULE)) {
-    planner.addRule(HivePullUpProjectsAboveJoinRule.BOTH_PROJECT);
-    planner.addRule(HivePullUpProjectsAboveJoinRule.LEFT_PROJECT);
-    planner.addRule(HivePullUpProjectsAboveJoinRule.RIGHT_PROJECT);
-    planner.addRule(HiveMergeProjectRule.INSTANCE);
+  if (!HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_CBO_GREEDY_JOIN_ORDER)) {
+    planner.registerMetadataProviders(list);
+    RelMetadataProvider chainedProvider=ChainedRelMetadataProvider.of(list);
+    cluster.setMetadataProvider(new CachingRelMetadataProvider(chainedProvider,planner));
+    planner.addRule(HiveSwapJoinRule.INSTANCE);
+    planner.addRule(HivePushJoinThroughJoinRule.LEFT);
+    planner.addRule(HivePushJoinThroughJoinRule.RIGHT);
+    if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_CBO_PULLPROJECTABOVEJOIN_RULE)) {
+      planner.addRule(HivePullUpProjectsAboveJoinRule.BOTH_PROJECT);
+      planner.addRule(HivePullUpProjectsAboveJoinRule.LEFT_PROJECT);
+      planner.addRule(HivePullUpProjectsAboveJoinRule.RIGHT_PROJECT);
+      planner.addRule(HiveMergeProjectRule.INSTANCE);
+      RelTraitSet desiredTraits=cluster.traitSetOf(HiveRel.CONVENTION,RelCollationImpl.EMPTY);
+      RelNode rootRel=optiqPreCboPlan;
+      if (!optiqPreCboPlan.getTraitSet().equals(desiredTraits)) {
+        rootRel=planner.changeTraits(optiqPreCboPlan,desiredTraits);
+      }
+      planner.setRoot(rootRel);
+      optiqOptimizedPlan=planner.findBestExp();
+    }
   }
-  RelTraitSet desiredTraits=cluster.traitSetOf(HiveRel.CONVENTION,RelCollationImpl.EMPTY);
-  RelNode rootRel=optiqPlan;
-  if (!optiqPlan.getTraitSet().equals(desiredTraits)) {
-    rootRel=planner.changeTraits(optiqPlan,desiredTraits);
+ else {
+    final HepProgram hepPgm=new HepProgramBuilder().addMatchOrder(HepMatchOrder.BOTTOM_UP).addRuleInstance(new ConvertMultiJoinRule(HiveJoinRel.class)).addRuleInstance(LoptOptimizeJoinRule.INSTANCE).build();
+    HepPlanner hepPlanner=new HepPlanner(hepPgm);
+    hepPlanner.registerMetadataProviders(list);
+    RelMetadataProvider chainedProvider=ChainedRelMetadataProvider.of(list);
+    cluster.setMetadataProvider(new CachingRelMetadataProvider(chainedProvider,hepPlanner));
+    hepPlanner.setRoot(optiqPreCboPlan);
+    optiqOptimizedPlan=hepPlanner.findBestExp();
   }
-  planner.setRoot(rootRel);
-  return planner.findBestExp();
+  return optiqOptimizedPlan;
 }

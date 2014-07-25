@@ -22,15 +22,19 @@
     childRexNodeLst.add(tmpRN);
   }
   RexNode expr=null;
+  RelDataType retType=null;
   expr=handleExplicitCast(func,childRexNodeLst);
   if (expr == null) {
-    RelDataType retType=(expr != null) ? expr.getType() : TypeConverter.convert(func.getTypeInfo(),m_cluster.getTypeFactory());
+    retType=(expr != null) ? expr.getType() : TypeConverter.convert(func.getTypeInfo(),m_cluster.getTypeFactory());
     SqlOperator optiqOp=SqlFunctionConverter.getOptiqOperator(func.getGenericUDF(),argTypeBldr.build(),retType);
     expr=m_cluster.getRexBuilder().makeCall(optiqOp,childRexNodeLst);
   }
+ else {
+    retType=expr.getType();
+  }
   if (m_flattenExpr && (expr instanceof RexCall) && !(((RexCall)expr).getOperator() instanceof SqlCastFunction)) {
     RexCall call=(RexCall)expr;
-    expr=m_cluster.getRexBuilder().makeFlatCall(call.getOperator(),call.getOperands());
+    expr=m_cluster.getRexBuilder().makeCall(retType,call.getOperator(),RexUtil.flatten(call.getOperands(),call.getOperator()));
   }
   return expr;
 }
