@@ -1,0 +1,64 @@
+{
+  PrivilegeBag privBag=new PrivilegeBag();
+  if (privileges.isEmpty()) {
+    return privBag;
+  }
+  String grantorName=grantor.getName();
+  PrincipalType grantorType=AuthorizationUtils.getThriftPrincipalType(grantor.getType());
+  if (privObject.getType() == null || privObject.getType() == HivePrivilegeObject.HivePrivilegeObjectType.GLOBAL) {
+    for (    HivePrivilege priv : privileges) {
+      List<String> columns=priv.getColumns();
+      if (columns != null && !columns.isEmpty()) {
+        throw new HiveException("For user-level privileges, column sets should be null. columns=" + columns.toString());
+      }
+      privBag.addToPrivileges(new HiveObjectPrivilege(new HiveObjectRef(HiveObjectType.GLOBAL,null,null,null,null),null,null,new PrivilegeGrantInfo(priv.getName(),0,grantor.getName(),grantorType,grantOption)));
+    }
+    return privBag;
+  }
+  if (privObject.getPartKeys() != null && grantOption) {
+    throw new HiveException("Grant does not support partition level.");
+  }
+  Database dbObj=hive.getDatabase(privObject.getDbname());
+  if (dbObj == null) {
+    throw new HiveException("Database " + privObject.getDbname() + " does not exists");
+  }
+  Table tableObj=null;
+  if (privObject.getObjectName() != null) {
+    tableObj=hive.getTable(dbObj.getName(),privObject.getObjectName());
+  }
+  List<String> partValues=null;
+  if (tableObj != null) {
+    if ((!tableObj.isPartitioned()) && privObject.getPartKeys() != null) {
+      throw new HiveException("Table is not partitioned, but partition name is present: partSpec=" + privObject.getPartKeys());
+    }
+    if (privObject.getPartKeys() != null) {
+      Map<String,String> partSpec=Warehouse.makeSpecFromValues(tableObj.getPartitionKeys(),privObject.getPartKeys());
+      Partition partObj=hive.getPartition(tableObj,partSpec,false).getTPartition();
+      partValues=partObj.getValues();
+    }
+  }
+  for (  HivePrivilege priv : privileges) {
+    List<String> columns=priv.getColumns();
+    if (columns != null && !columns.isEmpty()) {
+      if (!priv.supportsScope(PrivilegeScope.COLUMN_LEVEL_SCOPE)) {
+        throw new HiveException(priv.getName() + " does not support column level privilege.");
+      }
+      if (tableObj == null) {
+        throw new HiveException("For user-level/database-level privileges, column sets should be null. columns=" + columns);
+      }
+      for (int i=0; i < columns.size(); i++) {
+        privBag.addToPrivileges(new HiveObjectPrivilege(new HiveObjectRef(HiveObjectType.COLUMN,dbObj.getName(),tableObj.getTableName(),partValues,columns.get(i)),null,null,new PrivilegeGrantInfo(priv.getName(),0,grantorName,grantorType,grantOption)));
+      }
+    }
+ else     if (tableObj == null) {
+      privBag.addToPrivileges(new HiveObjectPrivilege(new HiveObjectRef(HiveObjectType.DATABASE,dbObj.getName(),null,null,null),null,null,new PrivilegeGrantInfo(priv.getName(),0,grantorName,grantorType,grantOption)));
+    }
+ else     if (partValues == null) {
+      privBag.addToPrivileges(new HiveObjectPrivilege(new HiveObjectRef(HiveObjectType.TABLE,dbObj.getName(),tableObj.getTableName(),null,null),null,null,new PrivilegeGrantInfo(priv.getName(),0,grantorName,grantorType,grantOption)));
+    }
+ else {
+      privBag.addToPrivileges(new HiveObjectPrivilege(new HiveObjectRef(HiveObjectType.PARTITION,dbObj.getName(),tableObj.getTableName(),partValues,null),null,null,new PrivilegeGrantInfo(priv.getName(),0,grantorName,grantorType,grantOption)));
+    }
+  }
+  return privBag;
+}

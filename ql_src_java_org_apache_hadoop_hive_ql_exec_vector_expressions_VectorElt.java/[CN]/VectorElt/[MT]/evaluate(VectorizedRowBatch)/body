@@ -1,0 +1,68 @@
+{
+  if (childExpressions != null) {
+    super.evaluateChildren(batch);
+  }
+  int[] sel=batch.selected;
+  int n=batch.size;
+  BytesColumnVector outputVector=(BytesColumnVector)batch.cols[outputColumn];
+  if (n <= 0) {
+    return;
+  }
+  outputVector.init();
+  outputVector.noNulls=false;
+  outputVector.isRepeating=false;
+  LongColumnVector inputIndexVector=(LongColumnVector)batch.cols[inputColumns[0]];
+  long[] indexVector=inputIndexVector.vector;
+  if (inputIndexVector.isRepeating) {
+    int index=(int)indexVector[0];
+    if (index > 0 && index < inputColumns.length) {
+      BytesColumnVector cv=(BytesColumnVector)batch.cols[inputColumns[index]];
+      if (cv.isRepeating) {
+        outputVector.setElement(0,0,cv);
+        outputVector.isRepeating=true;
+      }
+ else       if (batch.selectedInUse) {
+        for (int j=0; j != n; j++) {
+          int i=sel[j];
+          outputVector.setVal(i,cv.vector[0],cv.start[0],cv.length[0]);
+        }
+      }
+ else {
+        for (int i=0; i != n; i++) {
+          outputVector.setVal(i,cv.vector[0],cv.start[0],cv.length[0]);
+        }
+      }
+    }
+ else {
+      outputVector.isNull[0]=true;
+      outputVector.isRepeating=true;
+    }
+  }
+ else   if (batch.selectedInUse) {
+    for (int j=0; j != n; j++) {
+      int i=sel[j];
+      int index=(int)indexVector[i];
+      if (index > 0 && index < inputColumns.length) {
+        BytesColumnVector cv=(BytesColumnVector)batch.cols[inputColumns[index]];
+        int cvi=cv.isRepeating ? 0 : i;
+        outputVector.setVal(i,cv.vector[cvi],cv.start[cvi],cv.length[cvi]);
+      }
+ else {
+        outputVector.isNull[i]=true;
+      }
+    }
+  }
+ else {
+    for (int i=0; i != n; i++) {
+      int index=(int)indexVector[i];
+      if (index > 0 && index < inputColumns.length) {
+        BytesColumnVector cv=(BytesColumnVector)batch.cols[inputColumns[index]];
+        int cvi=cv.isRepeating ? 0 : i;
+        outputVector.setVal(i,cv.vector[cvi],cv.start[cvi],cv.length[cvi]);
+      }
+ else {
+        outputVector.isNull[i]=true;
+      }
+    }
+  }
+}

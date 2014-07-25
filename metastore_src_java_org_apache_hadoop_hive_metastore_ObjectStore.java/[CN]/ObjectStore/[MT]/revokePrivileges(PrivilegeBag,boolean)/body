@@ -1,0 +1,208 @@
+{
+  boolean committed=false;
+  try {
+    openTransaction();
+    List<Object> persistentObjs=new ArrayList<Object>();
+    List<HiveObjectPrivilege> privilegeList=privileges.getPrivileges();
+    if (privilegeList != null && privilegeList.size() > 0) {
+      Iterator<HiveObjectPrivilege> privIter=privilegeList.iterator();
+      while (privIter.hasNext()) {
+        HiveObjectPrivilege privDef=privIter.next();
+        HiveObjectRef hiveObject=privDef.getHiveObject();
+        String privilegeStr=privDef.getGrantInfo().getPrivilege();
+        if (privilegeStr == null || privilegeStr.trim().equals("")) {
+          continue;
+        }
+        String[] privs=privilegeStr.split(",");
+        String userName=privDef.getPrincipalName();
+        PrincipalType principalType=privDef.getPrincipalType();
+        if (hiveObject.getObjectType() == HiveObjectType.GLOBAL) {
+          List<MGlobalPrivilege> mSecUser=this.listPrincipalGlobalGrants(userName,principalType);
+          boolean found=false;
+          if (mSecUser != null) {
+            for (            String privilege : privs) {
+              for (              MGlobalPrivilege userGrant : mSecUser) {
+                String userGrantPrivs=userGrant.getPrivilege();
+                if (privilege.equals(userGrantPrivs)) {
+                  found=true;
+                  if (grantOption) {
+                    if (userGrant.getGrantOption()) {
+                      userGrant.setGrantOption(false);
+                    }
+ else {
+                      throw new MetaException("User " + userName + " does not have grant option with privilege "+ privilege);
+                    }
+                  }
+                  persistentObjs.add(userGrant);
+                  break;
+                }
+              }
+              if (!found) {
+                throw new InvalidObjectException("No user grant found for privileges " + privilege);
+              }
+            }
+          }
+        }
+ else         if (hiveObject.getObjectType() == HiveObjectType.DATABASE) {
+          MDatabase dbObj=getMDatabase(hiveObject.getDbName());
+          if (dbObj != null) {
+            String db=hiveObject.getDbName();
+            boolean found=false;
+            List<MDBPrivilege> dbGrants=this.listPrincipalDBGrants(userName,principalType,db);
+            for (            String privilege : privs) {
+              for (              MDBPrivilege dbGrant : dbGrants) {
+                String dbGrantPriv=dbGrant.getPrivilege();
+                if (privilege.equals(dbGrantPriv)) {
+                  found=true;
+                  if (grantOption) {
+                    if (dbGrant.getGrantOption()) {
+                      dbGrant.setGrantOption(false);
+                    }
+ else {
+                      throw new MetaException("User " + userName + " does not have grant option with privilege "+ privilege);
+                    }
+                  }
+                  persistentObjs.add(dbGrant);
+                  break;
+                }
+              }
+              if (!found) {
+                throw new InvalidObjectException("No database grant found for privileges " + privilege + " on database "+ db);
+              }
+            }
+          }
+        }
+ else         if (hiveObject.getObjectType() == HiveObjectType.TABLE) {
+          boolean found=false;
+          List<MTablePrivilege> tableGrants=this.listAllTableGrants(userName,principalType,hiveObject.getDbName(),hiveObject.getObjectName());
+          for (          String privilege : privs) {
+            for (            MTablePrivilege tabGrant : tableGrants) {
+              String tableGrantPriv=tabGrant.getPrivilege();
+              if (privilege.equalsIgnoreCase(tableGrantPriv)) {
+                found=true;
+                if (grantOption) {
+                  if (tabGrant.getGrantOption()) {
+                    tabGrant.setGrantOption(false);
+                  }
+ else {
+                    throw new MetaException("User " + userName + " does not have grant option with privilege "+ privilege);
+                  }
+                }
+                persistentObjs.add(tabGrant);
+                break;
+              }
+            }
+            if (!found) {
+              throw new InvalidObjectException("No grant (" + privilege + ") found "+ " on table "+ hiveObject.getObjectName()+ ", database is "+ hiveObject.getDbName());
+            }
+          }
+        }
+ else         if (hiveObject.getObjectType() == HiveObjectType.PARTITION) {
+          boolean found=false;
+          Table tabObj=this.getTable(hiveObject.getDbName(),hiveObject.getObjectName());
+          String partName=null;
+          if (hiveObject.getPartValues() != null) {
+            partName=Warehouse.makePartName(tabObj.getPartitionKeys(),hiveObject.getPartValues());
+          }
+          List<MPartitionPrivilege> partitionGrants=this.listPrincipalPartitionGrants(userName,principalType,hiveObject.getDbName(),hiveObject.getObjectName(),partName);
+          for (          String privilege : privs) {
+            for (            MPartitionPrivilege partGrant : partitionGrants) {
+              String partPriv=partGrant.getPrivilege();
+              if (partPriv.equalsIgnoreCase(privilege)) {
+                found=true;
+                if (grantOption) {
+                  if (partGrant.getGrantOption()) {
+                    partGrant.setGrantOption(false);
+                  }
+ else {
+                    throw new MetaException("User " + userName + " does not have grant option with privilege "+ privilege);
+                  }
+                }
+                persistentObjs.add(partGrant);
+                break;
+              }
+            }
+            if (!found) {
+              throw new InvalidObjectException("No grant (" + privilege + ") found "+ " on table "+ tabObj.getTableName()+ ", partition is "+ partName+ ", database is "+ tabObj.getDbName());
+            }
+          }
+        }
+ else         if (hiveObject.getObjectType() == HiveObjectType.COLUMN) {
+          Table tabObj=this.getTable(hiveObject.getDbName(),hiveObject.getObjectName());
+          String partName=null;
+          if (hiveObject.getPartValues() != null) {
+            partName=Warehouse.makePartName(tabObj.getPartitionKeys(),hiveObject.getPartValues());
+          }
+          if (partName != null) {
+            List<MPartitionColumnPrivilege> mSecCol=listPrincipalPartitionColumnGrants(userName,principalType,hiveObject.getDbName(),hiveObject.getObjectName(),partName,hiveObject.getColumnName());
+            boolean found=false;
+            if (mSecCol != null) {
+              for (              String privilege : privs) {
+                for (                MPartitionColumnPrivilege col : mSecCol) {
+                  String colPriv=col.getPrivilege();
+                  if (colPriv.equalsIgnoreCase(privilege)) {
+                    found=true;
+                    if (grantOption) {
+                      if (col.getGrantOption()) {
+                        col.setGrantOption(false);
+                      }
+ else {
+                        throw new MetaException("User " + userName + " does not have grant option with privilege "+ privilege);
+                      }
+                    }
+                    persistentObjs.add(col);
+                    break;
+                  }
+                }
+                if (!found) {
+                  throw new InvalidObjectException("No grant (" + privilege + ") found "+ " on table "+ tabObj.getTableName()+ ", partition is "+ partName+ ", column name = "+ hiveObject.getColumnName()+ ", database is "+ tabObj.getDbName());
+                }
+              }
+            }
+          }
+ else {
+            List<MTableColumnPrivilege> mSecCol=listPrincipalTableColumnGrants(userName,principalType,hiveObject.getDbName(),hiveObject.getObjectName(),hiveObject.getColumnName());
+            boolean found=false;
+            if (mSecCol != null) {
+              for (              String privilege : privs) {
+                for (                MTableColumnPrivilege col : mSecCol) {
+                  String colPriv=col.getPrivilege();
+                  if (colPriv.equalsIgnoreCase(privilege)) {
+                    found=true;
+                    if (grantOption) {
+                      if (col.getGrantOption()) {
+                        col.setGrantOption(false);
+                      }
+ else {
+                        throw new MetaException("User " + userName + " does not have grant option with privilege "+ privilege);
+                      }
+                    }
+                    persistentObjs.add(col);
+                    break;
+                  }
+                }
+                if (!found) {
+                  throw new InvalidObjectException("No grant (" + privilege + ") found "+ " on table "+ tabObj.getTableName()+ ", column name = "+ hiveObject.getColumnName()+ ", database is "+ tabObj.getDbName());
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    if (persistentObjs.size() > 0) {
+      if (grantOption) {
+      }
+ else {
+        pm.deletePersistentAll(persistentObjs);
+      }
+    }
+    committed=commitTransaction();
+  }
+  finally {
+    if (!committed) {
+      rollbackTransaction();
+    }
+  }
+  return committed;
+}

@@ -1,15 +1,11 @@
 {
-  if (isClosed) {
-    throw new SQLException("Can't execute after statement has been closed");
-  }
+  checkConnection("execute");
+  closeClientOperation();
+  TExecuteStatementReq execReq=new TExecuteStatementReq(sessHandle,sql);
+  execReq.setRunAsync(true);
+  execReq.setConfOverlay(sessConf);
+  transportLock.lock();
   try {
-    if (stmtHandle != null) {
-      closeClientOperation();
-    }
-    TExecuteStatementReq execReq=new TExecuteStatementReq(sessHandle,sql);
-    execReq.setRunAsync(true);
-    execReq.setConfOverlay(sessConf);
-    transportLock.lock();
     TExecuteStatementResp execResp=client.ExecuteStatement(execReq);
     Utils.verifySuccessWithInfo(execResp.getStatus());
     stmtHandle=execResp.getOperationHandle();
@@ -32,10 +28,7 @@ catch (  Exception ex) {
       try {
         statusResp=client.GetOperationStatus(statusReq);
       }
- catch (      Exception e) {
-        throw e;
-      }
- finally {
+  finally {
         transportLock.unlock();
       }
       Utils.verifySuccessWithInfo(statusResp.getStatus());
