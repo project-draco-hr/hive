@@ -1,0 +1,40 @@
+{
+  if (udf instanceof GenericUDFOPEqual) {
+    ExprNodeDesc lOperand=newExprs.get(0);
+    ExprNodeDesc rOperand=newExprs.get(1);
+    ExprNodeColumnDesc c;
+    ExprNodeConstantDesc v;
+    if (lOperand instanceof ExprNodeColumnDesc && rOperand instanceof ExprNodeConstantDesc) {
+      c=(ExprNodeColumnDesc)lOperand;
+      v=(ExprNodeConstantDesc)rOperand;
+    }
+ else     if (rOperand instanceof ExprNodeColumnDesc && lOperand instanceof ExprNodeConstantDesc) {
+      c=(ExprNodeColumnDesc)rOperand;
+      v=(ExprNodeConstantDesc)lOperand;
+    }
+ else {
+      return;
+    }
+    ColumnInfo ci=resolveColumn(rr,c);
+    if (ci != null) {
+      LOG.debug("Filter " + udf + " is identified as a value assignment, propagate it.");
+      if (!v.getTypeInfo().equals(ci.getType())) {
+        v=typeCast(v,ci.getType());
+      }
+      if (v != null) {
+        constants.put(ci,v);
+      }
+    }
+  }
+ else   if (udf instanceof GenericUDFOPNull) {
+    ExprNodeDesc operand=newExprs.get(0);
+    if (operand instanceof ExprNodeColumnDesc) {
+      LOG.debug("Filter " + udf + " is identified as a value assignment, propagate it.");
+      ExprNodeColumnDesc c=(ExprNodeColumnDesc)operand;
+      ColumnInfo ci=resolveColumn(rr,c);
+      if (ci != null) {
+        constants.put(ci,new ExprNodeNullDesc());
+      }
+    }
+  }
+}

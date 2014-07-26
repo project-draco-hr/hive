@@ -1,0 +1,23 @@
+{
+  FilterOperator op=(FilterOperator)nd;
+  ConstantPropagateProcCtx cppCtx=(ConstantPropagateProcCtx)ctx;
+  Map<ColumnInfo,ExprNodeDesc> constants=cppCtx.getPropagatedConstants(op);
+  cppCtx.getOpToConstantExprs().put(op,constants);
+  ExprNodeDesc condn=op.getConf().getPredicate();
+  LOG.debug("Old filter FIL[" + op.getIdentifier() + "] conditions:"+ condn.getExprString());
+  ExprNodeDesc newCondn=foldExpr(condn,constants,cppCtx,op,0,true);
+  if (newCondn instanceof ExprNodeConstantDesc) {
+    ExprNodeConstantDesc c=(ExprNodeConstantDesc)newCondn;
+    if (c.getValue() == Boolean.TRUE) {
+      cppCtx.addOpToDelete(op);
+      LOG.debug("Filter expression " + condn + " holds true. Will delete it.");
+    }
+ else     if (c.getValue() == Boolean.FALSE) {
+      LOG.warn("Filter expression " + condn + " holds false!");
+    }
+  }
+  LOG.debug("New filter FIL[" + op.getIdentifier() + "] conditions:"+ newCondn.getExprString());
+  op.getConf().setPredicate(newCondn);
+  foldOperator(op,cppCtx);
+  return null;
+}
