@@ -1,25 +1,17 @@
 {
-  try {
-    boolean grantRole=grantOrRevokeRoleDDL.getGrant();
-    List<PrincipalDesc> principals=grantOrRevokeRoleDDL.getPrincipalDesc();
-    List<String> roles=grantOrRevokeRoleDDL.getRoles();
-    if (SessionState.get().isAuthorizationModeV2()) {
-      return grantOrRevokeRoleV2(grantOrRevokeRoleDDL);
-    }
-    for (    PrincipalDesc principal : principals) {
-      String userName=principal.getName();
-      for (      String roleName : roles) {
-        if (grantRole) {
-          db.grantRole(roleName,userName,principal.getType(),grantOrRevokeRoleDDL.getGrantor(),grantOrRevokeRoleDDL.getGrantorType(),grantOrRevokeRoleDDL.isGrantOption());
-        }
- else {
-          db.revokeRole(roleName,userName,principal.getType());
-        }
-      }
-    }
+  HiveAuthorizer authorizer=getSessionAuthorizer();
+  HivePrincipal grantorPrinc=null;
+  if (grantOrRevokeRoleDDL.getGrantor() != null) {
+    grantorPrinc=new HivePrincipal(grantOrRevokeRoleDDL.getGrantor(),AuthorizationUtils.getHivePrincipalType(grantOrRevokeRoleDDL.getGrantorType()));
   }
- catch (  Exception e) {
-    throw new HiveException(e);
+  List<HivePrincipal> principals=AuthorizationUtils.getHivePrincipals(grantOrRevokeRoleDDL.getPrincipalDesc());
+  List<String> roles=grantOrRevokeRoleDDL.getRoles();
+  boolean grantOption=grantOrRevokeRoleDDL.isGrantOption();
+  if (grantOrRevokeRoleDDL.getGrant()) {
+    authorizer.grantRole(principals,roles,grantOption,grantorPrinc);
+  }
+ else {
+    authorizer.revokeRole(principals,roles,grantOption,grantorPrinc);
   }
   return 0;
 }

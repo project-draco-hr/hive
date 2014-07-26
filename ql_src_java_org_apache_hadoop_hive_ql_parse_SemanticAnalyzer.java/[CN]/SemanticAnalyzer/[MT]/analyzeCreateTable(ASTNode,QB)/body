@@ -11,6 +11,7 @@
   Map<String,String> tblProps=null;
   boolean ifNotExists=false;
   boolean isExt=false;
+  boolean isTemporary=false;
   ASTNode selectStmt=null;
   final int CREATE_TABLE=0;
   final int CTLT=1;
@@ -21,13 +22,12 @@
   Map<List<String>,String> listBucketColValuesMapping=new HashMap<List<String>,String>();
   boolean storedAsDirs=false;
   RowFormatParams rowFormatParams=new RowFormatParams();
-  StorageFormat storageFormat=new StorageFormat();
-  AnalyzeCreateCommonVars shared=new AnalyzeCreateCommonVars();
+  StorageFormat storageFormat=new StorageFormat(conf);
   LOG.info("Creating table " + tableName + " position="+ ast.getCharPositionInLine());
   int numCh=ast.getChildCount();
   for (int num=1; num < numCh; num++) {
     ASTNode child=(ASTNode)ast.getChild(num);
-    if (storageFormat.fillStorageFormat(child,shared)) {
+    if (storageFormat.fillStorageFormat(child)) {
       continue;
     }
 switch (child.getToken().getType()) {
@@ -37,16 +37,19 @@ case HiveParser.TOK_IFNOTEXISTS:
 case HiveParser.KW_EXTERNAL:
   isExt=true;
 break;
+case HiveParser.KW_TEMPORARY:
+isTemporary=true;
+break;
 case HiveParser.TOK_LIKETABLE:
 if (child.getChildCount() > 0) {
 likeTableName=getUnescapedName((ASTNode)child.getChild(0));
 if (likeTableName != null) {
-  if (command_type == CTAS) {
-    throw new SemanticException(ErrorMsg.CTAS_CTLT_COEXISTENCE.getMsg());
-  }
-  if (cols.size() != 0) {
-    throw new SemanticException(ErrorMsg.CTLT_COLLST_COEXISTENCE.getMsg());
-  }
+if (command_type == CTAS) {
+throw new SemanticException(ErrorMsg.CTAS_CTLT_COEXISTENCE.getMsg());
+}
+if (cols.size() != 0) {
+throw new SemanticException(ErrorMsg.CTLT_COLLST_COEXISTENCE.getMsg());
+}
 }
 command_type=CTLT;
 }
@@ -93,7 +96,7 @@ numBuckets=(Integer.valueOf(child.getChild(2).getText())).intValue();
 }
 break;
 case HiveParser.TOK_TABLEROWFORMAT:
-rowFormatParams.analyzeRowFormat(shared,child);
+rowFormatParams.analyzeRowFormat(child);
 break;
 case HiveParser.TOK_TABLELOCATION:
 location=unescapeSQLString(child.getChild(0).getText());
@@ -105,13 +108,10 @@ tblProps=DDLSemanticAnalyzer.getProps((ASTNode)child.getChild(0));
 break;
 case HiveParser.TOK_TABLESERIALIZER:
 child=(ASTNode)child.getChild(0);
-shared.serde=unescapeSQLString(child.getChild(0).getText());
+storageFormat.setSerde(unescapeSQLString(child.getChild(0).getText()));
 if (child.getChildCount() == 2) {
-readProps((ASTNode)(child.getChild(1).getChild(0)),shared.serdeProps);
+readProps((ASTNode)(child.getChild(1).getChild(0)),storageFormat.getSerdeProps());
 }
-break;
-case HiveParser.TOK_FILEFORMAT_GENERIC:
-handleGenericFileFormat(child);
 break;
 case HiveParser.TOK_TABLESKEWED:
 HiveConf hiveConf=SessionState.get().getConf();
@@ -123,8 +123,8 @@ default :
 throw new AssertionError("Unknown token: " + child.getToken());
 }
 }
-storageFormat.fillDefaultStorageFormat(shared);
-if ((command_type == CTAS) && (storageFormat.storageHandler != null)) {
+storageFormat.fillDefaultStorageFormat();
+if ((command_type == CTAS) && (storageFormat.getStorageHandler() != null)) {
 throw new SemanticException(ErrorMsg.CREATE_NON_NATIVE_AS.getMsg());
 }
 if (ifNotExists) {
@@ -135,18 +135,33 @@ return null;
 }
 }
  catch (HiveException e) {
-e.printStackTrace();
+throw new IllegalStateException("Unxpected Exception thrown: " + e.getMessage(),e);
 }
 }
 String[] qualified=Hive.getQualifiedNames(tableName);
 String dbName=qualified.length == 1 ? SessionState.get().getCurrentDatabase() : qualified[0];
 Database database=getDatabase(dbName);
 outputs.add(new WriteEntity(database,WriteEntity.WriteType.DDL_SHARED));
+if (isTemporary) {
+if (partCols.size() > 0) {
+throw new SemanticException("Partition columns are not supported on temporary tables");
+}
+if (location == null) {
+try {
+Path path=new Path(SessionState.getTempTableSpace(conf),UUID.randomUUID().toString());
+path=Warehouse.getDnsPath(path,conf);
+location=path.toString();
+}
+ catch (MetaException err) {
+throw new SemanticException("Error while generating temp table path:",err);
+}
+}
+}
 CreateTableDesc crtTblDesc=null;
 switch (command_type) {
 case CREATE_TABLE:
 tblProps=addDefaultProperties(tblProps);
-crtTblDesc=new CreateTableDesc(tableName,isExt,cols,partCols,bucketCols,sortCols,numBuckets,rowFormatParams.fieldDelim,rowFormatParams.fieldEscape,rowFormatParams.collItemDelim,rowFormatParams.mapKeyDelim,rowFormatParams.lineDelim,comment,storageFormat.inputFormat,storageFormat.outputFormat,location,shared.serde,storageFormat.storageHandler,shared.serdeProps,tblProps,ifNotExists,skewedColNames,skewedValues);
+crtTblDesc=new CreateTableDesc(tableName,isExt,isTemporary,cols,partCols,bucketCols,sortCols,numBuckets,rowFormatParams.fieldDelim,rowFormatParams.fieldEscape,rowFormatParams.collItemDelim,rowFormatParams.mapKeyDelim,rowFormatParams.lineDelim,comment,storageFormat.getInputFormat(),storageFormat.getOutputFormat(),location,storageFormat.getSerde(),storageFormat.getStorageHandler(),storageFormat.getSerdeProps(),tblProps,ifNotExists,skewedColNames,skewedValues);
 crtTblDesc.setStoredAsSubDirectories(storedAsDirs);
 crtTblDesc.setNullFormat(rowFormatParams.nullFormat);
 crtTblDesc.validate(conf);
@@ -155,7 +170,13 @@ rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),crtTblDesc),c
 break;
 case CTLT:
 tblProps=addDefaultProperties(tblProps);
-CreateTableLikeDesc crtTblLikeDesc=new CreateTableLikeDesc(tableName,isExt,storageFormat.inputFormat,storageFormat.outputFormat,location,shared.serde,shared.serdeProps,tblProps,ifNotExists,likeTableName);
+if (isTemporary) {
+Table likeTable=getTableWithQN(likeTableName,false);
+if (likeTable != null && likeTable.getPartCols().size() > 0) {
+throw new SemanticException("Partition columns are not supported on temporary tables " + "and source table in CREATE TABLE LIKE is partitioned.");
+}
+}
+CreateTableLikeDesc crtTblLikeDesc=new CreateTableLikeDesc(tableName,isExt,isTemporary,storageFormat.getInputFormat(),storageFormat.getOutputFormat(),location,storageFormat.getSerde(),storageFormat.getSerdeProps(),tblProps,ifNotExists,likeTableName);
 SessionState.get().setCommandType(HiveOperation.CREATETABLE);
 rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),crtTblLikeDesc),conf));
 break;
@@ -170,7 +191,7 @@ throw new SemanticException(ErrorMsg.TABLE_ALREADY_EXISTS.getMsg(tableName));
 throw new SemanticException(e);
 }
 tblProps=addDefaultProperties(tblProps);
-crtTblDesc=new CreateTableDesc(dbName,tableName,isExt,cols,partCols,bucketCols,sortCols,numBuckets,rowFormatParams.fieldDelim,rowFormatParams.fieldEscape,rowFormatParams.collItemDelim,rowFormatParams.mapKeyDelim,rowFormatParams.lineDelim,comment,storageFormat.inputFormat,storageFormat.outputFormat,location,shared.serde,storageFormat.storageHandler,shared.serdeProps,tblProps,ifNotExists,skewedColNames,skewedValues);
+crtTblDesc=new CreateTableDesc(dbName,tableName,isExt,isTemporary,cols,partCols,bucketCols,sortCols,numBuckets,rowFormatParams.fieldDelim,rowFormatParams.fieldEscape,rowFormatParams.collItemDelim,rowFormatParams.mapKeyDelim,rowFormatParams.lineDelim,comment,storageFormat.getInputFormat(),storageFormat.getOutputFormat(),location,storageFormat.getSerde(),storageFormat.getStorageHandler(),storageFormat.getSerdeProps(),tblProps,ifNotExists,skewedColNames,skewedValues);
 crtTblDesc.setStoredAsSubDirectories(storedAsDirs);
 crtTblDesc.setNullFormat(rowFormatParams.nullFormat);
 qb.setTableDesc(crtTblDesc);

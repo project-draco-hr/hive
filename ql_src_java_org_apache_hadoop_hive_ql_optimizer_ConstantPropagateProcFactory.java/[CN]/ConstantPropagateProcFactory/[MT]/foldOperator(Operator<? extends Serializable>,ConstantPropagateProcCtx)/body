@@ -1,0 +1,27 @@
+{
+  RowSchema schema=op.getSchema();
+  Map<ColumnInfo,ExprNodeDesc> constants=cppCtx.getOpToConstantExprs().get(op);
+  if (schema != null && schema.getSignature() != null) {
+    for (    ColumnInfo col : schema.getSignature()) {
+      ExprNodeDesc constant=constants.get(col);
+      if (constant != null) {
+        LOG.debug("Replacing column " + col + " with constant "+ constant+ " in "+ op);
+        if (!col.getType().equals(constant.getTypeInfo())) {
+          constant=typeCast(constant,col.getType());
+        }
+        if (constant != null) {
+          col.setObjectinspector(constant.getWritableObjectInspector());
+        }
+      }
+    }
+  }
+  Map<String,ExprNodeDesc> colExprMap=op.getColumnExprMap();
+  if (colExprMap != null) {
+    for (    Entry<ColumnInfo,ExprNodeDesc> e : constants.entrySet()) {
+      String internalName=e.getKey().getInternalName();
+      if (colExprMap.containsKey(internalName)) {
+        colExprMap.put(internalName,e.getValue());
+      }
+    }
+  }
+}

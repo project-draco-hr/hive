@@ -1,0 +1,55 @@
+{
+  DeferredJavaObject[] arguments=new DeferredJavaObject[exprs.size()];
+  ObjectInspector[] argois=new ObjectInspector[exprs.size()];
+  for (int i=0; i < exprs.size(); i++) {
+    ExprNodeDesc desc=exprs.get(i);
+    if (desc instanceof ExprNodeConstantDesc) {
+      ExprNodeConstantDesc constant=(ExprNodeConstantDesc)exprs.get(i);
+      if (!constant.getTypeInfo().equals(oldExprs.get(i).getTypeInfo())) {
+        constant=typeCast(constant,oldExprs.get(i).getTypeInfo());
+        if (constant == null) {
+          return null;
+        }
+      }
+      Object value=constant.getValue();
+      PrimitiveTypeInfo pti=(PrimitiveTypeInfo)constant.getTypeInfo();
+      Object writableValue=PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(pti).getPrimitiveWritableObject(value);
+      arguments[i]=new DeferredJavaObject(writableValue);
+      argois[i]=ObjectInspectorUtils.getConstantObjectInspector(constant.getWritableObjectInspector(),writableValue);
+    }
+ else     if (desc instanceof ExprNodeNullDesc) {
+      return null;
+    }
+ else {
+      return null;
+    }
+  }
+  try {
+    ObjectInspector oi=udf.initialize(argois);
+    Object o=udf.evaluate(arguments);
+    LOG.debug(udf.getClass().getName() + "(" + exprs+ ")="+ o);
+    if (o == null) {
+      return new ExprNodeNullDesc();
+    }
+    Class<?> clz=o.getClass();
+    if (PrimitiveObjectInspectorUtils.isPrimitiveWritableClass(clz)) {
+      PrimitiveObjectInspector poi=(PrimitiveObjectInspector)oi;
+      TypeInfo typeInfo=poi.getTypeInfo();
+      if (typeInfo.getTypeName().contains(serdeConstants.DECIMAL_TYPE_NAME) || typeInfo.getTypeName().contains(serdeConstants.VARCHAR_TYPE_NAME) || typeInfo.getTypeName().contains(serdeConstants.CHAR_TYPE_NAME)) {
+        return null;
+      }
+      o=poi.getPrimitiveJavaObject(o);
+    }
+ else     if (PrimitiveObjectInspectorUtils.isPrimitiveJavaClass(clz)) {
+    }
+ else {
+      LOG.error("Unable to evaluate " + udf + ". Return value unrecoginizable.");
+      return null;
+    }
+    return new ExprNodeConstantDesc(o);
+  }
+ catch (  HiveException e) {
+    LOG.error("Evaluation function " + udf.getClass() + " failed in Constant Propagatation Optimizer.");
+    throw new RuntimeException(e);
+  }
+}

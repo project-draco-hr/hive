@@ -1,0 +1,44 @@
+{
+  if (desc instanceof ExprNodeGenericFuncDesc) {
+    ExprNodeGenericFuncDesc funcDesc=(ExprNodeGenericFuncDesc)desc;
+    GenericUDF udf=funcDesc.getGenericUDF();
+    if (!isDeterministicUdf(udf)) {
+      LOG.debug("Function " + udf.getClass() + " undeterministic, quit folding.");
+      return desc;
+    }
+    boolean propagateNext=propagate && propagatableUdfs.contains(udf.getClass());
+    List<ExprNodeDesc> newExprs=new ArrayList<ExprNodeDesc>();
+    for (    ExprNodeDesc childExpr : desc.getChildren()) {
+      newExprs.add(foldExpr(childExpr,constants,cppCtx,op,tag,propagateNext));
+    }
+    ExprNodeDesc constant=evaluateFunction(udf,newExprs,desc.getChildren());
+    if (constant != null) {
+      LOG.debug("Folding expression:" + desc + " -> "+ constant);
+      return constant;
+    }
+ else {
+      ExprNodeDesc shortcut=shortcutFunction(udf,newExprs);
+      if (shortcut != null) {
+        LOG.debug("Folding expression:" + desc + " -> "+ shortcut);
+        return shortcut;
+      }
+      ((ExprNodeGenericFuncDesc)desc).setChildren(newExprs);
+    }
+    if (propagate) {
+      propagate(udf,newExprs,cppCtx.getRowResolver(op),constants);
+    }
+    return desc;
+  }
+ else   if (desc instanceof ExprNodeColumnDesc) {
+    if (op.getParentOperators() == null || op.getParentOperators().isEmpty()) {
+      return desc;
+    }
+    Operator<? extends Serializable> parent=op.getParentOperators().get(tag);
+    ExprNodeDesc col=evaluateColumn((ExprNodeColumnDesc)desc,cppCtx,parent);
+    if (col != null) {
+      LOG.debug("Folding expression:" + desc + " -> "+ col);
+      return col;
+    }
+  }
+  return desc;
+}

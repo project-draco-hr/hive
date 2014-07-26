@@ -1,0 +1,43 @@
+{
+  JoinOperator op=(JoinOperator)nd;
+  JoinDesc conf=op.getConf();
+  ConstantPropagateProcCtx cppCtx=(ConstantPropagateProcCtx)ctx;
+  Map<ColumnInfo,ExprNodeDesc> constants=cppCtx.getPropagatedConstants(op);
+  cppCtx.getOpToConstantExprs().put(op,constants);
+  if (constants.isEmpty()) {
+    return null;
+  }
+  if (op.getChildOperators().size() == 1 && op.getChildOperators().get(0) instanceof ReduceSinkOperator) {
+    LOG.debug("Skip JOIN-RS structure.");
+    return null;
+  }
+  LOG.info("Old exprs " + conf.getExprs());
+  Iterator<Entry<Byte,List<ExprNodeDesc>>> itr=conf.getExprs().entrySet().iterator();
+  while (itr.hasNext()) {
+    Entry<Byte,List<ExprNodeDesc>> e=itr.next();
+    int tag=e.getKey();
+    List<ExprNodeDesc> exprs=e.getValue();
+    if (exprs == null) {
+      continue;
+    }
+    List<ExprNodeDesc> newExprs=new ArrayList<ExprNodeDesc>();
+    for (    ExprNodeDesc expr : exprs) {
+      ExprNodeDesc newExpr=foldExpr(expr,constants,cppCtx,op,tag,false);
+      if (newExpr instanceof ExprNodeConstantDesc || newExpr instanceof ExprNodeNullDesc) {
+        LOG.info("expr " + newExpr + " fold from "+ expr+ " is removed.");
+        continue;
+      }
+      newExprs.add(newExpr);
+    }
+    e.setValue(newExprs);
+  }
+  LOG.info("New exprs " + conf.getExprs());
+  for (  List<ExprNodeDesc> v : conf.getFilters().values()) {
+    for (int i=0; i < v.size(); i++) {
+      ExprNodeDesc expr=foldExpr(v.get(i),constants,cppCtx,op,0,false);
+      v.set(i,expr);
+    }
+  }
+  foldOperator(op,cppCtx);
+  return null;
+}

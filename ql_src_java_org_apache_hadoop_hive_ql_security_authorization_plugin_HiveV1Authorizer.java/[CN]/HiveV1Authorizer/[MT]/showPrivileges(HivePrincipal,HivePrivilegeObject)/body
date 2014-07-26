@@ -1,0 +1,46 @@
+{
+  String name=principal == null ? null : principal.getName();
+  PrincipalType type=AuthorizationUtils.getThriftPrincipalType(principal == null ? null : principal.getType());
+  List<HiveObjectPrivilege> privs=new ArrayList<HiveObjectPrivilege>();
+  try {
+    if (privObj == null) {
+      privs.addAll(hive.showPrivilegeGrant(HiveObjectType.GLOBAL,name,type,null,null,null,null));
+    }
+ else     if (privObj.getDbname() == null) {
+      privs.addAll(hive.showPrivilegeGrant(null,name,type,null,null,null,null));
+    }
+ else {
+      Database dbObj=hive.getDatabase(privObj.getDbname());
+      ;
+      if (dbObj == null) {
+        throw new HiveException("Database " + privObj.getDbname() + " does not exists");
+      }
+      Table tableObj=null;
+      if (privObj.getObjectName() != null) {
+        tableObj=hive.getTable(dbObj.getName(),privObj.getObjectName());
+      }
+      List<String> partValues=privObj.getPartKeys();
+      if (tableObj == null) {
+        privs.addAll(hive.showPrivilegeGrant(HiveObjectType.DATABASE,name,type,dbObj.getName(),null,null,null));
+      }
+ else {
+        List<String> columns=privObj.getColumns();
+        if (columns != null && !columns.isEmpty()) {
+          for (          String columnName : columns) {
+            privs.addAll(hive.showPrivilegeGrant(HiveObjectType.COLUMN,name,type,dbObj.getName(),tableObj.getTableName(),partValues,columnName));
+          }
+        }
+ else         if (partValues == null) {
+          privs.addAll(hive.showPrivilegeGrant(HiveObjectType.TABLE,name,type,dbObj.getName(),tableObj.getTableName(),null,null));
+        }
+ else {
+          privs.addAll(hive.showPrivilegeGrant(HiveObjectType.PARTITION,name,type,dbObj.getName(),tableObj.getTableName(),partValues,null));
+        }
+      }
+    }
+    return AuthorizationUtils.getPrivilegeInfos(privs);
+  }
+ catch (  Exception ex) {
+    throw new HiveAuthzPluginException(ex);
+  }
+}
