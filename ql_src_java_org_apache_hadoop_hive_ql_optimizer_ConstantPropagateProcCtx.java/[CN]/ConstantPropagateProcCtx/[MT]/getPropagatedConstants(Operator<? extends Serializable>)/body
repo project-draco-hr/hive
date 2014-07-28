@@ -1,0 +1,74 @@
+{
+  Map<ColumnInfo,ExprNodeDesc> constants=new HashMap<ColumnInfo,ExprNodeDesc>();
+  OpParseContext parseCtx=opToParseCtx.get(op);
+  if (parseCtx == null) {
+    return constants;
+  }
+  RowResolver rr=parseCtx.getRowResolver();
+  LOG.debug("Getting constants of op:" + op + " with rr:"+ rr);
+  try {
+    if (op.getParentOperators() == null) {
+      return constants;
+    }
+    if (op instanceof UnionOperator) {
+      String alias=(String)rr.getRslvMap().keySet().toArray()[0];
+      Map<ColumnInfo,ExprNodeDesc> intersection=null;
+      for (      Operator<?> parent : op.getParentOperators()) {
+        Map<ColumnInfo,ExprNodeDesc> unionConst=opToConstantExprs.get(parent);
+        LOG.debug("Constant of op " + parent.getOperatorId() + " "+ unionConst);
+        if (intersection == null) {
+          intersection=new HashMap<ColumnInfo,ExprNodeDesc>();
+          for (          Entry<ColumnInfo,ExprNodeDesc> e : unionConst.entrySet()) {
+            ColumnInfo ci=new ColumnInfo(e.getKey());
+            ci.setTabAlias(alias);
+            intersection.put(ci,e.getValue());
+          }
+        }
+ else {
+          Iterator<Entry<ColumnInfo,ExprNodeDesc>> itr=intersection.entrySet().iterator();
+          while (itr.hasNext()) {
+            Entry<ColumnInfo,ExprNodeDesc> e=itr.next();
+            boolean found=false;
+            for (            Entry<ColumnInfo,ExprNodeDesc> f : opToConstantExprs.get(parent).entrySet()) {
+              if (e.getKey().getInternalName().equals(f.getKey().getInternalName())) {
+                if (e.getValue().isSame(f.getValue())) {
+                  found=true;
+                }
+                break;
+              }
+            }
+            if (!found) {
+              itr.remove();
+            }
+          }
+        }
+        if (intersection.isEmpty()) {
+          return intersection;
+        }
+      }
+      LOG.debug("Propagated union constants:" + intersection);
+      return intersection;
+    }
+    for (    Operator<? extends Serializable> parent : op.getParentOperators()) {
+      Map<ColumnInfo,ExprNodeDesc> c=opToConstantExprs.get(parent);
+      for (      Entry<ColumnInfo,ExprNodeDesc> e : c.entrySet()) {
+        ColumnInfo ci=e.getKey();
+        ColumnInfo rci=null;
+        ExprNodeDesc constant=e.getValue();
+        rci=resolve(ci,rr,opToParseCtx.get(parent).getRowResolver());
+        if (rci != null) {
+          constants.put(rci,constant);
+        }
+ else {
+          LOG.debug("Can't resolve " + ci.getTabAlias() + "."+ ci.getAlias()+ " from rr:"+ rr);
+        }
+      }
+    }
+    LOG.debug("Offerring constants " + constants.keySet() + " to operator "+ op.toString());
+    return constants;
+  }
+ catch (  SemanticException e) {
+    LOG.error(e.getMessage(),e);
+    throw new RuntimeException(e);
+  }
+}

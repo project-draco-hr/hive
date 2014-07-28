@@ -1,37 +1,46 @@
 {
-  int tryNum=1;
+  int tryNum=0;
   ZooKeeperHiveLock ret=null;
+  Set<String> conflictingLocks=new HashSet<String>();
   do {
+    tryNum++;
     try {
       if (tryNum > 1) {
         Thread.sleep(sleepTime);
         prepareRetry();
       }
-      ret=lockPrimitive(key,mode,keepAlive,parentCreated);
+      ret=lockPrimitive(key,mode,keepAlive,parentCreated,conflictingLocks);
       if (ret != null) {
         break;
       }
-      tryNum++;
     }
  catch (    Exception e1) {
-      tryNum++;
       if (e1 instanceof KeeperException) {
         KeeperException e=(KeeperException)e1;
 switch (e.code()) {
 case CONNECTIONLOSS:
 case OPERATIONTIMEOUT:
-          LOG.warn("Possibly transient ZooKeeper exception: ",e);
-        break;
+          LOG.debug("Possibly transient ZooKeeper exception: ",e);
+        continue;
 default :
       LOG.error("Serious Zookeeper exception: ",e);
     break;
 }
 }
 if (tryNum >= numRetriesForLock) {
+console.printError("Unable to acquire " + key.getData().getLockMode() + ", "+ mode+ " lock "+ key.getDisplayName()+ " after "+ tryNum+ " attempts.");
+LOG.error("Exceeds maximum retries with errors: ",e1);
+printConflictingLocks(key,mode,conflictingLocks);
+conflictingLocks.clear();
 throw new LockException(e1);
 }
 }
 }
  while (tryNum < numRetriesForLock);
+if (ret == null) {
+console.printError("Unable to acquire " + key.getData().getLockMode() + ", "+ mode+ " lock "+ key.getDisplayName()+ " after "+ tryNum+ " attempts.");
+printConflictingLocks(key,mode,conflictingLocks);
+}
+conflictingLocks.clear();
 return ret;
 }

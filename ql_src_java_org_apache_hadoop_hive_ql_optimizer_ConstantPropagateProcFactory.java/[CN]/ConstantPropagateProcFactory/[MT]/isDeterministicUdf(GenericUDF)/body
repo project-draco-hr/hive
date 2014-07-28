@@ -1,0 +1,32 @@
+{
+  UDFType udfType=udf.getClass().getAnnotation(UDFType.class);
+  if (udf instanceof GenericUDFBridge) {
+    udfType=((GenericUDFBridge)udf).getUdfClass().getAnnotation(UDFType.class);
+  }
+  if (udfType.deterministic() == false) {
+    return false;
+  }
+  String[] files;
+  String[] jars;
+  if (udf instanceof GenericUDFBridge) {
+    GenericUDFBridge bridge=(GenericUDFBridge)udf;
+    String udfClassName=bridge.getUdfClassName();
+    try {
+      UDF udfInternal=(UDF)Class.forName(bridge.getUdfClassName(),true,JavaUtils.getClassLoader()).newInstance();
+      files=udfInternal.getRequiredFiles();
+      jars=udf.getRequiredJars();
+    }
+ catch (    Exception e) {
+      LOG.error("The UDF implementation class '" + udfClassName + "' is not present in the class path");
+      return false;
+    }
+  }
+ else {
+    files=udf.getRequiredFiles();
+    jars=udf.getRequiredJars();
+  }
+  if (files != null || jars != null) {
+    return false;
+  }
+  return true;
+}
