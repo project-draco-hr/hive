@@ -1,5 +1,4 @@
 {
-  int rc=1;
   HiveConf hiveConf=(HiveConf)driverContext.getCtx().getConf();
   refreshLocalResources(sparkWork,hiveConf);
   MapWork mapWork=sparkWork.getMapWork();
@@ -38,46 +37,15 @@
  catch (  IOException e1) {
     e1.printStackTrace();
   }
+  SparkPlanGenerator gen=new SparkPlanGenerator(sc,ctx,jobConf,emptyScratchDir);
+  SparkPlan plan;
   try {
-    Path planPath=new Path(jobConf.getWorkingDirectory(),"plan.xml");
-    System.out.println("Serializing plan to path: " + planPath);
-    OutputStream os2=planPath.getFileSystem(jobConf).create(planPath);
-    Utilities.serializePlan(mapWork,os2,jobConf);
+    plan=gen.generate(sparkWork);
   }
- catch (  IOException e1) {
-    e1.printStackTrace();
-    return 1;
+ catch (  Exception e) {
+    e.printStackTrace();
+    return 2;
   }
-  JavaPairRDD rdd=createRDD(sc,jobConf,mapWork);
-  byte[] confBytes=KryoSerializer.serializeJobConf(jobConf);
-  HiveMapFunction mf=new HiveMapFunction(confBytes);
-  JavaPairRDD rdd2=rdd.mapPartitionsToPair(mf);
-  if (redWork == null) {
-    rdd2.foreach(HiveVoidFunction.getInstance());
-    if (mapWork.getAliasToWork() != null) {
-      for (      Operator<? extends OperatorDesc> op : mapWork.getAliasToWork().values()) {
-        try {
-          op.jobClose(jobConf,true);
-        }
- catch (        HiveException e) {
-          System.out.println("Calling jobClose() failed: " + e);
-          e.printStackTrace();
-        }
-      }
-    }
-  }
- else {
-    JavaPairRDD rdd3=rdd2.partitionBy(new HashPartitioner(1));
-    HiveReduceFunction rf=new HiveReduceFunction(confBytes);
-    JavaPairRDD rdd4=rdd3.mapPartitionsToPair(rf);
-    rdd4.foreach(HiveVoidFunction.getInstance());
-    try {
-      redWork.getReducer().jobClose(jobConf,true);
-    }
- catch (    HiveException e) {
-      System.out.println("Calling jobClose() failed: " + e);
-      e.printStackTrace();
-    }
-  }
+  plan.execute();
   return 0;
 }
