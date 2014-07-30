@@ -1,6 +1,7 @@
 {
   boolean subQuery;
   ArrayList<ExprNodeDesc> col_list=new ArrayList<ExprNodeDesc>();
+  ArrayList<Pair<Integer,RexNode>> windowingRexNodes=new ArrayList<Pair<Integer,RexNode>>();
   QBParseInfo qbp=getQBParseInfo(qb);
   String selClauseName=qbp.getClauseNames().iterator().next();
   ASTNode selExprList=qbp.getSelForClause(selClauseName);
@@ -34,12 +35,31 @@
   }
   ASTNode exprList=selExprList;
   int startPosn=posn;
+  int wndProjPos=0;
   List<String> tabAliasesForAllProjs=getTabAliases(inputRR);
   for (int i=startPosn; i < exprList.getChildCount(); ++i) {
     ASTNode child=(ASTNode)exprList.getChild(i);
     boolean hasAsClause=(!isInTransform) && (child.getChildCount() == 2);
-    boolean isWindowSpec=child.getChildCount() == 3 ? (child.getChild(2).getType() == HiveParser.TOK_WINDOWSPEC) : false;
-    if (isWindowSpec)     throw new RuntimeException("Windowing is not supported yet");
+    int wndSpecASTIndx=-1;
+    boolean isWindowSpec=(((child.getChildCount() == 1) || hasAsClause) && child.getChild(0).getType() == HiveParser.TOK_FUNCTION) ? ((wndSpecASTIndx=getWindowSpecIndx((ASTNode)child.getChild(0))) > 0) : false;
+    if (isWindowSpec) {
+      Pair<RexNode,TypeInfo> wtp=genWindowingProj(qb,(ASTNode)child.getChild(0),wndSpecASTIndx,wndProjPos,srcRel);
+      windowingRexNodes.add(new Pair(pos,wtp.getFirst()));
+      String colAlias=null;
+      ASTNode tabOrColAst=(ASTNode)child.getChild(1);
+      if (tabOrColAst != null)       colAlias=BaseSemanticAnalyzer.getUnescapedName(tabOrColAst);
+      ColumnInfo oColInfo=new ColumnInfo(getColumnInternalName(pos),wtp.getSecond(),null,false);
+      if (colAlias != null) {
+        out_rwsch.checkColumn(null,colAlias);
+        out_rwsch.put(null,colAlias,oColInfo);
+      }
+ else {
+        out_rwsch.putExpression(child,oColInfo);
+      }
+      pos=Integer.valueOf(pos.intValue() + 1);
+      wndProjPos++;
+      continue;
+    }
     if (child.getChildCount() > 2) {
       throw new SemanticException(generateErrorMessage((ASTNode)child.getChild(2),ErrorMsg.INVALID_AS.getMsg()));
     }
@@ -97,6 +117,10 @@
   RexNodeConverter rexNodeConv=new RexNodeConverter(m_cluster,srcRel.getRowType(),buildHiveColNameToInputPosMap(col_list,inputRR),0,false);
   for (  ExprNodeDesc colExpr : col_list) {
     optiqColLst.add(rexNodeConv.convert(colExpr));
+  }
+  for (  Pair<Integer,RexNode> wndPair : windowingRexNodes) {
+    optiqColLst.add(wndPair.getFirst(),wndPair.getSecond());
+    columnNames.add(getColumnInternalName(wndPair.getFirst()));
   }
   List<String> oFieldNames=Lists.transform(columnNames,new Function<String,String>(){
     public String apply(    String hName){
