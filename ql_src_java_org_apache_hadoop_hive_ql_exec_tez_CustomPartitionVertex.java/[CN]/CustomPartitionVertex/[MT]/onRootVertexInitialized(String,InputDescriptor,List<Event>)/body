@@ -1,5 +1,6 @@
 {
   Preconditions.checkState(rootVertexInitialized == false);
+  LOG.info("Root vertex not initialized");
   rootVertexInitialized=true;
   try {
     MRInputUserPayloadProto protoPayload=MRHelpers.parseMRInputPayload(inputDescriptor.getUserPayload());
@@ -13,7 +14,7 @@
     throw new RuntimeException(e);
   }
   boolean dataInformationEventSeen=false;
-  Map<Path,List<FileSplit>> pathFileSplitsMap=new TreeMap<Path,List<FileSplit>>();
+  Map<String,List<FileSplit>> pathFileSplitsMap=new TreeMap<String,List<FileSplit>>();
   for (  Event event : events) {
     if (event instanceof RootInputConfigureVertexTasksEvent) {
       Preconditions.checkState(dataInformationEventSeen == false);
@@ -36,10 +37,10 @@
  catch (      IOException e) {
         throw new RuntimeException("Failed to get file split for event: " + diEvent);
       }
-      List<FileSplit> fsList=pathFileSplitsMap.get(fileSplit.getPath());
+      List<FileSplit> fsList=pathFileSplitsMap.get(fileSplit.getPath().getName());
       if (fsList == null) {
         fsList=new ArrayList<FileSplit>();
-        pathFileSplitsMap.put(fileSplit.getPath(),fsList);
+        pathFileSplitsMap.put(fileSplit.getPath().getName(),fsList);
       }
       fsList.add(fileSplit);
     }
@@ -51,10 +52,18 @@
     float waves=conf.getFloat(TezConfiguration.TEZ_AM_GROUPING_SPLIT_WAVES,TezConfiguration.TEZ_AM_GROUPING_SPLIT_WAVES_DEFAULT);
     int availableSlots=totalResource / taskResource;
     LOG.info("Grouping splits. " + availableSlots + " available slots, "+ waves+ " waves.");
-    Multimap<Integer,InputSplit> bucketToGroupedSplitMap=grouper.group(conf,bucketToInitialSplitMap,availableSlots,waves);
+    JobConf jobConf=new JobConf(conf);
+    ShimLoader.getHadoopShims().getMergedCredentials(jobConf);
+    Multimap<Integer,InputSplit> bucketToGroupedSplitMap=HashMultimap.<Integer,InputSplit>create();
+    for (    Integer key : bucketToInitialSplitMap.keySet()) {
+      InputSplit[] inputSplitArray=(bucketToInitialSplitMap.get(key).toArray(new InputSplit[0]));
+      Multimap<Integer,InputSplit> groupedSplit=HiveSplitGenerator.generateGroupedSplits(jobConf,conf,inputSplitArray,waves,availableSlots);
+      bucketToGroupedSplitMap.putAll(key,groupedSplit.values());
+    }
+    LOG.info("We have grouped the splits into " + bucketToGroupedSplitMap.size() + " tasks");
     processAllEvents(inputName,bucketToGroupedSplitMap);
   }
- catch (  IOException e) {
+ catch (  Exception e) {
     throw new RuntimeException(e);
   }
 }
