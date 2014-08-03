@@ -1,0 +1,24 @@
+{
+  getStream();
+  long start=rawWriter.getPos();
+  long stripeLen=length;
+  long availBlockSpace=blockSize - (start % blockSize);
+  if (stripeLen < blockSize && stripeLen > availBlockSpace && addBlockPadding) {
+    byte[] pad=new byte[(int)Math.min(HDFS_BUFFER_SIZE,availBlockSpace)];
+    LOG.info(String.format("Padding ORC by %d bytes while merging..",availBlockSpace));
+    start+=availBlockSpace;
+    while (availBlockSpace > 0) {
+      int writeLen=(int)Math.min(availBlockSpace,pad.length);
+      rawWriter.write(pad,0,writeLen);
+      availBlockSpace-=writeLen;
+    }
+  }
+  rawWriter.write(stripe);
+  rowsInStripe=stripeStatistics.getColStats(0).getNumberOfValues();
+  rowCount+=rowsInStripe;
+  treeWriter.stripeStatsBuilders.add(stripeStatistics.toBuilder());
+  updateFileStatistics(stripeStatistics);
+  OrcProto.StripeInformation dirEntry=OrcProto.StripeInformation.newBuilder().setOffset(start).setNumberOfRows(rowsInStripe).setIndexLength(stripeInfo.getIndexLength()).setDataLength(stripeInfo.getDataLength()).setFooterLength(stripeInfo.getFooterLength()).build();
+  stripes.add(dirEntry);
+  rowsInStripe=0;
+}

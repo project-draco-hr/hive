@@ -3,11 +3,23 @@
   String driverUrl=HiveConf.getVar(conf,HiveConf.ConfVars.METASTORECONNECTURLKEY);
   String user=HiveConf.getVar(conf,HiveConf.ConfVars.METASTORE_CONNECTION_USER_NAME);
   String passwd=HiveConf.getVar(conf,HiveConf.ConfVars.METASTOREPWD);
-  BoneCPConfig config=new BoneCPConfig();
-  config.setJdbcUrl(driverUrl);
-  config.setMaxConnectionsPerPartition(10);
-  config.setPartitionCount(1);
-  config.setUser(user);
-  config.setPassword(passwd);
-  connPool=new BoneCP(config);
+  String connectionPooler=HiveConf.getVar(conf,HiveConf.ConfVars.METASTORE_CONNECTION_POOLING_TYPE).toLowerCase();
+  if ("bonecp".equals(connectionPooler)) {
+    BoneCPConfig config=new BoneCPConfig();
+    config.setJdbcUrl(driverUrl);
+    config.setMaxConnectionsPerPartition(10);
+    config.setPartitionCount(1);
+    config.setUser(user);
+    config.setPassword(passwd);
+    connPool=new BoneCPDataSource(config);
+  }
+ else   if ("dbcp".equals(connectionPooler)) {
+    ObjectPool objectPool=new GenericObjectPool();
+    ConnectionFactory connFactory=new DriverManagerConnectionFactory(driverUrl,user,passwd);
+    PoolableConnectionFactory poolConnFactory=new PoolableConnectionFactory(connFactory,objectPool,null,null,false,true);
+    connPool=new PoolingDataSource(objectPool);
+  }
+ else {
+    throw new RuntimeException("Unknown JDBC connection pooling " + connectionPooler);
+  }
 }
