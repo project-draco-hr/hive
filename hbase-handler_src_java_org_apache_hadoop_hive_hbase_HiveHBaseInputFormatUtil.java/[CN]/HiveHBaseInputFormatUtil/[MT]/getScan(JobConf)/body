@@ -1,0 +1,67 @@
+{
+  String hbaseColumnsMapping=jobConf.get(HBaseSerDe.HBASE_COLUMNS_MAPPING);
+  boolean doColumnRegexMatching=jobConf.getBoolean(HBaseSerDe.HBASE_COLUMNS_REGEX_MATCHING,true);
+  List<Integer> readColIDs=ColumnProjectionUtils.getReadColumnIDs(jobConf);
+  ColumnMappings columnMappings;
+  try {
+    columnMappings=HBaseSerDe.parseColumnsMapping(hbaseColumnsMapping,doColumnRegexMatching);
+  }
+ catch (  SerDeException e) {
+    throw new IOException(e);
+  }
+  if (columnMappings.size() < readColIDs.size()) {
+    throw new IOException("Cannot read more columns than the given table contains.");
+  }
+  boolean readAllColumns=ColumnProjectionUtils.isReadAllColumns(jobConf);
+  Scan scan=new Scan();
+  boolean empty=true;
+  List<String> addedFamilies=new ArrayList<String>();
+  if (!readAllColumns) {
+    ColumnMapping[] columnsMapping=columnMappings.getColumnsMapping();
+    for (    int i : readColIDs) {
+      ColumnMapping colMap=columnsMapping[i];
+      if (colMap.hbaseRowKey) {
+        continue;
+      }
+      if (colMap.qualifierName == null) {
+        scan.addFamily(colMap.familyNameBytes);
+        addedFamilies.add(colMap.familyName);
+      }
+ else {
+        if (!addedFamilies.contains(colMap.familyName)) {
+          scan.addColumn(colMap.familyNameBytes,colMap.qualifierNameBytes);
+        }
+      }
+      empty=false;
+    }
+  }
+  if (empty) {
+    for (    ColumnMapping colMap : columnMappings) {
+      if (colMap.hbaseRowKey) {
+        continue;
+      }
+      if (colMap.qualifierName == null) {
+        scan.addFamily(colMap.familyNameBytes);
+      }
+ else {
+        scan.addColumn(colMap.familyNameBytes,colMap.qualifierNameBytes);
+      }
+      if (!readAllColumns) {
+        break;
+      }
+    }
+  }
+  String scanCache=jobConf.get(HBaseSerDe.HBASE_SCAN_CACHE);
+  if (scanCache != null) {
+    scan.setCaching(Integer.valueOf(scanCache));
+  }
+  String scanCacheBlocks=jobConf.get(HBaseSerDe.HBASE_SCAN_CACHEBLOCKS);
+  if (scanCacheBlocks != null) {
+    scan.setCacheBlocks(Boolean.valueOf(scanCacheBlocks));
+  }
+  String scanBatch=jobConf.get(HBaseSerDe.HBASE_SCAN_BATCH);
+  if (scanBatch != null) {
+    scan.setBatch(Integer.valueOf(scanBatch));
+  }
+  return scan;
+}
