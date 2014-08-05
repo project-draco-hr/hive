@@ -3,10 +3,15 @@
   final Map<String,String> contextMetadata=new HashMap<String,String>();
   if (columns != null) {
     final List<String> listColumns=getColumns(columns);
+    final Map<String,String> lowerCaseFileSchemaColumns=new HashMap<String,String>();
+    for (    ColumnDescriptor c : fileSchema.getColumns()) {
+      lowerCaseFileSchemaColumns.put(c.getPath()[0].toLowerCase(),c.getPath()[0]);
+    }
     final List<Type> typeListTable=new ArrayList<Type>();
-    for (    final String col : listColumns) {
-      if (fileSchema.containsField(col)) {
-        typeListTable.add(fileSchema.getType(col));
+    for (    String col : listColumns) {
+      col=col.toLowerCase();
+      if (lowerCaseFileSchemaColumns.containsKey(col)) {
+        typeListTable.add(fileSchema.getType(lowerCaseFileSchemaColumns.get(col)));
       }
  else {
         typeListTable.add(new PrimitiveType(Repetition.OPTIONAL,PrimitiveTypeName.BINARY,col));
@@ -17,8 +22,22 @@
     MessageType requestedSchemaByUser=tableSchema;
     final List<Integer> indexColumnsWanted=ColumnProjectionUtils.getReadColumnIDs(configuration);
     final List<Type> typeListWanted=new ArrayList<Type>();
+    final boolean indexAccess=configuration.getBoolean(PARQUET_COLUMN_INDEX_ACCESS,false);
     for (    final Integer idx : indexColumnsWanted) {
-      typeListWanted.add(tableSchema.getType(listColumns.get(idx)));
+      String col=listColumns.get(idx);
+      if (indexAccess) {
+        typeListWanted.add(tableSchema.getType(col));
+      }
+ else {
+        col=col.toLowerCase();
+        if (lowerCaseFileSchemaColumns.containsKey(col)) {
+          typeListWanted.add(tableSchema.getType(lowerCaseFileSchemaColumns.get(col)));
+        }
+ else {
+          String msg="Column " + col + " at index "+ idx+ " does not exist in "+ lowerCaseFileSchemaColumns;
+          throw new IllegalStateException(msg);
+        }
+      }
     }
     requestedSchemaByUser=resolveSchemaAccess(new MessageType(fileSchema.getName(),typeListWanted),fileSchema,configuration);
     return new ReadContext(requestedSchemaByUser,contextMetadata);
