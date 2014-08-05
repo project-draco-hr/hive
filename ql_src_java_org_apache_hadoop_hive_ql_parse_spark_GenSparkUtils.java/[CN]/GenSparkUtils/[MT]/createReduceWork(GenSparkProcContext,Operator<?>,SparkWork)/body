@@ -1,2 +1,36 @@
 {
+  Preconditions.checkArgument(!root.getParentOperators().isEmpty(),"AssertionError: expected root.getParentOperators() to be non-empty");
+  boolean isAutoReduceParallelism=context.conf.getBoolVar(HiveConf.ConfVars.TEZ_AUTO_REDUCER_PARALLELISM);
+  float maxPartitionFactor=context.conf.getFloatVar(HiveConf.ConfVars.TEZ_MAX_PARTITION_FACTOR);
+  float minPartitionFactor=context.conf.getFloatVar(HiveConf.ConfVars.TEZ_MIN_PARTITION_FACTOR);
+  long bytesPerReducer=context.conf.getLongVar(HiveConf.ConfVars.BYTESPERREDUCER);
+  ReduceWork reduceWork=new ReduceWork("Reducer " + (++sequenceNumber));
+  logger.debug("Adding reduce work (" + reduceWork.getName() + ") for "+ root);
+  reduceWork.setReducer(root);
+  reduceWork.setNeedsTagging(GenMapRedUtils.needsTagging(reduceWork));
+  Preconditions.checkArgument(context.parentOfRoot instanceof ReduceSinkOperator,"AssertionError: expected context.parentOfRoot to be an instance of ReduceSinkOperator, but was " + context.parentOfRoot.getClass().getName());
+  ReduceSinkOperator reduceSink=(ReduceSinkOperator)context.parentOfRoot;
+  reduceWork.setNumReduceTasks(reduceSink.getConf().getNumReducers());
+  if (isAutoReduceParallelism && reduceSink.getConf().isAutoParallel()) {
+    reduceWork.setAutoReduceParallelism(true);
+    int maxReducers=context.conf.getIntVar(HiveConf.ConfVars.MAXREDUCERS);
+    int minPartition=Math.max(1,(int)(reduceSink.getConf().getNumReducers() * minPartitionFactor));
+    minPartition=(minPartition > maxReducers) ? maxReducers : minPartition;
+    int maxPartition=(int)(reduceSink.getConf().getNumReducers() * maxPartitionFactor);
+    maxPartition=(maxPartition > maxReducers) ? maxReducers : maxPartition;
+    reduceWork.setMinReduceTasks(minPartition);
+    reduceWork.setMaxReduceTasks(maxPartition);
+  }
+  setupReduceSink(context,reduceWork,reduceSink);
+  sparkWork.add(reduceWork);
+  SparkEdgeProperty edgeProp;
+  if (reduceWork.isAutoReduceParallelism()) {
+    edgeProp=new SparkEdgeProperty(0);
+  }
+ else {
+    edgeProp=new SparkEdgeProperty(0);
+  }
+  sparkWork.connect(context.preceedingWork,reduceWork,edgeProp);
+  context.connectedReduceSinks.add(reduceSink);
+  return reduceWork;
 }

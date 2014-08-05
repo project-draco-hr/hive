@@ -1,2 +1,104 @@
 {
+  GenSparkProcContext context=(GenSparkProcContext)procContext;
+  MapJoinOperator mapJoinOp=(MapJoinOperator)nd;
+  if (stack.size() < 2 || !(stack.get(stack.size() - 2) instanceof ReduceSinkOperator)) {
+    context.currentMapJoinOperators.add(mapJoinOp);
+    return null;
+  }
+  context.preceedingWork=null;
+  context.currentRootOperator=null;
+  ReduceSinkOperator parentRS=(ReduceSinkOperator)stack.get(stack.size() - 2);
+  parentRS.getConf().setSkipTag(true);
+  parentRS.setSkipTag(true);
+  if (!context.mapJoinParentMap.containsKey(mapJoinOp)) {
+    List<Operator<?>> parents=new ArrayList(mapJoinOp.getParentOperators());
+    context.mapJoinParentMap.put(mapJoinOp,parents);
+  }
+  List<BaseWork> mapJoinWork=null;
+  mapJoinWork=context.mapJoinWorkMap.get(mapJoinOp);
+  BaseWork parentWork;
+  if (context.unionWorkMap.containsKey(parentRS)) {
+    parentWork=context.unionWorkMap.get(parentRS);
+  }
+ else {
+    int workMapSize=context.childToWorkMap.get(parentRS).size();
+    Preconditions.checkArgument(workMapSize == 1,"AssertionError: expected context.childToWorkMap.get(parentRS).size() to be 1, but was " + workMapSize);
+    parentWork=context.childToWorkMap.get(parentRS).get(0);
+  }
+  int pos=context.mapJoinParentMap.get(mapJoinOp).indexOf(parentRS);
+  if (pos == -1) {
+    throw new SemanticException("Cannot find position of parent in mapjoin");
+  }
+  LOG.debug("Mapjoin " + mapJoinOp + ", pos: "+ pos+ " --> "+ parentWork.getName());
+  mapJoinOp.getConf().getParentToInput().put(pos,parentWork.getName());
+  int numBuckets=-1;
+  SparkEdgeProperty edgeProp=new SparkEdgeProperty(0);
+  if (mapJoinWork != null) {
+    for (    BaseWork myWork : mapJoinWork) {
+      SparkWork sparkWork=context.currentTask.getWork();
+      LOG.debug("connecting " + parentWork.getName() + " with "+ myWork.getName());
+      sparkWork.connect(parentWork,myWork,edgeProp);
+      ReduceSinkOperator r=null;
+      if (parentRS.getConf().getOutputName() != null) {
+        LOG.debug("Cloning reduce sink for multi-child broadcast edge");
+        r=(ReduceSinkOperator)OperatorFactory.getAndMakeChild((ReduceSinkDesc)parentRS.getConf().clone(),parentRS.getParentOperators());
+        context.clonedReduceSinks.add(r);
+      }
+ else {
+        r=parentRS;
+      }
+      r.getConf().setOutputName(myWork.getName());
+      context.connectedReduceSinks.add(r);
+    }
+  }
+  Map<BaseWork,SparkEdgeProperty> linkWorkMap=null;
+  if (context.linkOpWithWorkMap.containsKey(mapJoinOp)) {
+    linkWorkMap=context.linkOpWithWorkMap.get(mapJoinOp);
+  }
+ else {
+    linkWorkMap=new HashMap<BaseWork,SparkEdgeProperty>();
+  }
+  linkWorkMap.put(parentWork,edgeProp);
+  context.linkOpWithWorkMap.put(mapJoinOp,linkWorkMap);
+  List<ReduceSinkOperator> reduceSinks=context.linkWorkWithReduceSinkMap.get(parentWork);
+  if (reduceSinks == null) {
+    reduceSinks=new ArrayList<ReduceSinkOperator>();
+  }
+  reduceSinks.add(parentRS);
+  context.linkWorkWithReduceSinkMap.put(parentWork,reduceSinks);
+  List<Operator<?>> dummyOperators=new ArrayList<Operator<?>>();
+  HashTableDummyDesc desc=new HashTableDummyDesc();
+  @SuppressWarnings("unchecked") HashTableDummyOperator dummyOp=(HashTableDummyOperator)OperatorFactory.get(desc);
+  TableDesc tbl;
+  RowSchema rowSchema=parentRS.getParentOperators().get(0).getSchema();
+  tbl=PlanUtils.getReduceValueTableDesc(PlanUtils.getFieldSchemasFromRowSchema(rowSchema,""));
+  dummyOp.getConf().setTbl(tbl);
+  Map<Byte,List<ExprNodeDesc>> keyExprMap=mapJoinOp.getConf().getKeys();
+  List<ExprNodeDesc> keyCols=keyExprMap.get(Byte.valueOf((byte)0));
+  StringBuffer keyOrder=new StringBuffer();
+  for (  ExprNodeDesc k : keyCols) {
+    keyOrder.append("+");
+  }
+  TableDesc keyTableDesc=PlanUtils.getReduceKeyTableDesc(PlanUtils.getFieldSchemasFromColumnList(keyCols,"mapjoinkey"),keyOrder.toString());
+  mapJoinOp.getConf().setKeyTableDesc(keyTableDesc);
+  mapJoinOp.replaceParent(parentRS,dummyOp);
+  List<Operator<? extends OperatorDesc>> dummyChildren=new ArrayList<Operator<? extends OperatorDesc>>();
+  dummyChildren.add(mapJoinOp);
+  dummyOp.setChildOperators(dummyChildren);
+  dummyOperators.add(dummyOp);
+  List<Operator<? extends OperatorDesc>> childOperators=parentRS.getChildOperators();
+  int childIndex=childOperators.indexOf(mapJoinOp);
+  childOperators.remove(childIndex);
+  if (mapJoinWork != null) {
+    for (    BaseWork myWork : mapJoinWork) {
+      myWork.addDummyOp(dummyOp);
+    }
+  }
+  if (context.linkChildOpWithDummyOp.containsKey(mapJoinOp)) {
+    for (    Operator<?> op : context.linkChildOpWithDummyOp.get(mapJoinOp)) {
+      dummyOperators.add(op);
+    }
+  }
+  context.linkChildOpWithDummyOp.put(mapJoinOp,dummyOperators);
+  return true;
 }

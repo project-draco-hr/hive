@@ -1,2 +1,67 @@
 {
+  Set<Operator<?>> roots=work.getAllRootOperators();
+  if (work.getDummyOps() != null) {
+    roots.addAll(work.getDummyOps());
+  }
+  Set<Operator<?>> newRoots=Utilities.cloneOperatorTree(conf,roots);
+  Map<Operator<?>,Operator<?>> replacementMap=new HashMap<Operator<?>,Operator<?>>();
+  List<HashTableDummyOperator> dummyOps=new LinkedList<HashTableDummyOperator>();
+  Iterator<Operator<?>> it=newRoots.iterator();
+  for (  Operator<?> orig : roots) {
+    Operator<?> newRoot=it.next();
+    if (newRoot instanceof HashTableDummyOperator) {
+      dummyOps.add((HashTableDummyOperator)newRoot);
+      it.remove();
+    }
+ else {
+      replacementMap.put(orig,newRoot);
+    }
+  }
+  Deque<Operator<?>> operators=new LinkedList<Operator<?>>();
+  operators.addAll(newRoots);
+  Set<Operator<?>> seen=new HashSet<Operator<?>>();
+  while (!operators.isEmpty()) {
+    Operator<?> current=operators.pop();
+    seen.add(current);
+    if (current instanceof FileSinkOperator) {
+      FileSinkOperator fileSink=(FileSinkOperator)current;
+      context.fileSinkSet.add(fileSink);
+      FileSinkDesc desc=fileSink.getConf();
+      Path path=desc.getDirName();
+      List<FileSinkDesc> linked;
+      if (!context.linkedFileSinks.containsKey(path)) {
+        linked=new ArrayList<FileSinkDesc>();
+        context.linkedFileSinks.put(path,linked);
+      }
+      linked=context.linkedFileSinks.get(path);
+      linked.add(desc);
+      desc.setDirName(new Path(path,"" + linked.size()));
+      desc.setLinkedFileSinkDesc(linked);
+    }
+    if (current instanceof UnionOperator) {
+      Operator<?> parent=null;
+      int count=0;
+      for (      Operator<?> op : current.getParentOperators()) {
+        if (seen.contains(op)) {
+          ++count;
+          parent=op;
+        }
+      }
+      Preconditions.checkArgument(count <= 1,"AssertionError: expected count to be <= 1, but was " + count);
+      if (parent == null) {
+        replacementMap.put(current,current.getChildOperators().get(0));
+      }
+ else {
+        parent.removeChildAndAdoptItsChildren(current);
+      }
+    }
+    if (current instanceof FileSinkOperator || current instanceof ReduceSinkOperator) {
+      current.setChildOperators(null);
+    }
+ else {
+      operators.addAll(current.getChildOperators());
+    }
+  }
+  work.setDummyOps(dummyOps);
+  work.replaceRoots(replacementMap);
 }
