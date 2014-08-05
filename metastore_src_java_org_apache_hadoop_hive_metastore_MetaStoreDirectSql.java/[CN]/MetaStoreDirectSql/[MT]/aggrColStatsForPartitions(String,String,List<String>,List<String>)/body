@@ -1,0 +1,20 @@
+{
+  String qText="select \"COLUMN_NAME\", \"COLUMN_TYPE\", " + "min(\"LONG_LOW_VALUE\"), max(\"LONG_HIGH_VALUE\"), min(\"DOUBLE_LOW_VALUE\"), max(\"DOUBLE_HIGH_VALUE\"), " + "min(\"BIG_DECIMAL_LOW_VALUE\"), max(\"BIG_DECIMAL_HIGH_VALUE\"), sum(\"NUM_NULLS\"), max(\"NUM_DISTINCTS\"), "+ "max(\"AVG_COL_LEN\"), max(\"MAX_COL_LEN\"), sum(\"NUM_TRUES\"), sum(\"NUM_FALSES\") from \"PART_COL_STATS\""+ " where \"DB_NAME\" = ? and \"TABLE_NAME\" = ? and \"COLUMN_NAME\" in (" + makeParams(colNames.size()) + ") AND \"PARTITION_NAME\" in ("+ makeParams(partNames.size())+ ") group by \"COLUMN_NAME\", \"COLUMN_TYPE\"";
+  boolean doTrace=LOG.isDebugEnabled();
+  long start=doTrace ? System.nanoTime() : 0;
+  Query query=pm.newQuery("javax.jdo.query.SQL",qText);
+  Object qResult=query.executeWithArray(prepareParams(dbName,tableName,partNames,colNames));
+  if (qResult == null) {
+    query.closeAll();
+    return Lists.newArrayList();
+  }
+  List<Object[]> list=ensureList(qResult);
+  List<ColumnStatisticsObj> colStats=new ArrayList<ColumnStatisticsObj>(list.size());
+  for (  Object[] row : list) {
+    colStats.add(prepareCSObj(row,0));
+  }
+  long end=doTrace ? System.nanoTime() : 0;
+  timingTrace(doTrace,qText,start,end);
+  query.closeAll();
+  return colStats;
+}

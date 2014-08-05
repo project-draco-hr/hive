@@ -1,0 +1,84 @@
+{
+  String inputPathStr=null;
+  String outputDir=null;
+  String jobConfFileName=null;
+  String format=null;
+  try {
+    for (int i=0; i < args.length; i++) {
+      if (args[i].equals("-input")) {
+        inputPathStr=args[++i];
+      }
+ else       if (args[i].equals("-jobconffile")) {
+        jobConfFileName=args[++i];
+      }
+ else       if (args[i].equals("-outputDir")) {
+        outputDir=args[++i];
+      }
+ else       if (args[i].equals("-format")) {
+        format=args[++i];
+      }
+    }
+  }
+ catch (  IndexOutOfBoundsException e) {
+    System.err.println("Missing argument to option");
+    printUsage();
+  }
+  if (inputPathStr == null || outputDir == null || outputDir.trim().equals("")) {
+    printUsage();
+  }
+  List<Path> inputPaths=new ArrayList<Path>();
+  String[] paths=inputPathStr.split(INPUT_SEPERATOR);
+  if (paths == null || paths.length == 0) {
+    printUsage();
+  }
+  FileSystem fs=null;
+  JobConf conf=new JobConf(MergeTask.class);
+  for (  String path : paths) {
+    try {
+      Path pathObj=new Path(path);
+      if (fs == null) {
+        fs=FileSystem.get(pathObj.toUri(),conf);
+      }
+      FileStatus fstatus=fs.getFileStatus(pathObj);
+      if (fstatus.isDir()) {
+        FileStatus[] fileStatus=fs.listStatus(pathObj);
+        for (        FileStatus st : fileStatus) {
+          inputPaths.add(st.getPath());
+        }
+      }
+ else {
+        inputPaths.add(fstatus.getPath());
+      }
+    }
+ catch (    IOException e) {
+      e.printStackTrace(System.err);
+    }
+  }
+  if (jobConfFileName != null) {
+    conf.addResource(new Path(jobConfFileName));
+  }
+  HiveConf hiveConf=new HiveConf(conf,MergeTask.class);
+  Log LOG=LogFactory.getLog(MergeTask.class.getName());
+  boolean isSilent=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVESESSIONSILENT);
+  LogHelper console=new LogHelper(LOG,isSilent);
+  for (  Appender appender : Collections.list((Enumeration<Appender>)LogManager.getRootLogger().getAllAppenders())) {
+    if (appender instanceof FileAppender) {
+      console.printInfo("Execution log at: " + ((FileAppender)appender).getFile());
+    }
+  }
+  MergeWork mergeWork=null;
+  if (format.equals("rcfile")) {
+    mergeWork=new MergeWork(inputPaths,new Path(outputDir),RCFileInputFormat.class);
+  }
+ else   if (format.equals("orcfile")) {
+    mergeWork=new MergeWork(inputPaths,new Path(outputDir),OrcInputFormat.class);
+  }
+  DriverContext driverCxt=new DriverContext();
+  MergeTask taskExec=new MergeTask();
+  taskExec.initialize(hiveConf,null,driverCxt);
+  taskExec.setWork(mergeWork);
+  int ret=taskExec.execute(driverCxt);
+  if (ret != 0) {
+    System.exit(2);
+  }
+}

@@ -69,16 +69,25 @@
       for (      Partition part : partList.getNotDeniedPartns()) {
         partNames.add(part.getName());
       }
-      Map<String,List<ColStatistics>> partStats=getPartColumnStats(table,schema,partNames,neededColumns);
-      if (partStats != null) {
-        for (        String partName : partNames) {
-          List<ColStatistics> partStat=partStats.get(partName);
-          haveFullStats&=(partStat != null);
-          if (partStat != null) {
-            stats.updateColumnStatsState(deriveStatType(partStat,neededColumns));
-            stats.addToColumnStats(partStat);
-          }
+      Map<String,String> colToTabAlias=new HashMap<String,String>();
+      neededColumns=processNeededColumns(schema,neededColumns,colToTabAlias);
+      AggrStats aggrStats=Hive.get().getAggrColStatsFor(table.getDbName(),table.getTableName(),neededColumns,partNames);
+      if (null == aggrStats) {
+        haveFullStats=false;
+      }
+ else {
+        List<ColumnStatisticsObj> colStats=aggrStats.getColStats();
+        if (colStats.size() != neededColumns.size()) {
+          LOG.debug("Column stats requested for : " + neededColumns.size() + " columns. Able to retrieve"+ " for "+ colStats.size()+ " columns");
         }
+        List<ColStatistics> columnStats=convertColStats(colStats,table.getTableName(),colToTabAlias);
+        stats.addToColumnStats(columnStats);
+        State colState=deriveStatType(columnStats,neededColumns);
+        if (aggrStats.getPartsFound() != partNames.size() && colState != State.NONE) {
+          LOG.debug("Column stats requested for : " + partNames.size() + " partitions. "+ "Able to retrieve for "+ aggrStats.getPartsFound()+ " partitions");
+          stats.updateColumnStatsState(State.PARTIAL);
+        }
+        stats.setColumnStatsState(colState);
       }
     }
     if (!haveFullStats) {
