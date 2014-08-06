@@ -1,4 +1,24 @@
 {
-  if (m_rowCount == -1)   m_rowCount=StatsUtils.getNumRows(m_hiveTblMetadata);
+  if (m_rowCount == -1) {
+    if (m_hiveTblMetadata.isPartitioned()) {
+      if (partitionList == null) {
+        try {
+          List<Partition> parts=Hive.get().getPartitions(m_hiveTblMetadata);
+          List<Long> rowCounts=StatsUtils.getBasicStatForPartitions(m_hiveTblMetadata,parts,StatsSetupConst.ROW_COUNT);
+          m_rowCount=StatsUtils.getSumIgnoreNegatives(rowCounts);
+        }
+ catch (        HiveException he) {
+          throw new RuntimeException(he);
+        }
+      }
+ else {
+        List<Long> rowCounts=StatsUtils.getBasicStatForPartitions(m_hiveTblMetadata,partitionList.getNotDeniedPartns(),StatsSetupConst.ROW_COUNT);
+        m_rowCount=StatsUtils.getSumIgnoreNegatives(rowCounts);
+      }
+    }
+ else {
+      m_rowCount=StatsUtils.getNumRows(m_hiveTblMetadata);
+    }
+  }
   return m_rowCount;
 }
