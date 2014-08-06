@@ -1,0 +1,38 @@
+{
+  OptimizeSparkProcContext context=(OptimizeSparkProcContext)procContext;
+  ReduceSinkOperator sink=(ReduceSinkOperator)nd;
+  ReduceSinkDesc desc=sink.getConf();
+  long bytesPerReducer=context.getConf().getLongVar(HiveConf.ConfVars.BYTESPERREDUCER);
+  int maxReducers=context.getConf().getIntVar(HiveConf.ConfVars.MAXREDUCERS);
+  int constantReducers=context.getConf().getIntVar(HiveConf.ConfVars.HADOOPNUMREDUCERS);
+  if (context.getVisitedReduceSinks().contains(sink)) {
+    LOG.debug("Already processed reduce sink: " + sink.getName());
+    return true;
+  }
+  context.getVisitedReduceSinks().add(sink);
+  if (desc.getNumReducers() <= 0) {
+    if (constantReducers > 0) {
+      LOG.info("Parallelism for reduce sink " + sink + " set by user to "+ constantReducers);
+      desc.setNumReducers(constantReducers);
+    }
+ else {
+      long numberOfBytes=0;
+      for (      Operator<? extends OperatorDesc> sibling : sink.getChildOperators().get(0).getParentOperators()) {
+        if (sibling.getStatistics() != null) {
+          numberOfBytes+=sibling.getStatistics().getDataSize();
+        }
+ else {
+          LOG.warn("No stats available from: " + sibling);
+        }
+      }
+      int numReducers=Utilities.estimateReducers(numberOfBytes,bytesPerReducer,maxReducers,false);
+      LOG.info("Set parallelism for reduce sink " + sink + " to: "+ numReducers);
+      desc.setNumReducers(numReducers);
+      desc.setAutoParallel(true);
+    }
+  }
+ else {
+    LOG.info("Number of reducers determined to be: " + desc.getNumReducers());
+  }
+  return false;
+}
