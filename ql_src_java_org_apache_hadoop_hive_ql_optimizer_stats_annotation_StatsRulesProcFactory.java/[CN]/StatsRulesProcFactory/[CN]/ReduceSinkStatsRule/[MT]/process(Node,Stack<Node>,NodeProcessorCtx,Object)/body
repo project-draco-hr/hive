@@ -1,0 +1,49 @@
+{
+  ReduceSinkOperator rop=(ReduceSinkOperator)nd;
+  Operator<? extends OperatorDesc> parent=rop.getParentOperators().get(0);
+  Statistics parentStats=parent.getStatistics();
+  if (parentStats != null) {
+    AnnotateStatsProcCtx aspCtx=(AnnotateStatsProcCtx)procCtx;
+    HiveConf conf=aspCtx.getConf();
+    List<String> outKeyColNames=rop.getConf().getOutputKeyColumnNames();
+    List<String> outValueColNames=rop.getConf().getOutputValueColumnNames();
+    Map<String,ExprNodeDesc> colExprMap=rop.getColumnExprMap();
+    try {
+      Statistics outStats=parentStats.clone();
+      if (satisfyPrecondition(parentStats)) {
+        List<ColStatistics> colStats=Lists.newArrayList();
+        for (        String key : outKeyColNames) {
+          String prefixedKey="KEY." + key;
+          ExprNodeDesc end=colExprMap.get(prefixedKey);
+          if (end != null) {
+            ColStatistics cs=StatsUtils.getColStatisticsFromExpression(conf,parentStats,end);
+            if (cs != null) {
+              cs.setColumnName(key);
+              colStats.add(cs);
+            }
+          }
+        }
+        for (        String val : outValueColNames) {
+          String prefixedVal="VALUE." + val;
+          ExprNodeDesc end=colExprMap.get(prefixedVal);
+          if (end != null) {
+            ColStatistics cs=StatsUtils.getColStatisticsFromExpression(conf,parentStats,end);
+            if (cs != null) {
+              cs.setColumnName(val);
+              colStats.add(cs);
+            }
+          }
+        }
+        outStats.setColumnStats(colStats);
+      }
+      rop.setStatistics(outStats);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("[0] STATS-" + rop.toString() + ": "+ outStats.extendedToString());
+      }
+    }
+ catch (    CloneNotSupportedException e) {
+      throw new SemanticException(ErrorMsg.STATISTICS_CLONING_FAILED.getMsg());
+    }
+  }
+  return null;
+}
