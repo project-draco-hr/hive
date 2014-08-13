@@ -1,0 +1,43 @@
+{
+  JavaPairRDD<BytesWritable,BytesWritable> resultRDD=null;
+  for (  SparkTran tran : rootTrans) {
+    if (!(tran instanceof MapTran)) {
+      throw new Exception("root transformations must be MapTran!");
+    }
+    JavaPairRDD<BytesWritable,BytesWritable> input=mapInputs.get(tran);
+    if (input == null) {
+      throw new Exception("input is missing for transformation!");
+    }
+    JavaPairRDD<BytesWritable,BytesWritable> rdd=tran.transform(input);
+    while (getChildren(tran).size() > 0) {
+      SparkTran childTran=getChildren(tran).get(0);
+      if (childTran instanceof UnionTran) {
+        List<JavaPairRDD<BytesWritable,BytesWritable>> unionInputList=unionInputs.get(childTran);
+        if (unionInputList == null) {
+          unionInputList=new LinkedList<JavaPairRDD<BytesWritable,BytesWritable>>();
+          unionInputList.add(rdd);
+          unionInputs.put(childTran,unionInputList);
+          break;
+        }
+ else         if (unionInputList.size() < this.getParents(childTran).size() - 1) {
+          unionInputList.add(rdd);
+          break;
+        }
+ else         if (unionInputList.size() == this.getParents(childTran).size() - 1) {
+          for (          JavaPairRDD<BytesWritable,BytesWritable> inputRDD : unionInputList) {
+            ((UnionTran)childTran).setOtherInput(inputRDD);
+            rdd=childTran.transform(rdd);
+          }
+        }
+      }
+ else {
+        rdd=childTran.transform(rdd);
+      }
+      tran=childTran;
+    }
+    resultRDD=rdd;
+  }
+  if (resultRDD != null) {
+    resultRDD.foreach(HiveVoidFunction.getInstance());
+  }
+}

@@ -1,24 +1,45 @@
 {
   SparkPlan plan=new SparkPlan();
-  List<SparkTran> trans=new ArrayList<SparkTran>();
+  GraphTran trans=new GraphTran();
   Set<BaseWork> roots=sparkWork.getRoots();
-  assert(roots != null && roots.size() == 1);
-  BaseWork w=roots.iterator().next();
-  MapWork mapWork=(MapWork)w;
-  trans.add(generate(w));
-  while (sparkWork.getChildren(w).size() > 0) {
-    ReduceWork child=(ReduceWork)sparkWork.getChildren(w).get(0);
-    SparkEdgeProperty edge=sparkWork.getEdgeProperty(w,child);
-    SparkShuffler st=generate(edge);
-    ReduceTran rt=generate(child);
-    rt.setShuffler(st);
-    rt.setNumPartitions(edge.getNumPartitions());
-    trans.add(rt);
-    w=child;
+  for (  BaseWork w : roots) {
+    if (!(w instanceof MapWork)) {
+      throw new Exception("The roots in the SparkWork must be MapWork instances!");
+    }
+    MapWork mapWork=(MapWork)w;
+    SparkTran tran=generate(w);
+    JavaPairRDD<BytesWritable,BytesWritable> input=generateRDD(mapWork);
+    trans.addTranWithInput(tran,input);
+    while (sparkWork.getChildren(w).size() > 0) {
+      BaseWork child=sparkWork.getChildren(w).get(0);
+      if (child instanceof ReduceWork) {
+        SparkEdgeProperty edge=sparkWork.getEdgeProperty(w,child);
+        SparkShuffler st=generate(edge);
+        ReduceTran rt=generate((ReduceWork)child);
+        rt.setShuffler(st);
+        rt.setNumPartitions(edge.getNumPartitions());
+        trans.addTran(rt);
+        trans.connect(tran,rt);
+        w=child;
+        tran=rt;
+      }
+ else       if (child instanceof UnionWork) {
+        if (unionWorkTrans.get(child) != null) {
+          trans.connect(tran,unionWorkTrans.get(child));
+          break;
+        }
+ else {
+          SparkTran ut=generate((UnionWork)child);
+          unionWorkTrans.put(child,ut);
+          trans.addTran(ut);
+          trans.connect(tran,ut);
+          w=child;
+          tran=ut;
+        }
+      }
+    }
   }
-  ChainedTran chainedTran=new ChainedTran(trans);
-  plan.setTran(chainedTran);
-  JavaPairRDD<BytesWritable,BytesWritable> input=generateRDD(mapWork);
-  plan.setInput(input);
+  unionWorkTrans.clear();
+  plan.setTran(trans);
   return plan;
 }
