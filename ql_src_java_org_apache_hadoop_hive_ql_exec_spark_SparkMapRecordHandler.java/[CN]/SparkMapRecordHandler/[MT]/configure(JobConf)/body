@@ -1,0 +1,59 @@
+{
+  memoryMXBean=ManagementFactory.getMemoryMXBean();
+  l4j.info("maximum memory = " + memoryMXBean.getHeapMemoryUsage().getMax());
+  isLogInfoEnabled=l4j.isInfoEnabled();
+  try {
+    l4j.info("conf classpath = " + Arrays.asList(((URLClassLoader)job.getClassLoader()).getURLs()));
+    l4j.info("thread classpath = " + Arrays.asList(((URLClassLoader)Thread.currentThread().getContextClassLoader()).getURLs()));
+  }
+ catch (  Exception e) {
+    l4j.info("cannot get classpath: " + e.getMessage());
+  }
+  setDone(false);
+  ObjectCache cache=ObjectCacheFactory.getCache(job);
+  try {
+    jc=job;
+    execContext.setJc(jc);
+    MapWork mrwork=(MapWork)cache.retrieve(PLAN_KEY);
+    if (mrwork == null) {
+      mrwork=Utilities.getMapWork(job);
+      cache.cache(PLAN_KEY,mrwork);
+    }
+ else {
+      Utilities.setMapWork(job,mrwork);
+    }
+    if (mrwork.getVectorMode()) {
+      mo=new VectorMapOperator();
+    }
+ else {
+      mo=new MapOperator();
+    }
+    mo.setConf(mrwork);
+    mo.setChildren(job);
+    l4j.info(mo.dump(0));
+    localWork=mrwork.getMapLocalWork();
+    execContext.setLocalWork(localWork);
+    MapredContext.init(true,new JobConf(jc));
+    mo.setExecContext(execContext);
+    mo.initializeLocalWork(jc);
+    mo.initialize(jc,null);
+    if (localWork == null) {
+      return;
+    }
+    l4j.info("Initializing dummy operator");
+    List<Operator<? extends OperatorDesc>> dummyOps=localWork.getDummyParentOp();
+    for (    Operator<? extends OperatorDesc> dummyOp : dummyOps) {
+      dummyOp.setExecContext(execContext);
+      dummyOp.initialize(jc,null);
+    }
+  }
+ catch (  Throwable e) {
+    abort=true;
+    if (e instanceof OutOfMemoryError) {
+      throw (OutOfMemoryError)e;
+    }
+ else {
+      throw new RuntimeException("Map operator initialization failed",e);
+    }
+  }
+}
