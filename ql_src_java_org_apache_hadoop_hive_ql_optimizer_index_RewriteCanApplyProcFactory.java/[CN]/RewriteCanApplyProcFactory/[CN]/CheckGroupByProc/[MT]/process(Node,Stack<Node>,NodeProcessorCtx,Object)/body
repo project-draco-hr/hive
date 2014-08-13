@@ -1,2 +1,53 @@
 {
+  GroupByOperator operator=(GroupByOperator)nd;
+  RewriteCanApplyCtx canApplyCtx=(RewriteCanApplyCtx)ctx;
+  if (canApplyCtx.getParseContext().getGroupOpToInputTables().containsKey(operator) && !canApplyCtx.isQueryHasGroupBy()) {
+    canApplyCtx.setQueryHasGroupBy(true);
+    GroupByDesc conf=operator.getConf();
+    List<AggregationDesc> aggrList=conf.getAggregators();
+    if (aggrList != null && aggrList.size() > 0) {
+      for (      AggregationDesc aggregationDesc : aggrList) {
+        canApplyCtx.setAggFuncCnt(canApplyCtx.getAggFuncCnt() + 1);
+        if (canApplyCtx.getAggFuncCnt() > 1) {
+          return false;
+        }
+        String aggFunc=aggregationDesc.getGenericUDAFName();
+        if (!("count".equals(aggFunc))) {
+          canApplyCtx.setAggFuncIsNotCount(true);
+          return false;
+        }
+        List<ExprNodeDesc> para=aggregationDesc.getParameters();
+        if (para == null) {
+          canApplyCtx.setAggFuncColsFetchException(true);
+        }
+ else         if (para.size() == 0) {
+          canApplyCtx.setCountOnAllCols(true);
+          canApplyCtx.setAggFunction("_count_of_all");
+        }
+ else         if (para.size() == 1) {
+          ExprNodeDesc expr=ExprNodeDescUtils.backtrack(para.get(0),operator,topOp);
+          if (expr instanceof ExprNodeColumnDesc) {
+            canApplyCtx.getSelectColumnsList().add(((ExprNodeColumnDesc)expr).getColumn());
+            canApplyCtx.getAggFuncColList().add(((ExprNodeColumnDesc)expr).getColumn());
+            canApplyCtx.setAggFunction("_count_of_" + ((ExprNodeColumnDesc)expr).getColumn() + "");
+          }
+ else           if (expr instanceof ExprNodeConstantDesc) {
+            canApplyCtx.setCountOfOne(true);
+            canApplyCtx.setAggFunction("_count_of_1");
+          }
+        }
+ else {
+          throw new SemanticException("Invalid number of arguments for count");
+        }
+      }
+    }
+    List<ExprNodeDesc> keyList=conf.getKeys();
+    if (keyList == null || keyList.size() == 0) {
+      canApplyCtx.setGbyKeysFetchException(true);
+    }
+    for (    ExprNodeDesc expr : keyList) {
+      checkExpression(canApplyCtx,expr);
+    }
+  }
+  return null;
 }
