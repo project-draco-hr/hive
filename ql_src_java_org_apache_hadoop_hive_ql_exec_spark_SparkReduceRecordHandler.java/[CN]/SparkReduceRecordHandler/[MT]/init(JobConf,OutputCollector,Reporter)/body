@@ -1,0 +1,53 @@
+{
+  super.init(job,output,reporter);
+  rowObjectInspector=new ObjectInspector[Byte.MAX_VALUE];
+  ObjectInspector[] valueObjectInspector=new ObjectInspector[Byte.MAX_VALUE];
+  ObjectInspector keyObjectInspector;
+  ObjectCache cache=ObjectCacheFactory.getCache(jc);
+  ReduceWork gWork=(ReduceWork)cache.retrieve(PLAN_KEY);
+  if (gWork == null) {
+    gWork=Utilities.getReduceWork(job);
+    cache.cache(PLAN_KEY,gWork);
+  }
+ else {
+    Utilities.setReduceWork(job,gWork);
+  }
+  reducer=gWork.getReducer();
+  reducer.setParentOperators(null);
+  isTagged=gWork.getNeedsTagging();
+  try {
+    keyTableDesc=gWork.getKeyDesc();
+    inputKeyDeserializer=ReflectionUtils.newInstance(keyTableDesc.getDeserializerClass(),null);
+    SerDeUtils.initializeSerDe(inputKeyDeserializer,null,keyTableDesc.getProperties(),null);
+    keyObjectInspector=inputKeyDeserializer.getObjectInspector();
+    valueTableDesc=new TableDesc[gWork.getTagToValueDesc().size()];
+    for (int tag=0; tag < gWork.getTagToValueDesc().size(); tag++) {
+      valueTableDesc[tag]=gWork.getTagToValueDesc().get(tag);
+      inputValueDeserializer[tag]=ReflectionUtils.newInstance(valueTableDesc[tag].getDeserializerClass(),null);
+      SerDeUtils.initializeSerDe(inputValueDeserializer[tag],null,valueTableDesc[tag].getProperties(),null);
+      valueObjectInspector[tag]=inputValueDeserializer[tag].getObjectInspector();
+      ArrayList<ObjectInspector> ois=new ArrayList<ObjectInspector>();
+      ois.add(keyObjectInspector);
+      ois.add(valueObjectInspector[tag]);
+      reducer.setGroupKeyObjectInspector(keyObjectInspector);
+      rowObjectInspector[tag]=ObjectInspectorFactory.getStandardStructObjectInspector(Utilities.reduceFieldNameList,ois);
+    }
+  }
+ catch (  Exception e) {
+    throw new RuntimeException(e);
+  }
+  reducer.setReporter(rp);
+  try {
+    LOG.info(reducer.dump(0));
+    reducer.initialize(jc,rowObjectInspector);
+  }
+ catch (  Throwable e) {
+    abort=true;
+    if (e instanceof OutOfMemoryError) {
+      throw (OutOfMemoryError)e;
+    }
+ else {
+      throw new RuntimeException("Reduce operator initialization failed",e);
+    }
+  }
+}
