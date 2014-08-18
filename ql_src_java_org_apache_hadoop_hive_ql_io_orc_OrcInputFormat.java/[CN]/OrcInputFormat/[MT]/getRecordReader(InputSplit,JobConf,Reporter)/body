@@ -8,39 +8,18 @@
   }
   OrcSplit split=(OrcSplit)inputSplit;
   reporter.setStatus(inputSplit.toString());
+  Options options=new Options(conf).reporter(reporter);
+  final RowReader<OrcStruct> inner=getReader(inputSplit,options);
   if (split.isOriginal() && split.getDeltas().isEmpty()) {
     if (vectorMode) {
       return createVectorizedReader(inputSplit,conf,reporter);
     }
  else {
-      return new OrcRecordReader(OrcFile.createReader(split.getPath(),OrcFile.readerOptions(conf)),conf,split);
+      return new NullKeyRecordReader(inner,conf);
     }
   }
-  Options options=new Options(conf).reporter(reporter);
-  final RowReader<OrcStruct> inner=getReader(inputSplit,options);
   if (vectorMode) {
     return (org.apache.hadoop.mapred.RecordReader)new VectorizedOrcAcidRowReader(inner,conf,(FileSplit)inputSplit);
   }
-  final RecordIdentifier id=inner.createKey();
-  return new org.apache.hadoop.mapred.RecordReader<NullWritable,OrcStruct>(){
-    @Override public boolean next(    NullWritable nullWritable,    OrcStruct orcStruct) throws IOException {
-      return inner.next(id,orcStruct);
-    }
-    @Override public NullWritable createKey(){
-      return NullWritable.get();
-    }
-    @Override public OrcStruct createValue(){
-      return inner.createValue();
-    }
-    @Override public long getPos() throws IOException {
-      return inner.getPos();
-    }
-    @Override public void close() throws IOException {
-      inner.close();
-    }
-    @Override public float getProgress() throws IOException {
-      return inner.getProgress();
-    }
-  }
-;
+  return new NullKeyRecordReader(inner,conf);
 }
