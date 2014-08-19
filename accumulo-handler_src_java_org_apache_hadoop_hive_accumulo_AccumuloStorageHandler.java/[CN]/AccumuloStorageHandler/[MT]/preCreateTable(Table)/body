@@ -1,0 +1,38 @@
+{
+  boolean isExternal=isExternalTable(table);
+  if (table.getSd().getLocation() != null) {
+    throw new MetaException("Location can't be specified for Accumulo");
+  }
+  Map<String,String> serdeParams=table.getSd().getSerdeInfo().getParameters();
+  String columnMapping=serdeParams.get(AccumuloSerDeParameters.COLUMN_MAPPINGS);
+  if (columnMapping == null) {
+    throw new MetaException(AccumuloSerDeParameters.COLUMN_MAPPINGS + " missing from SERDEPROPERTIES");
+  }
+  try {
+    String tblName=getTableName(table);
+    Connector connector=connectionParams.getConnector();
+    TableOperations tableOpts=connector.tableOperations();
+    if (!tableOpts.exists(tblName)) {
+      if (!isExternal) {
+        tableOpts.create(tblName);
+      }
+ else {
+        throw new MetaException("Accumulo table " + tblName + " doesn't exist even though declared external");
+      }
+    }
+ else {
+      if (!isExternal) {
+        throw new MetaException("Table " + tblName + " already exists in Accumulo. Use CREATE EXTERNAL TABLE to register with Hive.");
+      }
+    }
+  }
+ catch (  AccumuloSecurityException e) {
+    throw new MetaException(StringUtils.stringifyException(e));
+  }
+catch (  TableExistsException e) {
+    throw new MetaException(StringUtils.stringifyException(e));
+  }
+catch (  AccumuloException e) {
+    throw new MetaException(StringUtils.stringifyException(e));
+  }
+}

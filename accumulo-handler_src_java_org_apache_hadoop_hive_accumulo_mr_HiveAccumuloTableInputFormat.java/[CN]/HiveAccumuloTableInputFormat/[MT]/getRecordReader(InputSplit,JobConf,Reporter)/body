@@ -1,0 +1,29 @@
+{
+  final ColumnMapper columnMapper;
+  try {
+    columnMapper=getColumnMapper(jobConf);
+  }
+ catch (  TooManyAccumuloColumnsException e) {
+    throw new IOException(e);
+  }
+  try {
+    final List<IteratorSetting> iterators=predicateHandler.getIterators(jobConf,columnMapper);
+    HiveAccumuloSplit hiveSplit=(HiveAccumuloSplit)inputSplit;
+    RangeInputSplit rangeSplit=hiveSplit.getSplit();
+    log.info("Split: " + rangeSplit);
+    if (null == rangeSplit.getIterators() || (rangeSplit.getIterators().isEmpty() && !iterators.isEmpty())) {
+      log.debug("Re-setting iterators on InputSplit due to Accumulo bug.");
+      rangeSplit.setIterators(iterators);
+    }
+    if (null == getTableName(rangeSplit)) {
+      final AccumuloConnectionParameters accumuloParams=new AccumuloConnectionParameters(jobConf);
+      log.debug("Re-setting table name on InputSplit due to Accumulo bug.");
+      setTableName(rangeSplit,accumuloParams.getAccumuloTableName());
+    }
+    final RecordReader<Text,PeekingIterator<Map.Entry<Key,Value>>> recordReader=accumuloInputFormat.getRecordReader(rangeSplit,jobConf,reporter);
+    return new HiveAccumuloRecordReader(recordReader,iterators.size());
+  }
+ catch (  SerDeException e) {
+    throw new IOException(StringUtils.stringifyException(e));
+  }
+}

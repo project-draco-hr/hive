@@ -1,0 +1,45 @@
+{
+  Preconditions.checkNotNull(columnSpec);
+  Preconditions.checkNotNull(columnName);
+  Preconditions.checkNotNull(columnType);
+  ColumnEncoding encoding=defaultEncoding;
+  if (ColumnEncoding.hasColumnEncoding(columnSpec)) {
+    String columnEncodingStr=ColumnEncoding.getColumnEncoding(columnSpec);
+    columnSpec=ColumnEncoding.stripCode(columnSpec);
+    if (AccumuloHiveConstants.ROWID.equalsIgnoreCase(columnSpec)) {
+      return new HiveAccumuloRowIdColumnMapping(columnSpec,ColumnEncoding.get(columnEncodingStr),columnName,columnType.getTypeName());
+    }
+ else {
+      Entry<String,String> pair=parseMapping(columnSpec);
+      if (isPrefix(pair.getValue())) {
+        if (!ColumnEncoding.isMapEncoding(columnEncodingStr)) {
+          throw new IllegalArgumentException("Expected map encoding for a map specification, " + columnSpec + " with encoding "+ columnEncodingStr);
+        }
+        Entry<ColumnEncoding,ColumnEncoding> encodings=ColumnEncoding.getMapEncoding(columnEncodingStr);
+        return new HiveAccumuloMapColumnMapping(pair.getKey(),pair.getValue(),encodings.getKey(),encodings.getValue(),columnName,columnType.getTypeName());
+      }
+ else {
+        return new HiveAccumuloColumnMapping(pair.getKey(),pair.getValue(),ColumnEncoding.getFromMapping(columnEncodingStr),columnName,columnType.getTypeName());
+      }
+    }
+  }
+ else {
+    if (AccumuloHiveConstants.ROWID.equalsIgnoreCase(columnSpec)) {
+      return new HiveAccumuloRowIdColumnMapping(columnSpec,defaultEncoding,columnName,columnType.getTypeName());
+    }
+ else {
+      Entry<String,String> pair=parseMapping(columnSpec);
+      boolean isPrefix=isPrefix(pair.getValue());
+      String cq=pair.getValue();
+      if (-1 != cq.indexOf(AccumuloHiveConstants.ESCAPED_ASTERISK)) {
+        cq=cq.replaceAll(AccumuloHiveConstants.ESCAPED_ASERTISK_REGEX,Character.toString(AccumuloHiveConstants.ASTERISK));
+      }
+      if (isPrefix) {
+        return new HiveAccumuloMapColumnMapping(pair.getKey(),cq.substring(0,cq.length() - 1),defaultEncoding,defaultEncoding,columnName,columnType.getTypeName());
+      }
+ else {
+        return new HiveAccumuloColumnMapping(pair.getKey(),cq,encoding,columnName,columnType.getTypeName());
+      }
+    }
+  }
+}
