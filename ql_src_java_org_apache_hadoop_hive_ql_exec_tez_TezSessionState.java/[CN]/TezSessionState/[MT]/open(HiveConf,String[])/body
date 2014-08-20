@@ -19,7 +19,7 @@
     commonLocalResources.put(utils.getBaseName(lr),lr);
   }
   Map<String,String> amEnv=new HashMap<String,String>();
-  MRHelpers.updateEnvironmentForMRAM(conf,amEnv);
+  MRHelpers.updateEnvBasedOnMRAMEnv(conf,amEnv);
   TezConfiguration tezConfig=new TezConfiguration(conf);
   tezConfig.set(TezConfiguration.TEZ_AM_STAGING_DIR,tezScratchDir.toUri().toString());
   if (HiveConf.getBoolVar(conf,ConfVars.HIVE_PREWARM_ENABLED)) {
@@ -27,7 +27,7 @@
     n=Math.max(tezConfig.getInt(TezConfiguration.TEZ_AM_SESSION_MIN_HELD_CONTAINERS,TezConfiguration.TEZ_AM_SESSION_MIN_HELD_CONTAINERS_DEFAULT),n);
     tezConfig.setInt(TezConfiguration.TEZ_AM_SESSION_MIN_HELD_CONTAINERS,n);
   }
-  session=new TezClient("HIVE-" + sessionId,tezConfig,true,commonLocalResources,null);
+  session=TezClient.create("HIVE-" + sessionId,tezConfig,true,commonLocalResources,null);
   LOG.info("Opening new Tez Session (id: " + sessionId + ", scratch dir: "+ tezScratchDir+ ")");
   session.start();
   if (HiveConf.getBoolVar(conf,ConfVars.HIVE_PREWARM_ENABLED)) {
@@ -37,9 +37,14 @@
     try {
       session.preWarm(prewarmVertex);
     }
- catch (    InterruptedException ie) {
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Hive Prewarm threw an exception ",ie);
+ catch (    IOException ie) {
+      if (ie.getMessage().contains("Interrupted while waiting")) {
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("Hive Prewarm threw an exception ",ie);
+        }
+      }
+ else {
+        throw ie;
       }
     }
   }

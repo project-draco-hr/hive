@@ -1,18 +1,19 @@
 {
-  TezRootInputInitializerContext rootInputContext=getContext();
-  MRInputUserPayloadProto userPayloadProto=MRHelpers.parseMRInputPayload(rootInputContext.getUserPayload());
-  Configuration conf=MRHelpers.createConfFromByteString(userPayloadProto.getConfigurationBytes());
+  InputInitializerContext rootInputContext=getContext();
+  MRInputUserPayloadProto userPayloadProto=MRInputHelpers.parseMRInputPayload(rootInputContext.getInputUserPayload());
+  Configuration conf=TezUtils.createConfFromByteString(userPayloadProto.getConfigurationBytes());
   boolean sendSerializedEvents=conf.getBoolean("mapreduce.tez.input.initializer.serialize.event.payload",true);
   JobConf jobConf=new JobConf(conf);
   ShimLoader.getHadoopShims().getMergedCredentials(jobConf);
   InputSplitInfoMem inputSplitInfo=null;
   String realInputFormatName=conf.get("mapred.input.format.class");
-  if (realInputFormatName != null && !realInputFormatName.isEmpty()) {
+  boolean groupingEnabled=userPayloadProto.getGroupingEnabled();
+  if (groupingEnabled) {
     InputFormat<?,?> inputFormat=(InputFormat<?,?>)ReflectionUtils.newInstance(Class.forName(realInputFormatName),jobConf);
     int totalResource=rootInputContext.getTotalAvailableResource().getMemory();
     int taskResource=rootInputContext.getVertexTaskResource().getMemory();
     int availableSlots=totalResource / taskResource;
-    float waves=conf.getFloat(TezConfiguration.TEZ_AM_GROUPING_SPLIT_WAVES,TezConfiguration.TEZ_AM_GROUPING_SPLIT_WAVES_DEFAULT);
+    float waves=conf.getFloat(TezMapReduceSplitsGrouper.TEZ_GROUPING_SPLIT_WAVES,TezMapReduceSplitsGrouper.TEZ_GROUPING_SPLIT_WAVES_DEFAULT);
     InputSplit[] splits=inputFormat.getSplits(jobConf,(int)(availableSlots * waves));
     LOG.info("Number of input splits: " + splits.length + ". "+ availableSlots+ " available slots, "+ waves+ " waves. Input format is: "+ realInputFormatName);
     Multimap<Integer,InputSplit> groupedSplits=generateGroupedSplits(jobConf,conf,splits,waves,availableSlots);
@@ -23,7 +24,7 @@
     inputSplitInfo=new InputSplitInfoMem(flatSplits,locationHints,flatSplits.length,null,jobConf);
   }
  else {
-    inputSplitInfo=MRHelpers.generateInputSplitsToMem(jobConf,false,0);
+    throw new RuntimeException("HiveInputFormat does not support non-grouped splits, InputFormatName is: " + realInputFormatName);
   }
   return createEventList(sendSerializedEvents,inputSplitInfo);
 }

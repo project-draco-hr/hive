@@ -3,11 +3,10 @@
   LOG.info("Root vertex not initialized");
   rootVertexInitialized=true;
   try {
-    MRInputUserPayloadProto protoPayload=MRHelpers.parseMRInputPayload(inputDescriptor.getUserPayload());
-    this.conf=MRHelpers.createConfFromByteString(protoPayload.getConfigurationBytes());
-    this.conf.set("mapred.input.format.class",TezGroupedSplitsInputFormat.class.getName());
-    MRInputUserPayloadProto updatedPayload=MRInputUserPayloadProto.newBuilder(protoPayload).setConfigurationBytes(MRHelpers.createByteStringFromConf(conf)).build();
-    inputDescriptor.setUserPayload(updatedPayload.toByteArray());
+    MRInputUserPayloadProto protoPayload=MRInputHelpers.parseMRInputPayload(inputDescriptor.getUserPayload());
+    this.conf=TezUtils.createConfFromByteString(protoPayload.getConfigurationBytes());
+    MRInputUserPayloadProto updatedPayload=MRInputUserPayloadProto.newBuilder(protoPayload).setGroupingEnabled(true).build();
+    inputDescriptor.setUserPayload(UserPayload.create(updatedPayload.toByteString().asReadOnlyByteBuffer()));
   }
  catch (  IOException e) {
     e.printStackTrace();
@@ -16,19 +15,19 @@
   boolean dataInformationEventSeen=false;
   Map<String,List<FileSplit>> pathFileSplitsMap=new TreeMap<String,List<FileSplit>>();
   for (  Event event : events) {
-    if (event instanceof RootInputConfigureVertexTasksEvent) {
+    if (event instanceof InputConfigureVertexTasksEvent) {
       Preconditions.checkState(dataInformationEventSeen == false);
       Preconditions.checkState(context.getVertexNumTasks(context.getVertexName()) == -1,"Parallelism for the vertex should be set to -1 if the InputInitializer is setting parallelism");
-      RootInputConfigureVertexTasksEvent cEvent=(RootInputConfigureVertexTasksEvent)event;
+      InputConfigureVertexTasksEvent cEvent=(InputConfigureVertexTasksEvent)event;
       configureVertexTaskEvent=cEvent;
       dataInformationEvents=Lists.newArrayListWithCapacity(configureVertexTaskEvent.getNumTasks());
     }
-    if (event instanceof RootInputUpdatePayloadEvent) {
+    if (event instanceof InputUpdatePayloadEvent) {
       Preconditions.checkState(false);
     }
- else     if (event instanceof RootInputDataInformationEvent) {
+ else     if (event instanceof InputDataInformationEvent) {
       dataInformationEventSeen=true;
-      RootInputDataInformationEvent diEvent=(RootInputDataInformationEvent)event;
+      InputDataInformationEvent diEvent=(InputDataInformationEvent)event;
       dataInformationEvents.add(diEvent);
       FileSplit fileSplit;
       try {
@@ -49,7 +48,7 @@
   try {
     int totalResource=context.getTotalAvailableResource().getMemory();
     int taskResource=context.getVertexTaskResource().getMemory();
-    float waves=conf.getFloat(TezConfiguration.TEZ_AM_GROUPING_SPLIT_WAVES,TezConfiguration.TEZ_AM_GROUPING_SPLIT_WAVES_DEFAULT);
+    float waves=conf.getFloat(TezMapReduceSplitsGrouper.TEZ_GROUPING_SPLIT_WAVES,TezMapReduceSplitsGrouper.TEZ_GROUPING_SPLIT_WAVES_DEFAULT);
     int availableSlots=totalResource / taskResource;
     LOG.info("Grouping splits. " + availableSlots + " available slots, "+ waves+ " waves.");
     JobConf jobConf=new JobConf(conf);

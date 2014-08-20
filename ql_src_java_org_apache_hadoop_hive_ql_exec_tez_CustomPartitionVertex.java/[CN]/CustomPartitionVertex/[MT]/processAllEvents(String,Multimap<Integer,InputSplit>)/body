@@ -10,27 +10,27 @@
       taskCount++;
     }
   }
-  EdgeManagerDescriptor hiveEdgeManagerDesc=new EdgeManagerDescriptor(CustomPartitionEdge.class.getName());
-  byte[] payload=getBytePayload(bucketToTaskMap);
+  EdgeManagerPluginDescriptor hiveEdgeManagerDesc=EdgeManagerPluginDescriptor.create(CustomPartitionEdge.class.getName());
+  UserPayload payload=getBytePayload(bucketToTaskMap);
   hiveEdgeManagerDesc.setUserPayload(payload);
-  Map<String,EdgeManagerDescriptor> emMap=Maps.newHashMap();
+  Map<String,EdgeManagerPluginDescriptor> emMap=Maps.newHashMap();
   for (  Entry<String,EdgeProperty> edgeEntry : context.getInputVertexEdgeProperties().entrySet()) {
     if (edgeEntry.getValue().getDataMovementType() == DataMovementType.CUSTOM && edgeEntry.getValue().getEdgeManagerDescriptor().getClassName().equals(CustomPartitionEdge.class.getName())) {
       emMap.put(edgeEntry.getKey(),hiveEdgeManagerDesc);
     }
   }
   LOG.info("Task count is " + taskCount);
-  List<RootInputDataInformationEvent> taskEvents=Lists.newArrayListWithCapacity(finalSplits.size());
+  List<InputDataInformationEvent> taskEvents=Lists.newArrayListWithCapacity(finalSplits.size());
   int count=0;
   for (  InputSplit inputSplit : finalSplits) {
-    MRSplitProto serializedSplit=MRHelpers.createSplitProto(inputSplit);
-    RootInputDataInformationEvent diEvent=new RootInputDataInformationEvent(count,serializedSplit.toByteArray());
+    MRSplitProto serializedSplit=MRInputHelpers.createSplitProto(inputSplit);
+    InputDataInformationEvent diEvent=InputDataInformationEvent.create(count,serializedSplit.toByteString().asReadOnlyByteBuffer());
     diEvent.setTargetIndex(count);
     count++;
     taskEvents.add(diEvent);
   }
-  Map<String,RootInputSpecUpdate> rootInputSpecUpdate=new HashMap<String,RootInputSpecUpdate>();
-  rootInputSpecUpdate.put(inputName,RootInputSpecUpdate.getDefaultSinglePhysicalInputSpecUpdate());
-  context.setVertexParallelism(taskCount,new VertexLocationHint(grouper.createTaskLocationHints(finalSplits.toArray(new InputSplit[finalSplits.size()]))),emMap,rootInputSpecUpdate);
+  Map<String,InputSpecUpdate> rootInputSpecUpdate=new HashMap<String,InputSpecUpdate>();
+  rootInputSpecUpdate.put(inputName,InputSpecUpdate.getDefaultSinglePhysicalInputSpecUpdate());
+  context.setVertexParallelism(taskCount,VertexLocationHint.create(grouper.createTaskLocationHints(finalSplits.toArray(new InputSplit[finalSplits.size()]))),emMap,rootInputSpecUpdate);
   context.addRootInputEvents(inputName,taskEvents);
 }
