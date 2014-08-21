@@ -43,7 +43,23 @@ default :
 optiqJoinType=JoinRelType.INNER;
 break;
 }
+if (leftSemiJoin) {
+List<RelDataTypeField> sysFieldList=new ArrayList<RelDataTypeField>();
+List<RexNode> leftJoinKeys=new ArrayList<RexNode>();
+List<RexNode> rightJoinKeys=new ArrayList<RexNode>();
+RexNode nonEquiConds=RelOptUtil.splitJoinCondition(sysFieldList,leftRel,rightRel,optiqJoinCond,leftJoinKeys,rightJoinKeys,null,null);
+if (!nonEquiConds.isAlwaysTrue()) {
+throw new SemanticException("Non equality condition not supported in Semi-Join" + nonEquiConds);
+}
+RelNode[] inputRels=new RelNode[]{leftRel,rightRel};
+final List<Integer> leftKeys=new ArrayList<Integer>();
+final List<Integer> rightKeys=new ArrayList<Integer>();
+optiqJoinCond=HiveOptiqUtil.projectNonColumnEquiConditions(HiveProjectRel.DEFAULT_PROJECT_FACTORY,inputRels,leftJoinKeys,rightJoinKeys,0,leftKeys,rightKeys);
+joinRel=new SemiJoinRel(m_cluster,m_cluster.traitSetOf(HiveRel.CONVENTION),inputRels[0],inputRels[1],optiqJoinCond,ImmutableIntList.copyOf(leftKeys),ImmutableIntList.copyOf(rightKeys));
+}
+ else {
 joinRel=HiveJoinRel.getJoin(m_cluster,leftRel,rightRel,optiqJoinCond,optiqJoinType,leftSemiJoin);
+}
 m_relToHiveColNameOptiqPosMap.put(joinRel,this.buildHiveToOptiqColumnMap(joinRR,joinRel));
 m_relToHiveRR.put(joinRel,joinRR);
 return joinRel;

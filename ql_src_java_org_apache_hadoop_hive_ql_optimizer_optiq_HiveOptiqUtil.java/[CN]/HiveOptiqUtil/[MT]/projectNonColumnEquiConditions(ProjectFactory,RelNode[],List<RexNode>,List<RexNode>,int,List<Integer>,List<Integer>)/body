@@ -1,0 +1,77 @@
+{
+  RelNode leftRel=inputRels[0];
+  RelNode rightRel=inputRels[1];
+  RexBuilder rexBuilder=leftRel.getCluster().getRexBuilder();
+  RexNode outJoinCond=null;
+  int origLeftInputSize=leftRel.getRowType().getFieldCount();
+  int origRightInputSize=rightRel.getRowType().getFieldCount();
+  List<RexNode> newLeftFields=new ArrayList<RexNode>();
+  List<String> newLeftFieldNames=new ArrayList<String>();
+  List<RexNode> newRightFields=new ArrayList<RexNode>();
+  List<String> newRightFieldNames=new ArrayList<String>();
+  int leftKeyCount=leftJoinKeys.size();
+  int i;
+  for (i=0; i < origLeftInputSize; i++) {
+    final RelDataTypeField field=leftRel.getRowType().getFieldList().get(i);
+    newLeftFields.add(rexBuilder.makeInputRef(field.getType(),i));
+    newLeftFieldNames.add(field.getName());
+  }
+  for (i=0; i < origRightInputSize; i++) {
+    final RelDataTypeField field=rightRel.getRowType().getFieldList().get(i);
+    newRightFields.add(rexBuilder.makeInputRef(field.getType(),i));
+    newRightFieldNames.add(field.getName());
+  }
+  int newKeyCount=0;
+  List<Pair<Integer,Integer>> origColEqConds=new ArrayList<Pair<Integer,Integer>>();
+  for (i=0; i < leftKeyCount; i++) {
+    RexNode leftKey=leftJoinKeys.get(i);
+    RexNode rightKey=rightJoinKeys.get(i);
+    if (leftKey instanceof RexInputRef && rightKey instanceof RexInputRef) {
+      origColEqConds.add(Pair.of(((RexInputRef)leftKey).getIndex(),((RexInputRef)rightKey).getIndex()));
+    }
+ else {
+      newLeftFields.add(leftKey);
+      newLeftFieldNames.add(null);
+      newRightFields.add(rightKey);
+      newRightFieldNames.add(null);
+      newKeyCount++;
+    }
+  }
+  for (i=0; i < origColEqConds.size(); i++) {
+    Pair<Integer,Integer> p=origColEqConds.get(i);
+    RexNode leftKey=leftJoinKeys.get(p.left);
+    RexNode rightKey=rightJoinKeys.get(p.right);
+    leftKeys.add(p.left);
+    rightKeys.add(p.right);
+    RexNode cond=rexBuilder.makeCall(SqlStdOperatorTable.EQUALS,rexBuilder.makeInputRef(leftKey.getType(),systemColCount + p.left),rexBuilder.makeInputRef(rightKey.getType(),systemColCount + origLeftInputSize + newKeyCount+ p.right));
+    if (outJoinCond == null) {
+      outJoinCond=cond;
+    }
+ else {
+      outJoinCond=rexBuilder.makeCall(SqlStdOperatorTable.AND,outJoinCond,cond);
+    }
+  }
+  if (newKeyCount == 0) {
+    return outJoinCond;
+  }
+  int newLeftOffset=systemColCount + origLeftInputSize;
+  int newRightOffset=systemColCount + origLeftInputSize + origRightInputSize+ newKeyCount;
+  for (i=0; i < newKeyCount; i++) {
+    leftKeys.add(origLeftInputSize + i);
+    rightKeys.add(origRightInputSize + i);
+    RexNode cond=rexBuilder.makeCall(SqlStdOperatorTable.EQUALS,rexBuilder.makeInputRef(newLeftFields.get(i).getType(),newLeftOffset + i),rexBuilder.makeInputRef(newLeftFields.get(i).getType(),newRightOffset + i));
+    if (outJoinCond == null) {
+      outJoinCond=cond;
+    }
+ else {
+      outJoinCond=rexBuilder.makeCall(SqlStdOperatorTable.AND,outJoinCond,cond);
+    }
+  }
+  if (newKeyCount > 0) {
+    leftRel=factory.createProject(leftRel,newLeftFields,SqlValidatorUtil.uniquify(newLeftFieldNames));
+    rightRel=factory.createProject(rightRel,newRightFields,SqlValidatorUtil.uniquify(newRightFieldNames));
+  }
+  inputRels[0]=leftRel;
+  inputRels[1]=rightRel;
+  return outJoinCond;
+}
