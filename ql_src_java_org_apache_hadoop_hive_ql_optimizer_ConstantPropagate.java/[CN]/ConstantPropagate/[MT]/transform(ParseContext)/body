@@ -1,0 +1,26 @@
+{
+  pGraphContext=pactx;
+  opToParseCtxMap=pGraphContext.getOpParseCtx();
+  ConstantPropagateProcCtx cppCtx=new ConstantPropagateProcCtx(opToParseCtxMap);
+  Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
+  opRules.put(new RuleRegExp("R1",FilterOperator.getOperatorName() + "%"),ConstantPropagateProcFactory.getFilterProc());
+  opRules.put(new RuleRegExp("R2",GroupByOperator.getOperatorName() + "%"),ConstantPropagateProcFactory.getGroupByProc());
+  opRules.put(new RuleRegExp("R3",SelectOperator.getOperatorName() + "%"),ConstantPropagateProcFactory.getSelectProc());
+  opRules.put(new RuleRegExp("R4",FileSinkOperator.getOperatorName() + "%"),ConstantPropagateProcFactory.getFileSinkProc());
+  opRules.put(new RuleRegExp("R5",ReduceSinkOperator.getOperatorName() + "%"),ConstantPropagateProcFactory.getReduceSinkProc());
+  opRules.put(new RuleRegExp("R6",JoinOperator.getOperatorName() + "%"),ConstantPropagateProcFactory.getJoinProc());
+  opRules.put(new RuleRegExp("R7",TableScanOperator.getOperatorName() + "%"),ConstantPropagateProcFactory.getTableScanProc());
+  opRules.put(new RuleRegExp("R8",ScriptOperator.getOperatorName() + "%"),ConstantPropagateProcFactory.getStopProc());
+  Dispatcher disp=new DefaultRuleDispatcher(ConstantPropagateProcFactory.getDefaultProc(),opRules,cppCtx);
+  GraphWalker ogw=new ConstantPropagateWalker(disp);
+  ArrayList<Node> topNodes=new ArrayList<Node>();
+  topNodes.addAll(pGraphContext.getTopOps().values());
+  ogw.startWalking(topNodes,null);
+  for (  Operator<? extends Serializable> opToDelete : cppCtx.getOpToDelete()) {
+    if (opToDelete.getParentOperators() == null || opToDelete.getParentOperators().size() != 1) {
+      throw new RuntimeException("Error pruning operator " + opToDelete + ". It should have only 1 parent.");
+    }
+    opToDelete.getParentOperators().get(0).removeChildAndAdoptItsChildren(opToDelete);
+  }
+  return pGraphContext;
+}

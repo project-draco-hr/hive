@@ -1,6 +1,5 @@
 {
   rawStoreClassName=hiveConf.getVar(HiveConf.ConfVars.METASTORE_RAW_STORE_IMPL);
-  checkForDefaultDb=hiveConf.getBoolean("hive.metastore.checkForDefaultDb",true);
   initListeners=MetaStoreUtils.getMetaStoreListeners(MetaStoreInitListener.class,hiveConf,hiveConf.getVar(HiveConf.ConfVars.METASTORE_INIT_HOOKS));
   for (  MetaStoreInitListener singleInitListener : initListeners) {
     MetaStoreInitContext context=new MetaStoreInitContext();
@@ -10,9 +9,12 @@
   alterHandler=(AlterHandler)ReflectionUtils.newInstance(MetaStoreUtils.getClass(alterHandlerName),hiveConf);
   wh=new Warehouse(hiveConf);
 synchronized (HMSHandler.class) {
-    createDefaultDB();
-    createDefaultRoles();
-    addAdminUsers();
+    if (currentUrl == null || !currentUrl.equals(MetaStoreInit.getConnectionURL(hiveConf))) {
+      createDefaultDB();
+      createDefaultRoles();
+      addAdminUsers();
+      currentUrl=MetaStoreInit.getConnectionURL(hiveConf);
+    }
   }
   if (hiveConf.getBoolean("hive.metastore.metrics.enabled",false)) {
     try {
@@ -26,7 +28,7 @@ synchronized (HMSHandler.class) {
   listeners=MetaStoreUtils.getMetaStoreListeners(MetaStoreEventListener.class,hiveConf,hiveConf.getVar(HiveConf.ConfVars.METASTORE_EVENT_LISTENERS));
   endFunctionListeners=MetaStoreUtils.getMetaStoreListeners(MetaStoreEndFunctionListener.class,hiveConf,hiveConf.getVar(HiveConf.ConfVars.METASTORE_END_FUNCTION_LISTENERS));
   String partitionValidationRegex=hiveConf.getVar(HiveConf.ConfVars.METASTORE_PARTITION_NAME_WHITELIST_PATTERN);
-  if (partitionValidationRegex != null && partitionValidationRegex != "") {
+  if (partitionValidationRegex != null && !partitionValidationRegex.isEmpty()) {
     partitionValidationPattern=Pattern.compile(partitionValidationRegex);
   }
  else {
@@ -37,5 +39,4 @@ synchronized (HMSHandler.class) {
     Timer cleaner=new Timer("Metastore Events Cleaner Thread",true);
     cleaner.schedule(new EventCleanerTask(this),cleanFreq,cleanFreq);
   }
-  return true;
 }

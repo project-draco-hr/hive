@@ -5,7 +5,9 @@
   HiveOperation op=ss.getHiveOperation();
   Hive db=sem.getDb();
   if (ss.isAuthorizationModeV2()) {
-    doAuthorizationV2(ss,op,inputs,outputs,command);
+    ColumnAccessInfo colAccessInfo=sem.getColumnAccessInfo();
+    Map<String,List<String>> tab2Cols=colAccessInfo != null ? colAccessInfo.getTableToColumnAccessMap() : null;
+    doAuthorizationV2(ss,op,inputs,outputs,command,tab2Cols);
     return;
   }
   if (op == null) {
@@ -69,45 +71,7 @@
         }
       }
     }
-    if (op.equals(HiveOperation.CREATETABLE_AS_SELECT) || op.equals(HiveOperation.QUERY)) {
-      SemanticAnalyzer querySem=(SemanticAnalyzer)sem;
-      ParseContext parseCtx=querySem.getParseContext();
-      Map<TableScanOperator,Table> tsoTopMap=parseCtx.getTopToTable();
-      for (      Map.Entry<String,Operator<? extends OperatorDesc>> topOpMap : querySem.getParseContext().getTopOps().entrySet()) {
-        Operator<? extends OperatorDesc> topOp=topOpMap.getValue();
-        if (topOp instanceof TableScanOperator && tsoTopMap.containsKey(topOp)) {
-          TableScanOperator tableScanOp=(TableScanOperator)topOp;
-          Table tbl=tsoTopMap.get(tableScanOp);
-          List<Integer> neededColumnIds=tableScanOp.getNeededColumnIDs();
-          List<FieldSchema> columns=tbl.getCols();
-          List<String> cols=new ArrayList<String>();
-          for (int i=0; i < neededColumnIds.size(); i++) {
-            cols.add(columns.get(neededColumnIds.get(i)).getName());
-          }
-          if (tbl.isPartitioned() && tableUsePartLevelAuth.get(tbl.getTableName()) == Boolean.TRUE) {
-            String alias_id=topOpMap.getKey();
-            PrunedPartitionList partsList=PartitionPruner.prune(tableScanOp,parseCtx,alias_id);
-            Set<Partition> parts=partsList.getPartitions();
-            for (            Partition part : parts) {
-              List<String> existingCols=part2Cols.get(part);
-              if (existingCols == null) {
-                existingCols=new ArrayList<String>();
-              }
-              existingCols.addAll(cols);
-              part2Cols.put(part,existingCols);
-            }
-          }
- else {
-            List<String> existingCols=tab2Cols.get(tbl);
-            if (existingCols == null) {
-              existingCols=new ArrayList<String>();
-            }
-            existingCols.addAll(cols);
-            tab2Cols.put(tbl,existingCols);
-          }
-        }
-      }
-    }
+    getTablePartitionUsedColumns(op,sem,tab2Cols,part2Cols,tableUsePartLevelAuth);
     Set<String> tableAuthChecked=new HashSet<String>();
     for (    ReadEntity read : inputs) {
       if (read.isDummy()) {
@@ -121,7 +85,7 @@
       if (read.getPartition() != null) {
         Partition partition=read.getPartition();
         tbl=partition.getTable();
-        if (tableUsePartLevelAuth.get(tbl.getTableName()) == Boolean.TRUE) {
+        if (Boolean.TRUE.equals(tableUsePartLevelAuth.get(tbl.getTableName()))) {
           List<String> cols=part2Cols.get(partition);
           if (cols != null && cols.size() > 0) {
             authorizer.authorize(partition.getTable(),partition,cols,op.getInputRequiredPrivileges(),null);
@@ -132,7 +96,7 @@
           continue;
         }
       }
-      if (tbl != null && !tableAuthChecked.contains(tbl.getTableName()) && !(tableUsePartLevelAuth.get(tbl.getTableName()) == Boolean.TRUE)) {
+      if (tbl != null && !tableAuthChecked.contains(tbl.getTableName()) && !(Boolean.TRUE.equals(tableUsePartLevelAuth.get(tbl.getTableName())))) {
         List<String> cols=tab2Cols.get(tbl);
         if (cols != null && cols.size() > 0) {
           authorizer.authorize(tbl,null,cols,op.getInputRequiredPrivileges(),null);

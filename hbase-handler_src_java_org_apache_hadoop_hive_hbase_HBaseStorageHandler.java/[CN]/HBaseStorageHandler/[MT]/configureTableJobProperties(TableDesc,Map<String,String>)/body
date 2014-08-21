@@ -27,6 +27,30 @@
   Configuration jobConf=getJobConf();
   addHBaseResources(jobConf,jobProperties);
   if (this.configureInputJobProps) {
+    String snapshotName=HiveConf.getVar(jobConf,HiveConf.ConfVars.HIVE_HBASE_SNAPSHOT_NAME);
+    if (snapshotName != null) {
+      HBaseTableSnapshotInputFormatUtil.assertSupportsTableSnapshots();
+      try {
+        String restoreDir=HiveConf.getVar(jobConf,HiveConf.ConfVars.HIVE_HBASE_SNAPSHOT_RESTORE_DIR);
+        if (restoreDir == null) {
+          throw new IllegalArgumentException("Cannot process HBase snapshot without specifying " + HiveConf.ConfVars.HIVE_HBASE_SNAPSHOT_RESTORE_DIR);
+        }
+        HBaseTableSnapshotInputFormatUtil.configureJob(hbaseConf,snapshotName,new Path(restoreDir));
+        jobProperties.put(HBASE_SNAPSHOT_NAME_KEY,hbaseConf.get(HBASE_SNAPSHOT_NAME_KEY));
+        if (hbaseConf.get(HBASE_SNAPSHOT_TABLE_DIR_KEY,null) != null) {
+          jobProperties.put(HBASE_SNAPSHOT_TABLE_DIR_KEY,hbaseConf.get(HBASE_SNAPSHOT_TABLE_DIR_KEY));
+        }
+ else {
+          jobProperties.put(HBASE_SNAPSHOT_RESTORE_DIR_KEY,hbaseConf.get(HBASE_SNAPSHOT_RESTORE_DIR_KEY));
+        }
+        TableMapReduceUtil.resetCacheConfig(hbaseConf);
+        jobProperties.put(HBASE_OFFHEAP_PCT_KEY,hbaseConf.get(HBASE_OFFHEAP_PCT_KEY));
+        jobProperties.put(HBASE_BUCKETCACHE_SIZE_KEY,hbaseConf.get(HBASE_BUCKETCACHE_SIZE_KEY));
+      }
+ catch (      IOException e) {
+        throw new IllegalArgumentException(e);
+      }
+    }
     for (    String k : jobProperties.keySet()) {
       jobConf.set(k,jobProperties.get(k));
     }

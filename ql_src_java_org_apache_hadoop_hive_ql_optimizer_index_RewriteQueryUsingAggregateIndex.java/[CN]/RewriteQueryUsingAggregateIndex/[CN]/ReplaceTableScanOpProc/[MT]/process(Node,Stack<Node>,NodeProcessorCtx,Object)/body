@@ -1,17 +1,13 @@
 {
   TableScanOperator scanOperator=(TableScanOperator)nd;
-  rewriteQueryCtx=(RewriteQueryUsingAggregateIndexCtx)ctx;
-  String baseTableName=rewriteQueryCtx.getBaseTableName();
-  String alias=null;
-  if (baseTableName.contains(":")) {
-    alias=(baseTableName.split(":"))[0];
-  }
+  RewriteQueryUsingAggregateIndexCtx rewriteQueryCtx=(RewriteQueryUsingAggregateIndexCtx)ctx;
+  String alias=rewriteQueryCtx.getAlias();
   Map<TableScanOperator,Table> topToTable=rewriteQueryCtx.getParseContext().getTopToTable();
   Map<String,Operator<? extends OperatorDesc>> topOps=rewriteQueryCtx.getParseContext().getTopOps();
   Map<Operator<? extends OperatorDesc>,OpParseContext> opParseContext=rewriteQueryCtx.getParseContext().getOpParseCtx();
   OpParseContext operatorContext=opParseContext.get(scanOperator);
+  topOps.remove(alias);
   topToTable.remove(scanOperator);
-  topOps.remove(baseTableName);
   opParseContext.remove(scanOperator);
   TableScanDesc indexTableScanDesc=new TableScanDesc();
   indexTableScanDesc.setGatherStats(false);
@@ -31,9 +27,9 @@
   RowResolver rr=new RowResolver();
   try {
     StructObjectInspector rowObjectInspector=(StructObjectInspector)indexTableHandle.getDeserializer().getObjectInspector();
-    List<? extends StructField> fields=rowObjectInspector.getAllStructFieldRefs();
-    for (int i=0; i < fields.size(); i++) {
-      rr.put(indexTableName,fields.get(i).getFieldName(),new ColumnInfo(fields.get(i).getFieldName(),TypeInfoUtils.getTypeInfoFromObjectInspector(fields.get(i).getFieldObjectInspector()),indexTableName,false));
+    for (    String column : rewriteQueryCtx.getColumns()) {
+      StructField field=rowObjectInspector.getStructFieldRef(column);
+      rr.put(indexTableName,field.getFieldName(),new ColumnInfo(field.getFieldName(),TypeInfoUtils.getTypeInfoFromObjectInspector(field.getFieldObjectInspector()),indexTableName,false));
     }
   }
  catch (  SerDeException e) {
@@ -42,20 +38,19 @@
     throw new SemanticException(e.getMessage(),e);
   }
   operatorContext.setRowResolver(rr);
-  String tabNameWithAlias=null;
-  if (alias != null) {
-    tabNameWithAlias=alias + ":" + indexTableName;
-  }
- else {
-    tabNameWithAlias=indexTableName;
+  String newAlias=indexTableName;
+  int index=alias.lastIndexOf(":");
+  if (index >= 0) {
+    newAlias=alias.substring(0,index) + ":" + indexTableName;
   }
   topToTable.put(scanOperator,indexTableHandle);
-  scanOperator.getConf().setAlias(tabNameWithAlias);
+  scanOperator.getConf().setAlias(newAlias);
   scanOperator.setAlias(indexTableName);
-  topOps.put(tabNameWithAlias,scanOperator);
+  topOps.put(newAlias,scanOperator);
   opParseContext.put(scanOperator,operatorContext);
   rewriteQueryCtx.getParseContext().setTopToTable((HashMap<TableScanOperator,Table>)topToTable);
   rewriteQueryCtx.getParseContext().setTopOps((HashMap<String,Operator<? extends OperatorDesc>>)topOps);
   rewriteQueryCtx.getParseContext().setOpParseCtx((LinkedHashMap<Operator<? extends OperatorDesc>,OpParseContext>)opParseContext);
+  ColumnPrunerProcFactory.setupNeededColumns(scanOperator,rr,new ArrayList<String>(rewriteQueryCtx.getColumns()));
   return null;
 }

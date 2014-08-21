@@ -1,0 +1,48 @@
+{
+  List<HivePrivilegeObject> hivePrivobjs=new ArrayList<HivePrivilegeObject>();
+  if (privObjects == null) {
+    return hivePrivobjs;
+  }
+  for (  Entity privObject : privObjects) {
+    HivePrivilegeObjectType privObjType=AuthorizationUtils.getHivePrivilegeObjectType(privObject.getType());
+    if (privObject instanceof ReadEntity && !((ReadEntity)privObject).isDirect()) {
+      continue;
+    }
+    if (privObject instanceof WriteEntity && ((WriteEntity)privObject).isTempURI()) {
+      continue;
+    }
+    String dbname=null;
+    String objName=null;
+    List<String> partKeys=null;
+    List<String> columns=null;
+switch (privObject.getType()) {
+case DATABASE:
+      dbname=privObject.getDatabase().getName();
+    break;
+case TABLE:
+  dbname=privObject.getTable().getDbName();
+objName=privObject.getTable().getTableName();
+columns=tableName2Cols == null ? null : tableName2Cols.get(Table.getCompleteName(dbname,objName));
+break;
+case DFS_DIR:
+case LOCAL_DIR:
+objName=privObject.getD();
+break;
+case FUNCTION:
+if (privObject.getDatabase() != null) {
+dbname=privObject.getDatabase().getName();
+}
+objName=privObject.getFunctionName();
+break;
+case DUMMYPARTITION:
+case PARTITION:
+continue;
+default :
+throw new AssertionError("Unexpected object type");
+}
+HivePrivObjectActionType actionType=AuthorizationUtils.getActionType(privObject);
+HivePrivilegeObject hPrivObject=new HivePrivilegeObject(privObjType,dbname,objName,partKeys,columns,actionType,null);
+hivePrivobjs.add(hPrivObject);
+}
+return hivePrivobjs;
+}

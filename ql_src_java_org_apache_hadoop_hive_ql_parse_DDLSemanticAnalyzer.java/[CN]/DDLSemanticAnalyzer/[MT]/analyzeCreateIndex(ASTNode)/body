@@ -1,7 +1,7 @@
 {
   String indexName=unescapeIdentifier(ast.getChild(0).getText());
   String typeName=unescapeSQLString(ast.getChild(1).getText());
-  String tableName=getUnescapedName((ASTNode)ast.getChild(2));
+  String[] qTabName=getQualifiedTableName((ASTNode)ast.getChild(2));
   List<String> indexedCols=getColumnNames((ASTNode)ast.getChild(3));
   IndexType indexType=HiveIndex.getIndexType(typeName);
   if (indexType != null) {
@@ -62,7 +62,15 @@ indexComment=unescapeSQLString(child.getText());
 }
 }
 storageFormat.fillDefaultStorageFormat();
-CreateIndexDesc crtIndexDesc=new CreateIndexDesc(tableName,indexName,indexedCols,indexTableName,deferredRebuild,storageFormat.getInputFormat(),storageFormat.getOutputFormat(),storageFormat.getStorageHandler(),typeName,location,idxProps,tblProps,storageFormat.getSerde(),storageFormat.getSerdeProps(),rowFormatParams.collItemDelim,rowFormatParams.fieldDelim,rowFormatParams.fieldEscape,rowFormatParams.lineDelim,rowFormatParams.mapKeyDelim,indexComment);
+if (indexTableName == null) {
+indexTableName=MetaStoreUtils.getIndexTableName(qTabName[0],qTabName[1],indexName);
+indexTableName=qTabName[0] + "." + indexTableName;
+}
+ else {
+indexTableName=getDotName(Utilities.getDbTableName(indexTableName));
+}
+inputs.add(new ReadEntity(getTable(qTabName)));
+CreateIndexDesc crtIndexDesc=new CreateIndexDesc(getDotName(qTabName),indexName,indexedCols,indexTableName,deferredRebuild,storageFormat.getInputFormat(),storageFormat.getOutputFormat(),storageFormat.getStorageHandler(),typeName,location,idxProps,tblProps,storageFormat.getSerde(),storageFormat.getSerdeProps(),rowFormatParams.collItemDelim,rowFormatParams.fieldDelim,rowFormatParams.fieldEscape,rowFormatParams.lineDelim,rowFormatParams.mapKeyDelim,indexComment);
 Task<?> createIndex=TaskFactory.get(new DDLWork(getInputs(),getOutputs(),crtIndexDesc),conf);
 rootTasks.add(createIndex);
 }

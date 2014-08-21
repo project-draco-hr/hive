@@ -1,79 +1,12 @@
 {
-  if (SessionState.get().isAuthorizationModeV2()) {
-    return showGrantsV2(showGrantDesc);
-  }
-  PrincipalDesc principalDesc=showGrantDesc.getPrincipalDesc();
-  PrivilegeObjectDesc hiveObjectDesc=showGrantDesc.getHiveObj();
-  String principalName=principalDesc == null ? null : principalDesc.getName();
-  PrincipalType type=principalDesc == null ? null : principalDesc.getType();
-  List<HiveObjectPrivilege> privs=new ArrayList<HiveObjectPrivilege>();
+  HiveAuthorizer authorizer=getSessionAuthorizer();
   try {
-    if (hiveObjectDesc == null) {
-      privs.addAll(db.showPrivilegeGrant(HiveObjectType.GLOBAL,principalName,type,null,null,null,null));
-    }
- else     if (hiveObjectDesc != null && hiveObjectDesc.getObject() == null) {
-      privs.addAll(db.showPrivilegeGrant(null,principalName,type,null,null,null,null));
-    }
- else {
-      String obj=hiveObjectDesc.getObject();
-      boolean notFound=true;
-      String dbName=null;
-      String tableName=null;
-      Table tableObj=null;
-      Database dbObj=null;
-      if (hiveObjectDesc.getTable()) {
-        String[] dbTab=splitTableName(obj);
-        dbName=dbTab[0];
-        tableName=dbTab[1];
-        dbObj=db.getDatabase(dbName);
-        tableObj=db.getTable(dbName,tableName);
-        notFound=(dbObj == null || tableObj == null);
-      }
- else {
-        dbName=hiveObjectDesc.getObject();
-        dbObj=db.getDatabase(dbName);
-        notFound=(dbObj == null);
-      }
-      if (notFound) {
-        throw new HiveException(obj + " can not be found");
-      }
-      String partName=null;
-      List<String> partValues=null;
-      if (hiveObjectDesc.getPartSpec() != null) {
-        partName=Warehouse.makePartName(hiveObjectDesc.getPartSpec(),false);
-        partValues=Warehouse.getPartValuesFromPartName(partName);
-      }
-      if (!hiveObjectDesc.getTable()) {
-        privs.addAll(db.showPrivilegeGrant(HiveObjectType.DATABASE,principalName,type,dbName,null,null,null));
-      }
- else {
-        if (showGrantDesc.getColumns() != null) {
-          for (          String columnName : showGrantDesc.getColumns()) {
-            privs.addAll(db.showPrivilegeGrant(HiveObjectType.COLUMN,principalName,type,dbName,tableName,partValues,columnName));
-          }
-        }
- else         if (hiveObjectDesc.getPartSpec() != null) {
-          privs.addAll(db.showPrivilegeGrant(HiveObjectType.PARTITION,principalName,type,dbName,tableName,partValues,null));
-        }
- else {
-          privs.addAll(db.showPrivilegeGrant(HiveObjectType.TABLE,principalName,type,dbName,tableName,null,null));
-        }
-      }
-    }
+    List<HivePrivilegeInfo> privInfos=authorizer.showPrivileges(AuthorizationUtils.getHivePrincipal(showGrantDesc.getPrincipalDesc()),AuthorizationUtils.getHivePrivilegeObject(showGrantDesc.getHiveObj()));
     boolean testMode=conf.getBoolVar(HiveConf.ConfVars.HIVE_IN_TEST);
-    writeToFile(writeGrantInfo(privs,testMode),showGrantDesc.getResFile());
+    writeToFile(writeGrantInfo(privInfos,testMode),showGrantDesc.getResFile());
   }
- catch (  FileNotFoundException e) {
-    LOG.info("show table status: " + stringifyException(e));
-    return 1;
-  }
-catch (  IOException e) {
-    LOG.info("show table status: " + stringifyException(e));
-    return 1;
-  }
-catch (  Exception e) {
-    e.printStackTrace();
-    throw new HiveException(e);
+ catch (  IOException e) {
+    throw new HiveException("Error in show grant statement",e);
   }
   return 0;
 }

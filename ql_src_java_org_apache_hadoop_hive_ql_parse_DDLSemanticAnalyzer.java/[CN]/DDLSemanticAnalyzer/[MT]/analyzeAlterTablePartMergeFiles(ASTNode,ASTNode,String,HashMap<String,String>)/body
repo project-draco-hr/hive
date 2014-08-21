@@ -12,7 +12,7 @@
     boolean isArchived=false;
     boolean checkIndex=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_CONCATENATE_CHECK_INDEX);
     if (checkIndex) {
-      List<Index> indexes=db.getIndexes(tblObj.getDbName(),tableName,Short.MAX_VALUE);
+      List<Index> indexes=db.getIndexes(tblObj.getDbName(),tblObj.getTableName(),Short.MAX_VALUE);
       if (indexes != null && indexes.size() > 0) {
         throw new SemanticException("can not do merge because source table " + tableName + " is indexed.");
       }
@@ -43,9 +43,10 @@
       newTblPartLoc=tblObj.getPath();
       lbCtx=constructListBucketingCtx(tblObj.getSkewedColNames(),tblObj.getSkewedColValues(),tblObj.getSkewedColValueLocationMaps(),tblObj.isStoredAsSubDirectories(),conf);
     }
-    if (!inputFormatClass.equals(RCFileInputFormat.class)) {
-      throw new SemanticException("Only RCFileFormat is supportted right now.");
+    if (!((inputFormatClass.equals(RCFileInputFormat.class) || (inputFormatClass.equals(OrcInputFormat.class))))) {
+      throw new SemanticException("Only RCFile and ORCFile Formats are supportted right now.");
     }
+    mergeDesc.setInputFormatClass(inputFormatClass);
     if (bucketCols != null && bucketCols.size() > 0) {
       throw new SemanticException("Merge can not perform on bucketized partition/table.");
     }
@@ -60,7 +61,7 @@
     ddlWork.setNeedLock(true);
     Task<? extends Serializable> mergeTask=TaskFactory.get(ddlWork,conf);
     TableDesc tblDesc=Utilities.getTableDesc(tblObj);
-    Path queryTmpdir=ctx.getExternalTmpPath(newTblPartLoc.toUri());
+    Path queryTmpdir=ctx.getExternalTmpPath(newTblPartLoc);
     mergeDesc.setOutputDir(queryTmpdir);
     LoadTableDesc ltd=new LoadTableDesc(queryTmpdir,tblDesc,partSpec == null ? new HashMap<String,String>() : partSpec);
     ltd.setLbCtx(lbCtx);

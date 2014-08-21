@@ -1,0 +1,31 @@
+{
+  FileSinkOperator op=(FileSinkOperator)nd;
+  ConstantPropagateProcCtx cppCtx=(ConstantPropagateProcCtx)ctx;
+  Map<ColumnInfo,ExprNodeDesc> constants=cppCtx.getPropagatedConstants(op);
+  cppCtx.getOpToConstantExprs().put(op,constants);
+  if (constants.isEmpty()) {
+    return null;
+  }
+  FileSinkDesc fsdesc=op.getConf();
+  DynamicPartitionCtx dpCtx=fsdesc.getDynPartCtx();
+  if (dpCtx != null) {
+    Set<String> inputs=dpCtx.getInputToDPCols().keySet();
+    Operator<? extends Serializable> parent=op.getParentOperators().get(0);
+    Map<ColumnInfo,ExprNodeDesc> parentConstants=cppCtx.getPropagatedConstants(parent);
+    RowResolver rr=cppCtx.getOpToParseCtxMap().get(parent).getRowResolver();
+    boolean allConstant=true;
+    for (    String input : inputs) {
+      String tmp[]=rr.reverseLookup(input);
+      ColumnInfo ci=rr.get(tmp[0],tmp[1]);
+      if (parentConstants.get(ci) == null) {
+        allConstant=false;
+        break;
+      }
+    }
+    if (allConstant) {
+      pruneDP(fsdesc);
+    }
+  }
+  foldOperator(op,cppCtx);
+  return null;
+}

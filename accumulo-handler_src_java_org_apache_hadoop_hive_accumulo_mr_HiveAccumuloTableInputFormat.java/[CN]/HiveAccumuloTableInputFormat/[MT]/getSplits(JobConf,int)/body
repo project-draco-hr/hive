@@ -1,0 +1,45 @@
+{
+  final AccumuloConnectionParameters accumuloParams=new AccumuloConnectionParameters(jobConf);
+  final Instance instance=accumuloParams.getInstance();
+  final ColumnMapper columnMapper;
+  try {
+    columnMapper=getColumnMapper(jobConf);
+  }
+ catch (  TooManyAccumuloColumnsException e) {
+    throw new IOException(e);
+  }
+  JobContext context=ShimLoader.getHadoopShims().newJobContext(Job.getInstance(jobConf));
+  Path[] tablePaths=FileInputFormat.getInputPaths(context);
+  try {
+    final Connector connector=accumuloParams.getConnector(instance);
+    final List<ColumnMapping> columnMappings=columnMapper.getColumnMappings();
+    final List<IteratorSetting> iterators=predicateHandler.getIterators(jobConf,columnMapper);
+    final Collection<Range> ranges=predicateHandler.getRanges(jobConf,columnMapper);
+    if (null != ranges && ranges.isEmpty()) {
+      return new InputSplit[0];
+    }
+    configure(jobConf,instance,connector,accumuloParams,columnMapper,iterators,ranges);
+    int numColumns=columnMappings.size();
+    List<Integer> readColIds=ColumnProjectionUtils.getReadColumnIDs(jobConf);
+    if (numColumns < readColIds.size())     throw new IOException("Number of column mappings (" + numColumns + ")"+ " numbers less than the hive table columns. ("+ readColIds.size()+ ")");
+    InputSplit[] splits=accumuloInputFormat.getSplits(jobConf,numSplits);
+    HiveAccumuloSplit[] hiveSplits=new HiveAccumuloSplit[splits.length];
+    for (int i=0; i < splits.length; i++) {
+      RangeInputSplit ris=(RangeInputSplit)splits[i];
+      hiveSplits[i]=new HiveAccumuloSplit(ris,tablePaths[0]);
+    }
+    return hiveSplits;
+  }
+ catch (  AccumuloException e) {
+    log.error("Could not configure AccumuloInputFormat",e);
+    throw new IOException(StringUtils.stringifyException(e));
+  }
+catch (  AccumuloSecurityException e) {
+    log.error("Could not configure AccumuloInputFormat",e);
+    throw new IOException(StringUtils.stringifyException(e));
+  }
+catch (  SerDeException e) {
+    log.error("Could not configure AccumuloInputFormat",e);
+    throw new IOException(StringUtils.stringifyException(e));
+  }
+}

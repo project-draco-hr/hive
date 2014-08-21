@@ -30,12 +30,23 @@
   MoveWork dummyMv=new MoveWork(null,null,null,new LoadFileDesc(fsInputDesc.getFinalDirName(),finalName,true,null,null),false);
   MapWork cplan;
   Serializable work;
-  if (conf.getBoolVar(ConfVars.HIVEMERGERCFILEBLOCKLEVEL) && fsInputDesc.getTableInfo().getInputFileFormatClass().equals(RCFileInputFormat.class)) {
-    String inputFormatClass=conf.getVar(ConfVars.HIVEMERGEINPUTFORMATBLOCKLEVEL);
+  if ((conf.getBoolVar(ConfVars.HIVEMERGERCFILEBLOCKLEVEL) && fsInputDesc.getTableInfo().getInputFileFormatClass().equals(RCFileInputFormat.class)) || (conf.getBoolVar(ConfVars.HIVEMERGEORCFILESTRIPELEVEL) && fsInputDesc.getTableInfo().getInputFileFormatClass().equals(OrcInputFormat.class))) {
+    final String inputFormatClass;
+    if (fsInputDesc.getTableInfo().getInputFileFormatClass().equals(RCFileInputFormat.class)) {
+      inputFormatClass=conf.getVar(ConfVars.HIVEMERGEINPUTFORMATBLOCKLEVEL);
+    }
+ else {
+      inputFormatClass=conf.getVar(ConfVars.HIVEMERGEINPUTFORMATSTRIPELEVEL);
+    }
     try {
       Class c=Class.forName(inputFormatClass);
-      LOG.info("RCFile format- Using block level merge");
-      cplan=GenMapRedUtils.createRCFileMergeTask(fsInputDesc,finalName,dpCtx != null && dpCtx.getNumDPCols() > 0);
+      if (fsInputDesc.getTableInfo().getInputFileFormatClass().equals(OrcInputFormat.class)) {
+        LOG.info("OrcFile format - Using stripe level merge");
+      }
+ else {
+        LOG.info("RCFile format- Using block level merge");
+      }
+      cplan=GenMapRedUtils.createMergeTask(fsInputDesc,finalName,dpCtx != null && dpCtx.getNumDPCols() > 0);
       work=cplan;
     }
  catch (    ClassNotFoundException e) {

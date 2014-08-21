@@ -1,0 +1,43 @@
+{
+  String tblName=null;
+  String colName=null;
+  Map<String,String> mapProp=null;
+  Map<String,String> partSpec=null;
+  String partName=null;
+  if (tblPart == null) {
+    tblName=getUnescapedName((ASTNode)ast.getChild(0));
+    colName=getUnescapedName((ASTNode)ast.getChild(1));
+    mapProp=getProps((ASTNode)(ast.getChild(2)).getChild(0));
+  }
+ else {
+    tblName=tblPart.tableName;
+    partSpec=tblPart.partSpec;
+    try {
+      partName=Warehouse.makePartName(partSpec,false);
+    }
+ catch (    MetaException e) {
+      throw new SemanticException("partition " + partSpec.toString() + " not found");
+    }
+    colName=getUnescapedName((ASTNode)ast.getChild(0));
+    mapProp=getProps((ASTNode)(ast.getChild(1)).getChild(0));
+  }
+  Table tbl=null;
+  try {
+    tbl=db.getTable(tblName);
+  }
+ catch (  HiveException e) {
+    throw new SemanticException("table " + tbl + " not found");
+  }
+  String colType=null;
+  List<FieldSchema> cols=tbl.getCols();
+  for (  FieldSchema col : cols) {
+    if (colName.equalsIgnoreCase(col.getName())) {
+      colType=col.getType();
+      break;
+    }
+  }
+  if (colType == null)   throw new SemanticException("column type not found");
+  ColumnStatsDesc cStatsDesc=new ColumnStatsDesc(tbl.getTableName(),Arrays.asList(colName),Arrays.asList(colType),partSpec == null);
+  ColumnStatsUpdateTask cStatsUpdateTask=(ColumnStatsUpdateTask)TaskFactory.get(new ColumnStatsUpdateWork(cStatsDesc,partName,mapProp),conf);
+  rootTasks.add(cStatsUpdateTask);
+}
