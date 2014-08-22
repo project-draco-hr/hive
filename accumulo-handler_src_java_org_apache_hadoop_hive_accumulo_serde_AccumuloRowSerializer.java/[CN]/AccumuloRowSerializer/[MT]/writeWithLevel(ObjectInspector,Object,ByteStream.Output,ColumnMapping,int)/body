@@ -1,0 +1,76 @@
+{
+switch (oi.getCategory()) {
+case PRIMITIVE:
+    if (mapping.getEncoding() == ColumnEncoding.BINARY) {
+      this.writeBinary(output,value,(PrimitiveObjectInspector)oi);
+    }
+ else {
+      this.writeString(output,value,(PrimitiveObjectInspector)oi);
+    }
+  return;
+case LIST:
+char separator=(char)serDeParams.getSeparators()[level];
+ListObjectInspector loi=(ListObjectInspector)oi;
+List<?> list=loi.getList(value);
+ObjectInspector eoi=loi.getListElementObjectInspector();
+if (list == null) {
+log.debug("No objects found when serializing list");
+return;
+}
+ else {
+for (int i=0; i < list.size(); i++) {
+if (i > 0) {
+output.write(separator);
+}
+writeWithLevel(eoi,list.get(i),output,mapping,level + 1);
+}
+}
+return;
+case MAP:
+char sep=(char)serDeParams.getSeparators()[level];
+char keyValueSeparator=(char)serDeParams.getSeparators()[level + 1];
+MapObjectInspector moi=(MapObjectInspector)oi;
+ObjectInspector koi=moi.getMapKeyObjectInspector();
+ObjectInspector voi=moi.getMapValueObjectInspector();
+Map<?,?> map=moi.getMap(value);
+if (map == null) {
+log.debug("No object found when serializing map");
+return;
+}
+ else {
+boolean first=true;
+for (Map.Entry<?,?> entry : map.entrySet()) {
+if (first) {
+first=false;
+}
+ else {
+output.write(sep);
+}
+writeWithLevel(koi,entry.getKey(),output,mapping,level + 2);
+output.write(keyValueSeparator);
+writeWithLevel(voi,entry.getValue(),output,mapping,level + 2);
+}
+}
+return;
+case STRUCT:
+sep=(char)serDeParams.getSeparators()[level];
+StructObjectInspector soi=(StructObjectInspector)oi;
+List<? extends StructField> fields=soi.getAllStructFieldRefs();
+list=soi.getStructFieldsDataAsList(value);
+if (list == null) {
+log.debug("No object found when serializing struct");
+return;
+}
+ else {
+for (int i=0; i < list.size(); i++) {
+if (i > 0) {
+output.write(sep);
+}
+writeWithLevel(fields.get(i).getFieldObjectInspector(),list.get(i),output,mapping,level + 1);
+}
+}
+return;
+default :
+throw new RuntimeException("Unknown category type: " + oi.getCategory());
+}
+}

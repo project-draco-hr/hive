@@ -1,0 +1,39 @@
+{
+  if (objInspector.getCategory() != ObjectInspector.Category.STRUCT) {
+    throw new SerDeException(getClass().toString() + " can only serialize struct types, but we got: " + objInspector.getTypeName());
+  }
+  StructObjectInspector soi=(StructObjectInspector)objInspector;
+  List<? extends StructField> fields=soi.getAllStructFieldRefs();
+  List<Object> columnValues=soi.getStructFieldsDataAsList(obj);
+  if (rowIdOffset >= fields.size()) {
+    throw new IllegalStateException("Attempted to access field outside of definition for struct. Have " + fields.size() + " fields and tried to access offset "+ rowIdOffset);
+  }
+  StructField field=fields.get(rowIdOffset);
+  Object value=columnValues.get(rowIdOffset);
+  ObjectInspector fieldObjectInspector=field.getFieldObjectInspector();
+  log.info("Serializing rowId with " + value + " in "+ field+ " using "+ rowIdFactory.getClass());
+  byte[] data=rowIdFactory.serializeRowId(value,field,output);
+  Mutation mutation=new Mutation(data);
+  for (int i=0; i < fields.size(); i++) {
+    if (rowIdOffset == i) {
+      continue;
+    }
+    field=fields.get(i);
+    value=columnValues.get(i);
+    if (null == value) {
+      continue;
+    }
+    fieldObjectInspector=field.getFieldObjectInspector();
+    ColumnMapping mapping=mappings.get(i);
+    if (mapping instanceof HiveAccumuloColumnMapping) {
+      serializeColumnMapping((HiveAccumuloColumnMapping)mapping,fieldObjectInspector,value,mutation);
+    }
+ else     if (mapping instanceof HiveAccumuloMapColumnMapping) {
+      serializeColumnMapping((HiveAccumuloMapColumnMapping)mapping,fieldObjectInspector,value,mutation);
+    }
+ else {
+      throw new IllegalArgumentException("Mapping for " + field.getFieldName() + " was not a HiveColumnMapping, but was "+ mapping.getClass());
+    }
+  }
+  return mutation;
+}
