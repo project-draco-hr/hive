@@ -10,37 +10,48 @@
     JobConf newJobConf=cloneJobConf(mapWork);
     SparkTran tran=generate(newJobConf,mapWork);
     JavaPairRDD<BytesWritable,BytesWritable> input=generateRDD(newJobConf,mapWork);
-    trans.addTranWithInput(tran,input);
+    trans.addRootTranWithInput(tran,input);
     while (sparkWork.getChildren(w).size() > 0) {
       BaseWork child=sparkWork.getChildren(w).get(0);
+      SparkTran childTran=childWorkTrans.get(child);
       if (child instanceof ReduceWork) {
-        SparkEdgeProperty edge=sparkWork.getEdgeProperty(w,child);
-        SparkShuffler st=generate(edge);
-        ReduceTran rt=generate((ReduceWork)child);
-        rt.setShuffler(st);
-        rt.setNumPartitions(edge.getNumPartitions());
-        trans.addTran(rt);
-        trans.connect(tran,rt);
+        ReduceTran rt=null;
+        if (((ReduceWork)child).getReducer() instanceof JoinOperator) {
+          if (childTran == null) {
+            rt=generateRTWithEdge(sparkWork,w,child);
+            UnionTran ut=generateUnionTran();
+            trans.connect(tran,ut);
+            trans.connect(ut,rt);
+            childWorkTrans.put(child,ut);
+          }
+ else {
+            trans.connect(tran,childTran);
+            break;
+          }
+        }
+ else {
+          rt=generateRTWithEdge(sparkWork,w,child);
+          trans.connect(tran,rt);
+        }
         w=child;
         tran=rt;
       }
  else       if (child instanceof UnionWork) {
-        if (unionWorkTrans.get(child) != null) {
-          trans.connect(tran,unionWorkTrans.get(child));
-          break;
-        }
- else {
-          SparkTran ut=generate((UnionWork)child);
-          unionWorkTrans.put(child,ut);
-          trans.addTran(ut);
+        if (childTran == null) {
+          SparkTran ut=generateUnionTran();
+          childWorkTrans.put(child,ut);
           trans.connect(tran,ut);
           w=child;
           tran=ut;
         }
+ else {
+          trans.connect(tran,childTran);
+          break;
+        }
       }
     }
   }
-  unionWorkTrans.clear();
+  childWorkTrans.clear();
   plan.setTran(trans);
   return plan;
 }
