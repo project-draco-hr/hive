@@ -1,0 +1,32 @@
+{
+  if (!columnMapper.hasRowIdMapping()) {
+    return TOTAL_RANGE;
+  }
+  int rowIdOffset=columnMapper.getRowIdOffset();
+  String[] hiveColumnNamesArr=conf.getStrings(serdeConstants.LIST_COLUMNS);
+  if (null == hiveColumnNamesArr) {
+    throw new IllegalArgumentException("Could not find Hive columns in configuration");
+  }
+  String hiveRowIdColumnName=hiveColumnNamesArr[rowIdOffset];
+  ExprNodeDesc root=this.getExpression(conf);
+  if (null == root) {
+    return TOTAL_RANGE;
+  }
+  Object result=generateRanges(columnMapper,hiveRowIdColumnName,root);
+  if (null == result) {
+    log.info("Calculated null set of ranges, scanning full table");
+    return TOTAL_RANGE;
+  }
+ else   if (result instanceof Range) {
+    log.info("Computed a single Range for the query: " + result);
+    return Collections.singletonList((Range)result);
+  }
+ else   if (result instanceof List) {
+    log.info("Computed a collection of Ranges for the query: " + result);
+    @SuppressWarnings("unchecked") List<Range> ranges=(List<Range>)result;
+    return ranges;
+  }
+ else {
+    throw new IllegalArgumentException("Unhandled return from Range generation: " + result);
+  }
+}

@@ -1,0 +1,30 @@
+{
+  Preconditions.checkNotNull(serializedColumnMappings);
+  String[] parsedColumnMappingValue=StringUtils.split(serializedColumnMappings,AccumuloHiveConstants.COMMA);
+  columnMappings=new ArrayList<ColumnMapping>(parsedColumnMappingValue.length);
+  rowIdOffset=-1;
+  if (null == defaultStorageType || "".equals(defaultStorageType)) {
+    defaultEncoding=ColumnEncoding.getDefault();
+  }
+ else {
+    defaultEncoding=ColumnEncoding.get(defaultStorageType.toLowerCase());
+  }
+  if (parsedColumnMappingValue.length > columnNames.size()) {
+    throw new TooManyAccumuloColumnsException("Found " + parsedColumnMappingValue.length + " columns, but only know of "+ columnNames.size()+ " Hive column names");
+  }
+  if (parsedColumnMappingValue.length > columnTypes.size()) {
+    throw new TooManyAccumuloColumnsException("Found " + parsedColumnMappingValue.length + " columns, but only know of "+ columnNames.size()+ " Hive column types");
+  }
+  for (int i=0; i < parsedColumnMappingValue.length; i++) {
+    String columnMappingStr=parsedColumnMappingValue[i];
+    ColumnMapping columnMapping=ColumnMappingFactory.get(columnMappingStr,defaultEncoding,columnNames.get(i),columnTypes.get(i));
+    if (columnMapping instanceof HiveAccumuloRowIdColumnMapping) {
+      if (-1 != rowIdOffset) {
+        throw new IllegalArgumentException("Column mapping should only have one definition with a value of " + AccumuloHiveConstants.ROWID);
+      }
+      rowIdOffset=i;
+      rowIdMapping=(HiveAccumuloRowIdColumnMapping)columnMapping;
+    }
+    columnMappings.add(columnMapping);
+  }
+}

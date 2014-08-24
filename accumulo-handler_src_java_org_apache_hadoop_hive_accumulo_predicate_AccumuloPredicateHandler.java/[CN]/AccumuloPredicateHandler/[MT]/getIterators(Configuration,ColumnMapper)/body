@@ -1,0 +1,27 @@
+{
+  List<IteratorSetting> itrs=Lists.newArrayList();
+  boolean shouldPushdown=conf.getBoolean(AccumuloSerDeParameters.ITERATOR_PUSHDOWN_KEY,AccumuloSerDeParameters.ITERATOR_PUSHDOWN_DEFAULT);
+  if (!shouldPushdown) {
+    log.info("Iterator pushdown is disabled for this table");
+    return itrs;
+  }
+  int rowIdOffset=columnMapper.getRowIdOffset();
+  String[] hiveColumnNamesArr=conf.getStrings(serdeConstants.LIST_COLUMNS);
+  if (null == hiveColumnNamesArr) {
+    throw new IllegalArgumentException("Could not find Hive columns in configuration");
+  }
+  String hiveRowIdColumnName=null;
+  if (rowIdOffset >= 0 && rowIdOffset < hiveColumnNamesArr.length) {
+    hiveRowIdColumnName=hiveColumnNamesArr[rowIdOffset];
+  }
+  List<String> hiveColumnNames=Arrays.asList(hiveColumnNamesArr);
+  for (  IndexSearchCondition sc : getSearchConditions(conf)) {
+    String col=sc.getColumnDesc().getColumn();
+    if (hiveRowIdColumnName == null || !hiveRowIdColumnName.equals(col)) {
+      HiveAccumuloColumnMapping mapping=(HiveAccumuloColumnMapping)columnMapper.getColumnMappingForHiveColumn(hiveColumnNames,col);
+      itrs.add(toSetting(mapping,sc));
+    }
+  }
+  if (log.isInfoEnabled())   log.info("num iterators = " + itrs.size());
+  return itrs;
+}

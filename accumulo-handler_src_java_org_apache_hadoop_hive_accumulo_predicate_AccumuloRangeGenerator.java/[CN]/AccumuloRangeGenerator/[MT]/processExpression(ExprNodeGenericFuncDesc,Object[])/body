@@ -1,0 +1,59 @@
+{
+  GenericUDF genericUdf=func.getGenericUDF();
+  ExprNodeConstantDesc constantDesc=null;
+  ExprNodeColumnDesc columnDesc=null;
+  ExprNodeDesc leftHandNode=null;
+  for (  Object nodeOutput : nodeOutputs) {
+    if (nodeOutput instanceof ExprNodeConstantDesc) {
+      if (null == leftHandNode) {
+        leftHandNode=(ExprNodeDesc)nodeOutput;
+      }
+      constantDesc=(ExprNodeConstantDesc)nodeOutput;
+    }
+ else     if (nodeOutput instanceof ExprNodeColumnDesc) {
+      if (null == leftHandNode) {
+        leftHandNode=(ExprNodeDesc)nodeOutput;
+      }
+      columnDesc=(ExprNodeColumnDesc)nodeOutput;
+    }
+  }
+  if (null == constantDesc || null == columnDesc) {
+    return null;
+  }
+  if (!this.hiveRowIdColumnName.equals(columnDesc.getColumn())) {
+    return null;
+  }
+  ConstantObjectInspector objInspector=constantDesc.getWritableObjectInspector();
+  Text constText;
+switch (rowIdMapping.getEncoding()) {
+case STRING:
+    constText=getUtf8Value(objInspector);
+  break;
+case BINARY:
+try {
+  constText=getBinaryValue(objInspector);
+}
+ catch (IOException e) {
+  throw new SemanticException(e);
+}
+break;
+default :
+throw new SemanticException("Unable to parse unknown encoding: " + rowIdMapping.getEncoding());
+}
+Class<? extends CompareOp> opClz;
+try {
+opClz=predicateHandler.getCompareOpClass(genericUdf.getUdfName());
+}
+ catch (NoSuchCompareOpException e) {
+throw new IllegalArgumentException("Unhandled UDF class: " + genericUdf.getUdfName());
+}
+if (leftHandNode instanceof ExprNodeConstantDesc) {
+return getConstantOpColumnRange(opClz,constText);
+}
+ else if (leftHandNode instanceof ExprNodeColumnDesc) {
+return getColumnOpConstantRange(opClz,constText);
+}
+ else {
+throw new IllegalStateException("Expected column or constant on LHS of expression");
+}
+}
