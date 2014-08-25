@@ -1,0 +1,27 @@
+{
+  Table destTable=getTable(qualified);
+  Table sourceTable=getTable(getUnescapedName((ASTNode)ast.getChild(1)));
+  Map<String,String> partSpecs=getPartSpec((ASTNode)ast.getChild(0));
+  validatePartitionValues(partSpecs);
+  boolean sameColumns=MetaStoreUtils.compareFieldColumns(destTable.getAllCols(),sourceTable.getAllCols());
+  boolean samePartitions=MetaStoreUtils.compareFieldColumns(destTable.getPartitionKeys(),sourceTable.getPartitionKeys());
+  if (!sameColumns || !samePartitions) {
+    throw new SemanticException(ErrorMsg.TABLES_INCOMPATIBLE_SCHEMAS.getMsg());
+  }
+  getPartitions(sourceTable,partSpecs,true);
+  int counter=isPartitionValueContinuous(sourceTable.getPartitionKeys(),partSpecs);
+  if (counter < 0) {
+    throw new SemanticException(ErrorMsg.PARTITION_VALUE_NOT_CONTINUOUS.getMsg(partSpecs.toString()));
+  }
+  List<Partition> destPartitions=null;
+  try {
+    destPartitions=getPartitions(destTable,partSpecs,true);
+  }
+ catch (  SemanticException ex) {
+  }
+  if (destPartitions != null) {
+    throw new SemanticException(ErrorMsg.PARTITION_EXISTS.getMsg(destPartitions.toString()));
+  }
+  AlterTableExchangePartition alterTableExchangePartition=new AlterTableExchangePartition(sourceTable,destTable,partSpecs);
+  rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),alterTableExchangePartition),conf));
+}
