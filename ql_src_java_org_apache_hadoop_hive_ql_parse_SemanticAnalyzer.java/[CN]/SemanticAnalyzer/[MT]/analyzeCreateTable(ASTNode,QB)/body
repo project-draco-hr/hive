@@ -1,5 +1,6 @@
 {
-  String tableName=getUnescapedName((ASTNode)ast.getChild(0));
+  String[] qualifiedTabName=getQualifiedTableName((ASTNode)ast.getChild(0));
+  String dbDotTab=getDotName(qualifiedTabName);
   String likeTableName=null;
   List<FieldSchema> cols=new ArrayList<FieldSchema>();
   List<FieldSchema> partCols=new ArrayList<FieldSchema>();
@@ -23,7 +24,7 @@
   boolean storedAsDirs=false;
   RowFormatParams rowFormatParams=new RowFormatParams();
   StorageFormat storageFormat=new StorageFormat(conf);
-  LOG.info("Creating table " + tableName + " position="+ ast.getCharPositionInLine());
+  LOG.info("Creating table " + dbDotTab + " position="+ ast.getCharPositionInLine());
   int numCh=ast.getChildCount();
   for (int num=1; num < numCh; num++) {
     ASTNode child=(ASTNode)ast.getChild(num);
@@ -129,7 +130,7 @@ throw new SemanticException(ErrorMsg.CREATE_NON_NATIVE_AS.getMsg());
 }
 if (ifNotExists) {
 try {
-Table table=getTable(tableName,false);
+Table table=getTable(qualifiedTabName,false);
 if (table != null) {
 return null;
 }
@@ -138,11 +139,7 @@ return null;
 throw new IllegalStateException("Unxpected Exception thrown: " + e.getMessage(),e);
 }
 }
-String[] qualified=Hive.getQualifiedNames(tableName);
-String dbName=qualified.length == 1 ? SessionState.get().getCurrentDatabase() : qualified[0];
-Database database=getDatabase(dbName);
-outputs.add(new WriteEntity(database,WriteEntity.WriteType.DDL_SHARED));
-outputs.add(new WriteEntity(new Table(dbName,tableName),WriteEntity.WriteType.DDL_NO_LOCK));
+addDbAndTabToOutputs(qualifiedTabName);
 if (isTemporary) {
 if (partCols.size() > 0) {
 throw new SemanticException("Partition columns are not supported on temporary tables");
@@ -162,7 +159,7 @@ CreateTableDesc crtTblDesc=null;
 switch (command_type) {
 case CREATE_TABLE:
 tblProps=addDefaultProperties(tblProps);
-crtTblDesc=new CreateTableDesc(tableName,isExt,isTemporary,cols,partCols,bucketCols,sortCols,numBuckets,rowFormatParams.fieldDelim,rowFormatParams.fieldEscape,rowFormatParams.collItemDelim,rowFormatParams.mapKeyDelim,rowFormatParams.lineDelim,comment,storageFormat.getInputFormat(),storageFormat.getOutputFormat(),location,storageFormat.getSerde(),storageFormat.getStorageHandler(),storageFormat.getSerdeProps(),tblProps,ifNotExists,skewedColNames,skewedValues);
+crtTblDesc=new CreateTableDesc(dbDotTab,isExt,isTemporary,cols,partCols,bucketCols,sortCols,numBuckets,rowFormatParams.fieldDelim,rowFormatParams.fieldEscape,rowFormatParams.collItemDelim,rowFormatParams.mapKeyDelim,rowFormatParams.lineDelim,comment,storageFormat.getInputFormat(),storageFormat.getOutputFormat(),location,storageFormat.getSerde(),storageFormat.getStorageHandler(),storageFormat.getSerdeProps(),tblProps,ifNotExists,skewedColNames,skewedValues);
 crtTblDesc.setStoredAsSubDirectories(storedAsDirs);
 crtTblDesc.setNullFormat(rowFormatParams.nullFormat);
 crtTblDesc.validate(conf);
@@ -177,22 +174,22 @@ if (likeTable != null && likeTable.getPartCols().size() > 0) {
 throw new SemanticException("Partition columns are not supported on temporary tables " + "and source table in CREATE TABLE LIKE is partitioned.");
 }
 }
-CreateTableLikeDesc crtTblLikeDesc=new CreateTableLikeDesc(tableName,isExt,isTemporary,storageFormat.getInputFormat(),storageFormat.getOutputFormat(),location,storageFormat.getSerde(),storageFormat.getSerdeProps(),tblProps,ifNotExists,likeTableName);
+CreateTableLikeDesc crtTblLikeDesc=new CreateTableLikeDesc(dbDotTab,isExt,isTemporary,storageFormat.getInputFormat(),storageFormat.getOutputFormat(),location,storageFormat.getSerde(),storageFormat.getSerdeProps(),tblProps,ifNotExists,likeTableName);
 SessionState.get().setCommandType(HiveOperation.CREATETABLE);
 rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),crtTblLikeDesc),conf));
 break;
 case CTAS:
 try {
-Table dumpTable=db.newTable(tableName);
+Table dumpTable=db.newTable(dbDotTab);
 if (null != db.getTable(dumpTable.getDbName(),dumpTable.getTableName(),false)) {
-throw new SemanticException(ErrorMsg.TABLE_ALREADY_EXISTS.getMsg(tableName));
+throw new SemanticException(ErrorMsg.TABLE_ALREADY_EXISTS.getMsg(dbDotTab));
 }
 }
  catch (HiveException e) {
 throw new SemanticException(e);
 }
 tblProps=addDefaultProperties(tblProps);
-crtTblDesc=new CreateTableDesc(dbName,tableName,isExt,isTemporary,cols,partCols,bucketCols,sortCols,numBuckets,rowFormatParams.fieldDelim,rowFormatParams.fieldEscape,rowFormatParams.collItemDelim,rowFormatParams.mapKeyDelim,rowFormatParams.lineDelim,comment,storageFormat.getInputFormat(),storageFormat.getOutputFormat(),location,storageFormat.getSerde(),storageFormat.getStorageHandler(),storageFormat.getSerdeProps(),tblProps,ifNotExists,skewedColNames,skewedValues);
+crtTblDesc=new CreateTableDesc(qualifiedTabName[0],dbDotTab,isExt,isTemporary,cols,partCols,bucketCols,sortCols,numBuckets,rowFormatParams.fieldDelim,rowFormatParams.fieldEscape,rowFormatParams.collItemDelim,rowFormatParams.mapKeyDelim,rowFormatParams.lineDelim,comment,storageFormat.getInputFormat(),storageFormat.getOutputFormat(),location,storageFormat.getSerde(),storageFormat.getStorageHandler(),storageFormat.getSerdeProps(),tblProps,ifNotExists,skewedColNames,skewedValues);
 crtTblDesc.setStoredAsSubDirectories(storedAsDirs);
 crtTblDesc.setNullFormat(rowFormatParams.nullFormat);
 qb.setTableDesc(crtTblDesc);
