@@ -101,36 +101,46 @@ catch (          MetaException e) {
   if (qb.isCTAS()) {
     CreateTableDesc crtTblDesc=qb.getTableDesc();
     crtTblDesc.validate(conf);
-    outputs.clear();
-    Task<? extends Serializable> crtTblTask=TaskFactory.get(new DDLWork(inputs,outputs,crtTblDesc),conf);
-    HashSet<Task<? extends Serializable>> leaves=new LinkedHashSet<Task<? extends Serializable>>();
-    getLeafTasks(rootTasks,leaves);
-    assert(leaves.size() > 0);
-    for (    Task<? extends Serializable> task : leaves) {
-      if (task instanceof StatsTask) {
-        for (        Task<? extends Serializable> parentOfStatsTask : task.getParentTasks()) {
-          parentOfStatsTask.addDependentTask(crtTblTask);
-        }
-        for (        Task<? extends Serializable> parentOfCrtTblTask : crtTblTask.getParentTasks()) {
-          parentOfCrtTblTask.removeDependentTask(task);
-        }
-        crtTblTask.addDependentTask(task);
-      }
+    Iterator<WriteEntity> outIter=outputs.iterator();
+    while (outIter.hasNext()) {
+switch (outIter.next().getType()) {
+case DFS_DIR:
+case LOCAL_DIR:
+        outIter.remove();
+      break;
+default :
+    break;
+}
+}
+Task<? extends Serializable> crtTblTask=TaskFactory.get(new DDLWork(inputs,outputs,crtTblDesc),conf);
+HashSet<Task<? extends Serializable>> leaves=new LinkedHashSet<Task<? extends Serializable>>();
+getLeafTasks(rootTasks,leaves);
+assert(leaves.size() > 0);
+for (Task<? extends Serializable> task : leaves) {
+if (task instanceof StatsTask) {
+  for (  Task<? extends Serializable> parentOfStatsTask : task.getParentTasks()) {
+    parentOfStatsTask.addDependentTask(crtTblTask);
+  }
+  for (  Task<? extends Serializable> parentOfCrtTblTask : crtTblTask.getParentTasks()) {
+    parentOfCrtTblTask.removeDependentTask(task);
+  }
+  crtTblTask.addDependentTask(task);
+}
  else {
-        task.addDependentTask(crtTblTask);
-      }
-    }
-  }
-  if (globalLimitCtx.isEnable() && pCtx.getFetchTask() != null) {
-    LOG.info("set least row check for FetchTask: " + globalLimitCtx.getGlobalLimit());
-    pCtx.getFetchTask().getWork().setLeastNumRows(globalLimitCtx.getGlobalLimit());
-  }
-  if (globalLimitCtx.isEnable() && globalLimitCtx.getLastReduceLimitDesc() != null) {
-    LOG.info("set least row check for LimitDesc: " + globalLimitCtx.getGlobalLimit());
-    globalLimitCtx.getLastReduceLimitDesc().setLeastRows(globalLimitCtx.getGlobalLimit());
-    List<ExecDriver> mrTasks=Utilities.getMRTasks(rootTasks);
-    for (    ExecDriver tsk : mrTasks) {
-      tsk.setRetryCmdWhenFail(true);
-    }
-  }
+  task.addDependentTask(crtTblTask);
+}
+}
+}
+if (globalLimitCtx.isEnable() && pCtx.getFetchTask() != null) {
+LOG.info("set least row check for FetchTask: " + globalLimitCtx.getGlobalLimit());
+pCtx.getFetchTask().getWork().setLeastNumRows(globalLimitCtx.getGlobalLimit());
+}
+if (globalLimitCtx.isEnable() && globalLimitCtx.getLastReduceLimitDesc() != null) {
+LOG.info("set least row check for LimitDesc: " + globalLimitCtx.getGlobalLimit());
+globalLimitCtx.getLastReduceLimitDesc().setLeastRows(globalLimitCtx.getGlobalLimit());
+List<ExecDriver> mrTasks=Utilities.getMRTasks(rootTasks);
+for (ExecDriver tsk : mrTasks) {
+tsk.setRetryCmdWhenFail(true);
+}
+}
 }

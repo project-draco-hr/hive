@@ -1,0 +1,26 @@
+{
+  String colName=getUnescapedName((ASTNode)ast.getChild(0));
+  Map<String,String> mapProp=getProps((ASTNode)(ast.getChild(1)).getChild(0));
+  Table tbl=getTable(tblName);
+  String partName=null;
+  if (partSpec != null) {
+    try {
+      partName=Warehouse.makePartName(partSpec,false);
+    }
+ catch (    MetaException e) {
+      throw new SemanticException("partition " + partSpec.toString() + " not found");
+    }
+  }
+  String colType=null;
+  List<FieldSchema> cols=tbl.getCols();
+  for (  FieldSchema col : cols) {
+    if (colName.equalsIgnoreCase(col.getName())) {
+      colType=col.getType();
+      break;
+    }
+  }
+  if (colType == null)   throw new SemanticException("column type not found");
+  ColumnStatsDesc cStatsDesc=new ColumnStatsDesc(tbl.getTableName(),Arrays.asList(colName),Arrays.asList(colType),partSpec == null);
+  ColumnStatsUpdateTask cStatsUpdateTask=(ColumnStatsUpdateTask)TaskFactory.get(new ColumnStatsUpdateWork(cStatsDesc,partName,mapProp),conf);
+  rootTasks.add(cStatsUpdateTask);
+}
