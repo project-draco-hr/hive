@@ -1,10 +1,13 @@
 {
-  Table newTable=new Table(deepCopyAndLowerCaseTable(newt));
   dbname=dbname.toLowerCase();
   tbl_name=tbl_name.toLowerCase();
+  boolean shouldDeleteColStats=false;
   if (!newt.getSd().getLocation().equals(oldt.getSd().getLocation())) {
     throw new MetaException("Temp table location cannot be changed");
   }
+  org.apache.hadoop.hive.metastore.api.Table newtCopy=deepCopyAndLowerCaseTable(newt);
+  MetaStoreUtils.updateUnpartitionedTableStatsFast(newtCopy,wh.getFileStatusesForSD(newtCopy.getSd()),false,true);
+  Table newTable=new Table(newtCopy);
   String newDbName=newTable.getDbName();
   String newTableName=newTable.getTableName();
   if (!newDbName.equals(oldt.getDbName()) || !newTableName.equals(oldt.getTableName())) {
@@ -15,6 +18,7 @@
     if (tables == null || tables.remove(tbl_name) == null) {
       throw new MetaException("Could not find temp table entry for " + dbname + "."+ tbl_name);
     }
+    shouldDeleteColStats=true;
     tables=getTempTablesForDatabase(newDbName);
     if (tables == null) {
       tables=new HashMap<String,Table>();
@@ -23,6 +27,17 @@
     tables.put(newTableName,newTable);
   }
  else {
+    if (haveTableColumnsChanged(oldt,newt)) {
+      shouldDeleteColStats=true;
+    }
     getTempTablesForDatabase(dbname).put(tbl_name,newTable);
+  }
+  if (shouldDeleteColStats) {
+    try {
+      deleteTempTableColumnStatsForTable(dbname,tbl_name);
+    }
+ catch (    NoSuchObjectException err) {
+      LOG.info(err);
+    }
   }
 }
