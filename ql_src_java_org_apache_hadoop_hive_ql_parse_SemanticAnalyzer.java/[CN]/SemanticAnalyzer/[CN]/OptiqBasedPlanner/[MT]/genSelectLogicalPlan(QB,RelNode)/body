@@ -1,4 +1,6 @@
 {
+  RelNode selForWindow=genSelectForWindowing(qb,srcRel);
+  srcRel=(selForWindow == null) ? srcRel : selForWindow;
   boolean subQuery;
   ArrayList<ExprNodeDesc> col_list=new ArrayList<ExprNodeDesc>();
   ArrayList<Pair<Integer,RexNode>> windowingRexNodes=new ArrayList<Pair<Integer,RexNode>>();
@@ -40,26 +42,6 @@
   for (int i=startPosn; i < exprList.getChildCount(); ++i) {
     ASTNode child=(ASTNode)exprList.getChild(i);
     boolean hasAsClause=(!isInTransform) && (child.getChildCount() == 2);
-    int wndSpecASTIndx=-1;
-    boolean isWindowSpec=(((child.getChildCount() == 1) || hasAsClause) && child.getChild(0).getType() == HiveParser.TOK_FUNCTION) ? ((wndSpecASTIndx=getWindowSpecIndx((ASTNode)child.getChild(0))) > 0) : false;
-    if (isWindowSpec) {
-      Pair<RexNode,TypeInfo> wtp=genWindowingProj(qb,(ASTNode)child.getChild(0),wndSpecASTIndx,wndProjPos,srcRel);
-      windowingRexNodes.add(new Pair(pos,wtp.getFirst()));
-      String colAlias=null;
-      ASTNode tabOrColAst=(ASTNode)child.getChild(1);
-      if (tabOrColAst != null)       colAlias=BaseSemanticAnalyzer.getUnescapedName(tabOrColAst);
-      ColumnInfo oColInfo=new ColumnInfo(getColumnInternalName(pos),wtp.getSecond(),null,false);
-      if (colAlias != null) {
-        out_rwsch.checkColumn(null,colAlias);
-        out_rwsch.put(null,colAlias,oColInfo);
-      }
- else {
-        out_rwsch.putExpression(child,oColInfo);
-      }
-      pos=Integer.valueOf(pos.intValue() + 1);
-      wndProjPos++;
-      continue;
-    }
     if (child.getChildCount() > 2) {
       throw new SemanticException(generateErrorMessage((ASTNode)child.getChild(2),ErrorMsg.INVALID_AS.getMsg()));
     }
@@ -106,27 +88,11 @@
     }
   }
   selectStar=selectStar && exprList.getChildCount() == posn + 1;
-  ArrayList<String> columnNames=new ArrayList<String>();
-  for (int i=0; i < col_list.size(); i++) {
-    columnNames.add(getColumnInternalName(i));
-  }
   List<RexNode> optiqColLst=new ArrayList<RexNode>();
   RexNodeConverter rexNodeConv=new RexNodeConverter(m_cluster,srcRel.getRowType(),buildHiveColNameToInputPosMap(col_list,inputRR),0,false);
   for (  ExprNodeDesc colExpr : col_list) {
     optiqColLst.add(rexNodeConv.convert(colExpr));
   }
-  for (  Pair<Integer,RexNode> wndPair : windowingRexNodes) {
-    optiqColLst.add(wndPair.getFirst(),wndPair.getSecond());
-    columnNames.add(getColumnInternalName(wndPair.getFirst()));
-  }
-  List<String> oFieldNames=Lists.transform(columnNames,new Function<String,String>(){
-    @Override public String apply(    String hName){
-      return "_o_" + hName;
-    }
-  }
-);
-  HiveRel selRel=HiveProjectRel.create(srcRel,optiqColLst,oFieldNames);
-  this.m_relToHiveColNameOptiqPosMap.put(selRel,buildHiveToOptiqColumnMap(out_rwsch,selRel));
-  this.m_relToHiveRR.put(selRel,out_rwsch);
+  RelNode selRel=genSelectRelNode(optiqColLst,out_rwsch,srcRel);
   return selRel;
 }
