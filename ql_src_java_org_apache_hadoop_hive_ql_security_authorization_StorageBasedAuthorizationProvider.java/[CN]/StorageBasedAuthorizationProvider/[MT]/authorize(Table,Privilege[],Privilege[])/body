@@ -1,13 +1,21 @@
 {
-  authorize(hive_db.getDatabase(table.getDbName()),readRequiredPriv,writeRequiredPriv);
   try {
     initWh();
-    String location=table.getTTable().getSd().getLocation();
-    if (location != null && !location.isEmpty()) {
-      authorize(new Path(location),readRequiredPriv,writeRequiredPriv);
-    }
   }
  catch (  MetaException ex) {
     throw hiveException(ex);
+  }
+  DropPrivilegeExtractor privExtractor=new DropPrivilegeExtractor(readRequiredPriv,writeRequiredPriv);
+  readRequiredPriv=privExtractor.getReadReqPriv();
+  writeRequiredPriv=privExtractor.getWriteReqPriv();
+  if (privExtractor.hasDropPrivilege || requireCreatePrivilege(readRequiredPriv) || requireCreatePrivilege(writeRequiredPriv)) {
+    authorize(hive_db.getDatabase(table.getDbName()),new Privilege[]{},new Privilege[]{Privilege.ALTER_DATA});
+  }
+  Path path=table.getDataLocation();
+  if (privExtractor.hasDropPrivilege() && table.getTableType() != TableType.EXTERNAL_TABLE) {
+    checkDeletePermission(path,getConf(),authenticator.getUserName());
+  }
+  if (path != null) {
+    authorize(path,readRequiredPriv,writeRequiredPriv);
   }
 }

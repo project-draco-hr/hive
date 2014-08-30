@@ -13,14 +13,14 @@
  else {
     SessionState.get().setCommandType(HiveOperation.QUERY);
   }
-  if (ast.getToken().getType() == HiveParser.TOK_CREATEVIEW || ast.getToken().getType() == HiveParser.TOK_ALTERVIEW_AS) {
+  if (ast.getToken().getType() == HiveParser.TOK_CREATEVIEW || (ast.getToken().getType() == HiveParser.TOK_ALTERVIEW && ast.getChild(1).getType() == HiveParser.TOK_QUERY)) {
     child=analyzeCreateView(ast,qb);
     SessionState.get().setCommandType(HiveOperation.CREATEVIEW);
     if (child == null) {
       return;
     }
     viewSelect=child;
-    viewsExpanded.add(SessionState.get().getCurrentDatabase() + "." + createVwDesc.getViewName());
+    viewsExpanded.add(createVwDesc.getViewName());
   }
   Phase1Ctx ctx_1=initPhase1Ctx();
   if (!doPhase1(child,qb,ctx_1)) {
@@ -73,6 +73,9 @@
     fetchTask=pCtx.getFetchTask();
   }
   LOG.info("Completed plan generation");
+  if (HiveConf.getBoolVar(this.conf,HiveConf.ConfVars.HIVE_STATS_COLLECT_SCANCOLS)) {
+    putAccessedColumnsToReadEntity(inputs,columnAccessInfo);
+  }
   if (!ctx.getExplain()) {
     enforceScanLimits(pCtx,origFetchTask);
   }

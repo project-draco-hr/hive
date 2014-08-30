@@ -1,0 +1,89 @@
+{
+  boolean ifNotExists=ast.getChild(0).getType() == HiveParser.TOK_IFNOTEXISTS;
+  Table tab=getTable(qualified);
+  boolean isView=tab.isView();
+  validateAlterTableType(tab,AlterTableTypes.ADDPARTITION,expectView);
+  outputs.add(new WriteEntity(tab,WriteEntity.WriteType.DDL_SHARED));
+  int numCh=ast.getChildCount();
+  int start=ifNotExists ? 1 : 0;
+  String currentLocation=null;
+  Map<String,String> currentPart=null;
+  AddPartitionDesc addPartitionDesc=new AddPartitionDesc(tab.getDbName(),tab.getTableName(),ifNotExists);
+  for (int num=start; num < numCh; num++) {
+    ASTNode child=(ASTNode)ast.getChild(num);
+switch (child.getToken().getType()) {
+case HiveParser.TOK_PARTSPEC:
+      if (currentPart != null) {
+        addPartitionDesc.addPartition(currentPart,currentLocation);
+        currentLocation=null;
+      }
+    currentPart=getPartSpec(child);
+  validatePartitionValues(currentPart);
+validatePartSpec(tab,currentPart,child,conf,true);
+break;
+case HiveParser.TOK_PARTITIONLOCATION:
+if (isView) {
+throw new SemanticException("LOCATION clause illegal for view partition");
+}
+currentLocation=unescapeSQLString(child.getChild(0).getText());
+boolean isLocal=false;
+try {
+String scheme=new URI(currentLocation).getScheme();
+if (scheme != null) {
+isLocal=FileUtils.isLocalFile(conf,currentLocation);
+}
+}
+ catch (URISyntaxException e) {
+LOG.warn("Unable to create URI from " + currentLocation,e);
+}
+inputs.add(new ReadEntity(new Path(currentLocation),isLocal));
+break;
+default :
+throw new SemanticException("Unknown child: " + child);
+}
+}
+if (currentPart != null) {
+addPartitionDesc.addPartition(currentPart,currentLocation);
+}
+if (addPartitionDesc.getPartitionCount() == 0) {
+return;
+}
+rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),addPartitionDesc),conf));
+if (isView) {
+StringBuilder cmd=new StringBuilder();
+cmd.append("SELECT * FROM ");
+cmd.append(HiveUtils.unparseIdentifier(getDotName(qualified)));
+cmd.append(" WHERE ");
+boolean firstOr=true;
+for (int i=0; i < addPartitionDesc.getPartitionCount(); ++i) {
+AddPartitionDesc.OnePartitionDesc partitionDesc=addPartitionDesc.getPartition(i);
+if (firstOr) {
+firstOr=false;
+}
+ else {
+cmd.append(" OR ");
+}
+boolean firstAnd=true;
+cmd.append("(");
+for (Map.Entry<String,String> entry : partitionDesc.getPartSpec().entrySet()) {
+if (firstAnd) {
+firstAnd=false;
+}
+ else {
+cmd.append(" AND ");
+}
+cmd.append(HiveUtils.unparseIdentifier(entry.getKey(),conf));
+cmd.append(" = '");
+cmd.append(HiveUtils.escapeString(entry.getValue()));
+cmd.append("'");
+}
+cmd.append(")");
+}
+Driver driver=new Driver(conf);
+int rc=driver.compile(cmd.toString(),false);
+if (rc != 0) {
+throw new SemanticException(ErrorMsg.NO_VALID_PARTN.getMsg());
+}
+inputs.addAll(driver.getPlan().getInputs());
+}
+}
