@@ -1,0 +1,25 @@
+{
+  ObjectInspector inspector;
+synchronized (TestOrcFile.class) {
+    inspector=ObjectInspectorFactory.getReflectionObjectInspector(Text.class,ObjectInspectorFactory.ObjectInspectorOptions.JAVA);
+  }
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).inspector(inspector).compress(CompressionKind.NONE).version(Version.V_0_11).bufferSize(10000));
+  for (int i=0; i < 20000; i++) {
+    writer.addRow(new Text(String.valueOf(i)));
+  }
+  writer.close();
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf).filesystem(fs));
+  RecordReader rows=reader.rows();
+  int idx=0;
+  while (rows.hasNext()) {
+    Object row=rows.next(null);
+    assertEquals(new Text(String.valueOf(idx++)),row);
+  }
+  for (  StripeInformation stripe : reader.getStripes()) {
+    OrcProto.StripeFooter footer=((RecordReaderImpl)rows).readStripeFooter(stripe);
+    for (int i=0; i < footer.getColumnsCount(); ++i) {
+      OrcProto.ColumnEncoding encoding=footer.getColumns(i);
+      assertEquals(OrcProto.ColumnEncoding.Kind.DICTIONARY,encoding.getKind());
+    }
+  }
+}
