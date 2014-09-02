@@ -1,0 +1,34 @@
+{
+  final long interval=Math.max(checkInterval,3000l);
+  Runnable timeoutChecker=new Runnable(){
+    @Override public void run(){
+      for (sleepInterval(interval); !shutdown; sleepInterval(interval)) {
+        long current=System.currentTimeMillis();
+        for (        HiveSession session : new ArrayList<HiveSession>(handleToSession.values())) {
+          if (sessionTimeout > 0 && session.getLastAccessTime() + sessionTimeout <= current) {
+            SessionHandle handle=session.getSessionHandle();
+            LOG.warn("Session " + handle + " is Timed-out (last access : "+ new Date(session.getLastAccessTime())+ ") and will be closed");
+            try {
+              closeSession(handle);
+            }
+ catch (            HiveSQLException e) {
+              LOG.warn("Exception is thrown closing session " + handle,e);
+            }
+          }
+ else {
+            session.closeExpiredOperations();
+          }
+        }
+      }
+    }
+    private void sleepInterval(    long interval){
+      try {
+        Thread.sleep(interval);
+      }
+ catch (      InterruptedException e) {
+      }
+    }
+  }
+;
+  backgroundOperationPool.execute(timeoutChecker);
+}
