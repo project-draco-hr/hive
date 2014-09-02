@@ -1,13 +1,55 @@
 {
-switch (ast.getToken().getType()) {
-case HiveParser.TOK_ALTERTABLE_PARTITION:
+  ASTNode ast=input;
+switch (ast.getType()) {
+case HiveParser.TOK_ALTERTABLE:
 {
-      ASTNode tablePart=(ASTNode)ast.getChild(0);
-      TablePartition tblPart=new TablePartition(tablePart);
-      String tableName=tblPart.tableName;
-      HashMap<String,String> partSpec=tblPart.partSpec;
-      ast=(ASTNode)ast.getChild(1);
-      if (ast.getToken().getType() == HiveParser.TOK_ALTERTABLE_FILEFORMAT) {
+      ast=(ASTNode)input.getChild(1);
+      String[] qualified=getQualifiedTableName((ASTNode)input.getChild(0));
+      String tableName=getDotName(qualified);
+      HashMap<String,String> partSpec=DDLSemanticAnalyzer.getPartSpec((ASTNode)input.getChild(2));
+      if (ast.getType() == HiveParser.TOK_ALTERTABLE_RENAME) {
+        analyzeAlterTableRename(qualified,ast,false);
+      }
+ else       if (ast.getType() == HiveParser.TOK_ALTERTABLE_TOUCH) {
+        analyzeAlterTableTouch(qualified,ast);
+      }
+ else       if (ast.getType() == HiveParser.TOK_ALTERTABLE_ARCHIVE) {
+        analyzeAlterTableArchive(qualified,ast,false);
+      }
+ else       if (ast.getType() == HiveParser.TOK_ALTERTABLE_UNARCHIVE) {
+        analyzeAlterTableArchive(qualified,ast,true);
+      }
+ else       if (ast.getType() == HiveParser.TOK_ALTERTABLE_ADDCOLS) {
+        analyzeAlterTableModifyCols(qualified,ast,AlterTableTypes.ADDCOLS);
+      }
+ else       if (ast.getType() == HiveParser.TOK_ALTERTABLE_REPLACECOLS) {
+        analyzeAlterTableModifyCols(qualified,ast,AlterTableTypes.REPLACECOLS);
+      }
+ else       if (ast.getType() == HiveParser.TOK_ALTERTABLE_RENAMECOL) {
+        analyzeAlterTableRenameCol(qualified,ast);
+      }
+ else       if (ast.getType() == HiveParser.TOK_ALTERTABLE_ADDPARTS) {
+        analyzeAlterTableAddParts(qualified,ast,false);
+      }
+ else       if (ast.getType() == HiveParser.TOK_ALTERTABLE_DROPPARTS) {
+        analyzeAlterTableDropParts(qualified,ast,false);
+      }
+ else       if (ast.getType() == HiveParser.TOK_ALTERTABLE_PARTCOLTYPE) {
+        analyzeAlterTablePartColType(qualified,ast);
+      }
+ else       if (ast.getType() == HiveParser.TOK_ALTERTABLE_PROPERTIES) {
+        analyzeAlterTableProps(qualified,ast,false,false);
+      }
+ else       if (ast.getType() == HiveParser.TOK_ALTERTABLE_DROPPROPERTIES) {
+        analyzeAlterTableProps(qualified,ast,false,true);
+      }
+ else       if (ast.getType() == HiveParser.TOK_ALTERTABLE_SKEWED) {
+        analyzeAltertableSkewedby(qualified,ast);
+      }
+ else       if (ast.getType() == HiveParser.TOK_ALTERTABLE_EXCHANGEPARTITION) {
+        analyzeExchangePartition(qualified,ast);
+      }
+ else       if (ast.getToken().getType() == HiveParser.TOK_ALTERTABLE_FILEFORMAT) {
         analyzeAlterTableFileFormat(ast,tableName,partSpec);
       }
  else       if (ast.getToken().getType() == HiveParser.TOK_ALTERTABLE_PROTECTMODE) {
@@ -17,7 +59,7 @@ case HiveParser.TOK_ALTERTABLE_PARTITION:
         analyzeAlterTableLocation(ast,tableName,partSpec);
       }
  else       if (ast.getToken().getType() == HiveParser.TOK_ALTERTABLE_MERGEFILES) {
-        analyzeAlterTablePartMergeFiles(tablePart,ast,tableName,partSpec);
+        analyzeAlterTablePartMergeFiles(ast,tableName,partSpec);
       }
  else       if (ast.getToken().getType() == HiveParser.TOK_ALTERTABLE_SERIALIZER) {
         analyzeAlterTableSerde(ast,tableName,partSpec);
@@ -28,20 +70,20 @@ case HiveParser.TOK_ALTERTABLE_PARTITION:
  else       if (ast.getToken().getType() == HiveParser.TOK_ALTERTABLE_RENAMEPART) {
         analyzeAlterTableRenamePart(ast,tableName,partSpec);
       }
- else       if (ast.getToken().getType() == HiveParser.TOK_ALTERTBLPART_SKEWED_LOCATION) {
+ else       if (ast.getToken().getType() == HiveParser.TOK_ALTERTABLE_SKEWED_LOCATION) {
         analyzeAlterTableSkewedLocation(ast,tableName,partSpec);
       }
- else       if (ast.getToken().getType() == HiveParser.TOK_TABLEBUCKETS) {
+ else       if (ast.getToken().getType() == HiveParser.TOK_ALTERTABLE_BUCKETS) {
         analyzeAlterTableBucketNum(ast,tableName,partSpec);
       }
  else       if (ast.getToken().getType() == HiveParser.TOK_ALTERTABLE_CLUSTER_SORT) {
         analyzeAlterTableClusterSort(ast,tableName,partSpec);
       }
- else       if (ast.getToken().getType() == HiveParser.TOK_COMPACT) {
+ else       if (ast.getToken().getType() == HiveParser.TOK_ALTERTABLE_COMPACT) {
         analyzeAlterTableCompact(ast,tableName,partSpec);
       }
  else       if (ast.getToken().getType() == HiveParser.TOK_ALTERTABLE_UPDATECOLSTATS) {
-        analyzeAlterTableUpdateStats(ast,tblPart);
+        analyzeAlterTableUpdateStats(ast,tableName,partSpec);
       }
       break;
     }
@@ -120,60 +162,27 @@ break;
 case HiveParser.TOK_DROPVIEW:
 analyzeDropTable(ast,true);
 break;
-case HiveParser.TOK_ALTERVIEW_PROPERTIES:
-analyzeAlterTableProps(ast,true,false);
+case HiveParser.TOK_ALTERVIEW:
+{
+String[] qualified=getQualifiedTableName((ASTNode)ast.getChild(0));
+ast=(ASTNode)ast.getChild(1);
+if (ast.getType() == HiveParser.TOK_ALTERVIEW_PROPERTIES) {
+analyzeAlterTableProps(qualified,ast,true,false);
+}
+ else if (ast.getType() == HiveParser.TOK_ALTERVIEW_DROPPROPERTIES) {
+analyzeAlterTableProps(qualified,ast,true,true);
+}
+ else if (ast.getType() == HiveParser.TOK_ALTERVIEW_ADDPARTS) {
+analyzeAlterTableAddParts(qualified,ast,true);
+}
+ else if (ast.getType() == HiveParser.TOK_ALTERVIEW_DROPPARTS) {
+analyzeAlterTableDropParts(qualified,ast,true);
+}
+ else if (ast.getType() == HiveParser.TOK_ALTERVIEW_RENAME) {
+analyzeAlterTableRename(qualified,ast,true);
+}
 break;
-case HiveParser.TOK_DROPVIEW_PROPERTIES:
-analyzeAlterTableProps(ast,true,true);
-break;
-case HiveParser.TOK_ALTERVIEW_ADDPARTS:
-analyzeAlterTableAddParts((ASTNode)ast.getChild(0),true);
-break;
-case HiveParser.TOK_ALTERVIEW_DROPPARTS:
-analyzeAlterTableDropParts((ASTNode)ast.getChild(0),true);
-break;
-case HiveParser.TOK_ALTERVIEW_RENAME:
-analyzeAlterTableRename(((ASTNode)ast.getChild(0)),true);
-break;
-case HiveParser.TOK_ALTERTABLE_RENAME:
-analyzeAlterTableRename(ast,false);
-break;
-case HiveParser.TOK_ALTERTABLE_UPDATECOLSTATS:
-analyzeAlterTableUpdateStats(ast,null);
-break;
-case HiveParser.TOK_ALTERTABLE_TOUCH:
-analyzeAlterTableTouch(ast);
-break;
-case HiveParser.TOK_ALTERTABLE_ARCHIVE:
-analyzeAlterTableArchive(ast,false);
-break;
-case HiveParser.TOK_ALTERTABLE_UNARCHIVE:
-analyzeAlterTableArchive(ast,true);
-break;
-case HiveParser.TOK_ALTERTABLE_ADDCOLS:
-analyzeAlterTableModifyCols(ast,AlterTableTypes.ADDCOLS);
-break;
-case HiveParser.TOK_ALTERTABLE_REPLACECOLS:
-analyzeAlterTableModifyCols(ast,AlterTableTypes.REPLACECOLS);
-break;
-case HiveParser.TOK_ALTERTABLE_RENAMECOL:
-analyzeAlterTableRenameCol(ast);
-break;
-case HiveParser.TOK_ALTERTABLE_ADDPARTS:
-analyzeAlterTableAddParts(ast,false);
-break;
-case HiveParser.TOK_ALTERTABLE_DROPPARTS:
-analyzeAlterTableDropParts(ast,false);
-break;
-case HiveParser.TOK_ALTERTABLE_PARTCOLTYPE:
-analyzeAlterTablePartColType(ast);
-break;
-case HiveParser.TOK_ALTERTABLE_PROPERTIES:
-analyzeAlterTableProps(ast,false,false);
-break;
-case HiveParser.TOK_DROPTABLE_PROPERTIES:
-analyzeAlterTableProps(ast,false,true);
-break;
+}
 case HiveParser.TOK_ALTERINDEX_REBUILD:
 analyzeAlterIndexRebuild(ast);
 break;
@@ -252,12 +261,6 @@ analyzeShowGrant(ast);
 break;
 case HiveParser.TOK_REVOKE:
 analyzeRevoke(ast);
-break;
-case HiveParser.TOK_ALTERTABLE_SKEWED:
-analyzeAltertableSkewedby(ast);
-break;
-case HiveParser.TOK_EXCHANGEPARTITION:
-analyzeExchangePartition(ast);
 break;
 case HiveParser.TOK_SHOW_SET_ROLE:
 analyzeSetShowRole(ast);

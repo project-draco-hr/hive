@@ -1,0 +1,25 @@
+{
+  if (!conf.getBoolVar(HiveConf.ConfVars.HIVEARCHIVEENABLED)) {
+    throw new SemanticException(ErrorMsg.ARCHIVE_METHODS_DISABLED.getMsg());
+  }
+  List<Map<String,String>> partSpecs=getPartitionSpecs(ast);
+  Table tab=getTable(qualified);
+  addTablePartsOutputs(tab,partSpecs,true,WriteEntity.WriteType.DDL_NO_LOCK);
+  validateAlterTableType(tab,AlterTableTypes.ARCHIVE);
+  inputs.add(new ReadEntity(tab));
+  if (partSpecs.size() > 1) {
+    throw new SemanticException(isUnArchive ? ErrorMsg.UNARCHIVE_ON_MULI_PARTS.getMsg() : ErrorMsg.ARCHIVE_ON_MULI_PARTS.getMsg());
+  }
+  if (partSpecs.size() == 0) {
+    throw new SemanticException(ErrorMsg.ARCHIVE_ON_TABLE.getMsg());
+  }
+  Map<String,String> partSpec=partSpecs.get(0);
+  try {
+    isValidPrefixSpec(tab,partSpec);
+  }
+ catch (  HiveException e) {
+    throw new SemanticException(e.getMessage(),e);
+  }
+  AlterTableSimpleDesc archiveDesc=new AlterTableSimpleDesc(getDotName(qualified),partSpec,(isUnArchive ? AlterTableTypes.UNARCHIVE : AlterTableTypes.ARCHIVE));
+  rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),archiveDesc),conf));
+}
