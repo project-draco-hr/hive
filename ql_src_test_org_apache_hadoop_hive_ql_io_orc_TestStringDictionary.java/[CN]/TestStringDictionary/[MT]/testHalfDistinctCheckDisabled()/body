@@ -1,0 +1,31 @@
+{
+  ObjectInspector inspector;
+synchronized (TestOrcFile.class) {
+    inspector=ObjectInspectorFactory.getReflectionObjectInspector(Text.class,ObjectInspectorFactory.ObjectInspectorOptions.JAVA);
+  }
+  conf.setBoolean(ConfVars.HIVE_ORC_ROW_INDEX_STRIDE_DICTIONARY_CHECK.varname,false);
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).inspector(inspector).compress(CompressionKind.NONE).bufferSize(10000));
+  Random rand=new Random(123);
+  int[] input=new int[20000];
+  for (int i=0; i < 20000; i++) {
+    input[i]=rand.nextInt(10000);
+  }
+  for (int i=0; i < 20000; i++) {
+    writer.addRow(new Text(String.valueOf(input[i])));
+  }
+  writer.close();
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf).filesystem(fs));
+  RecordReader rows=reader.rows();
+  int idx=0;
+  while (rows.hasNext()) {
+    Object row=rows.next(null);
+    assertEquals(new Text(String.valueOf(input[idx++])),row);
+  }
+  for (  StripeInformation stripe : reader.getStripes()) {
+    OrcProto.StripeFooter footer=((RecordReaderImpl)rows).readStripeFooter(stripe);
+    for (int i=0; i < footer.getColumnsCount(); ++i) {
+      OrcProto.ColumnEncoding encoding=footer.getColumns(i);
+      assertEquals(OrcProto.ColumnEncoding.Kind.DICTIONARY_V2,encoding.getKind());
+    }
+  }
+}
