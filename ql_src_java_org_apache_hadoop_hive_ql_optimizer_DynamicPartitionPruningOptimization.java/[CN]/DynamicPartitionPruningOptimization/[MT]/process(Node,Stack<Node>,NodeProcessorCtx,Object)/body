@@ -1,0 +1,61 @@
+{
+  OptimizeTezProcContext context=(OptimizeTezProcContext)procCtx;
+  ParseContext parseContext=context.parseContext;
+  FilterOperator filter=(FilterOperator)nd;
+  FilterDesc desc=filter.getConf();
+  TableScanOperator ts=null;
+  if (!parseContext.getConf().getBoolVar(ConfVars.TEZ_DYNAMIC_PARTITION_PRUNING)) {
+    return null;
+  }
+  DynamicPartitionPrunerContext removerContext=new DynamicPartitionPrunerContext();
+  if (filter.getParentOperators().size() == 1 && filter.getParentOperators().get(0) instanceof TableScanOperator) {
+    ts=(TableScanOperator)filter.getParentOperators().get(0);
+  }
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Parent: " + filter.getParentOperators().get(0));
+    LOG.debug("Filter: " + desc.getPredicateString());
+    LOG.debug("TableScan: " + ts);
+  }
+  removerContext.dynLists.clear();
+  walkExprTree(desc.getPredicate(),removerContext);
+  for (  DynamicListContext ctx : removerContext) {
+    String column=extractColName(ctx.parent);
+    if (ts != null && column != null) {
+      Table table=parseContext.getTopToTable().get(ts);
+      if (table != null && table.isPartitionKey(column)) {
+        String alias=ts.getConf().getAlias();
+        PrunedPartitionList plist=parseContext.getPrunedPartitions(alias,ts);
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("alias: " + alias);
+          LOG.debug("pruned partition list: ");
+          if (plist != null) {
+            for (            Partition p : plist.getPartitions()) {
+              LOG.debug(p.getCompleteName());
+            }
+          }
+        }
+        if (plist == null || plist.getPartitions().size() != 0) {
+          LOG.info("Dynamic partitioning: " + table.getCompleteName() + "."+ column);
+          generateEventOperatorPlan(ctx,parseContext,ts,column);
+        }
+ else {
+          LOG.debug("No partition pruning necessary.");
+        }
+      }
+ else {
+        LOG.debug("Column " + column + " is not a partition column");
+      }
+    }
+    ExprNodeDesc constNode=new ExprNodeConstantDesc(ctx.parent.getTypeInfo(),true);
+    if (ctx.grandParent == null) {
+      desc.setPredicate(constNode);
+    }
+ else {
+      int i=ctx.grandParent.getChildren().indexOf(ctx.parent);
+      ctx.grandParent.getChildren().remove(i);
+      ctx.grandParent.getChildren().add(i,constNode);
+    }
+  }
+  cleanTableScanFilters(ts);
+  return false;
+}

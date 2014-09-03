@@ -1,0 +1,24 @@
+{
+  if (si.skipPruning.get()) {
+    LOG.info("Skip pruning on " + source + ", column "+ si.columnName);
+    return;
+  }
+  Set<Object> values=si.values;
+  String columnName=si.columnName;
+  if (LOG.isDebugEnabled()) {
+    StringBuilder sb=new StringBuilder("Pruning ");
+    sb.append(columnName);
+    sb.append(" with ");
+    for (    Object value : values) {
+      sb.append(value == null ? null : value.toString());
+      sb.append(", ");
+    }
+    LOG.debug(sb.toString());
+  }
+  ObjectInspector oi=PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(TypeInfoFactory.getPrimitiveTypeInfo(si.fieldInspector.getTypeName()));
+  Converter converter=ObjectInspectorConverters.getConverter(PrimitiveObjectInspectorFactory.javaStringObjectInspector,oi);
+  StructObjectInspector soi=ObjectInspectorFactory.getStandardStructObjectInspector(Collections.singletonList(columnName),Collections.singletonList(oi));
+  @SuppressWarnings("rawtypes") ExprNodeEvaluator eval=ExprNodeEvaluatorFactory.get(si.partKey);
+  eval.initialize(soi);
+  applyFilterToPartitions(work,converter,eval,columnName,values);
+}

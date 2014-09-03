@@ -1,0 +1,32 @@
+{
+  Object[] row=new Object[1];
+  Iterator<String> it=work.getPathToPartitionInfo().keySet().iterator();
+  while (it.hasNext()) {
+    String p=it.next();
+    PartitionDesc desc=work.getPathToPartitionInfo().get(p);
+    Map<String,String> spec=desc.getPartSpec();
+    if (spec == null) {
+      throw new AssertionException("No partition spec found in dynamic pruning");
+    }
+    String partValueString=spec.get(columnName);
+    if (partValueString == null) {
+      throw new AssertionException("Could not find partition value for column: " + columnName);
+    }
+    Object partValue=converter.convert(partValueString);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Converted partition value: " + partValue + " original ("+ partValueString+ ")");
+    }
+    row[0]=partValue;
+    partValue=eval.evaluate(row);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("part key expr applied: " + partValue);
+    }
+    if (!values.contains(partValue)) {
+      LOG.info("Pruning path: " + p);
+      it.remove();
+      work.getPathToAliases().remove(p);
+      work.getPaths().remove(p);
+      work.getPartitionDescs().remove(desc);
+    }
+  }
+}
