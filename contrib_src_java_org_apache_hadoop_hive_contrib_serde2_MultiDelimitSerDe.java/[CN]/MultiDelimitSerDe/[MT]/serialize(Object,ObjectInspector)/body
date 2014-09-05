@@ -1,0 +1,24 @@
+{
+  StructObjectInspector soi=(StructObjectInspector)objInspector;
+  List<? extends StructField> fields=soi.getAllStructFieldRefs();
+  List<Object> list=soi.getStructFieldsDataAsList(obj);
+  if (fields.size() != numColumns) {
+    throw new SerDeException("Cannot serialize the object because there are " + fields.size() + " fields but the table has "+ numColumns+ " columns.");
+  }
+  serializeStream.reset();
+  for (int c=0; c < numColumns; c++) {
+    if (c > 0) {
+      serializeStream.write(fieldDelimited.getBytes(),0,fieldDelimited.getBytes().length);
+    }
+    Object field=list == null ? null : list.get(c);
+    ObjectInspector fieldOI=fields.get(c).getFieldObjectInspector();
+    try {
+      serializeNoEncode(serializeStream,field,fieldOI,serdeParams.getSeparators(),1,serdeParams.getNullSequence(),serdeParams.isEscaped(),serdeParams.getEscapeChar(),serdeParams.getNeedsEscape());
+    }
+ catch (    IOException e) {
+      throw new SerDeException(e);
+    }
+  }
+  serializeCache.set(serializeStream.getData(),0,serializeStream.getLength());
+  return serializeCache;
+}
