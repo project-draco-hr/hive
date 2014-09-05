@@ -1,0 +1,40 @@
+{
+  try {
+    HiveMetaStoreClient hmsc=new HiveMetaStoreClient(hiveConf);
+    clearAndRecreateDB(hmsc);
+    createTable(hmsc,enablePartitionGrouping);
+    Table table=hmsc.getTable(dbName,tableName);
+    populatePartitions(hmsc,table,Arrays.asList("isLocatedInTablePath","isLocatedOutsideTablePath"));
+    PartitionSpecProxy partitionSpecProxy=hmsc.listPartitionSpecs(dbName,tableName,-1);
+    Assert.assertEquals("Unexpected number of partitions.",nDates * 2,partitionSpecProxy.size());
+    Map<String,List<String>> locationToDateMap=new HashMap<String,List<String>>();
+    locationToDateMap.put("isLocatedInTablePath",new ArrayList<String>());
+    locationToDateMap.put("isLocatedOutsideTablePath",new ArrayList<String>());
+    PartitionSpecProxy.PartitionIterator iterator=partitionSpecProxy.getPartitionIterator();
+    while (iterator.hasNext()) {
+      Partition partition=iterator.next();
+      locationToDateMap.get(partition.getValues().get(1)).add(partition.getValues().get(0));
+    }
+    List<String> expectedDates=new ArrayList<String>(nDates);
+    for (int i=0; i < nDates; ++i) {
+      expectedDates.add(datePrefix + i);
+    }
+    Assert.assertArrayEquals("Unexpected date-values.",expectedDates.toArray(),locationToDateMap.get("isLocatedInTablePath").toArray());
+    Assert.assertArrayEquals("Unexpected date-values.",expectedDates.toArray(),locationToDateMap.get("isLocatedOutsideTablePath").toArray());
+    partitionSpecProxy=hmsc.listPartitionSpecsByFilter(dbName,tableName,"blurb = \"isLocatedOutsideTablePath\"",-1);
+    locationToDateMap.get("isLocatedInTablePath").clear();
+    locationToDateMap.get("isLocatedOutsideTablePath").clear();
+    iterator=partitionSpecProxy.getPartitionIterator();
+    while (iterator.hasNext()) {
+      Partition partition=iterator.next();
+      locationToDateMap.get(partition.getValues().get(1)).add(partition.getValues().get(0));
+    }
+    Assert.assertEquals("Unexpected date-values.",0,locationToDateMap.get("isLocatedInTablePath").size());
+    Assert.assertArrayEquals("Unexpected date-values.",expectedDates.toArray(),locationToDateMap.get("isLocatedOutsideTablePath").toArray());
+  }
+ catch (  Throwable t) {
+    LOG.error("Unexpected Exception!",t);
+    t.printStackTrace();
+    Assert.assertTrue("Unexpected Exception!",false);
+  }
+}
