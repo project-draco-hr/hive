@@ -1,0 +1,48 @@
+{
+  if (!ci.isMajorCompaction()) {
+    return;
+  }
+  if (columnList.isEmpty()) {
+    LOG.debug("No existing stats for " + ci.dbname + "."+ ci.tableName+ " found.  Will not run analyze.");
+    return;
+  }
+  StringBuilder sb=new StringBuilder("analyze table ").append(ci.dbname).append(".").append(ci.tableName);
+  if (ci.partName != null) {
+    try {
+      sb.append(" partition(");
+      Map<String,String> partitionColumnValues=Warehouse.makeEscSpecFromName(ci.partName);
+      for (      Map.Entry<String,String> ent : partitionColumnValues.entrySet()) {
+        sb.append(ent.getKey()).append("='").append(ent.getValue()).append("'");
+      }
+      sb.append(")");
+    }
+ catch (    MetaException ex) {
+      throw new IOException(ex);
+    }
+  }
+  sb.append(" compute statistics for columns ");
+  for (  String colName : columnList) {
+    sb.append(colName).append(",");
+  }
+  sb.setLength(sb.length() - 1);
+  LOG.debug("running '" + sb.toString() + "'");
+  Driver d=new Driver(conf,userName);
+  SessionState localSession=null;
+  if (SessionState.get() == null) {
+    localSession=SessionState.start(new SessionState(conf));
+  }
+  try {
+    CommandProcessorResponse cpr=d.run(sb.toString());
+    if (cpr.getResponseCode() != 0) {
+      throw new IOException("Could not update stats for table " + ci.getFullTableName() + (ci.partName == null ? "" : "/" + ci.partName)+ " due to: "+ cpr);
+    }
+  }
+ catch (  CommandNeedRetryException cnre) {
+    throw new IOException("Could not update stats for table " + ci.getFullTableName() + (ci.partName == null ? "" : "/" + ci.partName)+ " due to: "+ cnre.getMessage());
+  }
+ finally {
+    if (localSession != null) {
+      localSession.close();
+    }
+  }
+}

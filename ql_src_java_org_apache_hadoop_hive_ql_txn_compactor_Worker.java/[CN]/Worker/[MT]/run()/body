@@ -35,7 +35,7 @@
         txnHandler.markCleaned(ci);
         continue;
       }
-      final boolean isMajor=(ci.type == CompactionType.MAJOR);
+      final boolean isMajor=ci.isMajorCompaction();
       final ValidTxnList txns=TxnHandler.createValidTxnList(txnHandler.getOpenTxns());
       final StringBuffer jobName=new StringBuffer(name);
       jobName.append("-compactor-");
@@ -49,16 +49,17 @@
         runAs=ci.runAs;
       }
       LOG.info("Starting " + ci.type.toString() + " compaction for "+ ci.getFullPartitionName());
+      final StatsUpdater su=StatsUpdater.init(ci,txnHandler.findColumnsWithStats(ci),conf,runJobAsSelf(runAs) ? runAs : t.getOwner());
       final CompactorMR mr=new CompactorMR();
       try {
         if (runJobAsSelf(runAs)) {
-          mr.run(conf,jobName.toString(),t,sd,txns,isMajor);
+          mr.run(conf,jobName.toString(),t,sd,txns,isMajor,su);
         }
  else {
           UserGroupInformation ugi=UserGroupInformation.createProxyUser(t.getOwner(),UserGroupInformation.getLoginUser());
           ugi.doAs(new PrivilegedExceptionAction<Object>(){
             @Override public Object run() throws Exception {
-              mr.run(conf,jobName.toString(),t,sd,txns,isMajor);
+              mr.run(conf,jobName.toString(),t,sd,txns,isMajor,su);
               return null;
             }
           }
