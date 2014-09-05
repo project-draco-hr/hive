@@ -1,0 +1,33 @@
+{
+  if (procCtx.abandonedEventOperatorSet.contains(event)) {
+    return;
+  }
+  DynamicPruningEventDesc eventDesc=(DynamicPruningEventDesc)event.getConf();
+  TableScanOperator ts=eventDesc.getTableScan();
+  MapWork work=(MapWork)procCtx.rootToWorkMap.get(ts);
+  if (work == null) {
+    throw new AssertionError("No work found for tablescan " + ts);
+  }
+  BaseWork enclosingWork=getEnclosingWork(event,procCtx);
+  if (enclosingWork == null) {
+    throw new AssertionError("Cannot find work for operator" + event);
+  }
+  String sourceName=enclosingWork.getName();
+  eventDesc.setVertexName(work.getName());
+  eventDesc.setInputName(work.getAliases().get(0));
+  if (!work.getEventSourceTableDescMap().containsKey(sourceName)) {
+    work.getEventSourceTableDescMap().put(sourceName,new LinkedList<TableDesc>());
+  }
+  List<TableDesc> tables=work.getEventSourceTableDescMap().get(sourceName);
+  tables.add(event.getConf().getTable());
+  if (!work.getEventSourceColumnNameMap().containsKey(sourceName)) {
+    work.getEventSourceColumnNameMap().put(sourceName,new LinkedList<String>());
+  }
+  List<String> columns=work.getEventSourceColumnNameMap().get(sourceName);
+  columns.add(eventDesc.getTargetColumnName());
+  if (!work.getEventSourcePartKeyExprMap().containsKey(sourceName)) {
+    work.getEventSourcePartKeyExprMap().put(sourceName,new LinkedList<ExprNodeDesc>());
+  }
+  List<ExprNodeDesc> keys=work.getEventSourcePartKeyExprMap().get(sourceName);
+  keys.add(eventDesc.getPartKey());
+}
