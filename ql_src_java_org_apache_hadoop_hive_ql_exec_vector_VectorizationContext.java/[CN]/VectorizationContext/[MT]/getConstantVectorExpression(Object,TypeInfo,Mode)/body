@@ -1,28 +1,17 @@
 {
-  String type=typeInfo.getTypeName();
-  String colVectorType=getNormalizedTypeName(type);
+  String typeName=typeInfo.getTypeName();
+  VectorExpressionDescriptor.ArgumentType vectorArgType=VectorExpressionDescriptor.ArgumentType.fromHiveTypeName(typeName);
+  if (vectorArgType == VectorExpressionDescriptor.ArgumentType.NONE) {
+    throw new HiveException("No vector argument type for type name " + typeName);
+  }
   int outCol=-1;
   if (mode == Mode.PROJECTION) {
-    outCol=ocm.allocateOutputColumn(colVectorType);
+    outCol=ocm.allocateOutputColumn(typeName);
   }
   if (constantValue == null) {
-    return new ConstantVectorExpression(outCol,type,true);
+    return new ConstantVectorExpression(outCol,typeName,true);
   }
- else   if (decimalTypePattern.matcher(type).matches()) {
-    VectorExpression ve=new ConstantVectorExpression(outCol,(Decimal128)constantValue);
-    ve.setOutputType(typeInfo.getTypeName());
-    return ve;
-  }
- else   if (type.equalsIgnoreCase("long") || type.equalsIgnoreCase("int") || type.equalsIgnoreCase("short")|| type.equalsIgnoreCase("byte")) {
-    return new ConstantVectorExpression(outCol,((Number)constantValue).longValue());
-  }
- else   if (type.equalsIgnoreCase("double") || type.equalsIgnoreCase("float")) {
-    return new ConstantVectorExpression(outCol,((Number)constantValue).doubleValue());
-  }
- else   if (type.equalsIgnoreCase("string")) {
-    return new ConstantVectorExpression(outCol,((String)constantValue).getBytes());
-  }
- else   if (type.equalsIgnoreCase("boolean")) {
+  if (typeName.equalsIgnoreCase("boolean")) {
     if (mode == Mode.FILTER) {
       if (((Boolean)constantValue).booleanValue()) {
         return new FilterConstantBooleanVectorExpression(1);
@@ -40,5 +29,22 @@
       }
     }
   }
-  throw new HiveException("Unsupported constant type: " + type.toString());
+switch (vectorArgType) {
+case INT_FAMILY:
+    return new ConstantVectorExpression(outCol,((Number)constantValue).longValue());
+case FLOAT_FAMILY:
+  return new ConstantVectorExpression(outCol,((Number)constantValue).doubleValue());
+case DECIMAL:
+VectorExpression ve=new ConstantVectorExpression(outCol,(Decimal128)constantValue);
+ve.setOutputType(typeName);
+return ve;
+case STRING:
+return new ConstantVectorExpression(outCol,((String)constantValue).getBytes());
+case CHAR:
+return new ConstantVectorExpression(outCol,((HiveChar)constantValue));
+case VARCHAR:
+return new ConstantVectorExpression(outCol,((HiveVarchar)constantValue));
+default :
+throw new HiveException("Unsupported constant type: " + typeName);
+}
 }

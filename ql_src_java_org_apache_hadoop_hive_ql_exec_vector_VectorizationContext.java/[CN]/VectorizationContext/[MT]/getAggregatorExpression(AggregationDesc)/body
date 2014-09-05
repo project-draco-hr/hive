@@ -6,17 +6,17 @@
     vectorParams[i]=this.getVectorExpression(exprDesc,Mode.PROJECTION);
   }
   String aggregateName=desc.getGenericUDAFName();
-  String inputType=null;
+  VectorExpressionDescriptor.ArgumentType inputType=VectorExpressionDescriptor.ArgumentType.NONE;
   if (paramDescList.size() > 0) {
     ExprNodeDesc inputExpr=paramDescList.get(0);
-    inputType=getNormalizedTypeName(inputExpr.getTypeString());
-    if (decimalTypePattern.matcher(inputType).matches()) {
-      inputType="Decimal";
+    inputType=VectorExpressionDescriptor.ArgumentType.fromHiveTypeName(inputExpr.getTypeString());
+    if (inputType == VectorExpressionDescriptor.ArgumentType.NONE) {
+      throw new HiveException("No vector argument type for Hive type name " + inputExpr.getTypeString());
     }
   }
-  for (  Object[] aggDef : aggregatesDefinition) {
-    if (aggregateName.equalsIgnoreCase((String)aggDef[0]) && ((aggDef[1] == null && inputType == null) || (aggDef[1] != null && aggDef[1].equals(inputType)))) {
-      Class<? extends VectorAggregateExpression> aggClass=(Class<? extends VectorAggregateExpression>)(aggDef[2]);
+  for (  AggregateDefinition aggDef : aggregatesDefinition) {
+    if (aggregateName.equalsIgnoreCase(aggDef.getName()) && ((aggDef.getType() == VectorExpressionDescriptor.ArgumentType.NONE && inputType == VectorExpressionDescriptor.ArgumentType.NONE) || (aggDef.getType().isSameTypeOrFamily(inputType)))) {
+      Class<? extends VectorAggregateExpression> aggClass=aggDef.getAggClass();
       try {
         Constructor<? extends VectorAggregateExpression> ctor=aggClass.getConstructor(VectorExpression.class);
         VectorAggregateExpression aggExpr=ctor.newInstance(vectorParams.length > 0 ? vectorParams[0] : null);
@@ -28,5 +28,5 @@
       }
     }
   }
-  throw new HiveException("Vector aggregate not implemented: \"" + aggregateName + "\" for type: \""+ inputType+ "");
+  throw new HiveException("Vector aggregate not implemented: \"" + aggregateName + "\" for type: \""+ inputType.name()+ "");
 }
