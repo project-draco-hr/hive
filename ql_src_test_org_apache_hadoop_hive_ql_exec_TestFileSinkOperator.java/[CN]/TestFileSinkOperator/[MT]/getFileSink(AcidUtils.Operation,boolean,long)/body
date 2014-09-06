@@ -1,0 +1,36 @@
+{
+  TableDesc tableDesc=null;
+switch (writeType) {
+case DELETE:
+case UPDATE:
+case INSERT:
+    tableDesc=acidTableDescriptor;
+  break;
+case NOT_ACID:
+tableDesc=nonAcidTableDescriptor;
+break;
+}
+FileSinkDesc desc=null;
+if (dynamic) {
+ArrayList<ExprNodeDesc> partCols=new ArrayList<ExprNodeDesc>(1);
+partCols.add(new ExprNodeColumnDesc(TypeInfoFactory.stringTypeInfo,PARTCOL_NAME,"a",true));
+Map<String,String> partColMap=new LinkedHashMap<String,String>(1);
+partColMap.put(PARTCOL_NAME,null);
+DynamicPartitionCtx dpCtx=new DynamicPartitionCtx(null,partColMap,"Sunday",100);
+Map<String,String> partColNames=new HashMap<String,String>(1);
+partColNames.put(PARTCOL_NAME,PARTCOL_NAME);
+dpCtx.setInputToDPCols(partColNames);
+desc=new FileSinkDesc(basePath,tableDesc,false,1,false,false,1,1,partCols,dpCtx);
+}
+ else {
+desc=new FileSinkDesc(basePath,tableDesc,false);
+}
+desc.setWriteType(writeType);
+desc.setGatherStats(true);
+if (txnId > 0) desc.setTransactionId(txnId);
+if (writeType != AcidUtils.Operation.NOT_ACID) desc.setTransactionId(1L);
+FileSinkOperator op=(FileSinkOperator)OperatorFactory.get(FileSinkDesc.class);
+op.setConf(desc);
+op.initialize(jc,new ObjectInspector[]{inspector});
+return op;
+}

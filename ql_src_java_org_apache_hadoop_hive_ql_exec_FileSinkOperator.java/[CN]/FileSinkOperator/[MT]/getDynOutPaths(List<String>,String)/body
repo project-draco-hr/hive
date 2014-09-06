@@ -1,12 +1,14 @@
 {
   FSPaths fp;
-  String dpDir=getDynPartDirectory(row,dpColNames,numDynParts);
+  String dpDir=getDynPartDirectory(row,dpColNames);
   String pathKey=null;
   if (dpDir != null) {
     dpDir=appendToSource(lbDirName,dpDir);
     pathKey=dpDir;
+    int numericBucketNum=0;
     if (conf.getDpSortState().equals(DPSortState.PARTITION_BUCKET_SORTED)) {
       String buckNum=row.get(row.size() - 1);
+      numericBucketNum=Integer.valueOf(buckNum);
       taskId=Utilities.replaceTaskIdFromFilename(Utilities.getTaskId(hconf),buckNum);
       pathKey=appendToSource(taskId,dpDir);
     }
@@ -18,13 +20,19 @@
       if (!conf.getDpSortState().equals(DPSortState.NONE) && prevFsp != null) {
         prevFsp.closeWriters(false);
         if (conf.isGatherStats() && isCollectRWStats) {
-          RecordWriter outWriter=prevFsp.outWriters[0];
-          if (outWriter != null) {
-            SerDeStats stats=((StatsProvidingRecordWriter)outWriter).getStats();
-            if (stats != null) {
-              prevFsp.stat.addToStat(StatsSetupConst.RAW_DATA_SIZE,stats.getRawDataSize());
-              prevFsp.stat.addToStat(StatsSetupConst.ROW_COUNT,stats.getRowCount());
+          SerDeStats stats=null;
+          if (conf.getWriteType() == AcidUtils.Operation.NOT_ACID) {
+            RecordWriter outWriter=prevFsp.outWriters[0];
+            if (outWriter != null) {
+              stats=((StatsProvidingRecordWriter)outWriter).getStats();
             }
+          }
+ else           if (prevFsp.updaters[0] != null) {
+            stats=prevFsp.updaters[0].getStats();
+          }
+          if (stats != null) {
+            prevFsp.stat.addToStat(StatsSetupConst.RAW_DATA_SIZE,stats.getRawDataSize());
+            prevFsp.stat.addToStat(StatsSetupConst.ROW_COUNT,stats.getRowCount());
           }
         }
         prevFsp.outWriters[0]=null;

@@ -1,0 +1,39 @@
+{
+  if (in == null) {
+    Path paths[]=FileInputFormat.getInputPaths(entries);
+    in=new FSDataInputStream[paths.length];
+    FileSystem fs=paths[0].getFileSystem(entries);
+    for (int i=0; i < paths.length; i++) {
+      in[i]=fs.open(paths[i]);
+    }
+    readingFrom=0;
+  }
+  return new RecordReader<NullWritable,TFSORow>(){
+    @Override public boolean next(    NullWritable nullWritable,    TFSORow tfsoRecord) throws IOException {
+      try {
+        tfsoRecord.readFields(in[readingFrom]);
+        return true;
+      }
+ catch (      EOFException e) {
+        in[readingFrom].close();
+        if (++readingFrom >= in.length)         return false;
+ else         return next(nullWritable,tfsoRecord);
+      }
+    }
+    @Override public NullWritable createKey(){
+      return NullWritable.get();
+    }
+    @Override public TFSORow createValue(){
+      return new TFSORow();
+    }
+    @Override public long getPos() throws IOException {
+      return 0L;
+    }
+    @Override public void close() throws IOException {
+    }
+    @Override public float getProgress() throws IOException {
+      return 0.0f;
+    }
+  }
+;
+}
