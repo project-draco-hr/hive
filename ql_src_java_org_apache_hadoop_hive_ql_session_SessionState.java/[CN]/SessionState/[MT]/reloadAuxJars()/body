@@ -1,0 +1,34 @@
+{
+  final Set<String> reloadedAuxJars=new HashSet<String>();
+  final String renewableJarPath=conf.getVar(ConfVars.HIVERELOADABLEJARS);
+  if (renewableJarPath == null || renewableJarPath.isEmpty()) {
+    return;
+  }
+  Set<String> jarPaths=Utilities.getJarFilesByPath(renewableJarPath);
+  if (!jarPaths.isEmpty()) {
+    reloadedAuxJars.addAll(jarPaths);
+  }
+  try {
+    if (preReloadableAuxJars != null && !preReloadableAuxJars.isEmpty()) {
+      Utilities.removeFromClassPath(preReloadableAuxJars.toArray(new String[0]));
+    }
+  }
+ catch (  Exception e) {
+    String msg="Fail to remove the reloaded jars loaded last time: " + e;
+    throw new IOException(msg,e);
+  }
+  try {
+    if (reloadedAuxJars != null && !reloadedAuxJars.isEmpty()) {
+      URLClassLoader currentCLoader=(URLClassLoader)SessionState.get().getConf().getClassLoader();
+      currentCLoader=(URLClassLoader)Utilities.addToClassPath(currentCLoader,reloadedAuxJars.toArray(new String[0]));
+      conf.setClassLoader(currentCLoader);
+      Thread.currentThread().setContextClassLoader(currentCLoader);
+    }
+    preReloadableAuxJars.clear();
+    preReloadableAuxJars.addAll(reloadedAuxJars);
+  }
+ catch (  Exception e) {
+    String msg="Fail to add jars from the path specified in hive.reloadable.aux.jars.path property: " + e;
+    throw new IOException(msg,e);
+  }
+}
