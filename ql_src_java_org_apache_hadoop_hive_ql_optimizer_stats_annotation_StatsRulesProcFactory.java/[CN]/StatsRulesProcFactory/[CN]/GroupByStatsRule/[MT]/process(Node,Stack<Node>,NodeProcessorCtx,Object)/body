@@ -34,12 +34,12 @@
           break;
         }
       }
-      if (gop.getChildOperators().get(0) instanceof ReduceSinkOperator) {
+      if (gop.getChildOperators().get(0) instanceof ReduceSinkOperator || gop.getChildOperators().get(0) instanceof AppMasterEventOperator) {
         if (gop.getConf().isGroupingSetsPresent()) {
           int multiplier=gop.getConf().getListGroupingSets().size();
           multiplier*=mapSideParallelism;
-          newNumRows=multiplier * stats.getNumRows();
-          long dataSize=multiplier * stats.getDataSize();
+          newNumRows=setMaxIfInvalid(multiplier * stats.getNumRows());
+          long dataSize=setMaxIfInvalid(multiplier * stats.getDataSize());
           stats.setNumRows(newNumRows);
           stats.setDataSize(dataSize);
           for (          ColStatistics cs : colStats) {
@@ -52,12 +52,12 @@
         }
  else {
           newNumRows=stats.getNumRows() * mapSideParallelism;
-          updateStats(stats,newNumRows,true);
+          updateStats(stats,newNumRows,true,gop);
         }
       }
  else {
         newNumRows=applyGBYRule(stats.getNumRows(),dvProd);
-        updateStats(stats,newNumRows,true);
+        updateStats(stats,newNumRows,true,gop);
       }
     }
  else {
@@ -68,7 +68,7 @@
  else {
           stats=parentStats.clone();
           long newNumRows=parentStats.getNumRows() / 2;
-          updateStats(stats,newNumRows,false);
+          updateStats(stats,newNumRows,false,gop);
         }
       }
     }
@@ -90,12 +90,12 @@
       if (aggColStats.size() > 0) {
         stats.addToColumnStats(aggColStats);
         if (!stats.getColumnStatsState().equals(Statistics.State.NONE)) {
-          updateStats(stats,stats.getNumRows(),true);
+          updateStats(stats,stats.getNumRows(),true,gop);
         }
       }
       if (colExprMap.isEmpty()) {
         stats.setNumRows(1);
-        updateStats(stats,1,true);
+        updateStats(stats,1,true,gop);
       }
     }
     gop.setStatistics(stats);
