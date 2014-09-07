@@ -9,13 +9,22 @@
   Map<String,ExprNodeDesc> colExprMap=gop.getColumnExprMap();
   RowSchema rs=gop.getSchema();
   Statistics stats=null;
+  boolean mapSide=false;
+  int multiplier=mapSideParallelism;
+  long newNumRows;
+  long newDataSize;
+  if (gop.getChildOperators().get(0) instanceof ReduceSinkOperator || gop.getChildOperators().get(0) instanceof AppMasterEventOperator) {
+    mapSide=true;
+    if (gop.getConf().isGroupingSetsPresent()) {
+      multiplier*=gop.getConf().getListGroupingSets().size();
+    }
+  }
   try {
     if (satisfyPrecondition(parentStats)) {
       stats=parentStats.clone();
       List<ColStatistics> colStats=StatsUtils.getColStatisticsFromExprMap(conf,parentStats,colExprMap,rs);
       stats.setColumnStats(colStats);
       long dvProd=1;
-      long newNumRows=0;
       for (      ColStatistics cs : colStats) {
         if (cs != null) {
           long dv=cs.getCountDistint();
@@ -34,14 +43,12 @@
           break;
         }
       }
-      if (gop.getChildOperators().get(0) instanceof ReduceSinkOperator || gop.getChildOperators().get(0) instanceof AppMasterEventOperator) {
+      if (mapSide) {
         if (gop.getConf().isGroupingSetsPresent()) {
-          int multiplier=gop.getConf().getListGroupingSets().size();
-          multiplier*=mapSideParallelism;
           newNumRows=setMaxIfInvalid(multiplier * stats.getNumRows());
-          long dataSize=setMaxIfInvalid(multiplier * stats.getDataSize());
+          newDataSize=setMaxIfInvalid(multiplier * stats.getDataSize());
           stats.setNumRows(newNumRows);
-          stats.setDataSize(dataSize);
+          stats.setDataSize(newDataSize);
           for (          ColStatistics cs : colStats) {
             if (cs != null) {
               long oldNumNulls=cs.getNumNulls();
@@ -51,7 +58,7 @@
           }
         }
  else {
-          newNumRows=stats.getNumRows() * mapSideParallelism;
+          newNumRows=stats.getNumRows() * multiplier;
           updateStats(stats,newNumRows,true,gop);
         }
       }
@@ -62,12 +69,15 @@
     }
  else {
       if (parentStats != null) {
-        if (gop.getChildOperators().get(0) instanceof ReduceSinkOperator || gop.getChildOperators().get(0) instanceof AppMasterEventOperator) {
-          stats=parentStats.clone();
+        stats=parentStats.clone();
+        if (mapSide) {
+          newNumRows=multiplier * stats.getNumRows();
+          newDataSize=multiplier * stats.getDataSize();
+          stats.setNumRows(newNumRows);
+          stats.setDataSize(newDataSize);
         }
  else {
-          stats=parentStats.clone();
-          long newNumRows=parentStats.getNumRows() / 2;
+          newNumRows=parentStats.getNumRows() / 2;
           updateStats(stats,newNumRows,false,gop);
         }
       }
