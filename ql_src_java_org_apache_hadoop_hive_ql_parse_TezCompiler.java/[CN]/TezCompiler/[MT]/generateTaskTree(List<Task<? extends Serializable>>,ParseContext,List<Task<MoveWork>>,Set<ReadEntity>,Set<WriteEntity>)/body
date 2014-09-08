@@ -8,15 +8,8 @@
   opRules.put(new RuleRegExp("No more walking on ReduceSink-MapJoin",MapJoinOperator.getOperatorName() + "%"),new ReduceSinkMapJoinProc());
   opRules.put(new RuleRegExp("Split Work + Move/Merge - FileSink",FileSinkOperator.getOperatorName() + "%"),new CompositeProcessor(new FileSinkProcessor(),genTezWork));
   opRules.put(new RuleRegExp("Handle Potential Analyze Command",TableScanOperator.getOperatorName() + "%"),new ProcessAnalyzeTable(GenTezUtils.getUtils()));
-  opRules.put(new RuleRegExp("Remember union",UnionOperator.getOperatorName() + "%"),new NodeProcessor(){
-    @Override public Object process(    Node n,    Stack<Node> s,    NodeProcessorCtx procCtx,    Object... os) throws SemanticException {
-      GenTezProcContext context=(GenTezProcContext)procCtx;
-      UnionOperator union=(UnionOperator)n;
-      context.currentUnionOperators.add(union);
-      return null;
-    }
-  }
-);
+  opRules.put(new RuleRegExp("Remember union",UnionOperator.getOperatorName() + "%"),new UnionProcessor());
+  opRules.put(new RuleRegExp("AppMasterEventOperator",AppMasterEventOperator.getOperatorName() + "%"),new AppMasterEventProcessor());
   Dispatcher disp=new DefaultRuleDispatcher(null,opRules,procCtx);
   List<Node> topNodes=new ArrayList<Node>();
   topNodes.addAll(pCtx.getTopOps().values());
@@ -27,5 +20,10 @@
   }
   for (  FileSinkOperator fileSink : procCtx.fileSinkSet) {
     GenTezUtils.getUtils().processFileSink(procCtx,fileSink);
+  }
+  LOG.debug("There are " + procCtx.eventOperatorSet.size() + " app master events.");
+  for (  AppMasterEventOperator event : procCtx.eventOperatorSet) {
+    LOG.debug("Handling AppMasterEventOperator: " + event);
+    GenTezUtils.getUtils().processAppMasterEvent(procCtx,event);
   }
 }

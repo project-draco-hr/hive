@@ -21,8 +21,15 @@
       autoDelete=fs.deleteOnExit(fsp.outPaths[filesIdx]);
     }
     Utilities.copyTableJobPropertiesToConf(conf.getTableInfo(),jc);
-    fsp.outWriters[filesIdx]=HiveFileFormatUtils.getHiveRecordWriter(jc,conf.getTableInfo(),outputClass,conf,fsp.outPaths[filesIdx],reporter);
-    statsFromRecordWriter[filesIdx]=fsp.outWriters[filesIdx] instanceof StatsProvidingRecordWriter;
+    if (conf.getWriteType() == AcidUtils.Operation.NOT_ACID) {
+      fsp.outWriters[filesIdx]=HiveFileFormatUtils.getHiveRecordWriter(jc,conf.getTableInfo(),outputClass,conf,fsp.outPaths[filesIdx],reporter);
+      statsFromRecordWriter[filesIdx]=fsp.outWriters[filesIdx] instanceof StatsProvidingRecordWriter;
+    }
+ else     if (conf.getWriteType() == AcidUtils.Operation.INSERT) {
+      ObjectInspector inspector=bDynParts ? subSetOI : outputObjInspector;
+      int acidBucketNum=Integer.valueOf(Utilities.getTaskIdFromFilename(taskId));
+      fsp.updaters[filesIdx]=HiveFileFormatUtils.getAcidRecordUpdater(jc,conf.getTableInfo(),acidBucketNum,conf,fsp.outPaths[filesIdx],inspector,reporter,-1);
+    }
     if (reporter != null) {
       reporter.incrCounter(HiveConf.getVar(hconf,HiveConf.ConfVars.HIVECOUNTERGROUP),Operator.HIVECOUNTERCREATEDFILES,1);
     }

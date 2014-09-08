@@ -25,9 +25,15 @@
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TIME_TO_SUBMIT);
   boolean requireLock=false;
   boolean ckLock=false;
+  SessionState ss=SessionState.get();
   try {
     ckLock=checkConcurrency();
-    createTxnManager();
+    try {
+      ss.initTxnMgr(conf);
+    }
+ catch (    LockException e) {
+      throw new SemanticException(e.getMessage(),e);
+    }
   }
  catch (  SemanticException e) {
     errorMessage="FAILED: Error in semantic analysis: " + e.getMessage();
@@ -46,7 +52,7 @@
       return createProcessorResponse(ret);
     }
   }
-  ctx.setHiveTxnManager(txnMgr);
+  ctx.setHiveTxnManager(ss.getTxnMgr());
   if (ckLock) {
     boolean lockOnlyMapred=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_LOCK_MAPRED_ONLY);
     if (lockOnlyMapred) {

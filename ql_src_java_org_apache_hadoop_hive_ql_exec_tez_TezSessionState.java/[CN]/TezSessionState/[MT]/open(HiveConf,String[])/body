@@ -12,8 +12,6 @@
     }
   }
   refreshLocalResourcesFromConf(conf);
-  TezConfiguration tezConfig=new TezConfiguration(conf);
-  tezConfig.set(TezConfiguration.TEZ_AM_STAGING_DIR,tezScratchDir.toUri().toString());
   appJarLr=createJarLocalResource(utils.getExecJarPathLocal());
   Map<String,LocalResource> commonLocalResources=new HashMap<String,LocalResource>();
   commonLocalResources.put(utils.getBaseName(appJarLr),appJarLr);
@@ -21,26 +19,41 @@
     commonLocalResources.put(utils.getBaseName(lr),lr);
   }
   Map<String,String> amEnv=new HashMap<String,String>();
-  MRHelpers.updateEnvironmentForMRAM(conf,amEnv);
-  AMConfiguration amConfig=new AMConfiguration(amEnv,commonLocalResources,tezConfig,null);
-  TezSessionConfiguration sessionConfig=new TezSessionConfiguration(amConfig,tezConfig);
-  session=new TezSession("HIVE-" + sessionId,sessionConfig);
+  MRHelpers.updateEnvBasedOnMRAMEnv(conf,amEnv);
+  TezConfiguration tezConfig=new TezConfiguration(conf);
+  tezConfig.set(TezConfiguration.TEZ_AM_STAGING_DIR,tezScratchDir.toUri().toString());
+  if (HiveConf.getBoolVar(conf,ConfVars.HIVE_PREWARM_ENABLED)) {
+    int n=HiveConf.getIntVar(conf,ConfVars.HIVE_PREWARM_NUM_CONTAINERS);
+    n=Math.max(tezConfig.getInt(TezConfiguration.TEZ_AM_SESSION_MIN_HELD_CONTAINERS,TezConfiguration.TEZ_AM_SESSION_MIN_HELD_CONTAINERS_DEFAULT),n);
+    tezConfig.setInt(TezConfiguration.TEZ_AM_SESSION_MIN_HELD_CONTAINERS,n);
+  }
+  session=TezClient.create("HIVE-" + sessionId,tezConfig,true,commonLocalResources,null);
   LOG.info("Opening new Tez Session (id: " + sessionId + ", scratch dir: "+ tezScratchDir+ ")");
   session.start();
   if (HiveConf.getBoolVar(conf,ConfVars.HIVE_PREWARM_ENABLED)) {
     int n=HiveConf.getIntVar(conf,ConfVars.HIVE_PREWARM_NUM_CONTAINERS);
     LOG.info("Prewarming " + n + " containers  (id: "+ sessionId+ ", scratch dir: "+ tezScratchDir+ ")");
-    PreWarmContext context=utils.createPreWarmContext(sessionConfig,n,commonLocalResources);
+    PreWarmVertex prewarmVertex=utils.createPreWarmVertex(tezConfig,n,commonLocalResources);
     try {
-      session.preWarm(context);
+      session.preWarm(prewarmVertex);
     }
- catch (    InterruptedException ie) {
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Hive Prewarm threw an exception ",ie);
+ catch (    IOException ie) {
+      if (ie.getMessage().contains("Interrupted while waiting")) {
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("Hive Prewarm threw an exception ",ie);
+        }
+      }
+ else {
+        throw ie;
       }
     }
   }
+  try {
+    session.waitTillReady();
+  }
+ catch (  InterruptedException ie) {
+  }
   conf.set("mapreduce.framework.name","yarn-tez");
-  conf.set("mapreduce.tez.session.tokill-application-id",session.getApplicationId().toString());
+  conf.set("mapreduce.tez.session.tokill-application-id",session.getAppMasterApplicationId().toString());
   openSessions.add(this);
 }

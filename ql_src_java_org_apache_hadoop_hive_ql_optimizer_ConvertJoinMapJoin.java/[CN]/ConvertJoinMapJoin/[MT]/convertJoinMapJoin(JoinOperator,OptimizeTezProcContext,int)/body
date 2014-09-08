@@ -8,6 +8,17 @@
   MapJoinOperator mapJoinOp=MapJoinProcessor.convertJoinOpMapJoinOp(context.conf,parseContext.getOpParseCtx(),joinOp,parseContext.getJoinContext().get(joinOp),bigTablePosition,true);
   Operator<? extends OperatorDesc> parentBigTableOp=mapJoinOp.getParentOperators().get(bigTablePosition);
   if (parentBigTableOp instanceof ReduceSinkOperator) {
+    for (    Operator<?> p : parentBigTableOp.getParentOperators()) {
+      Set<Operator<?>> dynamicPartitionOperators=new HashSet<Operator<?>>();
+      for (      Operator<?> c : p.getChildOperators()) {
+        if (hasDynamicPartitionBroadcast(c)) {
+          dynamicPartitionOperators.add(c);
+        }
+      }
+      for (      Operator<?> c : dynamicPartitionOperators) {
+        p.removeChild(c);
+      }
+    }
     mapJoinOp.getParentOperators().remove(bigTablePosition);
     if (!(mapJoinOp.getParentOperators().contains(parentBigTableOp.getParentOperators().get(0)))) {
       mapJoinOp.getParentOperators().add(bigTablePosition,parentBigTableOp.getParentOperators().get(0));

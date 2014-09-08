@@ -1,0 +1,14 @@
+{
+  if (!pctx.getConf().getVar(ConfVars.HIVE_EXECUTION_ENGINE).equals("tez") || !pctx.getConf().getBoolVar(ConfVars.TEZ_DYNAMIC_PARTITION_PRUNING)) {
+    return pctx;
+  }
+  Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
+  opRules.put(new RuleRegExp("R1","(" + TableScanOperator.getOperatorName() + "%"+ ".*"+ ReduceSinkOperator.getOperatorName()+ "%"+ JoinOperator.getOperatorName()+ "%)"),new JoinSynthetic());
+  SyntheticContext context=new SyntheticContext(pctx);
+  Dispatcher disp=new DefaultRuleDispatcher(null,opRules,context);
+  GraphWalker ogw=new PreOrderWalker(disp);
+  List<Node> topNodes=new ArrayList<Node>();
+  topNodes.addAll(pctx.getTopOps().values());
+  ogw.startWalking(topNodes,null);
+  return pctx;
+}

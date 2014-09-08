@@ -1,0 +1,42 @@
+{
+  boolean success=false;
+  openTransaction();
+  try {
+    List<MTablePrivilege> tabGrants=null;
+    List<MTableColumnPrivilege> tabColumnGrants=null;
+    MTable table=this.getMTable(dbName,tblName);
+    if ("TRUE".equalsIgnoreCase(table.getParameters().get("PARTITION_LEVEL_PRIVILEGE"))) {
+      tabGrants=this.listAllTableGrants(dbName,tblName);
+      tabColumnGrants=this.listTableAllColumnGrants(dbName,tblName);
+    }
+    if (!partitionSpec.getTableName().equals(tblName) || !partitionSpec.getDbName().equals(dbName)) {
+      throw new MetaException("Partition does not belong to target table " + dbName + "."+ tblName+ ": "+ partitionSpec);
+    }
+    PartitionSpecProxy.PartitionIterator iterator=partitionSpec.getPartitionIterator();
+    int now=(int)(System.currentTimeMillis() / 1000);
+    while (iterator.hasNext()) {
+      Partition part=iterator.next();
+      if (isValidPartition(part,ifNotExists)) {
+        MPartition mpart=convertToMPart(part,true);
+        pm.makePersistent(mpart);
+        if (tabGrants != null) {
+          for (          MTablePrivilege tab : tabGrants) {
+            pm.makePersistent(new MPartitionPrivilege(tab.getPrincipalName(),tab.getPrincipalType(),mpart,tab.getPrivilege(),now,tab.getGrantor(),tab.getGrantorType(),tab.getGrantOption()));
+          }
+        }
+        if (tabColumnGrants != null) {
+          for (          MTableColumnPrivilege col : tabColumnGrants) {
+            pm.makePersistent(new MPartitionColumnPrivilege(col.getPrincipalName(),col.getPrincipalType(),mpart,col.getColumnName(),col.getPrivilege(),now,col.getGrantor(),col.getGrantorType(),col.getGrantOption()));
+          }
+        }
+      }
+    }
+    success=commitTransaction();
+  }
+  finally {
+    if (!success) {
+      rollbackTransaction();
+    }
+  }
+  return success;
+}
