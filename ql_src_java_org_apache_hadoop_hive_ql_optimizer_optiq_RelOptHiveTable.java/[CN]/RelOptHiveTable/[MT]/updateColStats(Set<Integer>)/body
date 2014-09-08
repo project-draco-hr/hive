@@ -6,29 +6,29 @@
   Set<String> colNamesFailedStats=new HashSet<String>();
   ColumnInfo tmp;
   for (  Integer pi : projIndxLst) {
-    if (m_hiveColStatsMap.get(pi) == null) {
-      if ((tmp=m_hiveNonPartitionColsMap.get(pi)) != null) {
+    if (hiveColStatsMap.get(pi) == null) {
+      if ((tmp=hiveNonPartitionColsMap.get(pi)) != null) {
         nonPartColNamesThatRqrStats.add(tmp.getInternalName());
         nonPartColIndxsThatRqrStats.add(pi);
       }
- else       if ((tmp=m_hivePartitionColsMap.get(pi)) != null) {
+ else       if ((tmp=hivePartitionColsMap.get(pi)) != null) {
         partColNamesThatRqrStats.add(tmp.getInternalName());
         partColIndxsThatRqrStats.add(pi);
       }
  else {
-        String logMsg="Unable to find Column Index: " + pi + ", in "+ m_hiveTblMetadata.getCompleteName();
+        String logMsg="Unable to find Column Index: " + pi + ", in "+ hiveTblMetadata.getCompleteName();
         LOG.error(logMsg);
         throw new RuntimeException(logMsg);
       }
     }
   }
   if (null == partitionList) {
-    computePartitionList(m_hiveConf,null);
+    computePartitionList(hiveConf,null);
   }
   if (nonPartColNamesThatRqrStats.size() > 0) {
     List<ColStatistics> hiveColStats;
-    if (!m_hiveTblMetadata.isPartitioned()) {
-      hiveColStats=StatsUtils.getTableColumnStats(m_hiveTblMetadata,m_hiveNonPartitionCols,nonPartColNamesThatRqrStats);
+    if (!hiveTblMetadata.isPartitioned()) {
+      hiveColStats=StatsUtils.getTableColumnStats(hiveTblMetadata,hiveNonPartitionCols,nonPartColNamesThatRqrStats);
       if (hiveColStats == null) {
         colNamesFailedStats.addAll(nonPartColNamesThatRqrStats);
       }
@@ -45,16 +45,16 @@
  else {
       try {
         if (partitionList.getNotDeniedPartns().isEmpty()) {
-          m_rowCount=0;
+          rowCount=0;
           hiveColStats=new ArrayList<ColStatistics>();
           for (          String c : nonPartColNamesThatRqrStats) {
-            hiveColStats.add(new ColStatistics(m_hiveTblMetadata.getTableName(),c,null));
+            hiveColStats.add(new ColStatistics(hiveTblMetadata.getTableName(),c,null));
           }
           colNamesFailedStats.clear();
         }
  else {
-          Statistics stats=StatsUtils.collectStatistics(m_hiveConf,partitionList,m_hiveTblMetadata,m_hiveNonPartitionCols,nonPartColNamesThatRqrStats,true,true);
-          m_rowCount=stats.getNumRows();
+          Statistics stats=StatsUtils.collectStatistics(hiveConf,partitionList,hiveTblMetadata,hiveNonPartitionCols,nonPartColNamesThatRqrStats,true,true);
+          rowCount=stats.getNumRows();
           hiveColStats=new ArrayList<ColStatistics>();
           for (          String c : nonPartColNamesThatRqrStats) {
             ColStatistics cs=stats.getColumnStatisticsFromColName(c);
@@ -75,21 +75,20 @@
     }
     if (hiveColStats != null && hiveColStats.size() == nonPartColNamesThatRqrStats.size()) {
       for (int i=0; i < hiveColStats.size(); i++) {
-        m_hiveColStatsMap.put(nonPartColIndxsThatRqrStats.get(i),hiveColStats.get(i));
+        hiveColStatsMap.put(nonPartColIndxsThatRqrStats.get(i),hiveColStats.get(i));
       }
     }
   }
   if (colNamesFailedStats.isEmpty() && !partColNamesThatRqrStats.isEmpty()) {
-    m_numPartitions=partitionList.getPartitions().size();
     ColStatistics cStats=null;
     for (int i=0; i < partColNamesThatRqrStats.size(); i++) {
-      cStats=new ColStatistics(m_hiveTblMetadata.getTableName(),partColNamesThatRqrStats.get(i),m_hivePartitionColsMap.get(partColIndxsThatRqrStats.get(i)).getTypeName());
+      cStats=new ColStatistics(hiveTblMetadata.getTableName(),partColNamesThatRqrStats.get(i),hivePartitionColsMap.get(partColIndxsThatRqrStats.get(i)).getTypeName());
       cStats.setCountDistint(getDistinctCount(partitionList.getPartitions(),partColNamesThatRqrStats.get(i)));
-      m_hiveColStatsMap.put(partColIndxsThatRqrStats.get(i),cStats);
+      hiveColStatsMap.put(partColIndxsThatRqrStats.get(i),cStats);
     }
   }
   if (!colNamesFailedStats.isEmpty()) {
-    String logMsg="No Stats for " + m_hiveTblMetadata.getCompleteName() + ", Columns: "+ getColNamesForLogging(colNamesFailedStats);
+    String logMsg="No Stats for " + hiveTblMetadata.getCompleteName() + ", Columns: "+ getColNamesForLogging(colNamesFailedStats);
     LOG.error(logMsg);
     noColsMissingStats.getAndAdd(colNamesFailedStats.size());
     throw new RuntimeException(logMsg);
