@@ -1,0 +1,52 @@
+{
+  ParseContext pCtx=((SyntheticContext)procCtx).getParseContext();
+  @SuppressWarnings("unchecked") CommonJoinOperator<JoinDesc> join=(CommonJoinOperator<JoinDesc>)nd;
+  ReduceSinkOperator source=(ReduceSinkOperator)stack.get(stack.size() - 2);
+  int srcPos=join.getParentOperators().indexOf(source);
+  List<Operator<? extends OperatorDesc>> parents=join.getParentOperators();
+  int[][] targets=getTargets(join);
+  Operator<? extends OperatorDesc> parent=source.getParentOperators().get(0);
+  RowResolver parentRR=pCtx.getOpParseCtx().get(parent).getRowResolver();
+  if (join.getConf().getNullSafes() != null) {
+    for (    boolean b : join.getConf().getNullSafes()) {
+      if (b) {
+        return null;
+      }
+    }
+  }
+  for (  int targetPos : targets[srcPos]) {
+    if (srcPos == targetPos) {
+      continue;
+    }
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Synthetic predicate: " + srcPos + " --> "+ targetPos);
+    }
+    ReduceSinkOperator target=(ReduceSinkOperator)parents.get(targetPos);
+    List<ExprNodeDesc> sourceKeys=source.getConf().getKeyCols();
+    List<ExprNodeDesc> targetKeys=target.getConf().getKeyCols();
+    if (sourceKeys.size() < 1) {
+      continue;
+    }
+    ExprNodeDesc syntheticExpr=null;
+    for (int i=0; i < sourceKeys.size(); ++i) {
+      List<ExprNodeDesc> inArgs=new ArrayList<ExprNodeDesc>();
+      inArgs.add(sourceKeys.get(i));
+      ExprNodeDynamicListDesc dynamicExpr=new ExprNodeDynamicListDesc(targetKeys.get(i).getTypeInfo(),target,i);
+      inArgs.add(dynamicExpr);
+      ExprNodeDesc syntheticInExpr=ExprNodeGenericFuncDesc.newInstance(FunctionRegistry.getFunctionInfo("in").getGenericUDF(),inArgs);
+      if (syntheticExpr != null) {
+        List<ExprNodeDesc> andArgs=new ArrayList<ExprNodeDesc>();
+        andArgs.add(syntheticExpr);
+        andArgs.add(syntheticInExpr);
+        syntheticExpr=ExprNodeGenericFuncDesc.newInstance(FunctionRegistry.getFunctionInfo("and").getGenericUDF(),andArgs);
+      }
+ else {
+        syntheticExpr=syntheticInExpr;
+      }
+    }
+    Operator<FilterDesc> newFilter=createFilter(source,parent,parentRR,syntheticExpr);
+    pCtx.getOpParseCtx().put(newFilter,new OpParseContext(parentRR));
+    parent=newFilter;
+  }
+  return null;
+}

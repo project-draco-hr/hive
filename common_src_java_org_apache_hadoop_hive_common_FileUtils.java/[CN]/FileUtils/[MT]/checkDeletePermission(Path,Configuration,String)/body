@@ -1,13 +1,24 @@
 {
-  final FileSystem fs=path.getFileSystem(conf);
-  if (!fs.exists(path)) {
+  if (path == null) {
     return;
   }
-  Path parPath=path.getParent();
-  FileStatus stat=fs.getFileStatus(path);
+  final FileSystem fs=path.getFileSystem(conf);
+  FileStatus stat=null;
+  try {
+    stat=fs.getFileStatus(path);
+  }
+ catch (  FileNotFoundException e) {
+  }
+  if (stat == null) {
+    return;
+  }
   FileUtils.checkFileAccessWithImpersonation(fs,stat,FsAction.WRITE,user);
-  FileStatus parStatus=fs.getFileStatus(parPath);
-  if (!parStatus.getPermission().getStickyBit()) {
+  HadoopShims shims=ShimLoader.getHadoopShims();
+  if (!shims.supportStickyBit()) {
+    return;
+  }
+  FileStatus parStatus=fs.getFileStatus(path.getParent());
+  if (!shims.hasStickyBit(parStatus.getPermission())) {
     return;
   }
   if (parStatus.getOwner().equals(user)) {

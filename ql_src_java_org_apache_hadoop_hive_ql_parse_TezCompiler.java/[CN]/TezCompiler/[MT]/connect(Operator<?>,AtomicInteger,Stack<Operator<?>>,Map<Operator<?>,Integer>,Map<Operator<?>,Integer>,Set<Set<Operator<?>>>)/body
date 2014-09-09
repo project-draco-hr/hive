@@ -1,0 +1,36 @@
+{
+  indexes.put(o,index.get());
+  lowLinks.put(o,index.get());
+  index.incrementAndGet();
+  nodes.push(o);
+  List<Operator<?>> children;
+  if (o instanceof AppMasterEventOperator) {
+    children=new ArrayList<Operator<?>>();
+    children.addAll(o.getChildOperators());
+    TableScanOperator ts=((DynamicPruningEventDesc)o.getConf()).getTableScan();
+    LOG.debug("Adding special edge: " + o.getName() + " --> "+ ts.toString());
+    children.add(ts);
+  }
+ else {
+    children=o.getChildOperators();
+  }
+  for (  Operator<?> child : children) {
+    if (!indexes.containsKey(child)) {
+      connect(child,index,nodes,indexes,lowLinks,components);
+      lowLinks.put(child,Math.min(lowLinks.get(o),lowLinks.get(child)));
+    }
+ else     if (nodes.contains(child)) {
+      lowLinks.put(o,Math.min(lowLinks.get(o),indexes.get(child)));
+    }
+  }
+  if (lowLinks.get(o).equals(indexes.get(o))) {
+    Set<Operator<?>> component=new HashSet<Operator<?>>();
+    components.add(component);
+    Operator<?> current;
+    do {
+      current=nodes.pop();
+      component.add(current);
+    }
+ while (current != o);
+  }
+}
