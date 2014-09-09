@@ -1,6 +1,21 @@
 {
   RelNode gbRel=null;
   QBParseInfo qbp=getQBParseInfo(qb);
+  if (!qbp.getDestRollups().isEmpty() || !qbp.getDestGroupingSets().isEmpty() || !qbp.getDestCubes().isEmpty()) {
+    String gbyClause=null;
+    HashMap<String,ASTNode> gbysMap=qbp.getDestToGroupBy();
+    if (gbysMap.size() == 1) {
+      ASTNode gbyAST=gbysMap.entrySet().iterator().next().getValue();
+      gbyClause=SemanticAnalyzer.this.ctx.getTokenRewriteStream().toString(gbyAST.getTokenStartIndex(),gbyAST.getTokenStopIndex());
+      gbyClause="in '" + gbyClause + "'.";
+    }
+ else {
+      gbyClause=".";
+    }
+    String msg=String.format("Encountered Grouping Set/Cube/Rollup%s" + " Currently we don't support Grouping Set/Cube/Rollup" + " clauses in CBO,"+ " turn off cbo for these queries.",gbyClause);
+    LOG.debug(msg);
+    throw new OptiqSemanticException(msg);
+  }
   String detsClauseName=qbp.getClauseNames().iterator().next();
   List<ASTNode> grpByAstExprs=getGroupByForClause(qbp,detsClauseName);
   HashMap<String,ASTNode> aggregationTrees=qbp.getAggregationExprsForClause(detsClauseName);
