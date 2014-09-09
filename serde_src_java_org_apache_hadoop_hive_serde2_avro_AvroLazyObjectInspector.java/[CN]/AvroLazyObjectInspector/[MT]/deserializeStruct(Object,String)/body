@@ -1,0 +1,66 @@
+{
+  byte[] data=((LazyStruct)struct).getBytes();
+  AvroDeserializer deserializer=new AvroDeserializer();
+  if (data == null) {
+    return null;
+  }
+  if (readerSchema == null && schemaRetriever == null) {
+    throw new IllegalArgumentException("reader schema or schemaRetriever must be set for field [" + fieldName + "]");
+  }
+  Schema ws=null;
+  Schema rs=null;
+  int offset=0;
+  AvroGenericRecordWritable avroWritable=new AvroGenericRecordWritable();
+  if (readerSchema == null) {
+    rs=schemaRetriever.retrieveReaderSchema(data);
+    if (rs == null) {
+      throw new IllegalStateException("A valid reader schema could not be retrieved either directly or from the schema retriever for field [" + fieldName + "]");
+    }
+    ws=schemaRetriever.retrieveWriterSchema(data);
+    if (ws == null) {
+      throw new IllegalStateException("Null writer schema retrieved from schemaRetriever for field [" + fieldName + "]");
+    }
+    offset=schemaRetriever.getOffset();
+    if (data.length < offset) {
+      throw new IllegalArgumentException("Data size cannot be less than [" + offset + "]. Found ["+ data.length+ "]");
+    }
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Retrieved writer Schema: " + ws.toString());
+      LOG.debug("Retrieved reader Schema: " + rs.toString());
+    }
+    try {
+      avroWritable.readFields(data,offset,data.length,ws,rs);
+    }
+ catch (    IOException ioe) {
+      throw new AvroObjectInspectorException("Error deserializing avro payload",ioe);
+    }
+  }
+ else {
+    if (schemaRetriever != null) {
+      ws=schemaRetriever.retrieveWriterSchema(data);
+      if (ws == null) {
+        throw new IllegalStateException("Null writer schema retrieved from schemaRetriever for field [" + fieldName + "]");
+      }
+    }
+ else {
+      ws=retrieveSchemaFromBytes(data);
+    }
+    rs=readerSchema;
+    try {
+      avroWritable.readFields(data,ws,rs);
+    }
+ catch (    IOException ioe) {
+      throw new AvroObjectInspectorException("Error deserializing avro payload",ioe);
+    }
+  }
+  AvroObjectInspectorGenerator oiGenerator=null;
+  Object deserializedObject=null;
+  try {
+    oiGenerator=new AvroObjectInspectorGenerator(rs);
+    deserializedObject=deserializer.deserialize(oiGenerator.getColumnNames(),oiGenerator.getColumnTypes(),avroWritable,rs);
+  }
+ catch (  SerDeException se) {
+    throw new AvroObjectInspectorException("Error deserializing avro payload",se);
+  }
+  return deserializedObject;
+}

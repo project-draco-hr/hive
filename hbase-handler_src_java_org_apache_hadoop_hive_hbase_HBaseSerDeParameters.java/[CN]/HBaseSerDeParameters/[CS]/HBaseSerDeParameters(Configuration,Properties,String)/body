@@ -1,17 +1,25 @@
 {
   this.job=job;
-  this.tbl=tbl;
-  this.serdeParams=LazySimpleSerDe.initSerdeParams(job,tbl,serdeName);
-  this.putTimestamp=Long.valueOf(tbl.getProperty(HBaseSerDe.HBASE_PUT_TIMESTAMP,"-1"));
   columnMappingString=tbl.getProperty(HBaseSerDe.HBASE_COLUMNS_MAPPING);
   doColumnRegexMatching=Boolean.valueOf(tbl.getProperty(HBaseSerDe.HBASE_COLUMNS_REGEX_MATCHING,"true"));
   columnMappings=HBaseSerDe.parseColumnsMapping(columnMappingString,doColumnRegexMatching);
+  String columnTypeProperty=tbl.getProperty(serdeConstants.LIST_COLUMN_TYPES);
+  String autogenerate=tbl.getProperty(HBaseSerDe.HBASE_AUTOGENERATE_STRUCT);
+  if (columnTypeProperty == null || columnTypeProperty.isEmpty()) {
+    String columnNameProperty=tbl.getProperty(serdeConstants.LIST_COLUMNS);
+    if (columnNameProperty == null || columnNameProperty.isEmpty()) {
+      if (autogenerate == null || autogenerate.isEmpty()) {
+        throw new IllegalArgumentException("Either the columns must be specified or the " + HBaseSerDe.HBASE_AUTOGENERATE_STRUCT + " property must be set to true.");
+      }
+      tbl.setProperty(serdeConstants.LIST_COLUMNS,columnMappings.toNamesString(tbl,autogenerate));
+    }
+    tbl.setProperty(serdeConstants.LIST_COLUMN_TYPES,columnMappings.toTypesString(tbl,job,autogenerate));
+  }
+  this.serdeParams=LazySimpleSerDe.initSerdeParams(job,tbl,serdeName);
+  this.putTimestamp=Long.valueOf(tbl.getProperty(HBaseSerDe.HBASE_PUT_TIMESTAMP,"-1"));
   columnMappings.setHiveColumnDescription(serdeName,serdeParams.getColumnNames(),serdeParams.getColumnTypes());
   String hbaseTableStorageType=tbl.getProperty(HBaseSerDe.HBASE_TABLE_DEFAULT_STORAGE_TYPE);
   columnMappings.parseColumnStorageTypes(hbaseTableStorageType);
-  String columnTypeProperty=tbl.getProperty(serdeConstants.LIST_COLUMN_TYPES);
-  if (columnTypeProperty == null) {
-    tbl.setProperty(serdeConstants.LIST_COLUMN_TYPES,columnMappings.toTypesString());
-  }
   this.keyFactory=initKeyFactory(job,tbl);
+  this.valueFactories=initValueFactories(job,tbl);
 }
