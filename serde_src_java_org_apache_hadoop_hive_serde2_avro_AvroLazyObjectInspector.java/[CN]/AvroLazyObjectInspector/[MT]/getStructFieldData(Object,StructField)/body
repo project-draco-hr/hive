@@ -1,0 +1,56 @@
+{
+  if (data == null) {
+    return null;
+  }
+  if (!(fieldRef instanceof MyField)) {
+    throw new IllegalArgumentException("fieldRef has to be of MyField");
+  }
+  MyField f=(MyField)fieldRef;
+  int fieldID=f.getFieldID();
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Getting struct field data for field: [" + f.getFieldName() + "] on data ["+ data.getClass()+ "]");
+  }
+  if (data instanceof LazyStruct) {
+    LazyStruct row=(LazyStruct)data;
+    Object rowField=row.getField(fieldID);
+    if (rowField instanceof LazyStruct) {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Deserializing struct [" + rowField.getClass() + "]");
+      }
+      return deserializeStruct(rowField,f.getFieldName());
+    }
+ else     if (rowField instanceof LazyMap) {
+      LazyMap lazyMap=(LazyMap)rowField;
+      for (      Entry<Object,Object> entry : lazyMap.getMap().entrySet()) {
+        Object _key=entry.getKey();
+        Object _value=entry.getValue();
+        if (_value instanceof LazyStruct) {
+          lazyMap.getMap().put(_key,deserializeStruct(_value,f.getFieldName()));
+        }
+      }
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Returning a lazy map for field [" + f.getFieldName() + "]");
+      }
+      return lazyMap;
+    }
+ else {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Returning [" + rowField.toString() + "] for field ["+ f.getFieldName()+ "]");
+      }
+      return rowField;
+    }
+  }
+ else {
+    if (!(data instanceof List)) {
+      throw new IllegalArgumentException("data should be an instance of list");
+    }
+    if (!(fieldID < ((List<Object>)data).size())) {
+      return null;
+    }
+    Object field=((List<Object>)data).get(fieldID);
+    if (field == null) {
+      return null;
+    }
+    return toLazyObject(field,fieldRef.getFieldObjectInspector());
+  }
+}

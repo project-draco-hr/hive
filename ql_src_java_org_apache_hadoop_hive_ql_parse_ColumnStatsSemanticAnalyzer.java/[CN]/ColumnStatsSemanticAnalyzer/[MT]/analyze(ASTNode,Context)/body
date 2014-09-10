@@ -2,6 +2,37 @@
   QB qb;
   QBParseInfo qbp;
   init(true);
+  super.processNoScanCommand(ast);
+  super.processPartialScanCommand(ast);
+  if (shouldRewrite(ast)) {
+    tbl=getTable(ast);
+    colNames=getColumnName(ast);
+    originalTree=ast;
+    boolean isPartitionStats=isPartitionLevelStats(ast);
+    Map<String,String> partSpec=null;
+    checkForPartitionColumns(colNames,Utilities.getColumnNamesFromFieldSchema(tbl.getPartitionKeys()));
+    validateSpecifiedColumnNames(colNames);
+    if (conf.getBoolVar(ConfVars.HIVE_STATS_COLLECT_PART_LEVEL_STATS) && tbl.isPartitioned()) {
+      isPartitionStats=true;
+    }
+    if (isPartitionStats) {
+      isTableLevel=false;
+      partSpec=getPartKeyValuePairsFromAST(ast);
+      handlePartialPartitionSpec(partSpec);
+    }
+ else {
+      isTableLevel=true;
+    }
+    colType=getColumnTypes(colNames);
+    int numBitVectors=getNumBitVectorsForNDVEstimation(conf);
+    rewrittenQuery=genRewrittenQuery(colNames,numBitVectors,partSpec,isPartitionStats);
+    rewrittenTree=genRewrittenTree(rewrittenQuery);
+  }
+ else {
+    originalTree=rewrittenTree=ast;
+    rewrittenQuery=null;
+    isRewritten=false;
+  }
   if (isRewritten) {
     qb=getQB();
     qb.setAnalyzeRewrite(true);

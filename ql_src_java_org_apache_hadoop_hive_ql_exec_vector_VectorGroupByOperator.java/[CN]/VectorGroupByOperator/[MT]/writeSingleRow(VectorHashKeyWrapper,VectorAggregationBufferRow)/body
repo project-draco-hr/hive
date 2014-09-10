@@ -1,0 +1,27 @@
+{
+  int fi=0;
+  if (!isVectorOutput) {
+    for (int i=0; i < keyExpressions.length; ++i) {
+      forwardCache[fi++]=keyWrappersBatch.getWritableKeyValue(kw,i,keyOutputWriters[i]);
+    }
+    for (int i=0; i < aggregators.length; ++i) {
+      forwardCache[fi++]=aggregators[i].evaluateOutput(agg.getAggregationBuffer(i));
+    }
+    if (LOG.isDebugEnabled()) {
+      LOG.debug(String.format("forwarding keys: %s: %s",kw,Arrays.toString(forwardCache)));
+    }
+    forward(forwardCache,outputObjInspector);
+  }
+ else {
+    for (int i=0; i < keyExpressions.length; ++i) {
+      vectorColumnAssign[fi++].assignObjectValue(keyWrappersBatch.getWritableKeyValue(kw,i,keyOutputWriters[i]),outputBatch.size);
+    }
+    for (int i=0; i < aggregators.length; ++i) {
+      vectorColumnAssign[fi++].assignObjectValue(aggregators[i].evaluateOutput(agg.getAggregationBuffer(i)),outputBatch.size);
+    }
+    ++outputBatch.size;
+    if (outputBatch.size == VectorizedRowBatch.DEFAULT_SIZE) {
+      flushOutput();
+    }
+  }
+}

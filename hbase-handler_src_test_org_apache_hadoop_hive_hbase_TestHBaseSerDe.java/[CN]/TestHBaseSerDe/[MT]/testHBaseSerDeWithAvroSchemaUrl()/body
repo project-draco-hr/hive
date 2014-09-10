@@ -1,0 +1,31 @@
+{
+  byte[] cfa="cola".getBytes();
+  byte[] qualAvro="avro".getBytes();
+  byte[] rowKey=Bytes.toBytes("test-row1");
+  List<KeyValue> kvs=new ArrayList<KeyValue>();
+  byte[] avroData=getTestAvroBytesFromSchema(RECORD_SCHEMA);
+  kvs.add(new KeyValue(rowKey,cfa,qualAvro,avroData));
+  Result r=new Result(kvs);
+  Put p=new Put(rowKey);
+  p.add(new KeyValue(rowKey,cfa,qualAvro,avroData));
+  Object[] expectedFieldsData={new String("test-row1"),new String("[[42, true, 42432234234]]")};
+  MiniDFSCluster miniDfs=null;
+  try {
+    miniDfs=new MiniDFSCluster(new Configuration(),1,true,null);
+    miniDfs.getFileSystem().mkdirs(new Path("/path/to/schema"));
+    FSDataOutputStream out=miniDfs.getFileSystem().create(new Path("/path/to/schema/schema.avsc"));
+    out.writeBytes(RECORD_SCHEMA);
+    out.close();
+    String onHDFS=miniDfs.getFileSystem().getUri() + "/path/to/schema/schema.avsc";
+    HBaseSerDe serDe=new HBaseSerDe();
+    Configuration conf=new Configuration();
+    Properties tbl=createPropertiesForHiveAvroSchemaUrl(onHDFS);
+    serDe.initialize(conf,tbl);
+    deserializeAndSerializeHiveAvro(serDe,r,p,expectedFieldsData);
+  }
+  finally {
+    if (miniDfs != null) {
+      miniDfs.shutdown();
+    }
+  }
+}

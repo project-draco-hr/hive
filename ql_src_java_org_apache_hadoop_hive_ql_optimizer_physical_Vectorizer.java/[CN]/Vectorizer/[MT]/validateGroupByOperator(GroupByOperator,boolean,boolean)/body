@@ -1,0 +1,49 @@
+{
+  GroupByDesc desc=op.getConf();
+  VectorGroupByDesc vectorDesc=desc.getVectorDesc();
+  if (desc.isGroupingSetsPresent()) {
+    LOG.info("Grouping sets not supported in vector mode");
+    return false;
+  }
+  boolean ret=validateExprNodeDesc(desc.getKeys());
+  if (!ret) {
+    return false;
+  }
+  ret=validateAggregationDesc(desc.getAggregators(),isReduce);
+  if (!ret) {
+    return false;
+  }
+  boolean isVectorOutput=isTez && aggregatorsOutputIsPrimitive(desc.getAggregators(),isReduce);
+  vectorDesc.setVectorOutput(isVectorOutput);
+  if (isReduce) {
+    if (desc.isDistinct()) {
+      LOG.info("Distinct not supported in reduce vector mode");
+      return false;
+    }
+    if (desc.getMode() != GroupByDesc.Mode.COMPLETE && desc.getMode() != GroupByDesc.Mode.PARTIAL1 && desc.getMode() != GroupByDesc.Mode.PARTIAL2 && desc.getMode() != GroupByDesc.Mode.MERGEPARTIAL) {
+      LOG.info("Reduce vector mode not supported when input for GROUP BY not sorted");
+      return false;
+    }
+    LOG.info("Reduce GROUP BY mode is " + desc.getMode().name());
+    if (desc.getGroupKeyNotReductionKey()) {
+      LOG.info("Reduce vector mode not supported when group key is not reduction key");
+      return false;
+    }
+    if (!isVectorOutput) {
+      LOG.info("Reduce vector mode only supported when aggregate outputs are primitive types");
+      return false;
+    }
+    if (desc.getKeys().size() > 0) {
+      LOG.info("Reduce-side GROUP BY will process key groups");
+      vectorDesc.setVectorGroupBatches(true);
+    }
+ else {
+      LOG.info("Reduce-side GROUP BY will do global aggregation");
+    }
+    vectorDesc.setIsReduce(true);
+  }
+ else {
+    LOG.info("Downstream operators of map-side GROUP BY will be vectorized: " + isVectorOutput);
+  }
+  return true;
+}

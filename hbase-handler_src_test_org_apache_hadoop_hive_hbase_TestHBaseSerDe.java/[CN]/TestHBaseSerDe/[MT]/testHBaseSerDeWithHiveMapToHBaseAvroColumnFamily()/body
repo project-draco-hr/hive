@@ -1,0 +1,33 @@
+{
+  byte[] cfa="cola".getBytes();
+  byte[] qualAvroA="prefixA_avro1".getBytes();
+  byte[] qualAvroB="prefixB_avro2".getBytes();
+  byte[] qualAvroC="prefixB_avro3".getBytes();
+  List<Object> qualifiers=new ArrayList<Object>();
+  qualifiers.add(new Text("prefixA_avro1"));
+  qualifiers.add(new Text("prefixB_avro2"));
+  qualifiers.add(new Text("prefixB_avro3"));
+  List<Object> expectedQualifiers=new ArrayList<Object>();
+  expectedQualifiers.add(new Text("prefixB_avro2"));
+  expectedQualifiers.add(new Text("prefixB_avro3"));
+  byte[] rowKey=Bytes.toBytes("test-row1");
+  List<KeyValue> kvs=new ArrayList<KeyValue>();
+  byte[] avroDataA=getTestAvroBytesFromSchema(RECORD_SCHEMA);
+  byte[] avroDataB=getTestAvroBytesFromClass1(1);
+  byte[] avroDataC=getTestAvroBytesFromClass1(2);
+  kvs.add(new KeyValue(rowKey,cfa,qualAvroA,avroDataA));
+  kvs.add(new KeyValue(rowKey,cfa,qualAvroB,avroDataB));
+  kvs.add(new KeyValue(rowKey,cfa,qualAvroC,avroDataC));
+  Result r=new Result(kvs);
+  Put p=new Put(rowKey);
+  p.add(new KeyValue(rowKey,cfa,qualAvroB,Bytes.padTail(avroDataB,11)));
+  p.add(new KeyValue(rowKey,cfa,qualAvroC,Bytes.padTail(avroDataC,11)));
+  Object[] expectedFieldsData={new Text("test-row1"),new String("[Avro Employee1, 11111, 25, FEMALE, [[[Avro First Address1, Avro Second Address1, Avro City1, 123456, 0:[999, 1234567890], null, {testkey=testvalue}], [Avro First Address1, Avro Second Address1, Avro City1, 123456, 0:[999, 1234567890], null, {testkey=testvalue}]], " + "[999, 1234567890], [999, 1234455555]]]"),new String("[Avro Employee2, 11111, 25, FEMALE, [[[Avro First Address2, Avro Second Address2, Avro City2, 123456, 0:[999, 1234567890], null, {testkey=testvalue}], [Avro First Address2, Avro Second Address2, Avro City2, 123456, 0:[999, 1234567890], null, {testkey=testvalue}]], " + "[999, 1234567890], [999, 1234455555]]]")};
+  int[] expectedMapSize=new int[]{2};
+  HBaseSerDe serDe=new HBaseSerDe();
+  Configuration conf=new Configuration();
+  Properties tbl=createPropertiesForHiveAvroColumnFamilyMap();
+  serDe.initialize(conf,tbl);
+  Object notPresentKey=new Text("prefixA_avro1");
+  deserializeAndSerializeHiveStructColumnFamily(serDe,r,p,expectedFieldsData,expectedMapSize,expectedQualifiers,notPresentKey);
+}
