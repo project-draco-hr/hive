@@ -17,10 +17,19 @@
     try {
       boolean isAllColumns=aggAst.getType() == HiveParser.TOK_FUNCTIONSTAR;
       Mode amode=groupByDescModeToUDAFMode(GroupByDesc.Mode.COMPLETE,isDistinct);
-      GenericUDAFEvaluator genericUDAFEvaluator=getGenericUDAFEvaluator(aggName,aggParameters,aggAst,isDistinct,isAllColumns);
-      assert(genericUDAFEvaluator != null);
-      GenericUDAFInfo udaf=getGenericUDAFInfo(genericUDAFEvaluator,amode,aggParameters);
-      udafRetType=udaf.returnType;
+      GenericUDAFEvaluator genericUDAFEvaluator=null;
+      if (aggName.toLowerCase().equals(FunctionRegistry.LEAD_FUNC_NAME) || aggName.toLowerCase().equals(FunctionRegistry.LAG_FUNC_NAME)) {
+        ArrayList<ObjectInspector> originalParameterTypeInfos=getWritableObjectInspector(aggParameters);
+        genericUDAFEvaluator=FunctionRegistry.getGenericWindowingEvaluator(aggName,originalParameterTypeInfos,isDistinct,isAllColumns);
+        GenericUDAFInfo udaf=getGenericUDAFInfo(genericUDAFEvaluator,amode,aggParameters);
+        udafRetType=((ListTypeInfo)udaf.returnType).getListElementTypeInfo();
+      }
+ else {
+        genericUDAFEvaluator=getGenericUDAFEvaluator(aggName,aggParameters,aggAst,isDistinct,isAllColumns);
+        assert(genericUDAFEvaluator != null);
+        GenericUDAFInfo udaf=getGenericUDAFInfo(genericUDAFEvaluator,amode,aggParameters);
+        udafRetType=udaf.returnType;
+      }
     }
  catch (    Exception e) {
       LOG.debug("CBO: Couldn't Obtain UDAF evaluators for " + aggName + ", trying to translate to GenericUDF");
