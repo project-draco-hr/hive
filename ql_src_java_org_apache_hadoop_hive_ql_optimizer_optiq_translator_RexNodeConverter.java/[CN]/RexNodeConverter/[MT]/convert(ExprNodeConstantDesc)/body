@@ -5,7 +5,7 @@
   RelDataType optiqDataType=TypeConverter.convert(hiveType,dtFactory);
   PrimitiveCategory hiveTypeCategory=hiveType.getPrimitiveCategory();
   ConstantObjectInspector coi=literal.getWritableObjectInspector();
-  Object value=ObjectInspectorUtils.copyToStandardJavaObject(literal.getWritableObjectInspector().getWritableConstantValue(),coi);
+  Object value=ObjectInspectorUtils.copyToStandardJavaObject(coi.getWritableConstantValue(),coi);
   RexNode optiqLiteral=null;
 switch (hiveTypeCategory) {
 case BOOLEAN:
@@ -26,9 +26,24 @@ case LONG:
 optiqLiteral=rexBuilder.makeBigintLiteral(new BigDecimal((Long)value));
 break;
 case DECIMAL:
-if (value instanceof HiveDecimal) value=((HiveDecimal)value).bigDecimalValue();
-if (value instanceof Decimal128) value=((Decimal128)value).toBigDecimal();
-optiqLiteral=rexBuilder.makeExactLiteral((BigDecimal)value);
+if (value instanceof HiveDecimal) {
+value=((HiveDecimal)value).bigDecimalValue();
+}
+ else if (value instanceof Decimal128) {
+value=((Decimal128)value).toBigDecimal();
+}
+if (value == null) {
+throw new OptiqSemanticException("Expression " + literal.getExprString() + " is not a valid decimal");
+}
+BigDecimal bd=(BigDecimal)value;
+BigInteger unscaled=bd.unscaledValue();
+if (unscaled.compareTo(MIN_LONG_BI) >= 0 && unscaled.compareTo(MAX_LONG_BI) <= 0) {
+optiqLiteral=rexBuilder.makeExactLiteral(bd);
+}
+ else {
+RelDataType relType=m_cluster.getTypeFactory().createSqlType(SqlTypeName.DECIMAL,bd.scale(),unscaled.toString().length());
+optiqLiteral=rexBuilder.makeExactLiteral(bd,relType);
+}
 break;
 case FLOAT:
 optiqLiteral=rexBuilder.makeApproxLiteral(new BigDecimal((Float)value),optiqDataType);
