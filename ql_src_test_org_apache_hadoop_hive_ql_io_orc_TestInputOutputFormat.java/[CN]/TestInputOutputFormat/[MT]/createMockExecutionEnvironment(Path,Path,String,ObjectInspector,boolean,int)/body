@@ -6,9 +6,18 @@
   conf.set("hive.vectorized.execution.enabled",Boolean.toString(isVectorized));
   conf.set("fs.mock.impl",MockFileSystem.class.getName());
   conf.set("mapred.mapper.class",ExecMapper.class.getName());
-  Path root=new Path(warehouseDir,tableName + "/p=0");
+  Path root=new Path(warehouseDir,tableName);
   ((MockFileSystem)root.getFileSystem(conf)).clear();
-  conf.set("mapred.input.dir",root.toString());
+  String[] partPath=new String[partitions];
+  StringBuilder buffer=new StringBuilder();
+  for (int p=0; p < partitions; ++p) {
+    partPath[p]=new Path(root,"p=" + p).toString();
+    if (p != 0) {
+      buffer.append(',');
+    }
+    buffer.append(partPath[p]);
+  }
+  conf.set("mapred.input.dir",buffer.toString());
   StringBuilder columnIds=new StringBuilder();
   StringBuilder columnNames=new StringBuilder();
   StringBuilder columnTypes=new StringBuilder();
@@ -35,18 +44,20 @@
   tblProps.put("columns",columnNames.toString());
   tblProps.put("columns.types",columnTypes.toString());
   TableDesc tbl=new TableDesc(OrcInputFormat.class,OrcOutputFormat.class,tblProps);
-  LinkedHashMap<String,String> partSpec=new LinkedHashMap<String,String>();
-  PartitionDesc part=new PartitionDesc(tbl,partSpec);
   MapWork mapWork=new MapWork();
   mapWork.setVectorMode(isVectorized);
   mapWork.setUseBucketizedHiveInputFormat(false);
   LinkedHashMap<String,ArrayList<String>> aliasMap=new LinkedHashMap<String,ArrayList<String>>();
   ArrayList<String> aliases=new ArrayList<String>();
   aliases.add(tableName);
-  aliasMap.put(root.toString(),aliases);
-  mapWork.setPathToAliases(aliasMap);
   LinkedHashMap<String,PartitionDesc> partMap=new LinkedHashMap<String,PartitionDesc>();
-  partMap.put(root.toString(),part);
+  for (int p=0; p < partitions; ++p) {
+    aliasMap.put(partPath[p],aliases);
+    LinkedHashMap<String,String> partSpec=new LinkedHashMap<String,String>();
+    PartitionDesc part=new PartitionDesc(tbl,partSpec);
+    partMap.put(partPath[p],part);
+  }
+  mapWork.setPathToAliases(aliasMap);
   mapWork.setPathToPartitionInfo(partMap);
   mapWork.setScratchColumnMap(new HashMap<String,Map<String,Integer>>());
   mapWork.setScratchColumnVectorTypes(new HashMap<String,Map<Integer,String>>());
