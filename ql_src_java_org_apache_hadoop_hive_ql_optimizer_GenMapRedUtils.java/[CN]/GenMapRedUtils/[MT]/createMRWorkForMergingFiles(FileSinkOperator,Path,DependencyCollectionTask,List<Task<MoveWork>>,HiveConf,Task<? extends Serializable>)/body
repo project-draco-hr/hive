@@ -31,34 +31,21 @@
   MapWork cplan;
   Serializable work;
   if ((conf.getBoolVar(ConfVars.HIVEMERGERCFILEBLOCKLEVEL) && fsInputDesc.getTableInfo().getInputFileFormatClass().equals(RCFileInputFormat.class)) || (conf.getBoolVar(ConfVars.HIVEMERGEORCFILESTRIPELEVEL) && fsInputDesc.getTableInfo().getInputFileFormatClass().equals(OrcInputFormat.class))) {
-    final String inputFormatClass;
-    if (fsInputDesc.getTableInfo().getInputFileFormatClass().equals(RCFileInputFormat.class)) {
-      inputFormatClass=conf.getVar(ConfVars.HIVEMERGEINPUTFORMATBLOCKLEVEL);
+    cplan=GenMapRedUtils.createMergeTask(fsInputDesc,finalName,dpCtx != null && dpCtx.getNumDPCols() > 0);
+    if (conf.getVar(ConfVars.HIVE_EXECUTION_ENGINE).equals("tez")) {
+      work=new TezWork(conf.getVar(HiveConf.ConfVars.HIVEQUERYID));
+      cplan.setName("Tez Merge File Work");
+      ((TezWork)work).add(cplan);
     }
  else {
-      inputFormatClass=conf.getVar(ConfVars.HIVEMERGEINPUTFORMATSTRIPELEVEL);
-    }
-    try {
-      Class c=Class.forName(inputFormatClass);
-      if (fsInputDesc.getTableInfo().getInputFileFormatClass().equals(OrcInputFormat.class)) {
-        LOG.info("OrcFile format - Using stripe level merge");
-      }
- else {
-        LOG.info("RCFile format- Using block level merge");
-      }
-      cplan=GenMapRedUtils.createMergeTask(fsInputDesc,finalName,dpCtx != null && dpCtx.getNumDPCols() > 0);
       work=cplan;
-    }
- catch (    ClassNotFoundException e) {
-      String msg="Illegal input format class: " + inputFormatClass;
-      throw new SemanticException(msg);
     }
   }
  else {
     cplan=createMRWorkForMergingFiles(conf,tsMerge,fsInputDesc);
     if (conf.getVar(ConfVars.HIVE_EXECUTION_ENGINE).equals("tez")) {
       work=new TezWork(conf.getVar(HiveConf.ConfVars.HIVEQUERYID));
-      cplan.setName("Merge");
+      cplan.setName("Tez Merge File Work");
       ((TezWork)work).add(cplan);
     }
  else {
