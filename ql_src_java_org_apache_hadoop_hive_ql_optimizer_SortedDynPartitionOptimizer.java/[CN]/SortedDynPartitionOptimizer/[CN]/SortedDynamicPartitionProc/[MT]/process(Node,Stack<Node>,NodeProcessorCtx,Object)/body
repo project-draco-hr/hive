@@ -23,8 +23,19 @@
   dpCtx.setNumBuckets(numBuckets);
   List<Integer> bucketPositions=getBucketPositions(destTable.getBucketCols(),destTable.getCols());
   ObjectPair<List<Integer>,List<Integer>> sortOrderPositions=getSortPositionsOrder(destTable.getSortCols(),destTable.getCols());
-  List<Integer> sortPositions=sortOrderPositions.getFirst();
-  List<Integer> sortOrder=sortOrderPositions.getSecond();
+  List<Integer> sortPositions=null;
+  List<Integer> sortOrder=null;
+  if (fsOp.getConf().getWriteType() == AcidUtils.Operation.UPDATE || fsOp.getConf().getWriteType() == AcidUtils.Operation.DELETE) {
+    sortPositions=Arrays.asList(0);
+    sortOrder=Arrays.asList(1);
+  }
+ else {
+    sortPositions=sortOrderPositions.getFirst();
+    sortOrder=sortOrderPositions.getSecond();
+  }
+  LOG.debug("Got sort order");
+  for (  int i : sortPositions)   LOG.debug("sort position " + i);
+  for (  int i : sortOrder)   LOG.debug("sort order " + i);
   List<Integer> partitionPositions=getPartitionPositions(dpCtx,fsParent.getSchema());
   List<ColumnInfo> colInfos=parseCtx.getOpParseCtx().get(fsParent).getRowResolver().getColumnInfos();
   ArrayList<ExprNodeDesc> bucketColumns=getPositionsToExprNodes(bucketPositions,colInfos);
@@ -41,7 +52,7 @@
     newValueCols.add(new ExprNodeColumnDesc(ci.getType(),ci.getInternalName(),ci.getTabAlias(),ci.isHiddenVirtualCol()));
     colExprMap.put(ci.getInternalName(),newValueCols.get(newValueCols.size() - 1));
   }
-  ReduceSinkDesc rsConf=getReduceSinkDesc(partitionPositions,sortPositions,sortOrder,newValueCols,bucketColumns,numBuckets,fsParent);
+  ReduceSinkDesc rsConf=getReduceSinkDesc(partitionPositions,sortPositions,sortOrder,newValueCols,bucketColumns,numBuckets,fsParent,fsOp.getConf().getWriteType());
   ReduceSinkOperator rsOp=(ReduceSinkOperator)putOpInsertMap(OperatorFactory.getAndMakeChild(rsConf,new RowSchema(outRR.getColumnInfos()),fsParent),outRR,parseCtx);
   rsOp.setColumnExprMap(colExprMap);
   ObjectPair<String,RowResolver> exPair=copyRowResolver(outRR);

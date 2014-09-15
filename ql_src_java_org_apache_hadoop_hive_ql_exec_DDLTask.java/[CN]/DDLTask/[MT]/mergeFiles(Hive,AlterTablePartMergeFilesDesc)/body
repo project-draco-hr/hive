@@ -1,11 +1,30 @@
 {
-  MergeWork mergeWork=new MergeWork(mergeFilesDesc.getInputDir(),mergeFilesDesc.getOutputDir(),mergeFilesDesc.getInputFormatClass());
+  ListBucketingCtx lbCtx=mergeFilesDesc.getLbCtx();
+  boolean lbatc=lbCtx == null ? false : lbCtx.isSkewedStoredAsDir();
+  int lbd=lbCtx == null ? 0 : lbCtx.calculateListBucketingLevel();
+  MergeFileWork mergeWork=new MergeFileWork(mergeFilesDesc.getInputDir(),mergeFilesDesc.getOutputDir(),mergeFilesDesc.getInputFormatClass().getName());
   mergeWork.setListBucketingCtx(mergeFilesDesc.getLbCtx());
   mergeWork.resolveConcatenateMerge(db.getConf());
   mergeWork.setMapperCannotSpanPartns(true);
-  mergeWork.setSourceTableInputFormat(mergeFilesDesc.getInputFormatClass());
+  mergeWork.setSourceTableInputFormat(mergeFilesDesc.getInputFormatClass().getName());
+  final FileMergeDesc fmd;
+  if (mergeFilesDesc.getInputFormatClass().equals(RCFileInputFormat.class)) {
+    fmd=new RCFileMergeDesc();
+  }
+ else {
+    fmd=new OrcFileMergeDesc();
+  }
+  fmd.setDpCtx(null);
+  fmd.setHasDynamicPartitions(false);
+  fmd.setListBucketingAlterTableConcatenate(lbatc);
+  fmd.setListBucketingDepth(lbd);
+  fmd.setOutputPath(mergeFilesDesc.getOutputDir());
+  Operator<? extends OperatorDesc> mergeOp=OperatorFactory.get(fmd);
+  LinkedHashMap<String,Operator<? extends OperatorDesc>> aliasToWork=new LinkedHashMap<String,Operator<? extends OperatorDesc>>();
+  aliasToWork.put(mergeFilesDesc.getInputDir().toString(),mergeOp);
+  mergeWork.setAliasToWork(aliasToWork);
   DriverContext driverCxt=new DriverContext();
-  MergeTask taskExec=new MergeTask();
+  MergeFileTask taskExec=new MergeFileTask();
   taskExec.initialize(db.getConf(),null,driverCxt);
   taskExec.setWork(mergeWork);
   taskExec.setQueryPlan(this.getQueryPlan());
