@@ -1,29 +1,14 @@
 {
   try {
     verifyHttpConfiguration(hiveConf);
-    String portString=System.getenv("HIVE_SERVER2_THRIFT_HTTP_PORT");
-    if (portString != null) {
-      portNum=Integer.valueOf(portString);
-    }
- else {
-      portNum=hiveConf.getIntVar(ConfVars.HIVE_SERVER2_THRIFT_HTTP_PORT);
-    }
-    minWorkerThreads=hiveConf.getIntVar(ConfVars.HIVE_SERVER2_THRIFT_HTTP_MIN_WORKER_THREADS);
-    maxWorkerThreads=hiveConf.getIntVar(ConfVars.HIVE_SERVER2_THRIFT_HTTP_MAX_WORKER_THREADS);
-    workerKeepAliveTime=hiveConf.getTimeVar(ConfVars.HIVE_SERVER2_THRIFT_HTTP_WORKER_KEEPALIVE_TIME,TimeUnit.SECONDS);
-    String httpPath=getHttpPath(hiveConf.getVar(HiveConf.ConfVars.HIVE_SERVER2_THRIFT_HTTP_PATH));
     httpServer=new org.eclipse.jetty.server.Server();
     String threadPoolName="HiveServer2-HttpHandler-Pool";
     ExecutorService executorService=new ThreadPoolExecutor(minWorkerThreads,maxWorkerThreads,workerKeepAliveTime,TimeUnit.SECONDS,new LinkedBlockingQueue<Runnable>(),new ThreadFactoryWithGarbageCleanup(threadPoolName));
     ExecutorThreadPool threadPool=new ExecutorThreadPool(executorService);
     httpServer.setThreadPool(threadPool);
     SelectChannelConnector connector=new SelectChannelConnector();
-    ;
     boolean useSsl=hiveConf.getBoolVar(ConfVars.HIVE_SERVER2_USE_SSL);
     String schemeName=useSsl ? "https" : "http";
-    String authType=hiveConf.getVar(ConfVars.HIVE_SERVER2_AUTHENTICATION);
-    UserGroupInformation serviceUGI=cliService.getServiceUGI();
-    UserGroupInformation httpUGI=cliService.getHttpUGI();
     if (useSsl) {
       String keyStorePath=hiveConf.getVar(ConfVars.HIVE_SERVER2_SSL_KEYSTORE_PATH).trim();
       String keyStorePassword=ShimLoader.getHadoopShims().getPassword(hiveConf,HiveConf.ConfVars.HIVE_SERVER2_SSL_KEYSTORE_PASSWORD.varname);
@@ -44,17 +29,22 @@
     TProcessorFactory processorFactory=hiveAuthFactory.getAuthProcFactory(this);
     TProcessor processor=processorFactory.getProcessor(null);
     TProtocolFactory protocolFactory=new TBinaryProtocol.Factory();
+    UserGroupInformation serviceUGI=cliService.getServiceUGI();
+    UserGroupInformation httpUGI=cliService.getHttpUGI();
+    String authType=hiveConf.getVar(ConfVars.HIVE_SERVER2_AUTHENTICATION);
     TServlet thriftHttpServlet=new ThriftHttpServlet(processor,protocolFactory,authType,serviceUGI,httpUGI);
     final ServletContextHandler context=new ServletContextHandler(ServletContextHandler.SESSIONS);
     context.setContextPath("/");
+    String httpPath=getHttpPath(hiveConf.getVar(HiveConf.ConfVars.HIVE_SERVER2_THRIFT_HTTP_PATH));
     httpServer.setHandler(context);
     context.addServlet(new ServletHolder(thriftHttpServlet),httpPath);
     httpServer.start();
-    String msg="Started ThriftHttpCLIService in " + schemeName + " mode on port "+ portNum+ " path="+ httpPath+ " with "+ minWorkerThreads+ ".."+ maxWorkerThreads+ " worker threads";
+    String msg="Started " + ThriftHttpCLIService.class.getSimpleName() + " in "+ schemeName+ " mode on port "+ portNum+ " path="+ httpPath+ " with "+ minWorkerThreads+ "..."+ maxWorkerThreads+ " worker threads";
     LOG.info(msg);
     httpServer.join();
   }
  catch (  Throwable t) {
-    LOG.error("Error: ",t);
+    LOG.fatal("Error starting HiveServer2: could not start " + ThriftHttpCLIService.class.getSimpleName(),t);
+    System.exit(-1);
   }
 }
