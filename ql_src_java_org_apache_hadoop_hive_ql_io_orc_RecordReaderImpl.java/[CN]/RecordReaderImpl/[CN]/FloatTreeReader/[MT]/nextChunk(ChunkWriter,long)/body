@@ -1,0 +1,32 @@
+{
+  boolean mayHaveNulls=present != null;
+  NullsState nullState=mayHaveNulls ? NullsState.HAS_NULLS : NullsState.NO_NULLS;
+  int rowsLeftToWrite=writer.estimateValueCountThatFits(Type.DOUBLE,mayHaveNulls);
+  if (rowsLeftToWrite == 0) {
+    return 0;
+  }
+  if (values == null) {
+    values=new double[LlapUtils.DOUBLE_GROUP_SIZE];
+  }
+  long originalRowsLeft=rowsLeftToRead;
+  while (rowsLeftToRead > 0 && rowsLeftToWrite > 0) {
+    int rowsToTransfer=(int)Math.min(rowsLeftToRead,rowsLeftToWrite);
+    presentHelper.availLength=Math.min(values.length,rowsToTransfer);
+    if (mayHaveNulls) {
+      LlapUtils.readPresentStream(presentHelper,present,rowsToTransfer);
+    }
+    if (presentHelper.isNullsRun) {
+      writer.writeNulls(presentHelper.availLength,presentHelper.isFollowedByOther);
+    }
+ else {
+      for (int i=0; i < presentHelper.availLength; ++i) {
+        values[i]=utils.readFloat(stream);
+      }
+      writer.writeDoubles(values,0,presentHelper.availLength,presentHelper.isFollowedByOther ? NullsState.NEXT_NULL : nullState);
+    }
+    rowsLeftToWrite=writer.estimateValueCountThatFits(Type.DOUBLE,mayHaveNulls);
+    rowsLeftToRead-=presentHelper.availLength;
+  }
+  writer.finishCurrentSegment();
+  return (int)(originalRowsLeft - rowsLeftToRead);
+}

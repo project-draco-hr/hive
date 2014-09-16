@@ -1,0 +1,21 @@
+{
+  boolean isVectorMode=Utilities.isVectorMode(job);
+  if (!isVectorMode) {
+    LOG.error("No llap in non-vectorized mode; falling back to original");
+    throw new UnsupportedOperationException("No llap in non-vectorized mode");
+  }
+  FileSplit fileSplit=(FileSplit)split;
+  reporter.setStatus(fileSplit.toString());
+  try {
+    List<Integer> includedCols=ColumnProjectionUtils.isReadAllColumns(job) ? null : ColumnProjectionUtils.getReadColumnIDs(job);
+    if (includedCols.isEmpty()) {
+      includedCols=null;
+    }
+    Reader reader=reqFactory.createLocalRequest().setSplit(split).setSarg(SearchArgumentFactory.createFromConf(job)).setColumns(includedCols).submit();
+    return createRecordReaderUnsafe(job,fileSplit,reader);
+  }
+ catch (  Exception ex) {
+    LOG.error("Local request failed; falling back to original",ex);
+    throw new IOException(ex);
+  }
+}

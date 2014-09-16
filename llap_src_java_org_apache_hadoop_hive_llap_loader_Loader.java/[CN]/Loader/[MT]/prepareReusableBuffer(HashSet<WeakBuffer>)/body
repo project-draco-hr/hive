@@ -1,0 +1,24 @@
+{
+  while (true) {
+    BufferInProgress buf=reusableBuffers.poll();
+    if (buf == null) {
+      WeakBuffer newWb=bufferPool.allocateBuffer();
+      if (!resultBuffers.add(newWb)) {
+        throw new AssertionError("Cannot add new buffer to resultBuffers");
+      }
+      return new BufferInProgress(newWb);
+    }
+    if (resultBuffers.add(buf.buffer)) {
+      if (!buf.buffer.lock(true)) {
+        resultBuffers.remove(buf.buffer);
+        continue;
+      }
+      if (DebugUtils.isTraceLockingEnabled()) {
+        Llap.LOG.info("Locked " + buf.buffer + " due to reuse");
+      }
+    }
+ else     if (!buf.buffer.isLocked()) {
+      throw new AssertionError(buf.buffer + " is in resultBuffers, but is not locked");
+    }
+  }
+}

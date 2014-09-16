@@ -1,0 +1,35 @@
+{
+  ByteBuffer newBuffer=ByteBuffer.allocate(bufferSize);
+  WeakBuffer wb=new WeakBuffer(this,newBuffer);
+  if (!wb.lock(false)) {
+    throw new AssertionError("Cannot lock a new buffer");
+  }
+  if (DebugUtils.isTraceLockingEnabled()) {
+    Llap.LOG.info("Locked " + wb + " after creation");
+  }
+  boolean hasWaited=false;
+  WeakBuffer evicted=null;
+  while (true) {
+    evicted=cachePolicy.cache(wb);
+    if (evicted != CachePolicy.CANNOT_EVICT)     break;
+    if (DebugUtils.isTraceCachingEnabled() && !hasWaited) {
+      Llap.LOG.info("Failed to add a new block to cache; waiting for blocks to be unlocked");
+      hasWaited=true;
+    }
+synchronized (evictionNotifyObj) {
+      ++evictionIsWaiting;
+      evictionNotifyObj.wait(1000);
+      --evictionIsWaiting;
+    }
+  }
+  if (DebugUtils.isTraceCachingEnabled() && hasWaited) {
+    Llap.LOG.info("Eviction is done waiting");
+  }
+  if (evicted != null) {
+    if (evictionListener != null) {
+      evictionListener.evictionNotice(evicted);
+    }
+    evicted.clear();
+  }
+  return wb;
+}

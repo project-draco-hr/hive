@@ -1,0 +1,95 @@
+{
+  if (DebugUtils.isTraceMttEnabled()) {
+    Llap.LOG.info("loadInternal called");
+  }
+  List<Integer> includedCols=request.getColumns();
+  if (includedCols != null) {
+    Collections.sort(includedCols);
+  }
+  FileSplit fileSplit=(FileSplit)request.getSplit();
+  String internedFilePath=fileSplit.getPath().toString().intern();
+  Llap.LOG.info("Processing split for " + internedFilePath);
+  if (context.isStopped)   return;
+  List<StripeInformation> stripes=metadataCache.getStripes(internedFilePath);
+  List<Type> types=metadataCache.getTypes(internedFilePath);
+  Reader reader=null;
+  if (stripes == null || types == null) {
+    reader=createReader(fileSplit);
+    if (stripes == null) {
+      stripes=reader.getStripes();
+      metadataCache.cacheStripes(internedFilePath,stripes);
+    }
+    if (types == null) {
+      types=reader.getTypes();
+      metadataCache.cacheTypes(internedFilePath,types);
+    }
+  }
+  if (includedCols == null) {
+    includedCols=new ArrayList<Integer>(types.size());
+    for (int i=1; i < types.size(); ++i) {
+      includedCols.add(i);
+    }
+  }
+  List<List<ChunkKey>> keys=new ArrayList<List<ChunkKey>>();
+  long stripeIxFromAndTo=determineStripesAndCacheKeys(fileSplit,includedCols,internedFilePath,stripes,keys);
+  int stripeIxFrom=(int)(stripeIxFromAndTo >>> 32), stripeIxTo=(int)(stripeIxFromAndTo & (long)Integer.MAX_VALUE);
+  int resultVectorCount=stripeIxTo - stripeIxFrom;
+  Chunk[][] resultMatrix=new Chunk[resultVectorCount][];
+  @SuppressWarnings("unchecked") HashSet<WeakBuffer>[] resultBuffers=new HashSet[resultVectorCount];
+  for (int i=0; i < resultVectorCount; ++i) {
+    resultMatrix[i]=new Chunk[types.size()];
+    resultBuffers[i]=new HashSet<WeakBuffer>();
+  }
+  if (context.isStopped)   return;
+  List<Integer> readyStripes=getChunksFromCache(keys,types.size(),stripeIxFrom,resultBuffers,resultMatrix);
+  if (readyStripes != null) {
+    Llap.LOG.info("Got " + readyStripes.size() + " full stripes from cache");
+    for (    Integer stripeIx : readyStripes) {
+      int stripeIxMod=stripeIx - stripeIxFrom;
+      VectorImpl vector=createVectorForStripe(resultMatrix[stripeIxMod],resultBuffers[stripeIxMod],types,includedCols);
+      if (DebugUtils.isTraceMttEnabled()) {
+        Llap.LOG.info("Returning stripe " + stripeIx + " from cache");
+      }
+      consumer.consumeVector(vector);
+      resultMatrix[stripeIxMod]=null;
+      resultBuffers[stripeIxMod]=null;
+    }
+  }
+  for (  List<ChunkKey> stripeKeys : keys) {
+    if (stripeKeys.isEmpty())     continue;
+    int stripeIx=stripeKeys.get(0).stripeIx;
+    StripeInformation si=stripes.get(stripeIx);
+    List<Integer> includeList=null;
+    if (includedCols.size() == stripeKeys.size()) {
+      includeList=includedCols;
+    }
+ else {
+      includeList=new ArrayList<Integer>(stripeKeys.size());
+      for (      ChunkKey key : stripeKeys) {
+        includeList.add(key.colIx);
+      }
+    }
+    boolean[] includes=OrcInputFormat.genIncludedColumns(types,includeList,true);
+    if (Llap.LOG.isDebugEnabled()) {
+      Llap.LOG.debug("Reading stripe " + stripeIx + " {"+ si.getOffset()+ ", "+ si.getLength()+ "}, cols "+ Arrays.toString(includes));
+    }
+    if (reader == null) {
+      reader=createReader(fileSplit);
+    }
+    RecordReader stripeReader=reader.rows(si.getOffset(),si.getLength(),includes);
+    int stripeIxMod=stripeIx - stripeIxFrom;
+    Chunk[] result=resultMatrix[stripeIxMod];
+    HashSet<WeakBuffer> buffers=resultBuffers[stripeIxMod];
+    loadStripe(stripeReader,stripeKeys,result,buffers);
+    stripeReader.close();
+    VectorImpl vector=createVectorForStripe(result,buffers,types,includedCols);
+    if (DebugUtils.isTraceMttEnabled()) {
+      Llap.LOG.info("Returning stripe " + stripeIx + " from FS");
+    }
+    consumer.consumeVector(vector);
+  }
+  consumer.setDone();
+  if (DebugUtils.isTraceMttEnabled()) {
+    Llap.LOG.info("loadInternal is done");
+  }
+}

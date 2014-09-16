@@ -1,0 +1,47 @@
+{
+  LOG.info("Testing heap size " + heapSize);
+  Random rdm=new Random(1234);
+  HiveConf conf=new HiveConf();
+  conf.setFloat(HiveConf.ConfVars.LLAP_LRFU_LAMBDA.varname,0.01f);
+  LrfuCachePolicy lrfu=new LrfuCachePolicy(conf,1,heapSize);
+  int toEvict=2;
+  ArrayList<WeakBuffer> inserted=new ArrayList<WeakBuffer>(heapSize);
+  WeakBuffer[] evicted=new WeakBuffer[toEvict];
+  Assume.assumeTrue(toEvict <= heapSize);
+  for (int i=0; i < heapSize + toEvict; ++i) {
+    WeakBuffer buffer=BufferPool.allocateFake();
+    WeakBuffer evictedBuf=cache(lrfu,buffer);
+    if (i < toEvict) {
+      evicted[i]=buffer;
+    }
+ else {
+      if (i >= heapSize) {
+        assertSame(evicted[i - heapSize],evictedBuf);
+        assertTrue(evictedBuf.isInvalid());
+      }
+ else {
+        assertNull(evictedBuf);
+      }
+      inserted.add(buffer);
+    }
+  }
+  LOG.info("Inserted " + dumpInserted(inserted));
+  Collections.shuffle(inserted,rdm);
+  LOG.info("Touch order " + dumpInserted(inserted));
+  for (  WeakBuffer buf : inserted) {
+    lock(lrfu,buf);
+  }
+  WeakBuffer block=lrfu.evictOneMoreBlock();
+  assertNull("Got " + block,block);
+  assertSame(CachePolicy.CANNOT_EVICT,cache(lrfu,BufferPool.allocateFake()));
+  for (  WeakBuffer buf : inserted) {
+    unlock(lrfu,buf);
+  }
+  for (  WeakBuffer buf : inserted) {
+    for (int j=0; j < 10; ++j) {
+      lrfu.notifyLock(buf);
+      lrfu.notifyUnlock(buf);
+    }
+  }
+  verifyOrder(lrfu,inserted);
+}

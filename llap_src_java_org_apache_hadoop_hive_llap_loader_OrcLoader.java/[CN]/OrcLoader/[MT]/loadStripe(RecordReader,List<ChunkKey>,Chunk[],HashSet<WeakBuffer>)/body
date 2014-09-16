@@ -1,0 +1,41 @@
+{
+  Object readCtx=reader.prepareColumnRead();
+  for (int keyIx=0; keyIx < keys.size(); ++keyIx) {
+    ChunkKey key=keys.get(keyIx);
+    BufferInProgress colBuffer=null;
+    while (true) {
+      colBuffer=prepareReusableBuffer(resultBuffers);
+      writer.prepare(colBuffer);
+      boolean hasMoreValues=reader.readNextColumnStripe(readCtx,writer);
+      if (!hasMoreValues)       break;
+      if (DebugUtils.isTraceEnabled()) {
+        Llap.LOG.info("Stripe doesn't fit into buffer");
+      }
+      results[key.colIx]=mergeResultChunks(colBuffer,results[key.colIx],false);
+    }
+    Chunk val=results[key.colIx]=mergeResultChunks(colBuffer,results[key.colIx],true);
+    if (Llap.LOG.isDebugEnabled()) {
+      Llap.LOG.debug("Caching chunk " + key + " => "+ val.toFullString());
+    }
+    Chunk cachedVal=chunkPool.addOrGetChunk(key,val,resultBuffers);
+    if (cachedVal != val) {
+      results[key.colIx]=cachedVal;
+      resultBuffers.clear();
+      for (int i=0; i < results.length; ++i) {
+        Chunk chunk1=results[i];
+        while (chunk1 != null) {
+          resultBuffers.add(chunk1.buffer);
+          chunk1=chunk1.nextChunk;
+        }
+      }
+      Chunk chunk=cachedVal;
+      while (chunk != null) {
+        if (!resultBuffers.contains(chunk.buffer)) {
+          chunk.buffer.unlock();
+        }
+        chunk=chunk.nextChunk;
+      }
+    }
+    returnReusableBuffer(colBuffer);
+  }
+}

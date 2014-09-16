@@ -1,0 +1,39 @@
+{
+  if (DebugUtils.isTraceEnabled()) {
+    Llap.LOG.info("next called; current=" + current + ", closed "+ isClosed+ ", done "+ isDone+ ", err "+ pendingError+ ", pending "+ pendingData.size());
+  }
+  if (current != null) {
+    if (DebugUtils.isTraceMttEnabled()) {
+      Llap.LOG.info("Processing is done with vector " + getVectorDebugDesc(current));
+    }
+    feedback.returnCompleteVector(current);
+    current=null;
+  }
+synchronized (pendingData) {
+    if (isClosed) {
+      throw new AssertionError("next called after close");
+    }
+    boolean willBlock=false;
+    if (DebugUtils.isTraceMttEnabled()) {
+      willBlock=!isDone && pendingData.isEmpty() && pendingError == null;
+      if (willBlock) {
+        Llap.LOG.info("next will block");
+      }
+    }
+    while (!isDone && pendingData.isEmpty() && pendingError == null) {
+      pendingData.wait(100);
+    }
+    if (willBlock) {
+      Llap.LOG.info("next is unblocked");
+    }
+    if (pendingError != null) {
+      returnAllVectors();
+      rethrowErrorIfAny();
+    }
+    current=pendingData.poll();
+  }
+  if (DebugUtils.isTraceMttEnabled() && current != null) {
+    Llap.LOG.info("Processing will receive vector " + getVectorDebugDesc(current));
+  }
+  return current;
+}

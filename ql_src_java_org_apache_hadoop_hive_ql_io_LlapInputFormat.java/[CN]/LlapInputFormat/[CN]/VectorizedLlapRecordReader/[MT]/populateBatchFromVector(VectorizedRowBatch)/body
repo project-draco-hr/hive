@@ -1,0 +1,25 @@
+{
+  int rowCount=VectorizedRowBatch.DEFAULT_SIZE, rowsRemaining=currentVector.getNumberOfRows() - currentVectorOffset;
+  if (rowsRemaining <= rowCount) {
+    rowCount=rowsRemaining;
+  }
+  int[] columnMap=rbCtx.getIncludedColumnIndexes();
+  if (columnMap.length != currentVector.getNumberOfColumns()) {
+    throw new RuntimeException("Unexpected number of columns, VRB has " + columnMap.length + " included, but vector has "+ currentVector.getNumberOfColumns());
+  }
+  vrbHelper.prepare(rowCount);
+  for (int vectorIx=0; vectorIx < currentVector.getNumberOfColumns(); ++vectorIx) {
+    int colIx=columnMap[vectorIx];
+    currentVectorSlice=currentVector.next(colIx,rowCount);
+    target.cols[colIx].visit(vrbHelper);
+  }
+  target.selectedInUse=false;
+  target.size=rowCount;
+  if (rowsRemaining == rowCount) {
+    currentVector=null;
+    currentVectorOffset=-1;
+  }
+ else {
+    currentVectorOffset+=rowCount;
+  }
+}

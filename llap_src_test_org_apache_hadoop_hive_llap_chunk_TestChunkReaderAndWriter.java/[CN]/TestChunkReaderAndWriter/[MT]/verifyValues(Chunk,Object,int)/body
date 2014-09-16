@@ -1,0 +1,36 @@
+{
+  boolean nullable=src instanceof Long[];
+  Long[] src0=nullable ? (Long[])src : null;
+  long[] src1=nullable ? null : (long[])src;
+  int[] stepsToVerify=new int[]{srcLength,srcLength / 2,63,5,1};
+  long[] dest=new long[srcLength];
+  boolean[] isNull=new boolean[srcLength];
+  int lastStep=-1;
+  for (  int step : stepsToVerify) {
+    if (step > srcLength || step == lastStep || step == 0)     continue;
+    if ((srcLength / step) > 50)     continue;
+    LOG.info("Verifying value count " + srcLength + " w/step "+ step);
+    Arrays.fill(dest,-1);
+    int offset=0;
+    ChunkReader reader=new ChunkReader(Type.LONG,chunk);
+    while (offset < srcLength) {
+      int adjStep=Math.min(srcLength - offset,step);
+      try {
+        reader.next(adjStep);
+        reader.copyLongs(dest,isNull,offset);
+      }
+ catch (      Exception ex) {
+        LOG.error("srcLength " + srcLength + ", step "+ adjStep+ "/"+ step+ " offset "+ offset,ex);
+        throw ex;
+      }
+      offset+=adjStep;
+    }
+    if (nullable) {
+      verifyArrays(src0,dest,isNull);
+    }
+ else {
+      verifyArrays(src1,dest,isNull);
+    }
+    lastStep=step;
+  }
+}

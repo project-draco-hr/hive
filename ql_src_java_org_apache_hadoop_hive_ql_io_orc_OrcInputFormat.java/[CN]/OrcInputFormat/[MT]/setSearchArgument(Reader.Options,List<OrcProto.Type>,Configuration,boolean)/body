@@ -1,30 +1,26 @@
 {
-  int rootColumn=getRootColumn(isOriginal);
-  String serializedPushdown=conf.get(TableScanDesc.FILTER_EXPR_CONF_STR);
-  String sargPushdown=conf.get(SARG_PUSHDOWN);
   String columnNamesString=conf.get(ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR);
-  if ((sargPushdown == null && serializedPushdown == null) || columnNamesString == null) {
+  if (columnNamesString == null) {
+    LOG.debug("No ORC pushdown predicate - no column names");
+    options.searchArgument(null,null);
+    return;
+  }
+  SearchArgument sarg=SearchArgumentFactory.createFromConf(conf);
+  if (sarg == null) {
     LOG.debug("No ORC pushdown predicate");
     options.searchArgument(null,null);
+    return;
   }
- else {
-    SearchArgument sarg;
-    if (serializedPushdown != null) {
-      sarg=SearchArgumentFactory.create(Utilities.deserializeExpression(serializedPushdown));
+  LOG.info("ORC pushdown predicate: " + sarg);
+  int rootColumn=getRootColumn(isOriginal);
+  String[] neededColumnNames=columnNamesString.split(",");
+  String[] columnNames=new String[types.size() - rootColumn];
+  boolean[] includedColumns=options.getInclude();
+  int i=0;
+  for (  int columnId : types.get(rootColumn).getSubtypesList()) {
+    if (includedColumns == null || includedColumns[columnId - rootColumn]) {
+      columnNames[columnId - rootColumn]=neededColumnNames[i++];
     }
- else {
-      sarg=SearchArgumentFactory.create(sargPushdown);
-    }
-    LOG.info("ORC pushdown predicate: " + sarg);
-    String[] neededColumnNames=columnNamesString.split(",");
-    String[] columnNames=new String[types.size() - rootColumn];
-    boolean[] includedColumns=options.getInclude();
-    int i=0;
-    for (    int columnId : types.get(rootColumn).getSubtypesList()) {
-      if (includedColumns == null || includedColumns[columnId - rootColumn]) {
-        columnNames[columnId - rootColumn]=neededColumnNames[i++];
-      }
-    }
-    options.searchArgument(sarg,columnNames);
   }
+  options.searchArgument(sarg,columnNames);
 }

@@ -1,0 +1,41 @@
+{
+  long offset=fileSplit.getStart(), maxOffset=offset + fileSplit.getLength();
+  int stripeIxFrom=-1, stripeIxTo=-1, stripeIx=0;
+  if (Llap.LOG.isDebugEnabled()) {
+    String tmp="FileSplit {" + fileSplit.getStart() + ", "+ fileSplit.getLength()+ "}; stripes ";
+    for (    StripeInformation stripe : stripes) {
+      tmp+="{" + stripe.getOffset() + ", "+ stripe.getLength()+ "}, ";
+    }
+    Llap.LOG.debug(tmp);
+  }
+  for (  StripeInformation stripe : stripes) {
+    long stripeStart=stripe.getOffset();
+    if (offset > stripeStart)     continue;
+    if (stripeIxFrom == -1) {
+      if (DebugUtils.isTraceEnabled()) {
+        Llap.LOG.info("Including from " + stripeIx + " ("+ stripeStart+ " >= "+ offset+ ")");
+      }
+      stripeIxFrom=stripeIx;
+    }
+    if (stripeStart >= maxOffset) {
+      if (DebugUtils.isTraceEnabled()) {
+        Llap.LOG.info("Including until " + stripeIxTo + " ("+ stripeStart+ " >= "+ maxOffset+ ")");
+      }
+      stripeIxTo=stripeIx;
+      break;
+    }
+    ArrayList<ChunkKey> stripeKeys=new ArrayList<ChunkKey>(includedCols.size());
+    keys.add(stripeKeys);
+    for (    Integer colIx : includedCols) {
+      stripeKeys.add(new ChunkKey(internedFilePath,stripeIx,colIx));
+    }
+    ++stripeIx;
+  }
+  if (stripeIxTo == -1) {
+    if (DebugUtils.isTraceEnabled()) {
+      Llap.LOG.info("Including until " + stripeIx + " (end of file)");
+    }
+    stripeIxTo=stripeIx;
+  }
+  return (((long)stripeIxFrom) << 32) + stripeIxTo;
+}

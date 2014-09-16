@@ -1,0 +1,22 @@
+{
+  int heapSize=4;
+  LOG.info("Testing lambda 0 (LFU)");
+  Random rdm=new Random(1234);
+  HiveConf conf=new HiveConf();
+  ArrayList<WeakBuffer> inserted=new ArrayList<WeakBuffer>(heapSize);
+  conf.setFloat(HiveConf.ConfVars.LLAP_LRFU_LAMBDA.varname,0.0f);
+  LrfuCachePolicy lfu=new LrfuCachePolicy(conf,1,heapSize);
+  for (int i=0; i < heapSize; ++i) {
+    WeakBuffer buffer=BufferPool.allocateFake();
+    assertNull(cache(lfu,buffer));
+    inserted.add(buffer);
+  }
+  Collections.shuffle(inserted,rdm);
+  for (int i=inserted.size() - 1; i >= 0; --i) {
+    for (int j=0; j < i + 1; ++j) {
+      lfu.notifyLock(inserted.get(i));
+      lfu.notifyUnlock(inserted.get(i));
+    }
+  }
+  verifyOrder(lfu,inserted);
+}

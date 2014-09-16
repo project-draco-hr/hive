@@ -1,0 +1,20 @@
+{
+  while (true) {
+    int evictionsSinceLast=newEvictions.getAndSet(0);
+    if (evictionsSinceLast > 0)     break;
+synchronized (newEvictions) {
+      newEvictions.wait(10000);
+    }
+  }
+  long endTime=System.nanoTime() + APPROX_CLEANUP_INTERVAL_SEC * 1000000000L;
+  int processed=0;
+  Iterator<Map.Entry<K,Chunk>> iter=chunkCache.entrySet().iterator();
+  while (iter.hasNext()) {
+    if (!verifyChunk(iter.next().getValue())) {
+      iter.remove();
+    }
+    ++processed;
+    int approxElementsLeft=chunkCache.size() - processed;
+    Thread.sleep((approxElementsLeft <= 0) ? 1 : (endTime - System.nanoTime()) / (1000000L * approxElementsLeft));
+  }
+}
