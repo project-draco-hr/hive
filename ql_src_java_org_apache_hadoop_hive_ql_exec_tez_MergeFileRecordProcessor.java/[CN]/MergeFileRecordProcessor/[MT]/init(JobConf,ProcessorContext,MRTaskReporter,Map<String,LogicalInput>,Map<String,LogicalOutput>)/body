@@ -1,0 +1,54 @@
+{
+  perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_INIT_OPERATORS);
+  super.init(jconf,processorContext,mrReporter,inputs,outputs);
+  MRInputLegacy mrInput=TezProcessor.getMRInput(inputs);
+  Configuration updatedConf=mrInput.getConfigUpdates();
+  if (updatedConf != null) {
+    for (    Map.Entry<String,String> entry : updatedConf) {
+      jconf.set(entry.getKey(),entry.getValue());
+    }
+  }
+  createOutputMap();
+  for (  Map.Entry<String,LogicalOutput> outputEntry : outputs.entrySet()) {
+    outputEntry.getValue().start();
+    ((TezProcessor.TezKVOutputCollector)outMap.get(outputEntry.getKey())).initialize();
+  }
+  org.apache.hadoop.hive.ql.exec.ObjectCache cache=ObjectCacheFactory.getCache(jconf);
+  try {
+    execContext.setJc(jconf);
+    MapWork mapWork=(MapWork)cache.retrieve(MAP_PLAN_KEY);
+    if (mapWork == null) {
+      mapWork=Utilities.getMapWork(jconf);
+      if (mapWork instanceof MergeFileWork) {
+        mfWork=(MergeFileWork)mapWork;
+      }
+ else {
+        throw new RuntimeException("MapWork should be an instance of" + " MergeFileWork.");
+      }
+      cache.cache(MAP_PLAN_KEY,mapWork);
+    }
+ else {
+      Utilities.setMapWork(jconf,mapWork);
+    }
+    String alias=mfWork.getAliasToWork().keySet().iterator().next();
+    mergeOp=mfWork.getAliasToWork().get(alias);
+    LOG.info(mergeOp.dump(0));
+    MapredContext.init(true,new JobConf(jconf));
+    ((TezContext)MapredContext.get()).setInputs(inputs);
+    mergeOp.setExecContext(execContext);
+    mergeOp.initializeLocalWork(jconf);
+    mergeOp.initialize(jconf,null);
+    OperatorUtils.setChildrenCollector(mergeOp.getChildOperators(),outMap);
+    mergeOp.setReporter(reporter);
+    MapredContext.get().setReporter(reporter);
+  }
+ catch (  Throwable e) {
+    if (e instanceof OutOfMemoryError) {
+      throw (OutOfMemoryError)e;
+    }
+ else {
+      throw new RuntimeException("Map operator initialization failed",e);
+    }
+  }
+  perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.TEZ_INIT_OPERATORS);
+}

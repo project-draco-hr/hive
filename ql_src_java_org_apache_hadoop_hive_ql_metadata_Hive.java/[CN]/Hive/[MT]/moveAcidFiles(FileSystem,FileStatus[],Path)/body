@@ -1,0 +1,55 @@
+{
+  Set<Path> createdDeltaDirs=new HashSet<Path>();
+  for (  FileStatus stat : stats) {
+    Path srcPath=stat.getPath();
+    LOG.debug("Acid move Looking for original buckets in " + srcPath);
+    FileStatus[] origBucketStats=null;
+    try {
+      origBucketStats=fs.listStatus(srcPath,AcidUtils.originalBucketFilter);
+    }
+ catch (    IOException e) {
+      String msg="Unable to look for bucket files in src path " + srcPath.toUri().toString();
+      LOG.error(msg);
+      throw new HiveException(msg,e);
+    }
+    LOG.debug("Acid move found " + origBucketStats.length + " original buckets");
+    for (    FileStatus origBucketStat : origBucketStats) {
+      Path origBucketPath=origBucketStat.getPath();
+      LOG.debug("Acid move looking for delta files in bucket " + origBucketPath);
+      FileStatus[] deltaStats=null;
+      try {
+        deltaStats=fs.listStatus(origBucketPath,AcidUtils.deltaFileFilter);
+      }
+ catch (      IOException e) {
+        throw new HiveException("Unable to look for delta files in original bucket " + origBucketPath.toUri().toString(),e);
+      }
+      LOG.debug("Acid move found " + deltaStats.length + " delta files");
+      for (      FileStatus deltaStat : deltaStats) {
+        Path deltaPath=deltaStat.getPath();
+        Path deltaDest=new Path(dst,deltaPath.getName());
+        try {
+          if (!createdDeltaDirs.contains(deltaDest)) {
+            try {
+              fs.mkdirs(deltaDest);
+              createdDeltaDirs.add(deltaDest);
+            }
+ catch (            IOException swallowIt) {
+              LOG.info("Unable to create delta directory " + deltaDest + ", assuming it already exists: "+ swallowIt.getMessage());
+            }
+          }
+          FileStatus[] bucketStats=fs.listStatus(deltaPath,AcidUtils.bucketFileFilter);
+          LOG.debug("Acid move found " + bucketStats.length + " bucket files");
+          for (          FileStatus bucketStat : bucketStats) {
+            Path bucketSrc=bucketStat.getPath();
+            Path bucketDest=new Path(deltaDest,bucketSrc.getName());
+            LOG.info("Moving bucket " + bucketSrc.toUri().toString() + " to "+ bucketDest.toUri().toString());
+            fs.rename(bucketSrc,bucketDest);
+          }
+        }
+ catch (        IOException e) {
+          throw new HiveException("Error moving acid files",e);
+        }
+      }
+    }
+  }
+}

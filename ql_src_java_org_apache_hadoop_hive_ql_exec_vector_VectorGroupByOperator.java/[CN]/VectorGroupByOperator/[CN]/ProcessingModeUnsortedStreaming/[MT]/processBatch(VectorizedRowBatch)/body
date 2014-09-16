@@ -1,0 +1,31 @@
+{
+  keyWrappersBatch.evaluateBatch(batch);
+  VectorHashKeyWrapper[] batchKeys=keyWrappersBatch.getVectorHashKeyWrappers();
+  if (streamingKey == null) {
+    currentStreamingAggregators=streamAggregationBufferRowPool.getFromPool();
+    streamingKey=(VectorHashKeyWrapper)batchKeys[0].copyKey();
+  }
+  aggregationBatchInfo.startBatch();
+  int flushMark=0;
+  for (int i=0; i < batch.size; ++i) {
+    if (!batchKeys[i].equals(streamingKey)) {
+      rowsToFlush[flushMark]=currentStreamingAggregators;
+      if (keysToFlush[flushMark] == null) {
+        keysToFlush[flushMark]=(VectorHashKeyWrapper)streamingKey.copyKey();
+      }
+ else {
+        streamingKey.duplicateTo(keysToFlush[flushMark]);
+      }
+      currentStreamingAggregators=streamAggregationBufferRowPool.getFromPool();
+      batchKeys[i].duplicateTo(streamingKey);
+      ++flushMark;
+    }
+    aggregationBatchInfo.mapAggregationBufferSet(currentStreamingAggregators,i);
+  }
+  processAggregators(batch);
+  for (int i=0; i < flushMark; ++i) {
+    writeSingleRow(keysToFlush[i],rowsToFlush[i]);
+    rowsToFlush[i].reset();
+    streamAggregationBufferRowPool.putInPool(rowsToFlush[i]);
+  }
+}

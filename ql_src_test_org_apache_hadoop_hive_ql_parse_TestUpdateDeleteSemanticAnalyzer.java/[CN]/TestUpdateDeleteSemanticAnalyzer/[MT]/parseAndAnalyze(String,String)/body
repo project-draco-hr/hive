@@ -1,0 +1,25 @@
+{
+  SessionState.start(conf);
+  Context ctx=new Context(conf);
+  ctx.setCmd(query);
+  ctx.setHDFSCleanup(true);
+  ParseDriver pd=new ParseDriver();
+  ASTNode tree=pd.parse(query,ctx);
+  tree=ParseUtils.findRootNonNullToken(tree);
+  BaseSemanticAnalyzer sem=SemanticAnalyzerFactory.get(conf,tree);
+  SessionState.get().initTxnMgr(conf);
+  db=sem.getDb();
+  db.createTable("T",Arrays.asList("a","b"),null,OrcInputFormat.class,OrcOutputFormat.class);
+  db.createTable("U",Arrays.asList("a","b"),Arrays.asList("ds"),OrcInputFormat.class,OrcOutputFormat.class);
+  Table u=db.getTable("U");
+  Map<String,String> partVals=new HashMap<String,String>(2);
+  partVals.put("ds","yesterday");
+  db.createPartition(u,partVals);
+  partVals.clear();
+  partVals.put("ds","today");
+  db.createPartition(u,partVals);
+  sem.analyze(tree,ctx);
+  sem.validate();
+  QueryPlan plan=new QueryPlan(query,sem,0L,testName);
+  return new ReturnInfo(tree,sem,plan);
+}

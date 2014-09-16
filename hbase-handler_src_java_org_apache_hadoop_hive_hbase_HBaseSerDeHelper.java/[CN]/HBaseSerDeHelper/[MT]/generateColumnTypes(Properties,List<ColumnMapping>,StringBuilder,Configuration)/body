@@ -1,0 +1,126 @@
+{
+  if (tbl == null) {
+    throw new IllegalArgumentException("tbl cannot be null");
+  }
+  if (columnsMapping == null) {
+    throw new IllegalArgumentException("columnsMapping cannot be null");
+  }
+  if (sb == null) {
+    throw new IllegalArgumentException("StringBuilder cannot be null");
+  }
+  for (int i=0; i < columnsMapping.size(); i++) {
+    if (sb.length() > 0) {
+      sb.append(":");
+    }
+    ColumnMapping colMap=columnsMapping.get(i);
+    if (colMap.hbaseRowKey) {
+      Map<String,String> compositeKeyParts=getCompositeKeyParts(tbl);
+      StringBuilder keyStruct=new StringBuilder();
+      if (compositeKeyParts == null || compositeKeyParts.isEmpty()) {
+        String compKeyClass=tbl.getProperty(HBaseSerDe.HBASE_COMPOSITE_KEY_CLASS);
+        String compKeyTypes=tbl.getProperty(HBaseSerDe.HBASE_COMPOSITE_KEY_TYPES);
+        if (compKeyTypes == null) {
+          if (compKeyClass != null) {
+            throw new SerDeException("Either the hbase.composite.key.types property should be set or the getParts method must be overridden in " + compKeyClass);
+          }
+          sb.append(serdeConstants.STRING_TYPE_NAME);
+        }
+ else {
+          generateKeyStruct(compKeyTypes,keyStruct);
+        }
+      }
+ else {
+        generateKeyStruct(compositeKeyParts,keyStruct);
+      }
+      sb.append(keyStruct);
+    }
+ else     if (colMap.qualifierName == null) {
+      String serClassName=null;
+      String serType=null;
+      String schemaLiteral=null;
+      String schemaUrl=null;
+      if (colMap.qualifierPrefix != null) {
+        serType=tbl.getProperty(colMap.familyName + "." + colMap.qualifierPrefix+ "."+ HBaseSerDe.SERIALIZATION_TYPE);
+        if (serType == null) {
+          throw new SerDeException(HBaseSerDe.SERIALIZATION_TYPE + " property not provided for column family [" + colMap.familyName+ "] and prefix ["+ colMap.qualifierPrefix+ "]");
+        }
+        serClassName=tbl.getProperty(colMap.familyName + "." + colMap.qualifierPrefix+ "."+ serdeConstants.SERIALIZATION_CLASS);
+        if (serClassName == null) {
+          if (serType.equalsIgnoreCase(HBaseSerDeParameters.AVRO_SERIALIZATION_TYPE)) {
+            schemaLiteral=tbl.getProperty(colMap.familyName + "." + colMap.qualifierPrefix+ "."+ AvroSerdeUtils.SCHEMA_LITERAL);
+            schemaUrl=tbl.getProperty(colMap.familyName + "." + colMap.qualifierPrefix+ "."+ AvroSerdeUtils.SCHEMA_URL);
+            if (schemaLiteral == null && schemaUrl == null) {
+              throw new SerDeException("For an avro schema, either " + AvroSerdeUtils.SCHEMA_LITERAL + ", "+ AvroSerdeUtils.SCHEMA_URL+ " or "+ serdeConstants.SERIALIZATION_CLASS+ " property must be set.");
+            }
+            if (schemaUrl != null) {
+              schemaLiteral=getSchemaFromFS(schemaUrl,conf).toString();
+            }
+          }
+ else {
+            throw new SerDeException(serdeConstants.SERIALIZATION_CLASS + " property not provided for column family [" + colMap.familyName+ "] and prefix ["+ colMap.qualifierPrefix+ "]");
+          }
+        }
+      }
+ else {
+        serType=tbl.getProperty(colMap.familyName + "." + HBaseSerDe.SERIALIZATION_TYPE);
+        if (serType == null) {
+          throw new SerDeException(HBaseSerDe.SERIALIZATION_TYPE + " property not provided for column family [" + colMap.familyName+ "]");
+        }
+        serClassName=tbl.getProperty(colMap.familyName + "." + serdeConstants.SERIALIZATION_CLASS);
+        if (serClassName == null) {
+          if (serType.equalsIgnoreCase(AVRO_SERIALIZATION_TYPE)) {
+            schemaLiteral=tbl.getProperty(colMap.familyName + "." + AvroSerdeUtils.SCHEMA_LITERAL);
+            schemaUrl=tbl.getProperty(colMap.familyName + "." + AvroSerdeUtils.SCHEMA_URL);
+            if (schemaLiteral == null && schemaUrl == null) {
+              throw new SerDeException("For an avro schema, either " + AvroSerdeUtils.SCHEMA_LITERAL + " property or "+ serdeConstants.SERIALIZATION_CLASS+ " property must be set.");
+            }
+            if (schemaUrl != null) {
+              schemaLiteral=getSchemaFromFS(schemaUrl,conf).toString();
+            }
+          }
+ else {
+            throw new SerDeException(serdeConstants.SERIALIZATION_CLASS + " property not provided for column family [" + colMap.familyName+ "]");
+          }
+        }
+      }
+      StringBuilder generatedStruct=new StringBuilder();
+      generateColumnStruct(serType,serClassName,schemaLiteral,colMap,generatedStruct);
+      sb.append(serdeConstants.MAP_TYPE_NAME + "<" + serdeConstants.STRING_TYPE_NAME+ ","+ generatedStruct+ ">");
+    }
+ else {
+      String qualifierName=colMap.qualifierName;
+      if (colMap.qualifierName.endsWith("*")) {
+        qualifierName=colMap.qualifierName.substring(0,colMap.qualifierName.length() - 1);
+      }
+      String serType=tbl.getProperty(colMap.familyName + "." + qualifierName+ "."+ HBaseSerDe.SERIALIZATION_TYPE);
+      if (serType == null) {
+        throw new SerDeException(HBaseSerDe.SERIALIZATION_TYPE + " property not provided for column family [" + colMap.familyName+ "] and qualifier ["+ qualifierName+ "]");
+      }
+      String serClassName=tbl.getProperty(colMap.familyName + "." + qualifierName+ "."+ serdeConstants.SERIALIZATION_CLASS);
+      String schemaLiteral=null;
+      String schemaUrl=null;
+      if (serClassName == null) {
+        if (serType.equalsIgnoreCase(AVRO_SERIALIZATION_TYPE)) {
+          schemaLiteral=tbl.getProperty(colMap.familyName + "." + qualifierName+ "."+ AvroSerdeUtils.SCHEMA_LITERAL);
+          schemaUrl=tbl.getProperty(colMap.familyName + "." + qualifierName+ "."+ AvroSerdeUtils.SCHEMA_URL);
+          if (schemaLiteral == null && schemaUrl == null) {
+            throw new SerDeException("For an avro schema, either " + AvroSerdeUtils.SCHEMA_LITERAL + ", "+ AvroSerdeUtils.SCHEMA_URL+ " or "+ serdeConstants.SERIALIZATION_CLASS+ " property must be set.");
+          }
+          if (schemaUrl != null) {
+            schemaLiteral=getSchemaFromFS(schemaUrl,conf).toString();
+          }
+        }
+ else {
+          throw new SerDeException(serdeConstants.SERIALIZATION_CLASS + " property not provided for column family [" + colMap.familyName+ "] and qualifier ["+ qualifierName+ "]");
+        }
+      }
+      StringBuilder generatedStruct=new StringBuilder();
+      generateColumnStruct(serType,serClassName,schemaLiteral,colMap,generatedStruct);
+      sb.append(generatedStruct);
+    }
+  }
+  trim(sb);
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Generated column types: [" + sb.toString() + "]");
+  }
+}

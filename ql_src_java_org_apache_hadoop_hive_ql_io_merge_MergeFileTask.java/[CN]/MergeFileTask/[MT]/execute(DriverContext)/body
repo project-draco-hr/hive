@@ -1,0 +1,93 @@
+{
+  Context ctx=driverContext.getCtx();
+  boolean ctxCreated=false;
+  RunningJob rj=null;
+  int returnVal=0;
+  try {
+    if (ctx == null) {
+      ctx=new Context(job);
+      ctxCreated=true;
+    }
+    ShimLoader.getHadoopShims().prepareJobOutput(job);
+    job.setInputFormat(work.getInputformatClass());
+    job.setOutputFormat(HiveOutputFormatImpl.class);
+    job.setMapperClass(MergeFileMapper.class);
+    job.setMapOutputKeyClass(NullWritable.class);
+    job.setMapOutputValueClass(NullWritable.class);
+    job.setOutputKeyClass(NullWritable.class);
+    job.setOutputValueClass(NullWritable.class);
+    job.setNumReduceTasks(0);
+    Path outputPath=work.getOutputDir();
+    Path tempOutPath=Utilities.toTempPath(outputPath);
+    FileSystem fs=tempOutPath.getFileSystem(job);
+    if (!fs.exists(tempOutPath)) {
+      fs.mkdirs(tempOutPath);
+    }
+    boolean noName=StringUtils.isEmpty(HiveConf.getVar(job,HiveConf.ConfVars.HADOOPJOBNAME));
+    String jobName=null;
+    if (noName && this.getQueryPlan() != null) {
+      int maxlen=conf.getIntVar(HiveConf.ConfVars.HIVEJOBNAMELENGTH);
+      jobName=Utilities.abbreviate(this.getQueryPlan().getQueryStr(),maxlen - 6);
+    }
+    if (noName) {
+      HiveConf.setVar(job,HiveConf.ConfVars.HADOOPJOBNAME,jobName != null ? jobName : "JOB" + Utilities.randGen.nextInt());
+    }
+    addInputPaths(job,work);
+    Utilities.setMapWork(job,work,ctx.getMRTmpPath(),true);
+    String pwd=HiveConf.getVar(job,HiveConf.ConfVars.METASTOREPWD);
+    if (pwd != null) {
+      HiveConf.setVar(job,HiveConf.ConfVars.METASTOREPWD,"HIVE");
+    }
+    JobClient jc=new JobClient(job);
+    String addedJars=Utilities.getResourceFiles(job,SessionState.ResourceType.JAR);
+    if (!addedJars.isEmpty()) {
+      job.set("tmpjars",addedJars);
+    }
+    Throttle.checkJobTracker(job,LOG);
+    rj=jc.submitJob(job);
+    returnVal=jobExecHelper.progress(rj,jc,null);
+    success=(returnVal == 0);
+  }
+ catch (  Exception e) {
+    String mesg=" with exception '" + Utilities.getNameMessage(e) + "'";
+    if (rj != null) {
+      mesg="Ended Job = " + rj.getJobID() + mesg;
+    }
+ else {
+      mesg="Job Submission failed" + mesg;
+    }
+    console.printError(mesg,"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
+    success=false;
+    returnVal=1;
+  }
+ finally {
+    try {
+      if (ctxCreated) {
+        ctx.clear();
+      }
+      if (rj != null) {
+        if (returnVal != 0) {
+          rj.killJob();
+        }
+        HadoopJobExecHelper.runningJobs.remove(rj);
+        jobID=rj.getID().toString();
+      }
+      if (rj != null) {
+        if (work.getAliasToWork() != null) {
+          for (          Operator<? extends OperatorDesc> op : work.getAliasToWork().values()) {
+            op.jobClose(job,success);
+          }
+        }
+      }
+    }
+ catch (    Exception e) {
+      if (success) {
+        success=false;
+        returnVal=3;
+        String mesg="Job Commit failed with exception '" + Utilities.getNameMessage(e) + "'";
+        console.printError(mesg,"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
+      }
+    }
+  }
+  return returnVal;
+}

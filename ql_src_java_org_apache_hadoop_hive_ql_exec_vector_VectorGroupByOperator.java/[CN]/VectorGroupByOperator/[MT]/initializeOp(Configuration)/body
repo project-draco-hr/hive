@@ -11,11 +11,20 @@
       aggregators[i].init(conf.getAggregators().get(i));
       objectInspectors.add(aggregators[i].getOutputObjectInspector());
     }
-    keyWrappersBatch=VectorHashKeyWrapperBatch.compileKeyWrapperBatch(keyExpressions);
-    aggregationBatchInfo=new VectorAggregationBufferBatch();
-    aggregationBatchInfo.compileAggregationBatchInfo(aggregators);
+    if (!conf.getVectorDesc().isVectorGroupBatches()) {
+      keyWrappersBatch=VectorHashKeyWrapperBatch.compileKeyWrapperBatch(keyExpressions);
+      aggregationBatchInfo=new VectorAggregationBufferBatch();
+      aggregationBatchInfo.compileAggregationBatchInfo(aggregators);
+    }
+    LOG.warn("VectorGroupByOperator is vector output " + isVectorOutput);
     List<String> outputFieldNames=conf.getOutputColumnNames();
     outputObjInspector=ObjectInspectorFactory.getStandardStructObjectInspector(outputFieldNames,objectInspectors);
+    if (isVectorOutput) {
+      vrbCtx=new VectorizedRowBatchCtx();
+      vrbCtx.init(hconf,fileKey,(StructObjectInspector)outputObjInspector);
+      outputBatch=vrbCtx.createVectorizedRowBatch();
+      vectorColumnAssign=VectorColumnAssignFactory.buildAssigners(outputBatch,outputObjInspector,vOutContext.getColumnMap(),conf.getOutputColumnNames());
+    }
   }
  catch (  HiveException he) {
     throw he;
@@ -27,6 +36,9 @@ catch (  Throwable e) {
   forwardCache=new Object[keyExpressions.length + aggregators.length];
   if (keyExpressions.length == 0) {
     processingMode=this.new ProcessingModeGlobalAggregate();
+  }
+ else   if (conf.getVectorDesc().isVectorGroupBatches()) {
+    processingMode=this.new ProcessingModeGroupBatches();
   }
  else {
     processingMode=this.new ProcessingModeHashAggregate();
