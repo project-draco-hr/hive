@@ -1,0 +1,43 @@
+{
+  PerfLogger perfLogger=PerfLogger.getPerfLogger();
+  perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.ACQUIRE_READ_WRITE_LOCKS);
+  SessionState ss=SessionState.get();
+  HiveTxnManager txnMgr=ss.getTxnMgr();
+  try {
+    String userFromUGI;
+    try {
+      userFromUGI=conf.getUser();
+    }
+ catch (    IOException e) {
+      errorMessage="FAILED: Error in determining user while acquiring locks: " + e.getMessage();
+      SQLState=ErrorMsg.findSQLState(e.getMessage());
+      downstreamError=e;
+      console.printError(errorMessage,"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
+      return 10;
+    }
+    if (acidSinks != null && acidSinks.size() > 0) {
+      long txnId=ss.getCurrentTxn();
+      if (txnId == SessionState.NO_CURRENT_TXN) {
+        txnId=txnMgr.openTxn(userFromUGI);
+        ss.setCurrentTxn(txnId);
+      }
+      if (acidSinks != null) {
+        for (        FileSinkDesc desc : acidSinks) {
+          desc.setTransactionId(txnId);
+        }
+      }
+    }
+    txnMgr.acquireLocks(plan,ctx,userFromUGI);
+    return 0;
+  }
+ catch (  LockException e) {
+    errorMessage="FAILED: Error in acquiring locks: " + e.getMessage();
+    SQLState=ErrorMsg.findSQLState(e.getMessage());
+    downstreamError=e;
+    console.printError(errorMessage,"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
+    return 10;
+  }
+ finally {
+    perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.ACQUIRE_READ_WRITE_LOCKS);
+  }
+}

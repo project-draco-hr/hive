@@ -1,0 +1,42 @@
+{
+  Throwable originalThrowable=null;
+  try {
+    TezCacheAccess cacheAccess=TezCacheAccess.createInstance(jobConf);
+    for (    Map.Entry<String,LogicalInput> inputEntry : inputs.entrySet()) {
+      if (!cacheAccess.isInputCached(inputEntry.getKey())) {
+        LOG.info("Input: " + inputEntry.getKey() + " is not cached");
+        inputEntry.getValue().start();
+      }
+ else {
+        LOG.info("Input: " + inputEntry.getKey() + " is already cached. Skipping start");
+      }
+    }
+    MRTaskReporter mrReporter=new MRTaskReporter(getContext());
+    rproc.init(jobConf,getContext(),mrReporter,inputs,outputs);
+    rproc.run();
+    perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.TEZ_RUN_PROCESSOR);
+  }
+ catch (  Throwable t) {
+    originalThrowable=t;
+  }
+ finally {
+    if (originalThrowable != null && originalThrowable instanceof Error) {
+      LOG.error(StringUtils.stringifyException(originalThrowable));
+      throw new RuntimeException(originalThrowable);
+    }
+    try {
+      if (rproc != null) {
+        rproc.close();
+      }
+    }
+ catch (    Throwable t) {
+      if (originalThrowable == null) {
+        originalThrowable=t;
+      }
+    }
+    if (originalThrowable != null) {
+      LOG.error(StringUtils.stringifyException(originalThrowable));
+      throw new RuntimeException(originalThrowable);
+    }
+  }
+}
