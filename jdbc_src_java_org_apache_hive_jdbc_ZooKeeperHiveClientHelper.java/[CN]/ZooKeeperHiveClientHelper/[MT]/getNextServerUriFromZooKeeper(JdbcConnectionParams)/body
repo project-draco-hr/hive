@@ -1,0 +1,23 @@
+{
+  String zooKeeperEnsemble=connParams.getZooKeeperEnsemble();
+  String zooKeeperNamespace=connParams.getSessionVars().get(JdbcConnectionParams.ZOOKEEPER_NAMESPACE);
+  List<String> serverHosts;
+  Random randomizer=new Random();
+  String serverNode;
+  try {
+    ZooKeeper zooKeeperClient=new ZooKeeper(zooKeeperEnsemble,JdbcConnectionParams.ZOOKEEPER_SESSION_TIMEOUT,new ZooKeeperHiveClientHelper.DummyWatcher());
+    serverHosts=zooKeeperClient.getChildren("/" + zooKeeperNamespace,false);
+    serverHosts.removeAll(connParams.getRejectedHostZnodePaths());
+    if (serverHosts.isEmpty()) {
+      throw new ZooKeeperHiveClientException("Tried all existing HiveServer2 uris from ZooKeeper.");
+    }
+    serverNode=serverHosts.get(randomizer.nextInt(serverHosts.size()));
+    connParams.setCurrentHostZnodePath(serverNode);
+    String serverUri=new String(zooKeeperClient.getData("/" + zooKeeperNamespace + "/"+ serverNode,false,null),Charset.forName("UTF-8"));
+    LOG.info("Selected HiveServer2 instance with uri: " + serverUri);
+    return serverUri;
+  }
+ catch (  Exception e) {
+    throw new ZooKeeperHiveClientException("Unable to read HiveServer2 uri from ZooKeeper",e);
+  }
+}

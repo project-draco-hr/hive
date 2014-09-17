@@ -1,11 +1,30 @@
 {
-  transport=isHttpTransportMode() ? createHttpTransport() : createBinaryTransport();
-  try {
-    if (!transport.isOpen()) {
-      transport.open();
+  while (true) {
+    try {
+      transport=isHttpTransportMode() ? createHttpTransport() : createBinaryTransport();
+      if (!transport.isOpen()) {
+        LOG.info("Will try to open client transport with JDBC Uri: " + jdbcUriString);
+        transport.open();
+      }
+      break;
     }
-  }
- catch (  TTransportException e) {
-    throw new SQLException("Could not open connection to " + jdbcURI + ": "+ e.getMessage()," 08S01",e);
+ catch (    TTransportException e) {
+      LOG.info("Could not open client transport with JDBC Uri: " + jdbcUriString);
+      if ((sessConfMap.get(JdbcConnectionParams.SERVICE_DISCOVERY_MODE) != null) && (JdbcConnectionParams.SERVICE_DISCOVERY_MODE_ZOOKEEPER.equalsIgnoreCase(sessConfMap.get(JdbcConnectionParams.SERVICE_DISCOVERY_MODE)))) {
+        try {
+          Utils.updateConnParamsFromZooKeeper(connParams);
+        }
+ catch (        ZooKeeperHiveClientException ze) {
+          throw new SQLException("Could not open client transport for any of the Server URI's in ZooKeeper: " + ze.getMessage()," 08S01",ze);
+        }
+        jdbcUriString=connParams.getJdbcUriString();
+        host=connParams.getHost();
+        port=connParams.getPort();
+        LOG.info("Will retry opening client transport");
+      }
+ else {
+        throw new SQLException("Could not open client transport with JDBC Uri: " + jdbcUriString + ": "+ e.getMessage()," 08S01",e);
+      }
+    }
   }
 }
