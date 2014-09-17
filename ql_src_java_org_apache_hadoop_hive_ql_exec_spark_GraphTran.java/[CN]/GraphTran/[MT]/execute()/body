@@ -11,28 +11,11 @@
     JavaPairRDD<HiveKey,BytesWritable> rdd=tran.transform(input);
     while (getChildren(tran).size() > 0) {
       SparkTran childTran=getChildren(tran).get(0);
-      if (childTran instanceof UnionTran) {
-        List<JavaPairRDD<HiveKey,BytesWritable>> unionInputList=unionInputs.get(childTran);
-        if (unionInputList == null) {
-          unionInputList=new LinkedList<JavaPairRDD<HiveKey,BytesWritable>>();
-          unionInputList.add(rdd);
-          unionInputs.put(childTran,unionInputList);
-          break;
-        }
- else         if (unionInputList.size() < this.getParents(childTran).size() - 1) {
-          unionInputList.add(rdd);
-          break;
-        }
- else         if (unionInputList.size() == this.getParents(childTran).size() - 1) {
-          for (          JavaPairRDD<HiveKey,BytesWritable> inputRDD : unionInputList) {
-            ((UnionTran)childTran).setOtherInput(inputRDD);
-            rdd=childTran.transform(rdd);
-          }
-        }
+      if (childTran instanceof UnionTran && this.getParents(childTran).size() > ((UnionTran)childTran).getOtherInputList().size() + 1) {
+        ((UnionTran)childTran).addOtherInput(rdd);
+        break;
       }
- else {
-        rdd=childTran.transform(rdd);
-      }
+      rdd=childTran.transform(rdd);
       tran=childTran;
     }
     if (!resultRDDs.containsKey(tran) && getChildren(tran).isEmpty()) {
