@@ -1,0 +1,21 @@
+{
+  Map<String,Integer> mapColumnNames=new HashMap<String,Integer>();
+  mapColumnNames.put("A",0);
+  VectorizationContext ctx=new VectorizationContext(mapColumnNames,1);
+  GroupByDesc desc=buildGroupByDescType(ctx,"count","A",TypeInfoFactory.longTypeInfo);
+  VectorGroupByDesc vectorDesc=desc.getVectorDesc();
+  vectorDesc.setIsReduce(true);
+  VectorGroupByOperator vgo=new VectorGroupByOperator(ctx,desc);
+  FakeCaptureOutputOperator out=FakeCaptureOutputOperator.addCaptureOutputChild(vgo);
+  vgo.initialize(null,null);
+  for (  VectorizedRowBatch unit : data) {
+    vgo.processOp(unit,0);
+  }
+  vgo.close(false);
+  List<Object> outBatchList=out.getCapturedRows();
+  assertNotNull(outBatchList);
+  assertEquals(1,outBatchList.size());
+  Object result=outBatchList.get(0);
+  Validator validator=getValidator("count");
+  validator.validate("_total",expected,result);
+}
