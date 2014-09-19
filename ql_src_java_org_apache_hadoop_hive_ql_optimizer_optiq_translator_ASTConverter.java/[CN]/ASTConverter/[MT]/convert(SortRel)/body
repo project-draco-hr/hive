@@ -10,7 +10,7 @@
   if (groupBy != null) {
     ASTBuilder b=ASTBuilder.construct(HiveParser.TOK_GROUPBY,"TOK_GROUPBY");
     for (    int i : BitSets.toIter(groupBy.getGroupSet())) {
-      RexInputRef iRef=new RexInputRef(i,new BasicSqlType(SqlTypeName.ANY));
+      RexInputRef iRef=new RexInputRef(i,groupBy.getCluster().getTypeFactory().createSqlType(SqlTypeName.ANY));
       b.add(iRef.accept(new RexVisitor(schema)));
     }
     if (!groupBy.getGroupSet().isEmpty())     hiveAST.groupBy=b.node();
@@ -21,10 +21,17 @@
     hiveAST.having=ASTBuilder.having(cond);
   }
   ASTBuilder b=ASTBuilder.construct(HiveParser.TOK_SELECT,"TOK_SELECT");
-  int i=0;
-  for (  RexNode r : select.getChildExps()) {
-    ASTNode selectExpr=ASTBuilder.selectExpr(r.accept(new RexVisitor(schema)),select.getRowType().getFieldNames().get(i++));
+  if (select.getChildExps().isEmpty()) {
+    RexLiteral r=select.getCluster().getRexBuilder().makeExactLiteral(new BigDecimal(1));
+    ASTNode selectExpr=ASTBuilder.selectExpr(ASTBuilder.literal(r),"1");
     b.add(selectExpr);
+  }
+ else {
+    int i=0;
+    for (    RexNode r : select.getChildExps()) {
+      ASTNode selectExpr=ASTBuilder.selectExpr(r.accept(new RexVisitor(schema)),select.getRowType().getFieldNames().get(i++));
+      b.add(selectExpr);
+    }
   }
   hiveAST.select=b.node();
   if (sortrel != null) {
