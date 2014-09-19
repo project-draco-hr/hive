@@ -1,140 +1,47 @@
 {
-  PerfLogger perfLogger=PerfLogger.getPerfLogger();
-  perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.GET_SPLITS);
   init(job);
   Map<String,ArrayList<String>> pathToAliases=mrwork.getPathToAliases();
   Map<String,Operator<? extends OperatorDesc>> aliasToWork=mrwork.getAliasToWork();
-  CombineFileInputFormatShim combine=ShimLoader.getHadoopShims().getCombineFileInputFormat();
-  if (HiveConf.getVar(job,HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("tez")) {
-    try {
-      List<Path> dirs=Utilities.getInputPathsTez(job,mrwork);
-      Utilities.setInputPaths(job,dirs);
-    }
- catch (    Exception e) {
-      throw new IOException("Could not create input paths",e);
-    }
-  }
-  InputSplit[] splits=null;
-  if (combine == null) {
-    splits=super.getSplits(job,numSplits);
-    perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.GET_SPLITS);
-    return splits;
-  }
-  if (combine.getInputPathsShim(job).length == 0) {
-    throw new IOException("No input paths specified in job");
-  }
   ArrayList<InputSplit> result=new ArrayList<InputSplit>();
-  Path[] paths=combine.getInputPathsShim(job);
-  List<Path> inpDirs=new ArrayList<Path>();
-  List<Path> inpFiles=new ArrayList<Path>();
-  Map<CombinePathInputFormat,CombineFilter> poolMap=new HashMap<CombinePathInputFormat,CombineFilter>();
-  Set<Path> poolSet=new HashSet<Path>();
+  Path[] paths=getInputPaths(job);
+  List<Path> nonCombinablePaths=new ArrayList<Path>(paths.length / 2);
+  List<Path> combinablePaths=new ArrayList<Path>(paths.length / 2);
   for (  Path path : paths) {
     PartitionDesc part=HiveFileFormatUtils.getPartitionDescFromPathRecursively(pathToPartitionInfo,path,IOPrepareCache.get().allocatePartitionDescMap());
-    TableDesc tableDesc=part.getTableDesc();
-    if ((tableDesc != null) && tableDesc.isNonNative()) {
-      return super.getSplits(job,numSplits);
-    }
     Class inputFormatClass=part.getInputFileFormatClass();
     String inputFormatClassName=inputFormatClass.getName();
     InputFormat inputFormat=getInputFormatFromCache(inputFormatClass,job);
-    String deserializerClassName=null;
-    try {
-      deserializerClassName=part.getDeserializer(job).getClass().getName();
-    }
- catch (    Exception e) {
-    }
-    FileSystem inpFs=path.getFileSystem(job);
-    if (inputFormatClass.isAssignableFrom(OrcInputFormat.class)) {
-      if (inpFs.exists(new Path(path,OrcRecordUpdater.ACID_FORMAT))) {
-        throw new IOException("CombineHiveInputFormat is incompatible " + " with ACID tables. Please set hive.input.format=" + "org.apache.hadoop.hive.ql.io.HiveInputFormat");
+    if (inputFormat instanceof AvoidSplitCombination && ((AvoidSplitCombination)inputFormat).shouldSkipCombine(path,job)) {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("The split [" + path + "] is being parked for HiveInputFormat.getSplits");
       }
-    }
-    if (this.mrwork != null && !this.mrwork.getHadoopSupportsSplittable()) {
-      if (inputFormat instanceof TextInputFormat) {
-        Queue<Path> dirs=new LinkedList<Path>();
-        FileStatus fStats=inpFs.getFileStatus(path);
-        if (fStats.isDir()) {
-          dirs.offer(path);
-        }
- else         if ((new CompressionCodecFactory(job)).getCodec(path) != null) {
-          splits=super.getSplits(job,numSplits);
-          perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.GET_SPLITS);
-          return splits;
-        }
-        while (dirs.peek() != null) {
-          Path tstPath=dirs.remove();
-          FileStatus[] fStatus=inpFs.listStatus(tstPath);
-          for (int idx=0; idx < fStatus.length; idx++) {
-            if (fStatus[idx].isDir()) {
-              dirs.offer(fStatus[idx].getPath());
-            }
- else             if ((new CompressionCodecFactory(job)).getCodec(fStatus[idx].getPath()) != null) {
-              splits=super.getSplits(job,numSplits);
-              perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.GET_SPLITS);
-              return splits;
-            }
-          }
-        }
-      }
-    }
-    if (inputFormat instanceof SymlinkTextInputFormat) {
-      splits=super.getSplits(job,numSplits);
-      perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.GET_SPLITS);
-      return splits;
-    }
-    Path filterPath=path;
-    CombineFilter f=null;
-    List<Operator<? extends OperatorDesc>> opList=null;
-    if (!mrwork.isMapperCannotSpanPartns()) {
-      opList=HiveFileFormatUtils.doGetWorksFromPath(pathToAliases,aliasToWork,filterPath);
-      CombinePathInputFormat combinePathInputFormat=new CombinePathInputFormat(opList,inputFormatClassName,deserializerClassName);
-      f=poolMap.get(combinePathInputFormat);
-      if (f == null) {
-        f=new CombineFilter(filterPath);
-        LOG.info("CombineHiveInputSplit creating pool for " + path + "; using filter path "+ filterPath);
-        combine.createPool(job,f);
-        poolMap.put(combinePathInputFormat,f);
-      }
- else {
-        LOG.info("CombineHiveInputSplit: pool is already created for " + path + "; using filter path "+ filterPath);
-        f.addPath(filterPath);
-      }
+      nonCombinablePaths.add(path);
     }
  else {
-      if (!path.getFileSystem(job).getFileStatus(path).isDir()) {
-        filterPath=path.getParent();
-        inpFiles.add(path);
-        poolSet.add(filterPath);
-      }
- else {
-        inpDirs.add(path);
-      }
+      combinablePaths.add(path);
     }
   }
-  List<InputSplitShim> iss=new ArrayList<InputSplitShim>();
-  if (!mrwork.isMapperCannotSpanPartns()) {
-    iss=Arrays.asList(combine.getSplits(job,1));
+  String oldPaths=job.get(HiveConf.ConfVars.HADOOPMAPREDINPUTDIR.varname);
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("The received input paths are: [" + oldPaths + "] against the property "+ HiveConf.ConfVars.HADOOPMAPREDINPUTDIR.varname);
   }
- else {
-    for (    Path path : inpDirs) {
-      processPaths(job,combine,iss,path);
-    }
-    if (inpFiles.size() > 0) {
-      for (      Path filterPath : poolSet) {
-        combine.createPool(job,new CombineFilter(filterPath));
-      }
-      processPaths(job,combine,iss,inpFiles.toArray(new Path[0]));
+  if (nonCombinablePaths.size() > 0) {
+    FileInputFormat.setInputPaths(job,nonCombinablePaths.toArray(new Path[nonCombinablePaths.size()]));
+    InputSplit[] splits=super.getSplits(job,numSplits);
+    for (    InputSplit split : splits) {
+      result.add(split);
     }
   }
-  if (mrwork.getNameToSplitSample() != null && !mrwork.getNameToSplitSample().isEmpty()) {
-    iss=sampleSplits(iss);
+  if (combinablePaths.size() > 0) {
+    FileInputFormat.setInputPaths(job,combinablePaths.toArray(new Path[combinablePaths.size()]));
+    InputSplit[] splits=getCombineSplits(job,numSplits);
+    for (    InputSplit split : splits) {
+      result.add(split);
+    }
   }
-  for (  InputSplitShim is : iss) {
-    CombineHiveInputSplit csplit=new CombineHiveInputSplit(job,is);
-    result.add(csplit);
+  if (oldPaths != null) {
+    job.set(HiveConf.ConfVars.HADOOPMAPREDINPUTDIR.varname,oldPaths);
   }
-  LOG.info("number of splits " + result.size());
-  perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.GET_SPLITS);
-  return result.toArray(new CombineHiveInputSplit[result.size()]);
+  LOG.info("Number of all splits " + result.size());
+  return result.toArray(new InputSplit[result.size()]);
 }
