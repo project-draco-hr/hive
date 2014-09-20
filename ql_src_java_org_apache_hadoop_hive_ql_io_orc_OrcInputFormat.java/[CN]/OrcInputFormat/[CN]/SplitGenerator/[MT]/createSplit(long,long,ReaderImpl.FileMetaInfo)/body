@@ -1,12 +1,17 @@
 {
   String[] hosts;
-  if ((offset % blockSize) + length <= blockSize) {
-    hosts=locations[(int)(offset / blockSize)].getHosts();
+  Map.Entry<Long,BlockLocation> startEntry=locations.floorEntry(offset);
+  BlockLocation start=startEntry.getValue();
+  if (offset + length <= start.getOffset() + start.getLength()) {
+    hosts=start.getHosts();
   }
  else {
+    Map.Entry<Long,BlockLocation> endEntry=locations.floorEntry(offset + length);
+    BlockLocation end=endEntry.getValue();
+    NavigableMap<Long,BlockLocation> navigableMap=locations.subMap(startEntry.getKey(),true,endEntry.getKey(),true);
     Map<String,LongWritable> sizes=new HashMap<String,LongWritable>();
     long maxSize=0;
-    for (    BlockLocation block : locations) {
+    for (    BlockLocation block : navigableMap.values()) {
       long overlap=getOverlap(offset,length,block.getOffset(),block.getLength());
       if (overlap > 0) {
         for (        String host : block.getHosts()) {
@@ -19,10 +24,13 @@
           maxSize=Math.max(maxSize,val.get());
         }
       }
+ else {
+        throw new IOException("File " + file.getPath().toString() + " should have had overlap on block starting at "+ block.getOffset());
+      }
     }
     long threshold=(long)(maxSize * MIN_INCLUDED_LOCATION);
     List<String> hostList=new ArrayList<String>();
-    for (    BlockLocation block : locations) {
+    for (    BlockLocation block : navigableMap.values()) {
       for (      String host : block.getHosts()) {
         if (sizes.containsKey(host)) {
           if (sizes.get(host).get() >= threshold) {
