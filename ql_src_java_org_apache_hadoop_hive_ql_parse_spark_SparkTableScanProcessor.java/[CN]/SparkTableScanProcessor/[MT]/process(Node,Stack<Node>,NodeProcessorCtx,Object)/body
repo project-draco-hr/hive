@@ -1,0 +1,63 @@
+{
+  GenSparkProcContext context=(GenSparkProcContext)procCtx;
+  TableScanOperator tblScan=(TableScanOperator)nd;
+  context.opToTaskMap.put(tblScan,context.defaultTask);
+  Map<FileSinkOperator,Stack<Operator<? extends OperatorDesc>>> fsToPath=new HashMap<FileSinkOperator,Stack<Operator<? extends OperatorDesc>>>();
+  Queue<Stack<Operator<? extends OperatorDesc>>> paths=new LinkedList<Stack<Operator<? extends OperatorDesc>>>();
+  Stack<Operator<? extends OperatorDesc>> p=new Stack<Operator<? extends OperatorDesc>>();
+  p.push(tblScan);
+  paths.offer(p);
+  while (!paths.isEmpty()) {
+    Stack<Operator<? extends OperatorDesc>> currPath=paths.poll();
+    Operator<? extends OperatorDesc> currOp=currPath.peek();
+    if (currOp instanceof FileSinkOperator) {
+      FileSinkOperator fsOp=(FileSinkOperator)currOp;
+      if (!fsToPath.containsKey(fsOp) || currPath.size() < fsToPath.get(fsOp).size()) {
+        fsToPath.put(fsOp,currPath);
+      }
+    }
+    for (    Operator<? extends OperatorDesc> nextOp : currOp.getChildOperators()) {
+      Stack<Operator<? extends OperatorDesc>> nextPath=new Stack<Operator<? extends OperatorDesc>>();
+      nextPath.addAll(currPath);
+      nextPath.push(nextOp);
+      paths.offer(nextPath);
+    }
+  }
+  if (fsToPath.size() > 1) {
+    int lowest=-1;
+    for (    Map.Entry<FileSinkOperator,Stack<Operator<? extends OperatorDesc>>> e : fsToPath.entrySet()) {
+      if (lowest < 0 || e.getValue().size() < lowest) {
+        lowest=e.getValue().size();
+      }
+    }
+    for (    Stack<Operator<? extends OperatorDesc>> st : fsToPath.values()) {
+      while (st.size() > lowest) {
+        st.pop();
+      }
+    }
+    Operator<? extends OperatorDesc> lca;
+    while (true) {
+      lca=null;
+      boolean same=true;
+      for (      Stack<Operator<? extends OperatorDesc>> st : fsToPath.values()) {
+        Operator<? extends OperatorDesc> op=st.pop();
+        if (lca == null) {
+          lca=op;
+        }
+ else         if (lca != op) {
+          same=false;
+        }
+      }
+      if (same) {
+        break;
+      }
+    }
+    Preconditions.checkArgument(lca.getNumChild() > 1,"AssertionError: the LCA should have multiple children, but got " + lca.getNumChild());
+    if (!(lca instanceof ForwardOperator)) {
+      for (      Operator<? extends OperatorDesc> childOp : lca.getChildOperators()) {
+        context.opToParentMap.put(childOp,lca);
+      }
+    }
+  }
+  return null;
+}

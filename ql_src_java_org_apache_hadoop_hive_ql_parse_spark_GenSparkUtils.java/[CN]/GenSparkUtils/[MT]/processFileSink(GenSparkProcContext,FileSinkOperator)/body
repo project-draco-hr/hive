@@ -1,17 +1,19 @@
 {
   ParseContext parseContext=context.parseContext;
+  Preconditions.checkArgument(context.opToTaskMap.containsKey(fileSink),"AssertionError: the fileSink " + fileSink.getName() + " should be in the context");
+  SparkTask currentTask=context.opToTaskMap.get(fileSink);
   boolean isInsertTable=GenMapRedUtils.isInsertInto(parseContext,fileSink);
   HiveConf hconf=parseContext.getConf();
-  boolean chDir=GenMapRedUtils.isMergeRequired(context.moveTask,hconf,fileSink,context.currentTask,isInsertTable);
-  Path finalName=GenMapRedUtils.createMoveTask(context.currentTask,chDir,fileSink,parseContext,context.moveTask,hconf,context.dependencyTask);
+  boolean chDir=GenMapRedUtils.isMergeRequired(context.moveTask,hconf,fileSink,currentTask,isInsertTable);
+  Path finalName=GenMapRedUtils.createMoveTask(currentTask,chDir,fileSink,parseContext,context.moveTask,hconf,context.dependencyTask);
   if (chDir) {
     logger.info("using CombineHiveInputformat for the merge job");
-    GenMapRedUtils.createMRWorkForMergingFiles(fileSink,finalName,context.dependencyTask,context.moveTask,hconf,context.currentTask);
+    GenMapRedUtils.createMRWorkForMergingFiles(fileSink,finalName,context.dependencyTask,context.moveTask,hconf,currentTask);
   }
   FetchTask fetchTask=parseContext.getFetchTask();
-  if (fetchTask != null && context.currentTask.getNumChild() == 0) {
+  if (fetchTask != null && currentTask.getNumChild() == 0) {
     if (fetchTask.isFetchFrom(fileSink.getConf())) {
-      context.currentTask.setFetchSource(true);
+      currentTask.setFetchSource(true);
     }
   }
 }

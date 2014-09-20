@@ -4,9 +4,32 @@
   GenSparkWork genSparkWork=new GenSparkWork(GenSparkUtils.getUtils());
   GenSparkProcContext procCtx=new GenSparkProcContext(conf,tempParseContext,mvTask,rootTasks,inputs,outputs);
   Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
+  opRules.put(new RuleRegExp("TS",TableScanOperator.getOperatorName() + "%"),new SparkTableScanProcessor());
+  Dispatcher disp=new DefaultRuleDispatcher(new SparkMultiInsertionProcessor(),opRules,procCtx);
+  ArrayList<Node> topNodes=new ArrayList<Node>();
+  topNodes.addAll(pCtx.getTopOps().values());
+  GraphWalker ogw=new GenSparkWorkWalker(disp,procCtx);
+  ogw.startWalking(topNodes,null);
+  opRules.clear();
+  opRules.put(new RuleRegExp("Join",JoinOperator.getOperatorName() + "%"),new SparkMergeTaskProcessor());
+  opRules.put(new RuleRegExp("Union",UnionOperator.getOperatorName() + "%"),new SparkMergeTaskProcessor());
+  disp=new DefaultRuleDispatcher(null,opRules,procCtx);
+  topNodes=new ArrayList<Node>();
+  topNodes.addAll(procCtx.tempTS);
+  topNodes.addAll(pCtx.getTopOps().values());
+  ogw=new GenSparkWorkWalker(disp,procCtx);
+  ogw.startWalking(topNodes,null);
+  opRules.clear();
   opRules.put(new RuleRegExp("Split Work - ReduceSink",ReduceSinkOperator.getOperatorName() + "%"),genSparkWork);
   opRules.put(new RuleRegExp("Split Work + Move/Merge - FileSink",FileSinkOperator.getOperatorName() + "%"),new CompositeProcessor(new SparkFileSinkProcessor(),genSparkWork));
-  opRules.put(new RuleRegExp("Handle Analyze Command",TableScanOperator.getOperatorName() + "%"),new SparkProcessAnalyzeTable(GenSparkUtils.getUtils()));
+  opRules.put(new RuleRegExp("Handle Analyze Command",TableScanOperator.getOperatorName() + "%"),new CompositeProcessor(new NodeProcessor(){
+    @Override public Object process(    Node nd,    Stack<Node> s,    NodeProcessorCtx procCtx,    Object... no) throws SemanticException {
+      GenSparkProcContext context=(GenSparkProcContext)procCtx;
+      context.currentTask=context.opToTaskMap.get(nd);
+      return null;
+    }
+  }
+,new SparkProcessAnalyzeTable(GenSparkUtils.getUtils())));
   opRules.put(new RuleRegExp("Remember union",UnionOperator.getOperatorName() + "%"),new NodeProcessor(){
     @Override public Object process(    Node n,    Stack<Node> s,    NodeProcessorCtx procCtx,    Object... os) throws SemanticException {
       GenSparkProcContext context=(GenSparkProcContext)procCtx;
@@ -16,10 +39,11 @@
     }
   }
 );
-  Dispatcher disp=new DefaultRuleDispatcher(null,opRules,procCtx);
-  List<Node> topNodes=new ArrayList<Node>();
+  disp=new DefaultRuleDispatcher(null,opRules,procCtx);
+  topNodes=new ArrayList<Node>();
   topNodes.addAll(pCtx.getTopOps().values());
-  GraphWalker ogw=new GenSparkWorkWalker(disp,procCtx);
+  topNodes.addAll(procCtx.tempTS);
+  ogw=new GenSparkWorkWalker(disp,procCtx);
   ogw.startWalking(topNodes,null);
   for (  BaseWork w : procCtx.workWithUnionOperators) {
     GenSparkUtils.getUtils().removeUnionOperators(conf,procCtx,w);

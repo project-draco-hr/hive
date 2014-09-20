@@ -1,0 +1,27 @@
+{
+  Preconditions.checkArgument(op.getNumParent() == 1,"AssertionError: expecting operator " + op + " to have only one parent,"+ " but found multiple parents : "+ op.getParentOperators());
+  SparkTask parentTask=context.defaultTask;
+  SparkTask childTask=(SparkTask)TaskFactory.get(new SparkWork(context.conf.getVar(HiveConf.ConfVars.HIVEQUERYID)),context.conf);
+  GenSparkUtils utils=GenSparkUtils.getUtils();
+  ParseContext parseCtx=context.parseContext;
+  parentTask.addDependentTask(childTask);
+  Operator<?> parent=context.opToParentMap.get(op);
+  Path taskTmpDir;
+  TableDesc tt_desc;
+  if (processed.add(parent)) {
+    taskTmpDir=parseCtx.getContext().getMRTmpPath();
+    tt_desc=PlanUtils.getIntermediateFileTableDesc(PlanUtils.getFieldSchemasFromRowSchema(parent.getSchema(),"temporarycol"));
+    createTempFS(parent,taskTmpDir,tt_desc,parseCtx);
+  }
+ else {
+    FileSinkOperator fs=(FileSinkOperator)parent.getChildOperators().get(0);
+    tt_desc=fs.getConf().getTableInfo();
+    taskTmpDir=fs.getConf().getDirName();
+  }
+  TableScanOperator tableScan=createTempTS(parent,op,parseCtx);
+  String streamDesc=taskTmpDir.toUri().toString();
+  context.opToTaskMap.put(tableScan,childTask);
+  context.tempTS.add(tableScan);
+  MapWork mapWork=utils.createMapWork(tableScan,childTask.getWork(),streamDesc,tt_desc);
+  context.rootToWorkMap.put(tableScan,mapWork);
+}
