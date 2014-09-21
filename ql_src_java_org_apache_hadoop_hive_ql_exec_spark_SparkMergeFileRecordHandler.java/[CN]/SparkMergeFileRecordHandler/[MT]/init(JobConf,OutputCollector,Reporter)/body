@@ -1,0 +1,39 @@
+{
+  super.init(job,output,reporter);
+  ObjectCache cache=ObjectCacheFactory.getCache(job);
+  try {
+    jc=job;
+    MapWork mapWork=(MapWork)cache.retrieve(PLAN_KEY);
+    if (mapWork == null) {
+      mapWork=Utilities.getMapWork(job);
+      cache.cache(PLAN_KEY,mapWork);
+    }
+ else {
+      Utilities.setMapWork(job,mapWork);
+    }
+    if (mapWork instanceof MergeFileWork) {
+      MergeFileWork mergeFileWork=(MergeFileWork)mapWork;
+      String alias=mergeFileWork.getAliasToWork().keySet().iterator().next();
+      op=mergeFileWork.getAliasToWork().get(alias);
+      if (op instanceof AbstractFileMergeOperator) {
+        mergeOp=(AbstractFileMergeOperator)op;
+        mergeOp.initializeOp(jc);
+        row=new Object[2];
+        abort=false;
+      }
+ else {
+        abort=true;
+        throw new RuntimeException("Merge file work's top operator should be an" + " instance of AbstractFileMergeOperator");
+      }
+    }
+ else {
+      abort=true;
+      throw new RuntimeException("Map work should be a merge file work.");
+    }
+    l4j.info(mergeOp.dump(0));
+  }
+ catch (  HiveException e) {
+    abort=true;
+    throw new RuntimeException(e);
+  }
+}
