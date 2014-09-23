@@ -1,0 +1,44 @@
+{
+  VectorizedRowBatch vrg=(VectorizedRowBatch)data;
+  Writable[] records=null;
+  Writable recordValue=null;
+  boolean vectorizedSerde=false;
+  try {
+    if (serializer instanceof VectorizedSerde) {
+      recordValue=((VectorizedSerde)serializer).serializeVector(vrg,inputObjInspectors[0]);
+      records=(Writable[])((ObjectWritable)recordValue).get();
+      vectorizedSerde=true;
+    }
+  }
+ catch (  SerDeException e1) {
+    throw new HiveException(e1);
+  }
+  for (int i=0; i < vrg.size; i++) {
+    Writable row=null;
+    if (vectorizedSerde) {
+      row=records[i];
+    }
+ else {
+      if (vrg.valueWriters == null) {
+        vrg.setValueWriters(this.valueWriters);
+      }
+      try {
+        row=serializer.serialize(getRowObject(vrg,i),inputObjInspectors[0]);
+      }
+ catch (      SerDeException ex) {
+        throw new HiveException(ex);
+      }
+    }
+    try {
+      row.write(buffer);
+      if (buffer.getLength() > MAX_SIZE) {
+        LOG.info("Disabling AM events. Buffer size too large: " + buffer.getLength());
+        hasReachedMaxSize=true;
+        buffer=null;
+      }
+    }
+ catch (    Exception e) {
+      throw new HiveException(e);
+    }
+  }
+}
