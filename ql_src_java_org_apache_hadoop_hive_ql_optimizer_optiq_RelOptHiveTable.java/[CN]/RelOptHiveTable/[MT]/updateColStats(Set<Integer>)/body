@@ -1,0 +1,97 @@
+{
+  List<String> nonPartColNamesThatRqrStats=new ArrayList<String>();
+  List<Integer> nonPartColIndxsThatRqrStats=new ArrayList<Integer>();
+  List<String> partColNamesThatRqrStats=new ArrayList<String>();
+  List<Integer> partColIndxsThatRqrStats=new ArrayList<Integer>();
+  Set<String> colNamesFailedStats=new HashSet<String>();
+  ColumnInfo tmp;
+  for (  Integer pi : projIndxLst) {
+    if (hiveColStatsMap.get(pi) == null) {
+      if ((tmp=hiveNonPartitionColsMap.get(pi)) != null) {
+        nonPartColNamesThatRqrStats.add(tmp.getInternalName());
+        nonPartColIndxsThatRqrStats.add(pi);
+      }
+ else       if ((tmp=hivePartitionColsMap.get(pi)) != null) {
+        partColNamesThatRqrStats.add(tmp.getInternalName());
+        partColIndxsThatRqrStats.add(pi);
+      }
+ else {
+        noColsMissingStats.getAndIncrement();
+        String logMsg="Unable to find Column Index: " + pi + ", in "+ hiveTblMetadata.getCompleteName();
+        LOG.error(logMsg);
+        throw new RuntimeException(logMsg);
+      }
+    }
+  }
+  if (null == partitionList) {
+    computePartitionList(hiveConf,null);
+  }
+  if (nonPartColNamesThatRqrStats.size() > 0) {
+    List<ColStatistics> hiveColStats;
+    if (!hiveTblMetadata.isPartitioned()) {
+      hiveColStats=StatsUtils.getTableColumnStats(hiveTblMetadata,hiveNonPartitionCols,nonPartColNamesThatRqrStats);
+      if (hiveColStats == null) {
+        colNamesFailedStats.addAll(nonPartColNamesThatRqrStats);
+      }
+ else       if (hiveColStats.size() != nonPartColNamesThatRqrStats.size()) {
+        Set<String> setOfFiledCols=new HashSet<String>(nonPartColNamesThatRqrStats);
+        Set<String> setOfObtainedColStats=new HashSet<String>();
+        for (        ColStatistics cs : hiveColStats) {
+          setOfObtainedColStats.add(cs.getColumnName());
+        }
+        setOfFiledCols.removeAll(setOfObtainedColStats);
+        colNamesFailedStats.addAll(setOfFiledCols);
+      }
+    }
+ else {
+      try {
+        if (partitionList.getNotDeniedPartns().isEmpty()) {
+          rowCount=0;
+          hiveColStats=new ArrayList<ColStatistics>();
+          for (          String c : nonPartColNamesThatRqrStats) {
+            hiveColStats.add(new ColStatistics(hiveTblMetadata.getTableName(),c,null));
+          }
+          colNamesFailedStats.clear();
+        }
+ else {
+          Statistics stats=StatsUtils.collectStatistics(hiveConf,partitionList,hiveTblMetadata,hiveNonPartitionCols,nonPartColNamesThatRqrStats,true,true);
+          rowCount=stats.getNumRows();
+          hiveColStats=new ArrayList<ColStatistics>();
+          for (          String c : nonPartColNamesThatRqrStats) {
+            ColStatistics cs=stats.getColumnStatisticsFromColName(c);
+            if (cs != null) {
+              hiveColStats.add(cs);
+            }
+ else {
+              colNamesFailedStats.add(c);
+            }
+          }
+        }
+      }
+ catch (      HiveException e) {
+        String logMsg="Collecting stats failed.";
+        LOG.error(logMsg);
+        throw new RuntimeException(logMsg);
+      }
+    }
+    if (hiveColStats != null && hiveColStats.size() == nonPartColNamesThatRqrStats.size()) {
+      for (int i=0; i < hiveColStats.size(); i++) {
+        hiveColStatsMap.put(nonPartColIndxsThatRqrStats.get(i),hiveColStats.get(i));
+      }
+    }
+  }
+  if (colNamesFailedStats.isEmpty() && !partColNamesThatRqrStats.isEmpty()) {
+    ColStatistics cStats=null;
+    for (int i=0; i < partColNamesThatRqrStats.size(); i++) {
+      cStats=new ColStatistics(hiveTblMetadata.getTableName(),partColNamesThatRqrStats.get(i),hivePartitionColsMap.get(partColIndxsThatRqrStats.get(i)).getTypeName());
+      cStats.setCountDistint(getDistinctCount(partitionList.getPartitions(),partColNamesThatRqrStats.get(i)));
+      hiveColStatsMap.put(partColIndxsThatRqrStats.get(i),cStats);
+    }
+  }
+  if (!colNamesFailedStats.isEmpty()) {
+    String logMsg="No Stats for " + hiveTblMetadata.getCompleteName() + ", Columns: "+ getColNamesForLogging(colNamesFailedStats);
+    LOG.error(logMsg);
+    noColsMissingStats.getAndAdd(colNamesFailedStats.size());
+    throw new RuntimeException(logMsg);
+  }
+}

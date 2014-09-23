@@ -1,0 +1,80 @@
+{
+  RexBuilder rexBuilder=m_cluster.getRexBuilder();
+  RelDataTypeFactory dtFactory=rexBuilder.getTypeFactory();
+  PrimitiveTypeInfo hiveType=(PrimitiveTypeInfo)literal.getTypeInfo();
+  RelDataType optiqDataType=TypeConverter.convert(hiveType,dtFactory);
+  PrimitiveCategory hiveTypeCategory=hiveType.getPrimitiveCategory();
+  ConstantObjectInspector coi=literal.getWritableObjectInspector();
+  Object value=ObjectInspectorUtils.copyToStandardJavaObject(coi.getWritableConstantValue(),coi);
+  RexNode optiqLiteral=null;
+switch (hiveTypeCategory) {
+case BOOLEAN:
+    optiqLiteral=rexBuilder.makeLiteral(((Boolean)value).booleanValue());
+  break;
+case BYTE:
+byte[] byteArray=new byte[]{(Byte)value};
+ByteString bs=new ByteString(byteArray);
+optiqLiteral=rexBuilder.makeBinaryLiteral(bs);
+break;
+case SHORT:
+optiqLiteral=rexBuilder.makeExactLiteral(new BigDecimal((Short)value));
+break;
+case INT:
+optiqLiteral=rexBuilder.makeExactLiteral(new BigDecimal((Integer)value));
+break;
+case LONG:
+optiqLiteral=rexBuilder.makeBigintLiteral(new BigDecimal((Long)value));
+break;
+case DECIMAL:
+if (value instanceof HiveDecimal) {
+value=((HiveDecimal)value).bigDecimalValue();
+}
+ else if (value instanceof Decimal128) {
+value=((Decimal128)value).toBigDecimal();
+}
+if (value == null) {
+throw new OptiqSemanticException("Expression " + literal.getExprString() + " is not a valid decimal");
+}
+BigDecimal bd=(BigDecimal)value;
+BigInteger unscaled=bd.unscaledValue();
+if (unscaled.compareTo(MIN_LONG_BI) >= 0 && unscaled.compareTo(MAX_LONG_BI) <= 0) {
+optiqLiteral=rexBuilder.makeExactLiteral(bd);
+}
+ else {
+RelDataType relType=m_cluster.getTypeFactory().createSqlType(SqlTypeName.DECIMAL,bd.scale(),unscaled.toString().length());
+optiqLiteral=rexBuilder.makeExactLiteral(bd,relType);
+}
+break;
+case FLOAT:
+optiqLiteral=rexBuilder.makeApproxLiteral(new BigDecimal((Float)value),optiqDataType);
+break;
+case DOUBLE:
+optiqLiteral=rexBuilder.makeApproxLiteral(new BigDecimal((Double)value),optiqDataType);
+break;
+case CHAR:
+if (value instanceof HiveChar) value=((HiveChar)value).getValue();
+optiqLiteral=rexBuilder.makeLiteral((String)value);
+break;
+case VARCHAR:
+if (value instanceof HiveVarchar) value=((HiveVarchar)value).getValue();
+optiqLiteral=rexBuilder.makeLiteral((String)value);
+break;
+case STRING:
+optiqLiteral=rexBuilder.makeLiteral((String)value);
+break;
+case DATE:
+Calendar cal=new GregorianCalendar();
+cal.setTime((Date)value);
+optiqLiteral=rexBuilder.makeDateLiteral(cal);
+break;
+case TIMESTAMP:
+optiqLiteral=rexBuilder.makeTimestampLiteral((Calendar)value,RelDataType.PRECISION_NOT_SPECIFIED);
+break;
+case BINARY:
+case VOID:
+case UNKNOWN:
+default :
+throw new RuntimeException("UnSupported Literal");
+}
+return optiqLiteral;
+}

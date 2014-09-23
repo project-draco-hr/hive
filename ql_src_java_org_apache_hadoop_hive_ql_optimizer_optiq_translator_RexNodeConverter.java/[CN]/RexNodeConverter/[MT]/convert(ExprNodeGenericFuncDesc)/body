@@ -1,0 +1,40 @@
+{
+  ExprNodeDesc tmpExprNode;
+  RexNode tmpRN;
+  TypeInfo tgtDT=null;
+  List<RexNode> childRexNodeLst=new LinkedList<RexNode>();
+  Builder<RelDataType> argTypeBldr=ImmutableList.<RelDataType>builder();
+  if (func.getGenericUDF() instanceof GenericUDFBaseNumeric) {
+    tgtDT=func.getTypeInfo();
+  }
+ else   if (func.getGenericUDF() instanceof GenericUDFBaseCompare) {
+    if (func.getChildren().size() == 2) {
+      tgtDT=FunctionRegistry.getCommonClassForComparison(func.getChildren().get(0).getTypeInfo(),func.getChildren().get(1).getTypeInfo());
+    }
+  }
+  for (  ExprNodeDesc childExpr : func.getChildren()) {
+    tmpExprNode=childExpr;
+    if (tgtDT != null && TypeInfoUtils.isConversionRequiredForComparison(tgtDT,childExpr.getTypeInfo())) {
+      tmpExprNode=ParseUtils.createConversionCast(childExpr,(PrimitiveTypeInfo)tgtDT);
+    }
+    argTypeBldr.add(TypeConverter.convert(tmpExprNode.getTypeInfo(),m_cluster.getTypeFactory()));
+    tmpRN=convert(tmpExprNode);
+    childRexNodeLst.add(tmpRN);
+  }
+  RexNode expr=null;
+  RelDataType retType=null;
+  expr=handleExplicitCast(func,childRexNodeLst);
+  if (expr == null) {
+    retType=TypeConverter.convert(func.getTypeInfo(),m_cluster.getTypeFactory());
+    SqlOperator optiqOp=SqlFunctionConverter.getOptiqOperator(func.getFuncText(),func.getGenericUDF(),argTypeBldr.build(),retType);
+    expr=m_cluster.getRexBuilder().makeCall(optiqOp,childRexNodeLst);
+  }
+ else {
+    retType=expr.getType();
+  }
+  if (m_flattenExpr && (expr instanceof RexCall) && !(((RexCall)expr).getOperator() instanceof SqlCastFunction)) {
+    RexCall call=(RexCall)expr;
+    expr=m_cluster.getRexBuilder().makeCall(retType,call.getOperator(),RexUtil.flatten(call.getOperands(),call.getOperator()));
+  }
+  return expr;
+}
