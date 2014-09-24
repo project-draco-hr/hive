@@ -1,0 +1,46 @@
+{
+  BytesWritable keyWritable;
+  try {
+    if (!reader.next()) {
+      return false;
+    }
+ else {
+      keyWritable=(BytesWritable)reader.getCurrentKey();
+      valueWritables=reader.getCurrentValues();
+    }
+    try {
+      keyObject=inputKeyDeserializer.deserialize(keyWritable);
+    }
+ catch (    Exception e) {
+      throw new HiveException("Hive Runtime Error: Unable to deserialize reduce input key from " + Utilities.formatBinaryString(keyWritable.getBytes(),0,keyWritable.getLength()) + " with properties "+ keyTableDesc.getProperties(),e);
+    }
+    if (handleGroupKey && !keyWritable.equals(this.groupKey)) {
+      if (groupKey == null) {
+        this.groupKey=new BytesWritable();
+      }
+ else {
+        reducer.endGroup();
+      }
+      groupKey.set(keyWritable.getBytes(),0,keyWritable.getLength());
+      reducer.setGroupKeyObject(keyObject);
+      reducer.startGroup();
+    }
+    if (vectorized) {
+      processVectors(valueWritables,tag);
+    }
+ else {
+      processKeyValues(valueWritables,tag);
+    }
+    return true;
+  }
+ catch (  Throwable e) {
+    abort=true;
+    if (e instanceof OutOfMemoryError) {
+      throw (OutOfMemoryError)e;
+    }
+ else {
+      l4j.fatal(StringUtils.stringifyException(e));
+      throw new RuntimeException(e);
+    }
+  }
+}
