@@ -1,57 +1,7 @@
 {
-  SparkPlan plan=new SparkPlan();
-  GraphTran trans=new GraphTran();
-  Set<BaseWork> roots=sparkWork.getRoots();
-  for (  BaseWork w : roots) {
-    if (!(w instanceof MapWork)) {
-      throw new Exception("The roots in the SparkWork must be MapWork instances!");
-    }
-    MapWork mapWork=(MapWork)w;
-    JobConf newJobConf=cloneJobConf(mapWork);
-    JavaPairRDD<BytesWritable,BytesWritable> input=generateRDD(newJobConf,mapWork);
-    SparkTran tran=generate(newJobConf,mapWork);
-    trans.addRootTranWithInput(tran,input);
-    while (sparkWork.getChildren(w).size() > 0) {
-      BaseWork child=sparkWork.getChildren(w).get(0);
-      SparkTran childTran=childWorkTrans.get(child);
-      if (child instanceof ReduceWork) {
-        ReduceTran rt=null;
-        if (((ReduceWork)child).getReducer() instanceof JoinOperator) {
-          if (childTran == null) {
-            rt=generateRTWithEdge(sparkWork,w,child);
-            UnionTran ut=generateUnionTran();
-            trans.connect(tran,ut);
-            trans.connect(ut,rt);
-            childWorkTrans.put(child,ut);
-          }
- else {
-            trans.connect(tran,childTran);
-            break;
-          }
-        }
- else {
-          rt=generateRTWithEdge(sparkWork,w,child);
-          trans.connect(tran,rt);
-        }
-        w=child;
-        tran=rt;
-      }
- else       if (child instanceof UnionWork) {
-        if (childTran == null) {
-          SparkTran ut=generateUnionTran();
-          childWorkTrans.put(child,ut);
-          trans.connect(tran,ut);
-          w=child;
-          tran=ut;
-        }
- else {
-          trans.connect(tran,childTran);
-          break;
-        }
-      }
-    }
+  List<JavaPairRDD<HiveKey,BytesWritable>> resultRDDs=new ArrayList<JavaPairRDD<HiveKey,BytesWritable>>();
+  for (  BaseWork bw : sparkWork.getLeaves()) {
+    resultRDDs.add(generate(sparkWork,bw));
   }
-  childWorkTrans.clear();
-  plan.setTran(trans);
-  return plan;
+  return new SparkPlan(resultRDDs);
 }

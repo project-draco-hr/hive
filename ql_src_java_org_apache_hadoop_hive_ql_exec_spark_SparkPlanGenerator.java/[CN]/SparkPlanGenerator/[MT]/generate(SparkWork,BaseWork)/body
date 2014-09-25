@@ -1,0 +1,30 @@
+{
+  if (workToRDDMap.containsKey(work)) {
+    return workToRDDMap.get(work);
+  }
+  List<BaseWork> parentWorks=sparkWork.getParents(work);
+  JavaPairRDD<HiveKey,BytesWritable> rdd;
+  SparkEdgeProperty edge=null;
+  if (parentWorks.size() == 0) {
+    Preconditions.checkArgument(work instanceof MapWork,"AssertionError: a work with no parent should be a MapWork.");
+    MapWork mapWork=(MapWork)work;
+    rdd=generateRDD(mapWork);
+  }
+ else {
+    rdd=null;
+    edge=sparkWork.getEdgeProperty(parentWorks.get(0),work);
+    for (    BaseWork parentWork : parentWorks) {
+      JavaPairRDD<HiveKey,BytesWritable> parentRDD=generate(sparkWork,parentWork);
+      if (rdd == null) {
+        rdd=parentRDD;
+      }
+ else {
+        rdd=rdd.union(parentRDD);
+      }
+    }
+    workToRDDMap.put(work,rdd);
+  }
+  SparkTran tran=generate(work,edge);
+  rdd=tran.transform(rdd);
+  return rdd;
+}
