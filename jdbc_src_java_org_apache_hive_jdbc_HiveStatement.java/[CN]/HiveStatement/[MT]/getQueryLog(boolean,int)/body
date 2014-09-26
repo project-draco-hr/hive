@@ -1,0 +1,42 @@
+{
+  checkConnection("getQueryLog");
+  if (isCancelled) {
+    throw new ClosedOrCancelledStatementException("Method getQueryLog() failed. The " + "statement has been closed or cancelled.");
+  }
+  List<String> logs=new ArrayList<String>();
+  TFetchResultsResp tFetchResultsResp=null;
+  transportLock.lock();
+  try {
+    if (stmtHandle != null) {
+      TFetchResultsReq tFetchResultsReq=new TFetchResultsReq(stmtHandle,getFetchOrientation(incremental),fetchSize);
+      tFetchResultsReq.setFetchType((short)1);
+      tFetchResultsResp=client.FetchResults(tFetchResultsReq);
+      Utils.verifySuccessWithInfo(tFetchResultsResp.getStatus());
+    }
+ else {
+      if (isQueryClosed) {
+        throw new ClosedOrCancelledStatementException("Method getQueryLog() failed. The " + "statement has been closed or cancelled.");
+      }
+      if (isExecuteStatementFailed) {
+        throw new SQLException("Method getQueryLog() failed. Because the stmtHandle in " + "HiveStatement is null and the statement execution might fail.");
+      }
+ else {
+        return logs;
+      }
+    }
+  }
+ catch (  SQLException e) {
+    throw e;
+  }
+catch (  Exception e) {
+    throw new SQLException("Error when getting query log: " + e,e);
+  }
+ finally {
+    transportLock.unlock();
+  }
+  RowSet rowSet=RowSetFactory.create(tFetchResultsResp.getResults(),connection.getProtocol());
+  for (  Object[] row : rowSet) {
+    logs.add((String)row[0]);
+  }
+  return logs;
+}
