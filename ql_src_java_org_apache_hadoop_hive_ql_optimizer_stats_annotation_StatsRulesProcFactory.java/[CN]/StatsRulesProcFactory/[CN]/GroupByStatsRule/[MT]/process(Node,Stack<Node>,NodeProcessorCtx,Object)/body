@@ -2,84 +2,149 @@
   GroupByOperator gop=(GroupByOperator)nd;
   Operator<? extends OperatorDesc> parent=gop.getParentOperators().get(0);
   Statistics parentStats=parent.getStatistics();
+  if (parentStats == null) {
+    return null;
+  }
   AnnotateStatsProcCtx aspCtx=(AnnotateStatsProcCtx)procCtx;
   HiveConf conf=aspCtx.getConf();
-  int mapSideParallelism=HiveConf.getIntVar(conf,HiveConf.ConfVars.HIVE_STATS_MAP_SIDE_PARALLELISM);
+  long maxSplitSize=HiveConf.getLongVar(conf,HiveConf.ConfVars.MAPREDMAXSPLITSIZE);
   List<AggregationDesc> aggDesc=gop.getConf().getAggregators();
   Map<String,ExprNodeDesc> colExprMap=gop.getColumnExprMap();
   RowSchema rs=gop.getSchema();
   Statistics stats=null;
+  List<ColStatistics> colStats=StatsUtils.getColStatisticsFromExprMap(conf,parentStats,colExprMap,rs);
+  long cardinality;
+  long parallelism=1L;
   boolean mapSide=false;
-  int multiplier=mapSideParallelism;
-  long newNumRows;
-  long newDataSize;
+  boolean mapSideHashAgg=false;
+  long inputSize=1L;
+  boolean containsGroupingSet=gop.getConf().isGroupingSetsPresent();
+  long sizeOfGroupingSet=containsGroupingSet ? gop.getConf().getListGroupingSets().size() : 1L;
   if (gop.getChildOperators().get(0) instanceof ReduceSinkOperator || gop.getChildOperators().get(0) instanceof AppMasterEventOperator) {
     mapSide=true;
-    if (gop.getConf().isGroupingSetsPresent()) {
-      multiplier*=gop.getConf().getListGroupingSets().size();
+    TableScanOperator top=OperatorUtils.findSingleOperatorUpstream(gop,TableScanOperator.class);
+    if (top == null) {
+      inputSize=parentStats.getDataSize();
+      maxSplitSize=HiveConf.getLongVar(conf,HiveConf.ConfVars.BYTESPERREDUCER);
     }
+ else {
+      inputSize=top.getConf().getStatistics().getDataSize();
+    }
+    parallelism=(int)Math.ceil((double)inputSize / maxSplitSize);
+  }
+  if (isDebugEnabled) {
+    LOG.debug("STATS-" + gop.toString() + ": inputSize: "+ inputSize+ " maxSplitSize: "+ maxSplitSize+ " parallelism: "+ parallelism+ " containsGroupingSet: "+ containsGroupingSet+ " sizeOfGroupingSet: "+ sizeOfGroupingSet);
   }
   try {
     if (satisfyPrecondition(parentStats)) {
+      mapSideHashAgg=checkMapSideAggregation(gop,colStats,conf);
+      if (isDebugEnabled) {
+        LOG.debug("STATS-" + gop.toString() + " mapSideHashAgg: "+ mapSideHashAgg);
+      }
       stats=parentStats.clone();
-      List<ColStatistics> colStats=StatsUtils.getColStatisticsFromExprMap(conf,parentStats,colExprMap,rs);
       stats.setColumnStats(colStats);
-      long dvProd=1;
+      long ndvProduct=1;
+      final long parentNumRows=stats.getNumRows();
       for (      ColStatistics cs : colStats) {
         if (cs != null) {
-          long dv=cs.getCountDistint();
+          long ndv=cs.getCountDistint();
           if (cs.getNumNulls() > 0) {
-            dv+=1;
+            ndv+=1;
           }
-          dvProd*=dv;
+          ndvProduct*=ndv;
         }
  else {
           if (parentStats.getColumnStatsState().equals(Statistics.State.COMPLETE)) {
             continue;
           }
  else {
-            dvProd=0;
+            ndvProduct=0;
           }
           break;
         }
       }
+      if (ndvProduct == 0) {
+        ndvProduct=parentNumRows / 2;
+        if (isDebugEnabled) {
+          LOG.debug("STATS-" + gop.toString() + ": ndvProduct became 0 as some column does not"+ " have stats. ndvProduct changed to: "+ ndvProduct);
+        }
+      }
       if (mapSide) {
-        if (gop.getConf().isGroupingSetsPresent()) {
-          newNumRows=setMaxIfInvalid(multiplier * stats.getNumRows());
-          newDataSize=setMaxIfInvalid(multiplier * stats.getDataSize());
-          stats.setNumRows(newNumRows);
-          stats.setDataSize(newDataSize);
-          for (          ColStatistics cs : colStats) {
-            if (cs != null) {
-              long oldNumNulls=cs.getNumNulls();
-              long newNumNulls=multiplier * oldNumNulls;
-              cs.setNumNulls(newNumNulls);
+        if (mapSideHashAgg) {
+          if (containsGroupingSet) {
+            cardinality=Math.min((parentNumRows * sizeOfGroupingSet) / 2,ndvProduct * parallelism * sizeOfGroupingSet);
+            if (isDebugEnabled) {
+              LOG.debug("[Case 4] STATS-" + gop.toString() + ": cardinality: "+ cardinality);
+            }
+          }
+ else {
+            cardinality=Math.min(parentNumRows / 2,ndvProduct * parallelism);
+            if (isDebugEnabled) {
+              LOG.debug("[Case 3] STATS-" + gop.toString() + ": cardinality: "+ cardinality);
             }
           }
         }
  else {
-          newNumRows=stats.getNumRows() * multiplier;
-          updateStats(stats,newNumRows,true,gop);
+          if (containsGroupingSet) {
+            cardinality=parentNumRows * sizeOfGroupingSet;
+            if (isDebugEnabled) {
+              LOG.debug("[Case 6] STATS-" + gop.toString() + ": cardinality: "+ cardinality);
+            }
+          }
+ else {
+            cardinality=parentNumRows;
+            if (isDebugEnabled) {
+              LOG.debug("[Case 5] STATS-" + gop.toString() + ": cardinality: "+ cardinality);
+            }
+          }
         }
       }
  else {
-        newNumRows=applyGBYRule(stats.getNumRows(),dvProd);
-        updateStats(stats,newNumRows,true,gop);
+        GroupByOperator mGop=OperatorUtils.findSingleOperatorUpstream(parent,GroupByOperator.class);
+        if (mGop != null) {
+          containsGroupingSet=mGop.getConf().isGroupingSetsPresent();
+          sizeOfGroupingSet=mGop.getConf().getListGroupingSets().size();
+        }
+        if (containsGroupingSet) {
+          cardinality=Math.min(parentNumRows,ndvProduct * sizeOfGroupingSet);
+          if (isDebugEnabled) {
+            LOG.debug("[Case 8] STATS-" + gop.toString() + ": cardinality: "+ cardinality);
+          }
+        }
+ else {
+          cardinality=Math.min(parentNumRows,ndvProduct);
+          if (isDebugEnabled) {
+            LOG.debug("[Case 9] STATS-" + gop.toString() + ": cardinality: "+ cardinality);
+          }
+        }
       }
+      updateStats(stats,cardinality,true,gop,false);
     }
  else {
       if (parentStats != null) {
         stats=parentStats.clone();
+        final long parentNumRows=stats.getNumRows();
         if (mapSide) {
-          newNumRows=multiplier * stats.getNumRows();
-          newDataSize=multiplier * stats.getDataSize();
-          stats.setNumRows(newNumRows);
-          stats.setDataSize(newDataSize);
+          if (containsGroupingSet) {
+            cardinality=parentNumRows * sizeOfGroupingSet;
+            if (isDebugEnabled) {
+              LOG.debug("[Case 2] STATS-" + gop.toString() + ": cardinality: "+ cardinality);
+            }
+          }
+ else {
+            cardinality=parentNumRows;
+            if (isDebugEnabled) {
+              LOG.debug("[Case 1] STATS-" + gop.toString() + ": cardinality: "+ cardinality);
+            }
+          }
         }
  else {
-          newNumRows=parentStats.getNumRows() / 2;
-          updateStats(stats,newNumRows,false,gop);
+          cardinality=parentNumRows / 2;
+          if (isDebugEnabled) {
+            LOG.debug("[Case 7] STATS-" + gop.toString() + ": cardinality: "+ cardinality);
+          }
         }
+        updateStats(stats,cardinality,false,gop);
       }
     }
     if (!aggDesc.isEmpty() && stats != null) {
@@ -109,7 +174,7 @@
       }
     }
     gop.setStatistics(stats);
-    if (LOG.isDebugEnabled() && stats != null) {
+    if (isDebugEnabled && stats != null) {
       LOG.debug("[0] STATS-" + gop.toString() + ": "+ stats.extendedToString());
     }
   }
