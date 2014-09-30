@@ -13,6 +13,7 @@
     Utilities.setReduceWork(job,gWork);
   }
   reducer=gWork.getReducer();
+  vectorized=gWork.getVectorMode();
   reducer.setParentOperators(null);
   isTagged=gWork.getNeedsTagging();
   try {
@@ -21,16 +22,47 @@
     SerDeUtils.initializeSerDe(inputKeyDeserializer,null,keyTableDesc.getProperties(),null);
     keyObjectInspector=inputKeyDeserializer.getObjectInspector();
     valueTableDesc=new TableDesc[gWork.getTagToValueDesc().size()];
+    if (vectorized) {
+      final int maxTags=gWork.getTagToValueDesc().size();
+      keyStructInspector=(StructObjectInspector)keyObjectInspector;
+      batches=new VectorizedRowBatch[maxTags];
+      valueStructInspectors=new StructObjectInspector[maxTags];
+      valueStringWriters=(List<VectorExpressionWriter>[])new List[maxTags];
+      keysColumnOffset=keyStructInspector.getAllStructFieldRefs().size();
+      buffer=new DataOutputBuffer();
+    }
     for (int tag=0; tag < gWork.getTagToValueDesc().size(); tag++) {
       valueTableDesc[tag]=gWork.getTagToValueDesc().get(tag);
       inputValueDeserializer[tag]=ReflectionUtils.newInstance(valueTableDesc[tag].getDeserializerClass(),null);
       SerDeUtils.initializeSerDe(inputValueDeserializer[tag],null,valueTableDesc[tag].getProperties(),null);
       valueObjectInspector[tag]=inputValueDeserializer[tag].getObjectInspector();
       ArrayList<ObjectInspector> ois=new ArrayList<ObjectInspector>();
-      ois.add(keyObjectInspector);
-      ois.add(valueObjectInspector[tag]);
-      reducer.setGroupKeyObjectInspector(keyObjectInspector);
-      rowObjectInspector[tag]=ObjectInspectorFactory.getStandardStructObjectInspector(Utilities.reduceFieldNameList,ois);
+      if (vectorized) {
+        valueStructInspectors[tag]=(StructObjectInspector)valueObjectInspector[tag];
+        batches[tag]=VectorizedBatchUtil.constructVectorizedRowBatch(keyStructInspector,valueStructInspectors[tag]);
+        final int totalColumns=keysColumnOffset + valueStructInspectors[tag].getAllStructFieldRefs().size();
+        valueStringWriters[tag]=new ArrayList<VectorExpressionWriter>(totalColumns);
+        valueStringWriters[tag].addAll(Arrays.asList(VectorExpressionWriterFactory.genVectorStructExpressionWritables(keyStructInspector)));
+        valueStringWriters[tag].addAll(Arrays.asList(VectorExpressionWriterFactory.genVectorStructExpressionWritables(valueStructInspectors[tag])));
+        ArrayList<String> colNames=new ArrayList<String>();
+        List<? extends StructField> fields=keyStructInspector.getAllStructFieldRefs();
+        for (        StructField field : fields) {
+          colNames.add(Utilities.ReduceField.KEY.toString() + "." + field.getFieldName());
+          ois.add(field.getFieldObjectInspector());
+        }
+        fields=valueStructInspectors[tag].getAllStructFieldRefs();
+        for (        StructField field : fields) {
+          colNames.add(Utilities.ReduceField.VALUE.toString() + "." + field.getFieldName());
+          ois.add(field.getFieldObjectInspector());
+        }
+        rowObjectInspector[tag]=ObjectInspectorFactory.getStandardStructObjectInspector(colNames,ois);
+      }
+ else {
+        ois.add(keyObjectInspector);
+        ois.add(valueObjectInspector[tag]);
+        reducer.setGroupKeyObjectInspector(keyObjectInspector);
+        rowObjectInspector[tag]=ObjectInspectorFactory.getStandardStructObjectInspector(Utilities.reduceFieldNameList,ois);
+      }
     }
   }
  catch (  Exception e) {
