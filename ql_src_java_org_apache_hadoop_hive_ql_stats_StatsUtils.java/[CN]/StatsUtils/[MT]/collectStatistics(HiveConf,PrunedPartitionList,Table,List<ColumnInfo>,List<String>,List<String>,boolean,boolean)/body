@@ -63,7 +63,6 @@
     if (containsNonPositives(rowCounts) && stats.getBasicStatsState().equals(State.COMPLETE)) {
       stats.setBasicStatsState(State.PARTIAL);
     }
-    boolean haveFullStats=fetchColStats;
     if (fetchColStats) {
       List<String> partNames=new ArrayList<String>(partList.getNotDeniedPartns().size());
       for (      Partition part : partList.getNotDeniedPartns()) {
@@ -73,27 +72,26 @@
       neededColumns=processNeededColumns(schema,neededColumns,colToTabAlias);
       AggrStats aggrStats=Hive.get().getAggrColStatsFor(table.getDbName(),table.getTableName(),neededColumns,partNames);
       if (null == aggrStats) {
-        haveFullStats=false;
+        List<ColStatistics> emptyStats=Lists.newArrayList();
+        addParitionColumnStats(neededColumns,referencedColumns,schema,table,partList,emptyStats);
+        stats.addToColumnStats(emptyStats);
+        stats.updateColumnStatsState(deriveStatType(emptyStats,referencedColumns));
       }
  else {
         List<ColumnStatisticsObj> colStats=aggrStats.getColStats();
         if (colStats.size() != neededColumns.size()) {
-          LOG.debug("Column stats requested for : " + neededColumns.size() + " columns. Able to retrieve"+ " for "+ colStats.size()+ " columns");
+          LOG.debug("Column stats requested for : " + neededColumns.size() + " columns. Able to"+ " retrieve for "+ colStats.size()+ " columns");
         }
         List<ColStatistics> columnStats=convertColStats(colStats,table.getTableName(),colToTabAlias);
+        addParitionColumnStats(neededColumns,referencedColumns,schema,table,partList,columnStats);
         stats.addToColumnStats(columnStats);
-        State colState=deriveStatType(columnStats,neededColumns);
+        State colState=deriveStatType(columnStats,referencedColumns);
         if (aggrStats.getPartsFound() != partNames.size() && colState != State.NONE) {
           LOG.debug("Column stats requested for : " + partNames.size() + " partitions. "+ "Able to retrieve for "+ aggrStats.getPartsFound()+ " partitions");
           colState=State.PARTIAL;
         }
         stats.setColumnStatsState(colState);
       }
-    }
-    if (!haveFullStats) {
-      List<ColStatistics> emptyStats=Lists.<ColStatistics>newArrayList();
-      stats.addToColumnStats(emptyStats);
-      stats.updateColumnStatsState(deriveStatType(emptyStats,neededColumns));
     }
   }
   return stats;
