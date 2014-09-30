@@ -1,12 +1,33 @@
 {
+  Map<SparkTran,JavaPairRDD<HiveKey,BytesWritable>> tranToRDDMap=new HashMap<SparkTran,JavaPairRDD<HiveKey,BytesWritable>>();
+  for (  SparkTran tran : getAllTrans()) {
+    JavaPairRDD<HiveKey,BytesWritable> rdd=null;
+    if (mapInputs.containsKey(tran)) {
+      rdd=mapInputs.get(tran);
+    }
+ else {
+      for (      SparkTran parentTran : getParents(tran)) {
+        JavaPairRDD<HiveKey,BytesWritable> prevRDD=tranToRDDMap.get(parentTran);
+        if (rdd == null) {
+          rdd=prevRDD;
+        }
+ else {
+          rdd=rdd.union(prevRDD);
+        }
+      }
+    }
+    rdd=tran.transform(rdd);
+    tranToRDDMap.put(tran,rdd);
+  }
   JavaPairRDD<HiveKey,BytesWritable> finalRDD=null;
-  for (  JavaPairRDD<HiveKey,BytesWritable> rdd : rdds) {
+  for (  SparkTran leafTran : leafTrans) {
+    JavaPairRDD<HiveKey,BytesWritable> rdd=tranToRDDMap.get(leafTran);
     if (finalRDD == null) {
       finalRDD=rdd;
     }
  else {
       finalRDD=finalRDD.union(rdd);
     }
-    finalRDD.foreach(HiveVoidFunction.getInstance());
   }
+  finalRDD.foreach(HiveVoidFunction.getInstance());
 }

@@ -1,7 +1,22 @@
 {
-  List<JavaPairRDD<HiveKey,BytesWritable>> resultRDDs=new ArrayList<JavaPairRDD<HiveKey,BytesWritable>>();
-  for (  BaseWork bw : sparkWork.getLeaves()) {
-    resultRDDs.add(generate(sparkWork,bw));
+  SparkPlan result=new SparkPlan();
+  Map<BaseWork,SparkTran> createdTransMap=new HashMap<BaseWork,SparkTran>();
+  for (  BaseWork work : sparkWork.getAllWork()) {
+    SparkTran tran;
+    if (work instanceof MapWork) {
+      JavaPairRDD<HiveKey,BytesWritable> inputRDD=generateRDD((MapWork)work);
+      tran=generate(work,null);
+      result.addInput(tran,inputRDD);
+    }
+ else {
+      List<BaseWork> parentWorks=sparkWork.getParents(work);
+      tran=generate(work,sparkWork.getEdgeProperty(parentWorks.get(0),work));
+      for (      BaseWork parentWork : parentWorks) {
+        SparkTran parentTran=createdTransMap.get(parentWork);
+        result.connect(parentTran,tran);
+      }
+    }
+    createdTransMap.put(work,tran);
   }
-  return new SparkPlan(resultRDDs);
+  return result;
 }
