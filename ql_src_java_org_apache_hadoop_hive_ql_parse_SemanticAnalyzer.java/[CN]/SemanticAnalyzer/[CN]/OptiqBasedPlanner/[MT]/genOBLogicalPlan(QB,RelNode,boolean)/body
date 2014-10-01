@@ -1,0 +1,78 @@
+{
+  RelNode sortRel=null;
+  RelNode originalOBChild=null;
+  QBParseInfo qbp=getQBParseInfo(qb);
+  String dest=qbp.getClauseNames().iterator().next();
+  ASTNode obAST=qbp.getOrderByForClause(dest);
+  if (obAST != null) {
+    Integer limit=qb.getParseInfo().getDestLimit(dest);
+    if (conf.getVar(HiveConf.ConfVars.HIVEMAPREDMODE).equalsIgnoreCase("strict") && limit == null) {
+      throw new SemanticException(generateErrorMessage(obAST,ErrorMsg.NO_LIMIT_WITH_ORDERBY.getMsg()));
+    }
+    final List<RexNode> newVCLst=new ArrayList<RexNode>();
+    final List<RelFieldCollation> fieldCollations=Lists.newArrayList();
+    int fieldIndex=0;
+    List<Node> obASTExprLst=obAST.getChildren();
+    ASTNode obASTExpr;
+    List<Pair<ASTNode,TypeInfo>> vcASTTypePairs=new ArrayList<Pair<ASTNode,TypeInfo>>();
+    RowResolver inputRR=relToHiveRR.get(srcRel);
+    RowResolver outputRR=new RowResolver();
+    RexNode rnd;
+    RexNodeConverter converter=new RexNodeConverter(cluster,srcRel.getRowType(),relToHiveColNameOptiqPosMap.get(srcRel),0,false);
+    int srcRelRecordSz=srcRel.getRowType().getFieldCount();
+    for (int i=0; i < obASTExprLst.size(); i++) {
+      obASTExpr=(ASTNode)obASTExprLst.get(i);
+      Map<ASTNode,ExprNodeDesc> astToExprNDescMap=TypeCheckProcFactory.genExprNode(obASTExpr,new TypeCheckCtx(inputRR));
+      ExprNodeDesc obExprNDesc=astToExprNDescMap.get(obASTExpr.getChild(0));
+      if (obExprNDesc == null)       throw new SemanticException("Invalid order by expression: " + obASTExpr.toString());
+      rnd=converter.convert(obExprNDesc);
+      if (rnd instanceof RexInputRef) {
+        fieldIndex=((RexInputRef)rnd).getIndex();
+      }
+ else {
+        fieldIndex=srcRelRecordSz + newVCLst.size();
+        newVCLst.add(rnd);
+        vcASTTypePairs.add(new Pair<ASTNode,TypeInfo>((ASTNode)obASTExpr.getChild(0),obExprNDesc.getTypeInfo()));
+      }
+      org.eigenbase.rel.RelFieldCollation.Direction order=RelFieldCollation.Direction.DESCENDING;
+      if (obASTExpr.getType() == HiveParser.TOK_TABSORTCOLNAMEASC) {
+        order=RelFieldCollation.Direction.ASCENDING;
+      }
+      fieldCollations.add(new RelFieldCollation(fieldIndex,order));
+    }
+    RelNode obInputRel=srcRel;
+    if (!newVCLst.isEmpty()) {
+      List<RexNode> originalInputRefs=Lists.transform(srcRel.getRowType().getFieldList(),new Function<RelDataTypeField,RexNode>(){
+        @Override public RexNode apply(        RelDataTypeField input){
+          return new RexInputRef(input.getIndex(),input.getType());
+        }
+      }
+);
+      RowResolver obSyntheticProjectRR=new RowResolver();
+      RowResolver.add(obSyntheticProjectRR,inputRR,0);
+      int vcolPos=inputRR.getRowSchema().getSignature().size();
+      for (      Pair<ASTNode,TypeInfo> astTypePair : vcASTTypePairs) {
+        obSyntheticProjectRR.putExpression(astTypePair.getKey(),new ColumnInfo(getColumnInternalName(vcolPos),astTypePair.getValue(),null,false));
+        vcolPos++;
+      }
+      obInputRel=genSelectRelNode(CompositeList.of(originalInputRefs,newVCLst),obSyntheticProjectRR,srcRel);
+      if (outermostOB) {
+        RowResolver.add(outputRR,inputRR,0);
+      }
+ else {
+        RowResolver.add(outputRR,obSyntheticProjectRR,0);
+        originalOBChild=srcRel;
+      }
+    }
+ else {
+      RowResolver.add(outputRR,inputRR,0);
+    }
+    RelTraitSet traitSet=cluster.traitSetOf(HiveRel.CONVENTION);
+    RelCollation canonizedCollation=traitSet.canonize(RelCollationImpl.of(fieldCollations));
+    sortRel=new HiveSortRel(cluster,traitSet,obInputRel,canonizedCollation,null,null);
+    ImmutableMap<String,Integer> hiveColNameOptiqPosMap=buildHiveToOptiqColumnMap(outputRR,sortRel);
+    relToHiveRR.put(sortRel,outputRR);
+    relToHiveColNameOptiqPosMap.put(sortRel,hiveColNameOptiqPosMap);
+  }
+  return (new Pair(sortRel,originalOBChild));
+}

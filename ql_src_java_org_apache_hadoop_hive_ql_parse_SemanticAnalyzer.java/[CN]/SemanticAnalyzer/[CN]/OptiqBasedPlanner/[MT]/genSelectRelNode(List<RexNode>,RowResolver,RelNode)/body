@@ -1,15 +1,23 @@
 {
+  Set<String> colNamesSet=new HashSet<String>();
+  List<ColumnInfo> cInfoLst=out_rwsch.getRowSchema().getSignature();
   ArrayList<String> columnNames=new ArrayList<String>();
+  String[] qualifiedColNames;
+  String tmpColAlias;
   for (int i=0; i < optiqColLst.size(); i++) {
-    columnNames.add(getColumnInternalName(i));
-  }
-  List<String> oFieldNames=Lists.transform(columnNames,new Function<String,String>(){
-    @Override public String apply(    String hName){
-      return "_o_" + hName;
+    ColumnInfo cInfo=cInfoLst.get(i);
+    qualifiedColNames=out_rwsch.reverseLookup(cInfo.getInternalName());
+    tmpColAlias=qualifiedColNames[1];
+    if (tmpColAlias.startsWith("_c"))     tmpColAlias="_o_" + tmpColAlias;
+    int suffix=1;
+    while (colNamesSet.contains(tmpColAlias)) {
+      tmpColAlias=qualifiedColNames[1] + suffix;
+      suffix++;
     }
+    colNamesSet.add(tmpColAlias);
+    columnNames.add(tmpColAlias);
   }
-);
-  HiveRel selRel=HiveProjectRel.create(srcRel,optiqColLst,oFieldNames);
+  HiveRel selRel=HiveProjectRel.create(srcRel,optiqColLst,columnNames);
   this.relToHiveColNameOptiqPosMap.put(selRel,buildHiveToOptiqColumnMap(out_rwsch,selRel));
   this.relToHiveRR.put(selRel,out_rwsch);
   return selRel;
