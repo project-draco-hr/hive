@@ -1,0 +1,31 @@
+{
+  Utilities.setMergeWork(conf,mergeJoinWork,mrScratchDir,false);
+  if (mergeJoinWork.getMainWork() instanceof MapWork) {
+    List<BaseWork> mapWorkList=mergeJoinWork.getBaseWorkList();
+    MapWork mapWork=(MapWork)(mergeJoinWork.getMainWork());
+    CommonMergeJoinOperator mergeJoinOp=mergeJoinWork.getMergeJoinOperator();
+    Vertex mergeVx=createVertex(conf,mapWork,appJarLr,additionalLr,fs,mrScratchDir,ctx,vertexType);
+    Class inputFormatClass=HiveInputFormat.class;
+    conf.setClass("mapred.input.format.class",HiveInputFormat.class,InputFormat.class);
+    conf.setBoolean("mapreduce.tez.input.initializer.serialize.event.payload",false);
+    for (int i=0; i < mapWorkList.size(); i++) {
+      mapWork=(MapWork)(mapWorkList.get(i));
+      conf.set(TEZ_MERGE_CURRENT_MERGE_FILE_PREFIX,mapWork.getName());
+      conf.set(Utilities.INPUT_NAME,mapWork.getName());
+      LOG.info("Going through each work and adding MultiMRInput");
+      mergeVx.addDataSource(mapWork.getName(),MultiMRInput.createConfigBuilder(conf,HiveInputFormat.class).build());
+    }
+    VertexManagerPluginDescriptor desc=VertexManagerPluginDescriptor.create(CustomPartitionVertex.class.getName());
+    CustomVertexConfiguration vertexConf=new CustomVertexConfiguration(mergeJoinWork.getMergeJoinOperator().getConf().getNumBuckets(),vertexType,mergeJoinWork.getBigTableAlias());
+    DataOutputBuffer dob=new DataOutputBuffer();
+    vertexConf.write(dob);
+    byte[] userPayload=dob.getData();
+    desc.setUserPayload(UserPayload.create(ByteBuffer.wrap(userPayload)));
+    mergeVx.setVertexManagerPlugin(desc);
+    return mergeVx;
+  }
+ else {
+    Vertex mergeVx=createVertex(conf,(ReduceWork)mergeJoinWork.getMainWork(),appJarLr,additionalLr,fs,mrScratchDir,ctx);
+    return mergeVx;
+  }
+}

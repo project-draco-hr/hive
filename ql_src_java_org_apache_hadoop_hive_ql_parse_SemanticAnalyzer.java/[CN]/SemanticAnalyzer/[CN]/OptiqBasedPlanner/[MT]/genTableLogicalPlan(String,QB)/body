@@ -1,0 +1,58 @@
+{
+  RowResolver rr=new RowResolver();
+  HiveTableScanRel tableRel=null;
+  try {
+    if (qb.getParseInfo().getTabSample(tableAlias) != null || SemanticAnalyzer.this.nameToSplitSample.containsKey(tableAlias)) {
+      String msg=String.format("Table Sample specified for %s." + " Currently we don't support Table Sample clauses in CBO," + " turn off cbo for queries on tableSamples.",tableAlias);
+      LOG.debug(msg);
+      throw new OptiqSemanticException(msg);
+    }
+    Table tab=qb.getMetaData().getSrcForAlias(tableAlias);
+    StructObjectInspector rowObjectInspector=(StructObjectInspector)tab.getDeserializer().getObjectInspector();
+    List<? extends StructField> fields=rowObjectInspector.getAllStructFieldRefs();
+    ColumnInfo colInfo;
+    String colName;
+    ArrayList<ColumnInfo> cInfoLst=new ArrayList<ColumnInfo>();
+    for (int i=0; i < fields.size(); i++) {
+      colName=fields.get(i).getFieldName();
+      colInfo=new ColumnInfo(fields.get(i).getFieldName(),TypeInfoUtils.getTypeInfoFromObjectInspector(fields.get(i).getFieldObjectInspector()),tableAlias,false);
+      colInfo.setSkewedCol((isSkewedCol(tableAlias,qb,colName)) ? true : false);
+      rr.put(tableAlias,colName,colInfo);
+      cInfoLst.add(colInfo);
+    }
+    ArrayList<ColumnInfo> nonPartitionColumns=new ArrayList<ColumnInfo>(cInfoLst);
+    ArrayList<ColumnInfo> partitionColumns=new ArrayList<ColumnInfo>();
+    for (    FieldSchema part_col : tab.getPartCols()) {
+      colName=part_col.getName();
+      colInfo=new ColumnInfo(colName,TypeInfoFactory.getPrimitiveTypeInfo(part_col.getType()),tableAlias,true);
+      rr.put(tableAlias,colName,colInfo);
+      cInfoLst.add(colInfo);
+      partitionColumns.add(colInfo);
+    }
+    Iterator<VirtualColumn> vcs=VirtualColumn.getRegistry(conf).iterator();
+    while (vcs.hasNext()) {
+      VirtualColumn vc=vcs.next();
+      colInfo=new ColumnInfo(vc.getName(),vc.getTypeInfo(),tableAlias,true,vc.getIsHidden());
+      rr.put(tableAlias,vc.getName(),colInfo);
+      cInfoLst.add(colInfo);
+    }
+    RelDataType rowType=TypeConverter.getType(cluster,rr,null);
+    String fullyQualifiedTabName=tab.getDbName();
+    if (fullyQualifiedTabName != null && !fullyQualifiedTabName.isEmpty())     fullyQualifiedTabName=fullyQualifiedTabName + "." + tab.getTableName();
+ else     fullyQualifiedTabName=tab.getTableName();
+    RelOptHiveTable optTable=new RelOptHiveTable(relOptSchema,fullyQualifiedTabName,tableAlias,rowType,tab,nonPartitionColumns,partitionColumns,conf,partitionCache,noColsMissingStats);
+    tableRel=new HiveTableScanRel(cluster,cluster.traitSetOf(HiveRel.CONVENTION),optTable,rowType);
+    ImmutableMap<String,Integer> hiveToOptiqColMap=buildHiveToOptiqColumnMap(rr,tableRel);
+    relToHiveRR.put(tableRel,rr);
+    relToHiveColNameOptiqPosMap.put(tableRel,hiveToOptiqColMap);
+  }
+ catch (  Exception e) {
+    if (e instanceof SemanticException) {
+      throw (SemanticException)e;
+    }
+ else {
+      throw (new RuntimeException(e));
+    }
+  }
+  return tableRel;
+}

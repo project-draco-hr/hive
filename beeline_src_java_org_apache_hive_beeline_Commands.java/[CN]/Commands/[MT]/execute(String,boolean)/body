@@ -19,6 +19,7 @@
  catch (  Exception e) {
     beeLine.handleException(e);
   }
+  line=line.trim();
   if (line.endsWith(";")) {
     line=line.substring(0,line.length() - 1);
   }
@@ -40,6 +41,7 @@
   try {
     Statement stmnt=null;
     boolean hasResults;
+    Thread logThread=null;
     try {
       long start=System.currentTimeMillis();
       if (call) {
@@ -48,7 +50,16 @@
       }
  else {
         stmnt=beeLine.createStatement();
-        hasResults=stmnt.execute(sql);
+        if (beeLine.getOpts().isSilent()) {
+          hasResults=stmnt.execute(sql);
+        }
+ else {
+          logThread=new Thread(createLogRunnable(stmnt));
+          logThread.setDaemon(true);
+          logThread.start();
+          hasResults=stmnt.execute(sql);
+          logThread.interrupt();
+        }
       }
       beeLine.showWarnings();
       if (hasResults) {
@@ -60,6 +71,11 @@
             beeLine.info(beeLine.loc("rows-selected",count) + " " + beeLine.locElapsedTime(end - start));
           }
   finally {
+            if (logThread != null) {
+              logThread.join(DEFAULT_QUERY_PROGRESS_THREAD_TIMEOUT);
+              showRemainingLogsIfAny(stmnt);
+              logThread=null;
+            }
             rs.close();
           }
         }
@@ -72,6 +88,13 @@
       }
     }
   finally {
+      if (logThread != null) {
+        if (!logThread.isInterrupted()) {
+          logThread.interrupt();
+        }
+        logThread.join(DEFAULT_QUERY_PROGRESS_THREAD_TIMEOUT);
+        showRemainingLogsIfAny(stmnt);
+      }
       if (stmnt != null) {
         stmnt.close();
       }

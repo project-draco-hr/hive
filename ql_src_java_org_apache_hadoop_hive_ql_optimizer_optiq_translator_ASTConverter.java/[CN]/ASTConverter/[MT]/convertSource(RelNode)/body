@@ -1,0 +1,39 @@
+{
+  Schema s;
+  ASTNode ast;
+  if (r instanceof TableAccessRelBase) {
+    TableAccessRelBase f=(TableAccessRelBase)r;
+    s=new Schema(f);
+    ast=ASTBuilder.table(f);
+  }
+ else   if (r instanceof JoinRelBase) {
+    JoinRelBase join=(JoinRelBase)r;
+    QueryBlockInfo left=convertSource(join.getLeft());
+    QueryBlockInfo right=convertSource(join.getRight());
+    s=new Schema(left.schema,right.schema);
+    ASTNode cond=join.getCondition().accept(new RexVisitor(s));
+    boolean semiJoin=join instanceof SemiJoinRel;
+    ast=ASTBuilder.join(left.ast,right.ast,join.getJoinType(),cond,semiJoin);
+    if (semiJoin)     s=left.schema;
+  }
+ else   if (r instanceof UnionRelBase) {
+    RelNode leftInput=((UnionRelBase)r).getInput(0);
+    RelNode rightInput=((UnionRelBase)r).getInput(1);
+    ASTConverter leftConv=new ASTConverter(leftInput);
+    ASTConverter rightConv=new ASTConverter(rightInput);
+    ASTNode leftAST=leftConv.convert((SortRel)null);
+    ASTNode rightAST=rightConv.convert((SortRel)null);
+    ASTNode unionAST=getUnionAllAST(leftAST,rightAST);
+    String sqAlias=ASTConverter.nextAlias();
+    ast=ASTBuilder.subQuery(unionAST,sqAlias);
+    s=new Schema((UnionRelBase)r,sqAlias);
+  }
+ else {
+    ASTConverter src=new ASTConverter(r);
+    ASTNode srcAST=src.convert(order);
+    String sqAlias=ASTConverter.nextAlias();
+    s=src.getRowSchema(sqAlias);
+    ast=ASTBuilder.subQuery(srcAST,sqAlias);
+  }
+  return new QueryBlockInfo(s,ast);
+}

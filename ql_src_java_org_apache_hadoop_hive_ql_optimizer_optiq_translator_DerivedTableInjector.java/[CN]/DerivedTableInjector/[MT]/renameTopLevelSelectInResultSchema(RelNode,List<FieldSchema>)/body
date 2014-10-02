@@ -1,0 +1,29 @@
+{
+  RelNode tmpRel=rootRel;
+  RelNode parentOforiginalProjRel=rootRel;
+  HiveProjectRel originalProjRel=null;
+  while (tmpRel != null) {
+    if (tmpRel instanceof HiveProjectRel) {
+      originalProjRel=(HiveProjectRel)tmpRel;
+      break;
+    }
+    parentOforiginalProjRel=tmpRel;
+    tmpRel=tmpRel.getInput(0);
+  }
+  List<RexNode> rootChildExps=originalProjRel.getChildExps();
+  if (resultSchema.size() != rootChildExps.size()) {
+    throw new OptiqSemanticException("Result Schema didn't match Optiq Optimized Op Tree Schema");
+  }
+  List<String> newSelAliases=new ArrayList<String>();
+  for (int i=0; i < rootChildExps.size(); i++) {
+    newSelAliases.add(resultSchema.get(i).getName());
+  }
+  HiveProjectRel replacementProjectRel=HiveProjectRel.create(originalProjRel.getChild(),originalProjRel.getChildExps(),newSelAliases);
+  if (rootRel == originalProjRel) {
+    return replacementProjectRel;
+  }
+ else {
+    parentOforiginalProjRel.replaceInput(0,replacementProjectRel);
+    return rootRel;
+  }
+}
