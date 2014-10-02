@@ -1,6 +1,5 @@
 {
-  batch.reset();
-  VectorizedBatchUtil.addRowToBatchFrom(keyObject,keyStructInspector,0,0,batch,buffer);
+  VectorizedBatchUtil.addRowToBatchFrom(keyObject,keyStructInspector,0,0,batch,keyBuffer);
   for (int i=0; i < keysColumnOffset; i++) {
     VectorizedBatchUtil.setRepeatingColumn(batch,i);
   }
@@ -9,11 +8,15 @@
     for (    Object value : values) {
       BytesWritable valueWritable=(BytesWritable)value;
       Object valueObj=deserializeValue(valueWritable,tag);
-      VectorizedBatchUtil.addRowToBatchFrom(valueObj,valueStructInspectors,rowIdx,keysColumnOffset,batch,buffer);
+      VectorizedBatchUtil.addRowToBatchFrom(valueObj,valueStructInspectors,rowIdx,keysColumnOffset,batch,valueBuffer);
       rowIdx++;
       if (rowIdx >= BATCH_SIZE) {
         VectorizedBatchUtil.setBatchSize(batch,rowIdx);
         reducer.processOp(batch,tag);
+        for (int i=keysColumnOffset; i < batch.numCols; i++) {
+          batch.cols[i].reset();
+        }
+        valueBuffer.reset();
         rowIdx=0;
       }
     }
@@ -21,6 +24,9 @@
       VectorizedBatchUtil.setBatchSize(batch,rowIdx);
       reducer.processOp(batch,tag);
     }
+    batch.reset();
+    keyBuffer.reset();
+    valueBuffer.reset();
   }
  catch (  Exception e) {
     String rowString=null;
