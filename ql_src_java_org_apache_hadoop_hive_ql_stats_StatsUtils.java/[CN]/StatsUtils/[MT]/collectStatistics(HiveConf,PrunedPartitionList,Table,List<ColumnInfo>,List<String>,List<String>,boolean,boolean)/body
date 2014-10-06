@@ -1,0 +1,98 @@
+{
+  Statistics stats=new Statistics();
+  float deserFactor=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVE_STATS_DESERIALIZATION_FACTOR);
+  if (!table.isPartitioned()) {
+    long nr=getNumRows(table);
+    long ds=getRawDataSize(table);
+    if (ds <= 0) {
+      ds=getTotalSize(table);
+      if (ds <= 0) {
+        ds=getFileSizeForTable(conf,table);
+      }
+      ds=(long)(ds * deserFactor);
+    }
+    if (nr <= 0) {
+      int avgRowSize=estimateRowSizeFromSchema(conf,schema,neededColumns);
+      if (avgRowSize > 0) {
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("Estimated average row size: " + avgRowSize);
+        }
+        nr=ds / avgRowSize;
+      }
+    }
+    stats.setNumRows(nr);
+    stats.setDataSize(ds);
+    List<ColStatistics> colStats=Lists.newArrayList();
+    if (fetchColStats) {
+      colStats=getTableColumnStats(table,schema,neededColumns);
+    }
+    stats.setColumnStatsState(deriveStatType(colStats,neededColumns));
+    stats.addToColumnStats(colStats);
+  }
+ else   if (partList != null) {
+    long nr=0;
+    long ds=0;
+    List<Long> rowCounts=Lists.newArrayList();
+    List<Long> dataSizes=Lists.newArrayList();
+    if (fetchPartStats) {
+      rowCounts=getBasicStatForPartitions(table,partList.getNotDeniedPartns(),StatsSetupConst.ROW_COUNT);
+      dataSizes=getBasicStatForPartitions(table,partList.getNotDeniedPartns(),StatsSetupConst.RAW_DATA_SIZE);
+      nr=getSumIgnoreNegatives(rowCounts);
+      ds=getSumIgnoreNegatives(dataSizes);
+      if (ds <= 0) {
+        dataSizes=getBasicStatForPartitions(table,partList.getNotDeniedPartns(),StatsSetupConst.TOTAL_SIZE);
+        ds=getSumIgnoreNegatives(dataSizes);
+      }
+    }
+    if (ds <= 0) {
+      dataSizes=getFileSizeForPartitions(conf,partList.getNotDeniedPartns());
+    }
+    ds=getSumIgnoreNegatives(dataSizes);
+    ds=(long)(ds * deserFactor);
+    int avgRowSize=estimateRowSizeFromSchema(conf,schema,neededColumns);
+    if (avgRowSize > 0) {
+      setUnknownRcDsToAverage(rowCounts,dataSizes,avgRowSize);
+      nr=getSumIgnoreNegatives(rowCounts);
+      ds=getSumIgnoreNegatives(dataSizes);
+      if (nr <= 0) {
+        nr=ds / avgRowSize;
+      }
+    }
+    stats.addToNumRows(nr);
+    stats.addToDataSize(ds);
+    if (containsNonPositives(rowCounts) && stats.getBasicStatsState().equals(State.COMPLETE)) {
+      stats.setBasicStatsState(State.PARTIAL);
+    }
+    if (fetchColStats) {
+      List<String> partNames=new ArrayList<String>(partList.getNotDeniedPartns().size());
+      for (      Partition part : partList.getNotDeniedPartns()) {
+        partNames.add(part.getName());
+      }
+      Map<String,String> colToTabAlias=new HashMap<String,String>();
+      neededColumns=processNeededColumns(schema,neededColumns,colToTabAlias);
+      AggrStats aggrStats=Hive.get().getAggrColStatsFor(table.getDbName(),table.getTableName(),neededColumns,partNames);
+      if (null == aggrStats) {
+        List<ColStatistics> emptyStats=Lists.newArrayList();
+        addParitionColumnStats(neededColumns,referencedColumns,schema,table,partList,emptyStats);
+        stats.addToColumnStats(emptyStats);
+        stats.updateColumnStatsState(deriveStatType(emptyStats,referencedColumns));
+      }
+ else {
+        List<ColumnStatisticsObj> colStats=aggrStats.getColStats();
+        if (colStats.size() != neededColumns.size()) {
+          LOG.debug("Column stats requested for : " + neededColumns.size() + " columns. Able to"+ " retrieve for "+ colStats.size()+ " columns");
+        }
+        List<ColStatistics> columnStats=convertColStats(colStats,table.getTableName(),colToTabAlias);
+        addParitionColumnStats(neededColumns,referencedColumns,schema,table,partList,columnStats);
+        stats.addToColumnStats(columnStats);
+        State colState=deriveStatType(columnStats,referencedColumns);
+        if (aggrStats.getPartsFound() != partNames.size() && colState != State.NONE) {
+          LOG.debug("Column stats requested for : " + partNames.size() + " partitions. "+ "Able to retrieve for "+ aggrStats.getPartsFound()+ " partitions");
+          colState=State.PARTIAL;
+        }
+        stats.setColumnStatsState(colState);
+      }
+    }
+  }
+  return stats;
+}

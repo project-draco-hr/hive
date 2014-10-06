@@ -1,0 +1,31 @@
+{
+  try {
+    boolean doEvalClientSide=hasUserFunctions(compactExpr);
+    List<Partition> partitions=new ArrayList<Partition>();
+    boolean hasUnknownPartitions=false;
+    PerfLogger perfLogger=PerfLogger.getPerfLogger();
+    if (!doEvalClientSide) {
+      perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.PARTITION_RETRIEVING);
+      try {
+        hasUnknownPartitions=Hive.get().getPartitionsByExpr(tab,compactExpr,conf,partitions);
+      }
+ catch (      IMetaStoreClient.IncompatibleMetastoreException ime) {
+        LOG.warn("Metastore doesn't support getPartitionsByExpr",ime);
+        doEvalClientSide=true;
+      }
+ finally {
+        perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.PARTITION_RETRIEVING);
+      }
+    }
+    if (doEvalClientSide) {
+      hasUnknownPartitions=pruneBySequentialScan(tab,partitions,compactExpr,conf);
+    }
+    return new PrunedPartitionList(tab,new LinkedHashSet<Partition>(partitions),new ArrayList<String>(partColsUsedInFilter),hasUnknownPartitions || !isPruningByExactFilter);
+  }
+ catch (  SemanticException e) {
+    throw e;
+  }
+catch (  Exception e) {
+    throw new SemanticException(e);
+  }
+}

@@ -1,0 +1,34 @@
+{
+  if (!deep) {
+    return null;
+  }
+  List<RexNode> args=new LinkedList<RexNode>();
+  boolean argsPruned=false;
+  GenericUDF hiveUDF=SqlFunctionConverter.getHiveUDF(call.getOperator(),call.getType());
+  if (hiveUDF != null && !FunctionRegistry.isDeterministic(hiveUDF)) {
+    return null;
+  }
+  for (  RexNode operand : call.operands) {
+    RexNode n=operand.accept(this);
+    if (n != null) {
+      args.add(n);
+    }
+ else {
+      argsPruned=true;
+    }
+  }
+  if (call.getOperator() != SqlStdOperatorTable.AND) {
+    return argsPruned ? null : call;
+  }
+ else {
+    if (args.size() == 0) {
+      return null;
+    }
+ else     if (args.size() == 1) {
+      return args.get(0);
+    }
+ else {
+      return cluster.getRexBuilder().makeCall(call.getOperator(),args);
+    }
+  }
+}

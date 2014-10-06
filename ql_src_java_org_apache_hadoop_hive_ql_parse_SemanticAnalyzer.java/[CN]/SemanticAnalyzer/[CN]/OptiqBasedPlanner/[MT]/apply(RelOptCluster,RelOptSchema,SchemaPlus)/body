@@ -1,0 +1,48 @@
+{
+  RelNode optiqGenPlan=null;
+  RelNode optiqPreCboPlan=null;
+  RelNode optiqOptimizedPlan=null;
+  RelOptPlanner planner=HiveVolcanoPlanner.createPlanner();
+  final RelOptQuery query=new RelOptQuery(planner);
+  final RexBuilder rexBuilder=cluster.getRexBuilder();
+  cluster=query.createCluster(rexBuilder.getTypeFactory(),rexBuilder);
+  this.cluster=cluster;
+  this.relOptSchema=relOptSchema;
+  try {
+    optiqGenPlan=genLogicalPlan(qb,true);
+    topLevelFieldSchema=convertRowSchemaToResultSetSchema(relToHiveRR.get(optiqGenPlan),HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_RESULTSET_USE_UNIQUE_COLUMN_NAMES));
+  }
+ catch (  SemanticException e) {
+    semanticException=e;
+    throw new RuntimeException(e);
+  }
+  optiqPreCboPlan=applyPreCBOTransforms(optiqGenPlan,HiveDefaultRelMetadataProvider.INSTANCE);
+  List<RelMetadataProvider> list=Lists.newArrayList();
+  list.add(HiveDefaultRelMetadataProvider.INSTANCE);
+  RelTraitSet desiredTraits=cluster.traitSetOf(HiveRel.CONVENTION,RelCollationImpl.EMPTY);
+  HepProgram hepPgm=null;
+  HepProgramBuilder hepPgmBldr=new HepProgramBuilder().addMatchOrder(HepMatchOrder.BOTTOM_UP).addRuleInstance(new ConvertMultiJoinRule(HiveJoinRel.class));
+  hepPgmBldr.addRuleInstance(new LoptOptimizeJoinRule(HiveJoinRel.HIVE_JOIN_FACTORY,HiveProjectRel.DEFAULT_PROJECT_FACTORY,HiveFilterRel.DEFAULT_FILTER_FACTORY));
+  hepPgm=hepPgmBldr.build();
+  HepPlanner hepPlanner=new HepPlanner(hepPgm);
+  hepPlanner.registerMetadataProviders(list);
+  RelMetadataProvider chainedProvider=ChainedRelMetadataProvider.of(list);
+  cluster.setMetadataProvider(new CachingRelMetadataProvider(chainedProvider,hepPlanner));
+  RelNode rootRel=optiqPreCboPlan;
+  hepPlanner.setRoot(rootRel);
+  if (!optiqPreCboPlan.getTraitSet().equals(desiredTraits)) {
+    rootRel=hepPlanner.changeTraits(optiqPreCboPlan,desiredTraits);
+  }
+  hepPlanner.setRoot(rootRel);
+  optiqOptimizedPlan=hepPlanner.findBestExp();
+  if (LOG.isDebugEnabled() && !conf.getBoolVar(ConfVars.HIVE_IN_TEST)) {
+    LOG.debug("CBO Planning details:\n");
+    LOG.debug("Original Plan:\n");
+    LOG.debug(RelOptUtil.toString(optiqGenPlan));
+    LOG.debug("Plan After PPD, PartPruning, ColumnPruning:\n");
+    LOG.debug(RelOptUtil.toString(optiqPreCboPlan));
+    LOG.debug("Plan After Join Reordering:\n");
+    LOG.debug(RelOptUtil.toString(optiqOptimizedPlan,SqlExplainLevel.ALL_ATTRIBUTES));
+  }
+  return optiqOptimizedPlan;
+}

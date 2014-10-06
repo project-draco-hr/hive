@@ -1,5 +1,4 @@
 {
-  Multimap<Integer,Integer> bucketToTaskMap=HashMultimap.<Integer,Integer>create();
   List<InputSplit> finalSplits=Lists.newLinkedList();
   for (  Entry<Integer,Collection<InputSplit>> entry : bucketToGroupedSplitMap.asMap().entrySet()) {
     int bucketNum=entry.getKey();
@@ -10,9 +9,12 @@
       taskCount++;
     }
   }
-  EdgeManagerPluginDescriptor hiveEdgeManagerDesc=EdgeManagerPluginDescriptor.create(CustomPartitionEdge.class.getName());
-  UserPayload payload=getBytePayload(bucketToTaskMap);
-  hiveEdgeManagerDesc.setUserPayload(payload);
+  EdgeManagerPluginDescriptor hiveEdgeManagerDesc=null;
+  if ((vertexType == VertexType.MULTI_INPUT_INITIALIZED_EDGES) || (vertexType == VertexType.INITIALIZED_EDGES)) {
+    hiveEdgeManagerDesc=EdgeManagerPluginDescriptor.create(CustomPartitionEdge.class.getName());
+    UserPayload payload=getBytePayload(bucketToTaskMap);
+    hiveEdgeManagerDesc.setUserPayload(payload);
+  }
   Map<String,EdgeManagerPluginDescriptor> emMap=Maps.newHashMap();
   for (  Entry<String,EdgeProperty> edgeEntry : context.getInputVertexEdgeProperties().entrySet()) {
     if (edgeEntry.getValue().getDataMovementType() == DataMovementType.CUSTOM && edgeEntry.getValue().getEdgeManagerDescriptor().getClassName().equals(CustomPartitionEdge.class.getName())) {
@@ -31,6 +33,14 @@
   }
   Map<String,InputSpecUpdate> rootInputSpecUpdate=new HashMap<String,InputSpecUpdate>();
   rootInputSpecUpdate.put(inputName,InputSpecUpdate.getDefaultSinglePhysicalInputSpecUpdate());
-  context.setVertexParallelism(taskCount,VertexLocationHint.create(grouper.createTaskLocationHints(finalSplits.toArray(new InputSplit[finalSplits.size()]))),emMap,rootInputSpecUpdate);
+  if ((mainWorkName.compareTo(inputName) == 0) || (mainWorkName.isEmpty())) {
+    context.setVertexParallelism(taskCount,VertexLocationHint.create(grouper.createTaskLocationHints(finalSplits.toArray(new InputSplit[finalSplits.size()]))),emMap,rootInputSpecUpdate);
+  }
   context.addRootInputEvents(inputName,taskEvents);
+  if (inputToGroupedSplitMap.isEmpty() == false) {
+    for (    Entry<String,Multimap<Integer,InputSplit>> entry : inputToGroupedSplitMap.entrySet()) {
+      processAllSideEvents(entry.getKey(),entry.getValue());
+    }
+    inputToGroupedSplitMap.clear();
+  }
 }
