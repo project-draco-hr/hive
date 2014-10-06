@@ -1,19 +1,19 @@
 {
   boolean gotNewConnectUrl=false;
-  boolean reloadConf=HiveConf.getBoolVar(hiveConf,HiveConf.ConfVars.HMSHANDLERFORCERELOADCONF);
-  long retryInterval=HiveConf.getTimeVar(hiveConf,HiveConf.ConfVars.HMSHANDLERINTERVAL,TimeUnit.MILLISECONDS);
-  int retryLimit=HiveConf.getIntVar(hiveConf,HiveConf.ConfVars.HMSHANDLERATTEMPTS);
+  boolean reloadConf=HiveConf.getBoolVar(origConf,HiveConf.ConfVars.HMSHANDLERFORCERELOADCONF);
+  long retryInterval=HiveConf.getTimeVar(origConf,HiveConf.ConfVars.HMSHANDLERINTERVAL,TimeUnit.MILLISECONDS);
+  int retryLimit=HiveConf.getIntVar(origConf,HiveConf.ConfVars.HMSHANDLERATTEMPTS);
   if (reloadConf) {
-    MetaStoreInit.updateConnectionURL(hiveConf,getConf(),null,metaStoreInitData);
+    MetaStoreInit.updateConnectionURL(origConf,getActiveConf(),null,metaStoreInitData);
   }
   int retryCount=0;
   Throwable caughtException=null;
   while (true) {
     try {
       if (reloadConf || gotNewConnectUrl) {
-        base.setConf(getConf());
+        baseHandler.setConf(getActiveConf());
       }
-      return method.invoke(base,args);
+      return method.invoke(baseHandler,args);
     }
  catch (    javax.jdo.JDOException e) {
       caughtException=e;
@@ -63,7 +63,7 @@ catch (    InvocationTargetException e) {
     retryCount++;
     LOG.error(String.format("Retrying HMSHandler after %d ms (attempt %d of %d)",retryInterval,retryCount,retryLimit) + " with error: " + ExceptionUtils.getStackTrace(caughtException));
     Thread.sleep(retryInterval);
-    String lastUrl=MetaStoreInit.getConnectionURL(getConf());
-    gotNewConnectUrl=MetaStoreInit.updateConnectionURL(hiveConf,getConf(),lastUrl,metaStoreInitData);
+    String lastUrl=MetaStoreInit.getConnectionURL(getActiveConf());
+    gotNewConnectUrl=MetaStoreInit.updateConnectionURL(origConf,getActiveConf(),lastUrl,metaStoreInitData);
   }
 }

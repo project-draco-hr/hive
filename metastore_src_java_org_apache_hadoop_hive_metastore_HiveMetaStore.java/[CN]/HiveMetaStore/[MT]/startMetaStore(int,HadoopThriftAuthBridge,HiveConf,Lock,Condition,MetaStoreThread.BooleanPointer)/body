@@ -9,19 +9,19 @@
     TServerTransport serverTransport=tcpKeepAlive ? new TServerSocketKeepAlive(port) : new TServerSocket(port);
     TProcessor processor;
     TTransportFactory transFactory;
+    HMSHandler baseHandler=new HiveMetaStore.HMSHandler("new db based metaserver",conf,false);
+    IHMSHandler handler=newRetryingHMSHandler(baseHandler,conf);
     if (useSasl) {
       if (useFramedTransport) {
         throw new HiveMetaException("Framed transport is not supported with SASL enabled.");
       }
       saslServer=bridge.createServer(conf.getVar(HiveConf.ConfVars.METASTORE_KERBEROS_KEYTAB_FILE),conf.getVar(HiveConf.ConfVars.METASTORE_KERBEROS_PRINCIPAL));
-      HMSHandler hmsHandler=new HMSHandler("new db based metaserver",conf);
-      saslServer.startDelegationTokenSecretManager(conf,hmsHandler);
+      saslServer.startDelegationTokenSecretManager(conf,baseHandler.getMS());
       transFactory=saslServer.createTransportFactory(MetaStoreUtils.getMetaStoreSaslProperties(conf));
-      processor=saslServer.wrapProcessor(new ThriftHiveMetastore.Processor<HMSHandler>(hmsHandler));
+      processor=saslServer.wrapProcessor(new ThriftHiveMetastore.Processor<IHMSHandler>(handler));
       LOG.info("Starting DB backed MetaStore Server in Secure Mode");
     }
  else {
-      IHMSHandler handler=newHMSHandler("new db based metaserver",conf);
       if (conf.getBoolVar(ConfVars.METASTORE_EXECUTE_SET_UGI)) {
         transFactory=useFramedTransport ? new ChainedTTransportFactory(new TFramedTransport.Factory(),new TUGIContainingTransport.Factory()) : new TUGIContainingTransport.Factory();
         processor=new TUGIBasedProcessor<IHMSHandler>(handler);
