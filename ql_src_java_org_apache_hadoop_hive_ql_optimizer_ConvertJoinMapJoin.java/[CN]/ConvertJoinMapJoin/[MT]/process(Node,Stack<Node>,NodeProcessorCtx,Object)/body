@@ -1,14 +1,11 @@
 {
   OptimizeTezProcContext context=(OptimizeTezProcContext)procCtx;
-  JoinOperator joinOp=(JoinOperator)nd;
-  if (!context.conf.getBoolVar(HiveConf.ConfVars.HIVECONVERTJOIN) && !(context.conf.getBoolVar(HiveConf.ConfVars.HIVE_AUTO_SORTMERGE_JOIN))) {
-    int pos=0;
-    convertJoinSMBJoin(joinOp,context,pos,0,false,false);
+  if (!context.conf.getBoolVar(HiveConf.ConfVars.HIVECONVERTJOIN)) {
     return null;
   }
+  JoinOperator joinOp=(JoinOperator)nd;
   int numBuckets=-1;
   int estimatedBuckets=-1;
-  TezBucketJoinProcCtx tezBucketJoinProcCtx=new TezBucketJoinProcCtx(context.conf);
   if (context.conf.getBoolVar(HiveConf.ConfVars.HIVE_CONVERT_JOIN_BUCKET_MAPJOIN_TEZ)) {
     for (    Operator<? extends OperatorDesc> parentOp : joinOp.getParentOperators()) {
       if (parentOp.getOpTraits().getNumBuckets() > 0) {
@@ -30,58 +27,22 @@
     numBuckets=1;
   }
   LOG.info("Estimated number of buckets " + numBuckets);
-  int mapJoinConversionPos=getMapJoinConversionPos(joinOp,context,numBuckets);
+  int mapJoinConversionPos=mapJoinConversionPos(joinOp,context,numBuckets);
   if (mapJoinConversionPos < 0) {
-    if (context.conf.getBoolVar(HiveConf.ConfVars.HIVE_AUTO_SORTMERGE_JOIN) == false) {
-      convertJoinSMBJoin(joinOp,context,0,0,false,false);
-      return null;
-    }
-    Class<? extends BigTableSelectorForAutoSMJ> bigTableMatcherClass=null;
-    try {
-      bigTableMatcherClass=(Class<? extends BigTableSelectorForAutoSMJ>)(Class.forName(HiveConf.getVar(context.parseContext.getConf(),HiveConf.ConfVars.HIVE_AUTO_SORTMERGE_JOIN_BIGTABLE_SELECTOR)));
-    }
- catch (    ClassNotFoundException e) {
-      throw new SemanticException(e.getMessage());
-    }
-    BigTableSelectorForAutoSMJ bigTableMatcher=ReflectionUtils.newInstance(bigTableMatcherClass,null);
-    JoinDesc joinDesc=joinOp.getConf();
-    JoinCondDesc[] joinCondns=joinDesc.getConds();
-    Set<Integer> joinCandidates=MapJoinProcessor.getBigTableCandidates(joinCondns);
-    if (joinCandidates.isEmpty()) {
-      return false;
-    }
-    mapJoinConversionPos=bigTableMatcher.getBigTablePosition(context.parseContext,joinOp,joinCandidates);
-    if (mapJoinConversionPos < 0) {
-      int pos=0;
-      convertJoinSMBJoin(joinOp,context,pos,0,false,false);
-      return null;
-    }
-    if (checkConvertJoinSMBJoin(joinOp,context,mapJoinConversionPos,tezBucketJoinProcCtx)) {
-      convertJoinSMBJoin(joinOp,context,mapJoinConversionPos,tezBucketJoinProcCtx.getNumBuckets(),tezBucketJoinProcCtx.isSubQuery(),true);
-    }
- else {
-      int pos=0;
-      convertJoinSMBJoin(joinOp,context,pos,0,false,false);
-    }
     return null;
   }
-  if (numBuckets > 1) {
-    if (context.conf.getBoolVar(HiveConf.ConfVars.HIVE_CONVERT_JOIN_BUCKET_MAPJOIN_TEZ)) {
-      if (convertJoinBucketMapJoin(joinOp,context,mapJoinConversionPos,tezBucketJoinProcCtx)) {
-        return null;
-      }
+  if (context.conf.getBoolVar(HiveConf.ConfVars.HIVE_CONVERT_JOIN_BUCKET_MAPJOIN_TEZ)) {
+    if (convertJoinBucketMapJoin(joinOp,context,mapJoinConversionPos)) {
+      return null;
     }
   }
   LOG.info("Convert to non-bucketed map join");
-  mapJoinConversionPos=getMapJoinConversionPos(joinOp,context,1);
+  mapJoinConversionPos=mapJoinConversionPos(joinOp,context,1);
   if (mapJoinConversionPos < 0) {
-    int pos=0;
-    convertJoinSMBJoin(joinOp,context,pos,0,false,false);
     return null;
   }
   MapJoinOperator mapJoinOp=convertJoinMapJoin(joinOp,context,mapJoinConversionPos);
-  mapJoinOp.setOpTraits(new OpTraits(null,-1,null));
-  mapJoinOp.setStatistics(joinOp.getStatistics());
+  mapJoinOp.setOpTraits(new OpTraits(null,-1));
   for (  Operator<? extends OperatorDesc> childOp : mapJoinOp.getChildOperators()) {
     setAllChildrenTraitsToNull(childOp);
   }

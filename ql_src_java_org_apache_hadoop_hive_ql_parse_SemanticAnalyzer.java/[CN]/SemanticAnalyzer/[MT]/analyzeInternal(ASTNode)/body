@@ -29,55 +29,7 @@
   LOG.info("Completed phase 1 of Semantic Analysis");
   getMetaData(qb);
   LOG.info("Completed getting MetaData in Semantic Analysis");
-  if (runCBO) {
-    boolean tokenTypeIsQuery=ast.getToken().getType() == HiveParser.TOK_QUERY || ast.getToken().getType() == HiveParser.TOK_EXPLAIN;
-    if (!tokenTypeIsQuery || createVwDesc != null || !HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_CBO_ENABLED) || !canHandleQuery(qb,true) || !HiveOptiqUtil.validateASTForCBO(ast)) {
-      runCBO=false;
-    }
-    if (runCBO) {
-      disableJoinMerge=true;
-    }
-  }
-  Operator sinkOp=null;
-  if (runCBO) {
-    OptiqBasedPlanner optiqPlanner=new OptiqBasedPlanner();
-    boolean reAnalyzeAST=false;
-    try {
-      ASTNode newAST=optiqPlanner.getOptimizedAST(prunedPartitions);
-      init(false);
-      ctx_1=initPhase1Ctx();
-      if (!doPhase1(newAST,qb,ctx_1)) {
-        throw new RuntimeException("Couldn't do phase1 on CBO optimized query plan");
-      }
-      getMetaData(qb);
-      disableJoinMerge=true;
-      sinkOp=genPlan(qb);
-      LOG.info("CBO Succeeded; optimized logical plan.");
-      LOG.debug(newAST.dump());
-    }
- catch (    Exception e) {
-      LOG.error("CBO failed, skipping CBO. ",e);
-      if (!conf.getBoolVar(ConfVars.HIVE_IN_TEST) || (optiqPlanner.noColsMissingStats.get() > 0) || e instanceof OptiqSemanticException) {
-        reAnalyzeAST=true;
-      }
- else {
-        throw e instanceof SemanticException ? (SemanticException)e : new SemanticException(e);
-      }
-    }
- finally {
-      runCBO=false;
-      disableJoinMerge=false;
-      if (reAnalyzeAST) {
-        init(true);
-        prunedPartitions.clear();
-        analyzeInternal(ast);
-        return;
-      }
-    }
-  }
- else {
-    sinkOp=genPlan(qb);
-  }
+  Operator sinkOp=genPlan(qb);
   if (createVwDesc != null)   resultSchema=convertRowSchemaToViewSchema(opParseCtx.get(sinkOp).getRowResolver());
  else   resultSchema=convertRowSchemaToResultSetSchema(opParseCtx.get(sinkOp).getRowResolver(),HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_RESULTSET_USE_UNIQUE_COLUMN_NAMES));
   ParseContext pCtx=new ParseContext(conf,qb,child,opToPartPruner,opToPartList,topOps,topSelOps,opParseCtx,joinContext,smbMapJoinContext,topToTable,topToTableProps,fsopToTable,loadTableWork,loadFileWork,ctx,idToTableNameMap,destTableId,uCtx,listMapJoinOpsNoReducer,groupOpToInputTables,prunedPartitions,opToSamplePruner,globalLimitCtx,nameToSplitSample,inputs,rootTasks,opToPartToSkewedPruner,viewAliasToInput,reduceSinkOperatorsAddedByEnforceBucketingSorting,queryProperties);

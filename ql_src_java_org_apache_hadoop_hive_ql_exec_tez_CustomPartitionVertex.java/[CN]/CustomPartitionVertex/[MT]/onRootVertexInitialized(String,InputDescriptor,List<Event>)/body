@@ -1,5 +1,7 @@
 {
-  LOG.info("On root vertex initialized " + inputName);
+  Preconditions.checkState(rootVertexInitialized == false);
+  LOG.info("Root vertex not initialized");
+  rootVertexInitialized=true;
   try {
     MRInputUserPayloadProto protoPayload=MRInputHelpers.parseMRInputPayload(inputDescriptor.getUserPayload());
     this.conf=TezUtils.createConfFromByteString(protoPayload.getConfigurationBytes());
@@ -15,6 +17,7 @@
   for (  Event event : events) {
     if (event instanceof InputConfigureVertexTasksEvent) {
       Preconditions.checkState(dataInformationEventSeen == false);
+      Preconditions.checkState(context.getVertexNumTasks(context.getVertexName()) == -1,"Parallelism for the vertex should be set to -1 if the InputInitializer is setting parallelism");
       InputConfigureVertexTasksEvent cEvent=(InputConfigureVertexTasksEvent)event;
       configureVertexTaskEvent=cEvent;
       dataInformationEvents=Lists.newArrayListWithCapacity(configureVertexTaskEvent.getNumTasks());
@@ -53,16 +56,11 @@
     Multimap<Integer,InputSplit> bucketToGroupedSplitMap=HashMultimap.<Integer,InputSplit>create();
     for (    Integer key : bucketToInitialSplitMap.keySet()) {
       InputSplit[] inputSplitArray=(bucketToInitialSplitMap.get(key).toArray(new InputSplit[0]));
-      Multimap<Integer,InputSplit> groupedSplit=HiveSplitGenerator.generateGroupedSplits(jobConf,conf,inputSplitArray,waves,availableSlots,inputName);
+      Multimap<Integer,InputSplit> groupedSplit=HiveSplitGenerator.generateGroupedSplits(jobConf,conf,inputSplitArray,waves,availableSlots);
       bucketToGroupedSplitMap.putAll(key,groupedSplit.values());
     }
-    LOG.info("We have grouped the splits into " + bucketToGroupedSplitMap);
-    if ((mainWorkName.isEmpty() == false) && (mainWorkName.compareTo(inputName) != 0)) {
-      processAllSideEvents(inputName,bucketToGroupedSplitMap);
-    }
- else {
-      processAllEvents(inputName,bucketToGroupedSplitMap);
-    }
+    LOG.info("We have grouped the splits into " + bucketToGroupedSplitMap.size() + " tasks");
+    processAllEvents(inputName,bucketToGroupedSplitMap);
   }
  catch (  Exception e) {
     throw new RuntimeException(e);

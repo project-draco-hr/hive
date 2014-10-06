@@ -18,8 +18,13 @@
     String[] inputOutputJars=work.configureJobConfAndExtractJars(jobConf);
     Path scratchDir=ctx.getMRScratchDir();
     scratchDir=utils.createTezDir(scratchDir,conf);
-    Map<String,LocalResource> inputOutputLocalResources=getExtraLocalResources(jobConf,scratchDir,inputOutputJars);
-    updateSession(session,jobConf,scratchDir,inputOutputJars,inputOutputLocalResources);
+    if (!session.isOpen()) {
+      LOG.info("Tez session hasn't been created yet. Opening session");
+      session.open(conf,inputOutputJars);
+    }
+ else {
+      session.refreshLocalResourcesFromConf(conf);
+    }
     List<LocalResource> additionalLr=session.getLocalizedResources();
     if (LOG.isDebugEnabled()) {
       if (additionalLr == null || additionalLr.size() == 0) {
@@ -33,8 +38,7 @@
     }
     LocalResource appJarLr=session.getAppJarLr();
     DAG dag=build(jobConf,work,scratchDir,appJarLr,additionalLr,ctx);
-    addExtraResourcesToDag(session,dag,inputOutputJars,inputOutputLocalResources);
-    client=submit(jobConf,dag,scratchDir,appJarLr,session,additionalLr,inputOutputJars,inputOutputLocalResources);
+    client=submit(jobConf,dag,scratchDir,appJarLr,session,additionalLr);
     TezJobMonitor monitor=new TezJobMonitor();
     rc=monitor.monitorExecution(client,ctx.getHiveTxnManager(),conf);
     Set<StatusGetOpts> statusGetOpts=EnumSet.of(StatusGetOpts.GET_COUNTERS);

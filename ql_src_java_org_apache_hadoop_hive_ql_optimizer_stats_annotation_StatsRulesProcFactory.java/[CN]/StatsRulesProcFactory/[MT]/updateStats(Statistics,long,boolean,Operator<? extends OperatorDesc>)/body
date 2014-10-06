@@ -1,3 +1,30 @@
 {
-  updateStats(stats,newNumRows,useColStats,op,true);
+  if (newNumRows <= 0) {
+    LOG.info("STATS-" + op.toString() + ": Overflow in number of rows."+ newNumRows+ " rows will be set to Long.MAX_VALUE");
+  }
+  newNumRows=setMaxIfInvalid(newNumRows);
+  long oldRowCount=stats.getNumRows();
+  double ratio=(double)newNumRows / (double)oldRowCount;
+  stats.setNumRows(newNumRows);
+  if (useColStats) {
+    List<ColStatistics> colStats=stats.getColumnStats();
+    for (    ColStatistics cs : colStats) {
+      long oldNumNulls=cs.getNumNulls();
+      long oldDV=cs.getCountDistint();
+      long newNumNulls=Math.round(ratio * oldNumNulls);
+      long newDV=oldDV;
+      if (ratio <= 1.0) {
+        newDV=(long)Math.ceil(ratio * oldDV);
+      }
+      cs.setNumNulls(newNumNulls);
+      cs.setCountDistint(newDV);
+    }
+    stats.setColumnStats(colStats);
+    long newDataSize=StatsUtils.getDataSizeFromColumnStats(newNumRows,colStats);
+    stats.setDataSize(setMaxIfInvalid(newDataSize));
+  }
+ else {
+    long newDataSize=(long)(ratio * stats.getDataSize());
+    stats.setDataSize(setMaxIfInvalid(newDataSize));
+  }
 }

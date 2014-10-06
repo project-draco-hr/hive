@@ -2,32 +2,16 @@
   LOG.trace("Started pruning partiton");
   LOG.trace("dbname = " + tab.getDbName());
   LOG.trace("tabname = " + tab.getTableName());
-  LOG.trace("prune Expression = " + prunerExpr == null ? "" : prunerExpr);
+  LOG.trace("prune Expression = " + prunerExpr);
   String key=tab.getDbName() + "." + tab.getTableName()+ ";";
-  if (!tab.isPartitioned()) {
-    return getAllPartsFromCacheOrServer(tab,key,false,prunedPartitionsMap);
+  if (prunerExpr != null) {
+    key=key + prunerExpr.getExprString();
   }
-  if ("strict".equalsIgnoreCase(HiveConf.getVar(conf,HiveConf.ConfVars.HIVEMAPREDMODE)) && !hasColumnExpr(prunerExpr)) {
-    throw new SemanticException(ErrorMsg.NO_PARTITION_PREDICATE.getMsg("for Alias \"" + alias + "\" Table \""+ tab.getTableName()+ "\""));
+  PrunedPartitionList ret=prunedPartitionsMap.get(key);
+  if (ret != null) {
+    return ret;
   }
-  if (prunerExpr == null) {
-    return getAllPartsFromCacheOrServer(tab,key,false,prunedPartitionsMap);
-  }
-  Set<String> partColsUsedInFilter=new LinkedHashSet<String>();
-  prunerExpr=removeNonPartCols(prunerExpr,extractPartColNames(tab),partColsUsedInFilter);
-  ExprNodeGenericFuncDesc compactExpr=(ExprNodeGenericFuncDesc)compactExpr(prunerExpr.clone());
-  String oldFilter=prunerExpr.getExprString();
-  if (compactExpr == null) {
-    LOG.debug("Filter " + oldFilter + " was null after compacting");
-    return getAllPartsFromCacheOrServer(tab,key,true,prunedPartitionsMap);
-  }
-  LOG.debug("Filter w/ compacting: " + compactExpr.getExprString() + "; filter w/o compacting: "+ oldFilter);
-  key=key + compactExpr.getExprString();
-  PrunedPartitionList ppList=prunedPartitionsMap.get(key);
-  if (ppList != null) {
-    return ppList;
-  }
-  ppList=getPartitionsFromServer(tab,compactExpr,conf,alias,partColsUsedInFilter,oldFilter.equals(compactExpr.getExprString()));
-  prunedPartitionsMap.put(key,ppList);
-  return ppList;
+  ret=getPartitionsFromServer(tab,prunerExpr,conf,alias);
+  prunedPartitionsMap.put(key,ret);
+  return ret;
 }
