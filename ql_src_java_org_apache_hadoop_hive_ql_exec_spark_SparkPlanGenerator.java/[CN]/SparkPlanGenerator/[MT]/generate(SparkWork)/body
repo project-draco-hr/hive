@@ -1,22 +1,25 @@
 {
-  SparkPlan result=new SparkPlan();
-  Map<BaseWork,SparkTran> createdTransMap=new HashMap<BaseWork,SparkTran>();
+  SparkPlan sparkPlan=new SparkPlan();
+  Map<BaseWork,SparkTran> workToTranMap=new HashMap<BaseWork,SparkTran>();
   for (  BaseWork work : sparkWork.getAllWork()) {
     SparkTran tran;
     if (work instanceof MapWork) {
-      JavaPairRDD<HiveKey,BytesWritable> inputRDD=generateRDD((MapWork)work);
+      MapInput mapInput=generateMapInput((MapWork)work);
+      sparkPlan.addTran(mapInput);
       tran=generate(work,null);
-      result.addInput(tran,inputRDD);
+      sparkPlan.addTran(tran);
+      sparkPlan.connect(mapInput,tran);
     }
  else {
       List<BaseWork> parentWorks=sparkWork.getParents(work);
       tran=generate(work,sparkWork.getEdgeProperty(parentWorks.get(0),work));
+      sparkPlan.addTran(tran);
       for (      BaseWork parentWork : parentWorks) {
-        SparkTran parentTran=createdTransMap.get(parentWork);
-        result.connect(parentTran,tran);
+        SparkTran parentTran=workToTranMap.get(parentWork);
+        sparkPlan.connect(parentTran,tran);
       }
     }
-    createdTransMap.put(work,tran);
+    workToTranMap.put(work,tran);
   }
-  return result;
+  return sparkPlan;
 }

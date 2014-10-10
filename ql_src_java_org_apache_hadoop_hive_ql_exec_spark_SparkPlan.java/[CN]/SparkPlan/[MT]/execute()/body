@@ -1,13 +1,15 @@
 {
-  Map<SparkTran,JavaPairRDD<HiveKey,BytesWritable>> tranToRDDMap=new HashMap<SparkTran,JavaPairRDD<HiveKey,BytesWritable>>();
+  Map<SparkTran,JavaPairRDD<HiveKey,BytesWritable>> tranToOutputRDDMap=new HashMap<SparkTran,JavaPairRDD<HiveKey,BytesWritable>>();
   for (  SparkTran tran : getAllTrans()) {
     JavaPairRDD<HiveKey,BytesWritable> rdd=null;
-    if (mapInputs.containsKey(tran)) {
-      rdd=mapInputs.get(tran);
+    List<SparkTran> parents=getParents(tran);
+    if (parents.size() == 0) {
+      Preconditions.checkArgument(tran instanceof MapInput,"AssertionError: tran must be an instance of MapInput");
+      rdd=tran.transform(null);
     }
  else {
-      for (      SparkTran parentTran : getParents(tran)) {
-        JavaPairRDD<HiveKey,BytesWritable> prevRDD=tranToRDDMap.get(parentTran);
+      for (      SparkTran parent : parents) {
+        JavaPairRDD<HiveKey,BytesWritable> prevRDD=tranToOutputRDDMap.get(parent);
         if (rdd == null) {
           rdd=prevRDD;
         }
@@ -15,13 +17,13 @@
           rdd=rdd.union(prevRDD);
         }
       }
+      rdd=tran.transform(rdd);
     }
-    rdd=tran.transform(rdd);
-    tranToRDDMap.put(tran,rdd);
+    tranToOutputRDDMap.put(tran,rdd);
   }
   JavaPairRDD<HiveKey,BytesWritable> finalRDD=null;
   for (  SparkTran leafTran : leafTrans) {
-    JavaPairRDD<HiveKey,BytesWritable> rdd=tranToRDDMap.get(leafTran);
+    JavaPairRDD<HiveKey,BytesWritable> rdd=tranToOutputRDDMap.get(leafTran);
     if (finalRDD == null) {
       finalRDD=rdd;
     }
