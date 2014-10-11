@@ -20,6 +20,9 @@
   }
   URI jdbcURI=URI.create(uri.substring(URI_JDBC_PREFIX.length()));
   Pattern pattern=Pattern.compile("([^;]*)=([^;]*)[;]?");
+  Map<String,String> sessionVarMap=connParams.getSessionVars();
+  Map<String,String> hiveConfMap=connParams.getHiveConfs();
+  Map<String,String> hiveVarMap=connParams.getHiveVars();
   String sessVars=jdbcURI.getPath();
   if ((sessVars != null) && !sessVars.isEmpty()) {
     String dbName="";
@@ -33,7 +36,7 @@
       if (sessVars != null) {
         Matcher sessMatcher=pattern.matcher(sessVars);
         while (sessMatcher.find()) {
-          if (connParams.getSessionVars().put(sessMatcher.group(1),sessMatcher.group(2)) != null) {
+          if (sessionVarMap.put(sessMatcher.group(1),sessMatcher.group(2)) != null) {
             throw new JdbcUriParseException("Bad URL format: Multiple values for property " + sessMatcher.group(1));
           }
         }
@@ -47,16 +50,24 @@
   if (confStr != null) {
     Matcher confMatcher=pattern.matcher(confStr);
     while (confMatcher.find()) {
-      connParams.getHiveConfs().put(confMatcher.group(1),confMatcher.group(2));
+      hiveConfMap.put(confMatcher.group(1),confMatcher.group(2));
     }
   }
   String varStr=jdbcURI.getFragment();
   if (varStr != null) {
     Matcher varMatcher=pattern.matcher(varStr);
     while (varMatcher.find()) {
-      connParams.getHiveVars().put(varMatcher.group(1),varMatcher.group(2));
+      hiveVarMap.put(varMatcher.group(1),varMatcher.group(2));
     }
   }
+  String newUsage;
+  String usageUrlBase="jdbc:hive2://<host>:<port>/dbName;";
+  newUsage=usageUrlBase + JdbcConnectionParams.AUTH_QOP + "=<qop_value>";
+  handleParamDeprecation(sessionVarMap,sessionVarMap,JdbcConnectionParams.AUTH_QOP_DEPRECATED,JdbcConnectionParams.AUTH_QOP,newUsage);
+  newUsage=usageUrlBase + JdbcConnectionParams.TRANSPORT_MODE + "=<transport_mode_value>";
+  handleParamDeprecation(hiveConfMap,sessionVarMap,JdbcConnectionParams.TRANSPORT_MODE_DEPRECATED,JdbcConnectionParams.TRANSPORT_MODE,newUsage);
+  newUsage=usageUrlBase + JdbcConnectionParams.HTTP_PATH + "=<http_path_value>";
+  handleParamDeprecation(hiveConfMap,sessionVarMap,JdbcConnectionParams.HTTP_PATH_DEPRECATED,JdbcConnectionParams.HTTP_PATH,newUsage);
   if (connParams.isEmbeddedMode()) {
     connParams.setHost(jdbcURI.getHost());
     connParams.setPort(jdbcURI.getPort());
