@@ -6,13 +6,25 @@
     if (work instanceof MapWork) {
       MapInput mapInput=generateMapInput((MapWork)work);
       sparkPlan.addTran(mapInput);
-      tran=generate(work,null);
+      tran=generate((MapWork)work);
       sparkPlan.addTran(tran);
       sparkPlan.connect(mapInput,tran);
     }
+ else     if (work instanceof ReduceWork) {
+      List<BaseWork> parentWorks=sparkWork.getParents(work);
+      tran=generate((ReduceWork)work);
+      sparkPlan.addTran(tran);
+      ShuffleTran shuffleTran=generate(sparkWork.getEdgeProperty(parentWorks.get(0),work));
+      sparkPlan.addTran(shuffleTran);
+      sparkPlan.connect(shuffleTran,tran);
+      for (      BaseWork parentWork : parentWorks) {
+        SparkTran parentTran=workToTranMap.get(parentWork);
+        sparkPlan.connect(parentTran,shuffleTran);
+      }
+    }
  else {
       List<BaseWork> parentWorks=sparkWork.getParents(work);
-      tran=generate(work,sparkWork.getEdgeProperty(parentWorks.get(0),work));
+      tran=new IdentityTran();
       sparkPlan.addTran(tran);
       for (      BaseWork parentWork : parentWorks) {
         SparkTran parentTran=workToTranMap.get(parentWork);
