@@ -27,16 +27,12 @@
     LOG.debug(msg);
     throw new OptiqSemanticException(msg);
   }
-  ASTNode udtfExpr=(ASTNode)selExprList.getChild(posn).getChild(0);
-  GenericUDTF genericUDTF=null;
-  int udtfExprType=udtfExpr.getType();
-  if (udtfExprType == HiveParser.TOK_FUNCTION || udtfExprType == HiveParser.TOK_FUNCTIONSTAR) {
-    String funcName=TypeCheckProcFactory.DefaultExprProcessor.getFunctionText(udtfExpr,true);
+  ASTNode expr=(ASTNode)selExprList.getChild(posn).getChild(0);
+  int exprType=expr.getType();
+  if (exprType == HiveParser.TOK_FUNCTION || exprType == HiveParser.TOK_FUNCTIONSTAR) {
+    String funcName=TypeCheckProcFactory.DefaultExprProcessor.getFunctionText(expr,true);
     FunctionInfo fi=FunctionRegistry.getFunctionInfo(funcName);
-    if (fi != null) {
-      genericUDTF=fi.getGenericUDTF();
-    }
-    if (genericUDTF != null) {
+    if (fi != null && fi.getGenericUDTF() != null) {
       String msg=String.format("UDTF " + funcName + " is currently not supported in CBO,"+ " turn off cbo to use UDTF "+ funcName);
       LOG.debug(msg);
       throw new OptiqSemanticException(msg);
@@ -52,7 +48,6 @@
     if (child.getChildCount() > 2) {
       throw new SemanticException(generateErrorMessage((ASTNode)child.getChild(2),ErrorMsg.INVALID_AS.getMsg()));
     }
-    ASTNode expr;
     String tabAlias;
     String colAlias;
     expr=(ASTNode)child.getChild(0);
@@ -68,6 +63,9 @@
     }
  else     if (expr.getType() == HiveParser.DOT && expr.getChild(0).getType() == HiveParser.TOK_TABLE_OR_COL && inputRR.hasTableAlias(unescapeIdentifier(expr.getChild(0).getChild(0).getText().toLowerCase())) && !hasAsClause && !inputRR.getIsExprResolver() && isRegex(unescapeIdentifier(expr.getChild(1).getText()),conf)) {
       pos=genColListRegex(unescapeIdentifier(expr.getChild(1).getText()),unescapeIdentifier(expr.getChild(0).getChild(0).getText().toLowerCase()),expr,col_list,inputRR,pos,out_rwsch,tabAliasesForAllProjs,subQuery);
+    }
+ else     if (expr.toStringTree().contains("TOK_FUNCTIONDI") && !(srcRel instanceof HiveAggregateRel)) {
+      throw new OptiqSemanticException("Distinct without an aggreggation.");
     }
  else {
       TypeCheckCtx tcCtx=new TypeCheckCtx(inputRR);
