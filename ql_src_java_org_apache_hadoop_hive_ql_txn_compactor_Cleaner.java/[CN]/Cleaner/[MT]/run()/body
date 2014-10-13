@@ -1,25 +1,52 @@
 {
+  if (cleanerCheckInterval == 0) {
+    cleanerCheckInterval=conf.getTimeVar(HiveConf.ConfVars.HIVE_COMPACTOR_CLEANER_RUN_INTERVAL,TimeUnit.MILLISECONDS);
+  }
   do {
+    boolean setLooped=!looped.boolVal;
     try {
       long startedAt=System.currentTimeMillis();
       List<CompactionInfo> toClean=txnHandler.findReadyToClean();
-      for (      CompactionInfo ci : toClean) {
-        LockComponent comp=null;
-        comp=new LockComponent(LockType.EXCLUSIVE,LockLevel.TABLE,ci.dbname);
-        comp.setTablename(ci.tableName);
-        if (ci.partName != null)         comp.setPartitionname(ci.partName);
-        List<LockComponent> components=new ArrayList<LockComponent>(1);
-        components.add(comp);
-        LockRequest rqst=new LockRequest(components,System.getProperty("user.name"),Worker.hostname());
-        LockResponse rsp=txnHandler.lockNoWait(rqst);
+      if (toClean.size() > 0 || compactId2LockMap.size() > 0) {
+        ShowLocksResponse locksResponse=txnHandler.showLocks(new ShowLocksRequest());
+        for (        CompactionInfo ci : toClean) {
+          if (!compactId2LockMap.containsKey(ci.id)) {
+            compactId2LockMap.put(ci.id,findRelatedLocks(ci,locksResponse));
+            compactId2CompactInfoMap.put(ci.id,ci);
+          }
+        }
+        Set<Long> currentLocks=buildCurrentLockSet(locksResponse);
+        List<Long> expiredLocks=new ArrayList<Long>();
+        List<Long> compactionsCleaned=new ArrayList<Long>();
         try {
-          if (rsp.getState() == LockState.ACQUIRED) {
-            clean(ci);
+          for (          Map.Entry<Long,Set<Long>> queueEntry : compactId2LockMap.entrySet()) {
+            boolean sawLock=false;
+            for (            Long lockId : queueEntry.getValue()) {
+              if (currentLocks.contains(lockId)) {
+                sawLock=true;
+                break;
+              }
+ else {
+                expiredLocks.add(lockId);
+              }
+            }
+            if (!sawLock) {
+              compactionsCleaned.add(queueEntry.getKey());
+              clean(compactId2CompactInfoMap.get(queueEntry.getKey()));
+            }
+ else {
+              for (              Long lockId : expiredLocks) {
+                queueEntry.getValue().remove(lockId);
+              }
+            }
           }
         }
   finally {
-          if (rsp.getState() == LockState.ACQUIRED) {
-            txnHandler.unlock(new UnlockRequest(rsp.getLockid()));
+          if (compactionsCleaned.size() > 0) {
+            for (            Long compactId : compactionsCleaned) {
+              compactId2LockMap.remove(compactId);
+              compactId2CompactInfoMap.remove(compactId);
+            }
           }
         }
       }
@@ -29,6 +56,9 @@
     }
  catch (    Throwable t) {
       LOG.error("Caught an exception in the main loop of compactor cleaner, " + StringUtils.stringifyException(t));
+    }
+    if (setLooped) {
+      looped.boolVal=true;
     }
   }
  while (!stop.boolVal);
