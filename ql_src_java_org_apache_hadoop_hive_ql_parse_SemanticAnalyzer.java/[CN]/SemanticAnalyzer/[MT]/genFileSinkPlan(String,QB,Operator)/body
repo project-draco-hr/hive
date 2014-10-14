@@ -3,6 +3,7 @@
   QBMetaData qbm=qb.getMetaData();
   Integer dest_type=qbm.getDestTypeForAlias(dest);
   Table dest_tab=null;
+  boolean destTableIsAcid=false;
   Partition dest_part=null;
   Path queryTmpdir=null;
   Path dest_path=null;
@@ -18,6 +19,7 @@ switch (dest_type.intValue()) {
 case QBMetaData.DEST_TABLE:
 {
       dest_tab=qbm.getDestTableForAlias(dest);
+      destTableIsAcid=isAcidTable(dest_tab);
       if ((!conf.getBoolVar(HiveConf.ConfVars.HIVE_INSERT_INTO_EXTERNAL_TABLES)) && (dest_tab.getTableType().equals(TableType.EXTERNAL_TABLE))) {
         throw new SemanticException(ErrorMsg.INSERT_EXTERNAL_TABLE.getMsg(dest_tab.getTableName()));
       }
@@ -77,9 +79,10 @@ case QBMetaData.DEST_TABLE:
       destTableId++;
       lbCtx=constructListBucketingCtx(dest_tab.getSkewedColNames(),dest_tab.getSkewedColValues(),dest_tab.getSkewedColValueLocationMaps(),dest_tab.isStoredAsSubDirectories(),conf);
       if (!isNonNativeTable) {
-        AcidUtils.Operation acidOp=getAcidType(table_desc.getOutputFileFormatClass());
-        if (acidOp != AcidUtils.Operation.NOT_ACID) {
-          checkIfAcidAndOverwriting(qb,table_desc);
+        AcidUtils.Operation acidOp=AcidUtils.Operation.NOT_ACID;
+        if (destTableIsAcid) {
+          acidOp=getAcidType(table_desc.getOutputFileFormatClass());
+          checkAcidConstraints(qb,table_desc,dest_tab);
         }
         ltd=new LoadTableDesc(queryTmpdir,table_desc,dpCtx,acidOp);
         ltd.setReplace(!qb.getParseInfo().isInsertIntoTable(dest_tab.getDbName(),dest_tab.getTableName()));
@@ -122,6 +125,7 @@ case QBMetaData.DEST_PARTITION:
 {
     dest_part=qbm.getDestPartitionForAlias(dest);
     dest_tab=dest_part.getTable();
+    destTableIsAcid=isAcidTable(dest_tab);
     if ((!conf.getBoolVar(HiveConf.ConfVars.HIVE_INSERT_INTO_EXTERNAL_TABLES)) && dest_tab.getTableType().equals(TableType.EXTERNAL_TABLE)) {
       throw new SemanticException(ErrorMsg.INSERT_EXTERNAL_TABLE.getMsg(dest_tab.getTableName()));
     }
@@ -149,9 +153,10 @@ case QBMetaData.DEST_PARTITION:
     currentTableId=destTableId;
     destTableId++;
     lbCtx=constructListBucketingCtx(dest_part.getSkewedColNames(),dest_part.getSkewedColValues(),dest_part.getSkewedColValueLocationMaps(),dest_part.isStoredAsSubDirectories(),conf);
-    AcidUtils.Operation acidOp=getAcidType(table_desc.getOutputFileFormatClass());
-    if (acidOp != AcidUtils.Operation.NOT_ACID) {
-      checkIfAcidAndOverwriting(qb,table_desc);
+    AcidUtils.Operation acidOp=AcidUtils.Operation.NOT_ACID;
+    if (destTableIsAcid) {
+      acidOp=getAcidType(table_desc.getOutputFileFormatClass());
+      checkAcidConstraints(qb,table_desc,dest_tab);
     }
     ltd=new LoadTableDesc(queryTmpdir,table_desc,dest_part.getSpec(),acidOp);
     ltd.setReplace(!qb.getParseInfo().isInsertIntoTable(dest_tab.getDbName(),dest_tab.getTableName()));
@@ -283,10 +288,9 @@ throw new SemanticException(e.getMessage(),e);
 }
 RowSchema fsRS=new RowSchema(vecCol);
 boolean canBeMerged=(dest_tab == null || !((dest_tab.getNumBuckets() > 0 && conf.getBoolVar(HiveConf.ConfVars.HIVEENFORCEBUCKETING)) || (dest_tab.getSortCols() != null && dest_tab.getSortCols().size() > 0 && conf.getBoolVar(HiveConf.ConfVars.HIVEENFORCESORTING))));
-boolean acidTable=isAcidTable(dest_tab);
-canBeMerged&=!acidTable;
+canBeMerged&=!destTableIsAcid;
 FileSinkDesc fileSinkDesc=new FileSinkDesc(queryTmpdir,table_desc,conf.getBoolVar(HiveConf.ConfVars.COMPRESSRESULT),currentTableId,rsCtx.isMultiFileSpray(),canBeMerged,rsCtx.getNumFiles(),rsCtx.getTotalFiles(),rsCtx.getPartnCols(),dpCtx);
-if (acidTable) {
+if (destTableIsAcid) {
 AcidUtils.Operation wt=updating() ? AcidUtils.Operation.UPDATE : (deleting() ? AcidUtils.Operation.DELETE : AcidUtils.Operation.INSERT);
 fileSinkDesc.setWriteType(wt);
 acidFileSinks.add(fileSinkDesc);

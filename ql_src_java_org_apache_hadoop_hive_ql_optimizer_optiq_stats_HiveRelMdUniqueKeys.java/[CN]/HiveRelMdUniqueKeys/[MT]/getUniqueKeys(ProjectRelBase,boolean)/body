@@ -1,0 +1,40 @@
+{
+  HiveTableScanRel tScan=getTableScan(rel.getChild(),false);
+  if (tScan == null) {
+    Function<RelNode,Metadata> fn=RelMdUniqueKeys.SOURCE.apply(rel.getClass(),BuiltInMetadata.UniqueKeys.class);
+    return ((BuiltInMetadata.UniqueKeys)fn.apply(rel)).getUniqueKeys(ignoreNulls);
+  }
+  Map<Integer,Integer> posMap=new HashMap<Integer,Integer>();
+  int projectPos=0;
+  int colStatsPos=0;
+  BitSet projectedCols=new BitSet();
+  for (  RexNode r : rel.getProjects()) {
+    if (r instanceof RexInputRef) {
+      projectedCols.set(((RexInputRef)r).getIndex());
+      posMap.put(colStatsPos,projectPos);
+      colStatsPos++;
+    }
+    projectPos++;
+  }
+  double numRows=tScan.getRows();
+  List<ColStatistics> colStats=tScan.getColStat(BitSets.toList(projectedCols));
+  Set<BitSet> keys=new HashSet<BitSet>();
+  colStatsPos=0;
+  for (  ColStatistics cStat : colStats) {
+    boolean isKey=false;
+    if (cStat.getCountDistint() >= numRows) {
+      isKey=true;
+    }
+    if (!isKey && cStat.getRange() != null && cStat.getRange().maxValue != null && cStat.getRange().minValue != null) {
+      double r=cStat.getRange().maxValue.doubleValue() - cStat.getRange().minValue.doubleValue() + 1;
+      isKey=(numRows == r);
+    }
+    if (isKey) {
+      BitSet key=new BitSet();
+      key.set(posMap.get(colStatsPos));
+      keys.add(key);
+    }
+    colStatsPos++;
+  }
+  return keys;
+}

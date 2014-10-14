@@ -1,0 +1,25 @@
+{
+  if (topSelparentPair.getKey() instanceof SortRel && HiveOptiqUtil.orderRelNode(topSelparentPair.getKey())) {
+    HiveSortRel obRel=(HiveSortRel)topSelparentPair.getKey();
+    ProjectRelBase obChild=(ProjectRelBase)topSelparentPair.getValue();
+    if (obChild.getRowType().getFieldCount() > resultSchema.size()) {
+      RelDataType rt=obChild.getRowType();
+      Set<Integer> collationInputRefs=new HashSet(RelCollationImpl.ordinals(obRel.getCollation()));
+      ImmutableMap.Builder<Integer,RexNode> inputRefToCallMapBldr=ImmutableMap.builder();
+      for (int i=resultSchema.size(); i < rt.getFieldCount(); i++) {
+        if (collationInputRefs.contains(i)) {
+          inputRefToCallMapBldr.put(i,obChild.getChildExps().get(i));
+        }
+      }
+      ImmutableMap<Integer,RexNode> inputRefToCallMap=inputRefToCallMapBldr.build();
+      if ((obChild.getRowType().getFieldCount() - inputRefToCallMap.size()) == resultSchema.size()) {
+        HiveProjectRel replacementProjectRel=HiveProjectRel.create(obChild.getChild(),obChild.getChildExps().subList(0,resultSchema.size()),obChild.getRowType().getFieldNames().subList(0,resultSchema.size()));
+        obRel.replaceInput(0,replacementProjectRel);
+        obRel.setInputRefToCallMap(inputRefToCallMap);
+      }
+ else {
+        throw new OptiqSemanticException("Result Schema didn't match Optiq Optimized Op Tree Schema");
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  String tableName=tableDesc.getTableName();
+  if (!qb.getParseInfo().isInsertIntoTable(tableName)) {
+    LOG.debug("Couldn't find table " + tableName + " in insertIntoTable");
+    throw new SemanticException(ErrorMsg.NO_INSERT_OVERWRITE_WITH_ACID.getMsg());
+  }
+  if (conf.getBoolVar(ConfVars.HIVE_VECTORIZATION_ENABLED)) {
+    LOG.info("Turning off vectorization for acid write operation");
+    conf.setBoolVar(ConfVars.HIVE_VECTORIZATION_ENABLED,false);
+  }
+  LOG.info("Modifying config values for ACID write");
+  conf.setBoolVar(ConfVars.HIVEOPTREDUCEDEDUPLICATION,true);
+  conf.setIntVar(ConfVars.HIVEOPTREDUCEDEDUPLICATIONMINREDUCER,1);
+  conf.setBoolVar(ConfVars.HIVE_HADOOP_SUPPORTS_SUBDIRECTORIES,true);
+  conf.set(AcidUtils.CONF_ACID_KEY,"true");
+  if (table.getNumBuckets() < 1) {
+    throw new SemanticException(ErrorMsg.ACID_OP_ON_NONACID_TABLE,table.getTableName());
+  }
+  if (table.getSortCols() != null && table.getSortCols().size() > 0) {
+    throw new SemanticException(ErrorMsg.ACID_NO_SORTED_BUCKETS,table.getTableName());
+  }
+}

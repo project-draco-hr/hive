@@ -1,0 +1,73 @@
+{
+  Utilities.clearWorkMap();
+  JobConf conf=new JobConf();
+  conf.set("hive.exec.plan",workDir.toString());
+  conf.set("mapred.job.tracker","local");
+  conf.set("hive.vectorized.execution.enabled",Boolean.toString(isVectorized));
+  conf.set("fs.mock.impl",MockFileSystem.class.getName());
+  conf.set("mapred.mapper.class",ExecMapper.class.getName());
+  Path root=new Path(warehouseDir,tableName);
+  ((MockFileSystem)root.getFileSystem(conf)).clear();
+  String[] partPath=new String[partitions];
+  StringBuilder buffer=new StringBuilder();
+  for (int p=0; p < partitions; ++p) {
+    partPath[p]=new Path(root,"p=" + p).toString();
+    if (p != 0) {
+      buffer.append(',');
+    }
+    buffer.append(partPath[p]);
+  }
+  conf.set("mapred.input.dir",buffer.toString());
+  StringBuilder columnIds=new StringBuilder();
+  StringBuilder columnNames=new StringBuilder();
+  StringBuilder columnTypes=new StringBuilder();
+  StructObjectInspector structOI=(StructObjectInspector)objectInspector;
+  List<? extends StructField> fields=structOI.getAllStructFieldRefs();
+  int numCols=fields.size();
+  for (int i=0; i < numCols; ++i) {
+    if (i != 0) {
+      columnIds.append(',');
+      columnNames.append(',');
+      columnTypes.append(',');
+    }
+    columnIds.append(i);
+    columnNames.append(fields.get(i).getFieldName());
+    columnTypes.append(fields.get(i).getFieldObjectInspector().getTypeName());
+  }
+  conf.set("hive.io.file.readcolumn.ids",columnIds.toString());
+  conf.set("partition_columns","p");
+  conf.set(serdeConstants.LIST_COLUMNS,columnNames.toString());
+  conf.set(serdeConstants.LIST_COLUMN_TYPES,columnTypes.toString());
+  MockFileSystem fs=(MockFileSystem)warehouseDir.getFileSystem(conf);
+  fs.clear();
+  Properties tblProps=new Properties();
+  tblProps.put("name",tableName);
+  tblProps.put("serialization.lib",OrcSerde.class.getName());
+  tblProps.put("columns",columnNames.toString());
+  tblProps.put("columns.types",columnTypes.toString());
+  TableDesc tbl=new TableDesc(OrcInputFormat.class,OrcOutputFormat.class,tblProps);
+  MapWork mapWork=new MapWork();
+  mapWork.setVectorMode(isVectorized);
+  mapWork.setUseBucketizedHiveInputFormat(false);
+  LinkedHashMap<String,ArrayList<String>> aliasMap=new LinkedHashMap<String,ArrayList<String>>();
+  ArrayList<String> aliases=new ArrayList<String>();
+  aliases.add(tableName);
+  LinkedHashMap<String,PartitionDesc> partMap=new LinkedHashMap<String,PartitionDesc>();
+  for (int p=0; p < partitions; ++p) {
+    aliasMap.put(partPath[p],aliases);
+    LinkedHashMap<String,String> partSpec=new LinkedHashMap<String,String>();
+    PartitionDesc part=new PartitionDesc(tbl,partSpec);
+    partMap.put(partPath[p],part);
+  }
+  mapWork.setPathToAliases(aliasMap);
+  mapWork.setPathToPartitionInfo(partMap);
+  mapWork.setScratchColumnMap(new HashMap<String,Map<String,Integer>>());
+  mapWork.setScratchColumnVectorTypes(new HashMap<String,Map<Integer,String>>());
+  FileSystem localFs=FileSystem.getLocal(conf).getRaw();
+  Path mapXml=new Path(workDir,"map.xml");
+  localFs.delete(mapXml,true);
+  FSDataOutputStream planStream=localFs.create(mapXml);
+  Utilities.serializePlan(mapWork,planStream,conf);
+  planStream.close();
+  return conf;
+}

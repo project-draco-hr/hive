@@ -31,7 +31,9 @@
   ArrayList<ExprNodeDesc> newPartCols=Lists.newArrayList();
   for (  Integer idx : keyColsPosInVal) {
     if (idx < 0) {
-      newKeyCols.add(new ExprNodeConstantDesc(TypeInfoFactory.getPrimitiveTypeInfoFromPrimitiveWritable(IntWritable.class),-1));
+      ExprNodeConstantDesc encd=new ExprNodeConstantDesc(TypeInfoFactory.stringTypeInfo,BUCKET_NUMBER_COL_NAME);
+      newKeyCols.add(encd);
+      newValueCols.add(encd);
     }
  else {
       newKeyCols.add(newValueCols.get(idx).clone());
@@ -41,7 +43,8 @@
     newPartCols.add(newValueCols.get(idx).clone());
   }
   ReduceSinkOperator parentRSOp=OperatorUtils.findSingleOperatorUpstream(parent,ReduceSinkOperator.class);
-  if (parentRSOp != null) {
+  boolean isOrderBy=parseCtx.getQB().getParseInfo().getDestToOrderBy().size() > 0;
+  if (parentRSOp != null && isOrderBy) {
     String parentRSOpOrder=parentRSOp.getConf().getOrder();
     if (parentRSOpOrder != null && !parentRSOpOrder.isEmpty() && sortPositions.isEmpty()) {
       newKeyCols.addAll(parentRSOp.getConf().getKeyCols());
@@ -56,6 +59,9 @@
   }
   List<String> outCols=Utilities.getInternalColumnNamesFromSignature(parent.getSchema().getSignature());
   ArrayList<String> outValColNames=Lists.newArrayList(outCols);
+  if (!bucketColumns.isEmpty()) {
+    outValColNames.add(BUCKET_NUMBER_COL_NAME);
+  }
   List<FieldSchema> valFields=PlanUtils.getFieldSchemasFromColumnList(newValueCols,outValColNames,0,"");
   TableDesc valueTable=PlanUtils.getReduceValueTableDesc(valFields);
   List<List<Integer>> distinctColumnIndices=Lists.newArrayList();

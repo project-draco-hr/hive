@@ -1,0 +1,37 @@
+{
+  DataInputStream in=new DataInputStream(new ByteBufferBackedInputStream(payload));
+  String columnName=in.readUTF();
+  boolean skip=in.readBoolean();
+  LOG.info("Source of event: " + sourceName);
+  List<SourceInfo> infos=this.sourceInfoMap.get(sourceName);
+  if (infos == null) {
+    in.close();
+    throw new AssertionException("no source info for event source: " + sourceName);
+  }
+  SourceInfo info=null;
+  for (  SourceInfo si : infos) {
+    if (columnName.equals(si.columnName)) {
+      info=si;
+      break;
+    }
+  }
+  if (info == null) {
+    in.close();
+    throw new AssertionException("no source info for column: " + columnName);
+  }
+  if (skip) {
+    info.skipPruning.set(true);
+  }
+  while (payload.hasRemaining()) {
+    writable.readFields(in);
+    Object row=info.deserializer.deserialize(writable);
+    Object value=info.soi.getStructFieldData(row,info.field);
+    value=ObjectInspectorUtils.copyToStandardObject(value,info.fieldInspector);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Adding: " + value + " to list of required partitions");
+    }
+    info.values.add(value);
+  }
+  in.close();
+  return sourceName;
+}

@@ -28,20 +28,18 @@
     desc=new ExprNodeFieldDesc(t,children.get(0),fieldNameString,isList);
   }
  else   if (funcText.equals("[")) {
+    if (!ctx.getallowIndexExpr())     throw new SemanticException(ErrorMsg.INVALID_FUNCTION.getMsg(expr));
     assert(children.size() == 2);
     TypeInfo myt=children.get(0).getTypeInfo();
     if (myt.getCategory() == Category.LIST) {
-      if (!(children.get(1) instanceof ExprNodeConstantDesc) || !(((ExprNodeConstantDesc)children.get(1)).getTypeInfo().equals(TypeInfoFactory.intTypeInfo))) {
-        throw new SemanticException(SemanticAnalyzer.generateErrorMessage(expr,ErrorMsg.INVALID_ARRAYINDEX_CONSTANT.getMsg()));
+      if (!FunctionRegistry.implicitConvertible(children.get(1).getTypeInfo(),TypeInfoFactory.intTypeInfo)) {
+        throw new SemanticException(SemanticAnalyzer.generateErrorMessage(expr,ErrorMsg.INVALID_ARRAYINDEX_TYPE.getMsg()));
       }
       TypeInfo t=((ListTypeInfo)myt).getListElementTypeInfo();
       desc=new ExprNodeGenericFuncDesc(t,FunctionRegistry.getGenericUDFForIndex(),children);
     }
  else     if (myt.getCategory() == Category.MAP) {
-      if (!(children.get(1) instanceof ExprNodeConstantDesc)) {
-        throw new SemanticException(SemanticAnalyzer.generateErrorMessage(expr,ErrorMsg.INVALID_MAPINDEX_CONSTANT.getMsg()));
-      }
-      if (!(((ExprNodeConstantDesc)children.get(1)).getTypeInfo().equals(((MapTypeInfo)myt).getMapKeyTypeInfo()))) {
+      if (!FunctionRegistry.implicitConvertible(children.get(1).getTypeInfo(),((MapTypeInfo)myt).getMapKeyTypeInfo())) {
         throw new SemanticException(ErrorMsg.INVALID_MAPINDEX_TYPE.getMsg(expr));
       }
       TypeInfo t=((MapTypeInfo)myt).getMapValueTypeInfo();
@@ -90,22 +88,7 @@ default :
 break;
 }
 }
-if (fi.getGenericUDTF() != null) {
-throw new SemanticException(ErrorMsg.UDTF_INVALID_LOCATION.getMsg());
-}
-if (fi.getGenericUDAFResolver() != null) {
-if (isFunction) {
-throw new SemanticException(ErrorMsg.UDAF_INVALID_LOCATION.getMsg((ASTNode)expr.getChild(0)));
-}
- else {
-throw new SemanticException(ErrorMsg.UDAF_INVALID_LOCATION.getMsg(expr));
-}
-}
-if (!ctx.getAllowStatefulFunctions() && (genericUDF != null)) {
-if (FunctionRegistry.isStateful(genericUDF)) {
-throw new SemanticException(ErrorMsg.UDF_STATEFUL_INVALID_LOCATION.getMsg());
-}
-}
+validateUDF(expr,isFunction,ctx,fi,children,genericUDF);
 if (genericUDF instanceof GenericUDFBaseCompare && children.size() == 2 && ((children.get(0) instanceof ExprNodeConstantDesc && children.get(1) instanceof ExprNodeColumnDesc) || (children.get(0) instanceof ExprNodeColumnDesc && children.get(1) instanceof ExprNodeConstantDesc))) {
 int constIdx=children.get(0) instanceof ExprNodeConstantDesc ? 0 : 1;
 Set<String> inferTypes=new HashSet<String>(Arrays.asList(serdeConstants.TINYINT_TYPE_NAME.toLowerCase(),serdeConstants.SMALLINT_TYPE_NAME.toLowerCase(),serdeConstants.INT_TYPE_NAME.toLowerCase(),serdeConstants.BIGINT_TYPE_NAME.toLowerCase(),serdeConstants.FLOAT_TYPE_NAME.toLowerCase(),serdeConstants.DOUBLE_TYPE_NAME.toLowerCase(),serdeConstants.STRING_TYPE_NAME.toLowerCase()));

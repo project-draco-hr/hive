@@ -23,6 +23,8 @@
     ASTNode tree=pd.parse(command,ctx);
     tree=ParseUtils.findRootNonNullToken(tree);
     perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.PARSE);
+    SessionState.get().initTxnMgr(conf);
+    recordValidTxns();
     perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.ANALYZE);
     BaseSemanticAnalyzer sem=SemanticAnalyzerFactory.get(conf,tree);
     List<HiveSemanticAnalyzerHook> saHooks=getHooks(HiveConf.ConfVars.SEMANTIC_ANALYZER_HOOK,HiveSemanticAnalyzerHook.class);
@@ -30,6 +32,8 @@
       HiveSemanticAnalyzerHookContext hookCtx=new HiveSemanticAnalyzerHookContextImpl();
       hookCtx.setConf(conf);
       hookCtx.setUserName(userName);
+      hookCtx.setIpAddress(SessionState.get().getUserIpAddress());
+      hookCtx.setCommand(command);
       for (      HiveSemanticAnalyzerHook hook : saHooks) {
         tree=hook.preAnalyze(hookCtx,tree);
       }
@@ -46,7 +50,7 @@
     LOG.info("Semantic Analysis Completed");
     sem.validate();
     perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.ANALYZE);
-    plan=new QueryPlan(command,sem,perfLogger.getStartTime(PerfLogger.DRIVER_RUN),queryId);
+    plan=new QueryPlan(command,sem,perfLogger.getStartTime(PerfLogger.DRIVER_RUN),queryId,SessionState.get().getCommandType());
     String queryStr=plan.getQueryStr();
     conf.setVar(HiveConf.ConfVars.HIVEQUERYSTRING,queryStr);
     conf.set("mapreduce.workflow.id","hive_" + queryId);

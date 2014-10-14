@@ -2,8 +2,17 @@
   String columnNameProperty=conf.get(serdeConstants.LIST_COLUMNS);
   String columnTypeProperty=conf.get(serdeConstants.LIST_COLUMN_TYPES);
   ArrayList<String> columnNames=new ArrayList<String>();
+  Deque<Integer> virtualColumns=new ArrayDeque<Integer>();
   if (columnNameProperty != null && columnNameProperty.length() > 0) {
-    Collections.addAll(columnNames,columnNameProperty.split(","));
+    String[] colNames=columnNameProperty.split(",");
+    for (int i=0; i < colNames.length; i++) {
+      if (VirtualColumn.VIRTUAL_COLUMN_NAMES.contains(colNames[i])) {
+        virtualColumns.addLast(i);
+      }
+ else {
+        columnNames.add(colNames[i]);
+      }
+    }
   }
   if (columnTypeProperty == null) {
     StringBuilder sb=new StringBuilder();
@@ -16,6 +25,9 @@
     columnTypeProperty=sb.toString();
   }
   ArrayList<TypeInfo> fieldTypes=TypeInfoUtils.getTypeInfosFromTypeString(columnTypeProperty);
+  while (virtualColumns.size() > 0) {
+    fieldTypes.remove(virtualColumns.removeLast());
+  }
   StructTypeInfo rowType=new StructTypeInfo();
   rowType.setAllStructFieldNames(columnNames);
   rowType.setAllStructFieldTypeInfos(fieldTypes);

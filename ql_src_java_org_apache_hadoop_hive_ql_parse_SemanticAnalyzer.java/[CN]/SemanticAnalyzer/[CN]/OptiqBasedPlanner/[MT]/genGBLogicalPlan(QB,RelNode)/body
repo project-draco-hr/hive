@@ -1,0 +1,68 @@
+{
+  RelNode gbRel=null;
+  QBParseInfo qbp=getQBParseInfo(qb);
+  if (!qbp.getDestRollups().isEmpty() || !qbp.getDestGroupingSets().isEmpty() || !qbp.getDestCubes().isEmpty()) {
+    String gbyClause=null;
+    HashMap<String,ASTNode> gbysMap=qbp.getDestToGroupBy();
+    if (gbysMap.size() == 1) {
+      ASTNode gbyAST=gbysMap.entrySet().iterator().next().getValue();
+      gbyClause=SemanticAnalyzer.this.ctx.getTokenRewriteStream().toString(gbyAST.getTokenStartIndex(),gbyAST.getTokenStopIndex());
+      gbyClause="in '" + gbyClause + "'.";
+    }
+ else {
+      gbyClause=".";
+    }
+    String msg=String.format("Encountered Grouping Set/Cube/Rollup%s" + " Currently we don't support Grouping Set/Cube/Rollup" + " clauses in CBO,"+ " turn off cbo for these queries.",gbyClause);
+    LOG.debug(msg);
+    throw new OptiqSemanticException(msg);
+  }
+  String detsClauseName=qbp.getClauseNames().iterator().next();
+  List<ASTNode> grpByAstExprs=getGroupByForClause(qbp,detsClauseName);
+  HashMap<String,ASTNode> aggregationTrees=qbp.getAggregationExprsForClause(detsClauseName);
+  boolean hasGrpByAstExprs=(grpByAstExprs != null && !grpByAstExprs.isEmpty()) ? true : false;
+  boolean hasAggregationTrees=(aggregationTrees != null && !aggregationTrees.isEmpty()) ? true : false;
+  if (hasGrpByAstExprs || hasAggregationTrees) {
+    ArrayList<ExprNodeDesc> gbExprNDescLst=new ArrayList<ExprNodeDesc>();
+    ArrayList<String> outputColumnNames=new ArrayList<String>();
+    RowResolver groupByInputRowResolver=this.relToHiveRR.get(srcRel);
+    RowResolver groupByOutputRowResolver=new RowResolver();
+    groupByOutputRowResolver.setIsExprResolver(true);
+    if (hasGrpByAstExprs) {
+      for (int i=0; i < grpByAstExprs.size(); ++i) {
+        ASTNode grpbyExpr=grpByAstExprs.get(i);
+        Map<ASTNode,ExprNodeDesc> astToExprNDescMap=TypeCheckProcFactory.genExprNode(grpbyExpr,new TypeCheckCtx(groupByInputRowResolver));
+        ExprNodeDesc grpbyExprNDesc=astToExprNDescMap.get(grpbyExpr);
+        if (grpbyExprNDesc == null)         throw new OptiqSemanticException("Invalid Column Reference: " + grpbyExpr.dump());
+        addToGBExpr(groupByOutputRowResolver,groupByInputRowResolver,grpbyExpr,grpbyExprNDesc,gbExprNDescLst,outputColumnNames);
+      }
+    }
+    ArrayList<AggInfo> aggregations=new ArrayList<AggInfo>();
+    if (hasAggregationTrees) {
+      assert(aggregationTrees != null);
+      for (      ASTNode value : aggregationTrees.values()) {
+        String aggName=unescapeIdentifier(value.getChild(0).getText());
+        boolean isDistinct=value.getType() == HiveParser.TOK_FUNCTIONDI;
+        boolean isAllColumns=value.getType() == HiveParser.TOK_FUNCTIONSTAR;
+        ArrayList<ExprNodeDesc> aggParameters=new ArrayList<ExprNodeDesc>();
+        for (int i=1; i < value.getChildCount(); i++) {
+          ASTNode paraExpr=(ASTNode)value.getChild(i);
+          ExprNodeDesc paraExprNode=genExprNodeDesc(paraExpr,groupByInputRowResolver);
+          aggParameters.add(paraExprNode);
+        }
+        Mode amode=groupByDescModeToUDAFMode(GroupByDesc.Mode.COMPLETE,isDistinct);
+        GenericUDAFEvaluator genericUDAFEvaluator=getGenericUDAFEvaluator(aggName,aggParameters,value,isDistinct,isAllColumns);
+        assert(genericUDAFEvaluator != null);
+        GenericUDAFInfo udaf=getGenericUDAFInfo(genericUDAFEvaluator,amode,aggParameters);
+        AggInfo aInfo=new AggInfo(aggParameters,udaf.returnType,aggName,isDistinct);
+        aggregations.add(aInfo);
+        String field=getColumnInternalName(gbExprNDescLst.size() + aggregations.size() - 1);
+        outputColumnNames.add(field);
+        groupByOutputRowResolver.putExpression(value,new ColumnInfo(field,aInfo.m_returnType,"",false));
+      }
+    }
+    gbRel=genGBRelNode(gbExprNDescLst,aggregations,srcRel);
+    relToHiveColNameOptiqPosMap.put(gbRel,buildHiveToOptiqColumnMap(groupByOutputRowResolver,gbRel));
+    this.relToHiveRR.put(gbRel,groupByOutputRowResolver);
+  }
+  return gbRel;
+}

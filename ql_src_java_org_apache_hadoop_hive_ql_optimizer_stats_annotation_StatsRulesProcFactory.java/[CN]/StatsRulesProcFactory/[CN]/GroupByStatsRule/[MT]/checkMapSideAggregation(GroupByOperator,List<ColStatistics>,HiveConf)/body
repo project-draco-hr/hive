@@ -1,0 +1,54 @@
+{
+  List<AggregationDesc> aggDesc=gop.getConf().getAggregators();
+  GroupByDesc desc=gop.getConf();
+  GroupByDesc.Mode mode=desc.getMode();
+  if (mode.equals(GroupByDesc.Mode.HASH)) {
+    float hashAggMem=conf.getFloatVar(HiveConf.ConfVars.HIVEMAPAGGRHASHMEMORY);
+    float hashAggMaxThreshold=conf.getFloatVar(HiveConf.ConfVars.HIVEMAPAGGRMEMORYTHRESHOLD);
+    long totalMemory=StatsUtils.getAvailableMemory(conf) * 1000L * 1000L;
+    long maxMemHashAgg=Math.round(totalMemory * hashAggMem * hashAggMaxThreshold);
+    long numEstimatedRows=1;
+    long avgKeySize=0;
+    for (    ColStatistics cs : colStats) {
+      if (cs != null) {
+        numEstimatedRows*=cs.getCountDistint();
+        avgKeySize+=Math.ceil(cs.getAvgColLen());
+      }
+    }
+    long avgValSize=0;
+    GenericUDAFEvaluator[] aggregationEvaluators;
+    aggregationEvaluators=new GenericUDAFEvaluator[aggDesc.size()];
+    for (int i=0; i < aggregationEvaluators.length; i++) {
+      AggregationDesc agg=aggDesc.get(i);
+      aggregationEvaluators[i]=agg.getGenericUDAFEvaluator();
+    }
+    for (int i=0; i < aggregationEvaluators.length; i++) {
+      avgValSize+=gop.javaObjectOverHead;
+      GenericUDAFEvaluator.AggregationBuffer agg=null;
+      try {
+        agg=aggregationEvaluators[i].getNewAggregationBuffer();
+      }
+ catch (      HiveException e) {
+        avgValSize+=gop.javaSizeUnknownType;
+      }
+      if (agg != null) {
+        if (GenericUDAFEvaluator.isEstimable(agg)) {
+          avgValSize+=((GenericUDAFEvaluator.AbstractAggregationBuffer)agg).estimate();
+        }
+ else {
+          Field[] fArr=ObjectInspectorUtils.getDeclaredNonStaticFields(agg.getClass());
+          for (          Field f : fArr) {
+            long avgSize=StatsUtils.getAvgColLenOfFixedLengthTypes(f.getType().getName());
+            avgValSize+=avgSize == 0 ? gop.javaSizeUnknownType : avgSize;
+          }
+        }
+      }
+    }
+    long hashEntrySize=gop.javaHashEntryOverHead + avgKeySize + avgValSize;
+    long estHashTableSize=numEstimatedRows * hashEntrySize;
+    if (estHashTableSize < maxMemHashAgg) {
+      return true;
+    }
+  }
+  return false;
+}
