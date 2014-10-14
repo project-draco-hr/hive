@@ -1,0 +1,80 @@
+{
+  completed=new HashSet<String>();
+  boolean running=false;
+  boolean done=false;
+  int failedCounter=0;
+  int rc=0;
+  SparkJobState lastState=null;
+  String lastReport=null;
+  long startTime=0;
+  while (true) {
+    try {
+      Map<String,SparkProgress> progressMap=sparkJobStatus.getSparkStageProgress();
+      SparkJobState state=sparkJobStatus.getState();
+      if (state != lastState || state == SparkJobState.RUNNING) {
+        lastState=state;
+switch (state) {
+case SUBMITTED:
+          console.printInfo("Status: Submitted");
+        break;
+case INITING:
+      console.printInfo("Status: Initializing");
+    break;
+case RUNNING:
+  if (!running) {
+    console.printInfo("\nQuery Hive on Spark job[" + sparkJobStatus.getJobId() + "] stages:");
+    for (    int stageId : sparkJobStatus.getStageIds()) {
+      console.printInfo(Integer.toString(stageId));
+    }
+    console.printInfo("\nStatus: Running (Hive on Spark job[" + sparkJobStatus.getJobId() + "])\n");
+    startTime=System.currentTimeMillis();
+    running=true;
+  }
+lastReport=printStatus(progressMap,lastReport,console);
+break;
+case SUCCEEDED:
+lastReport=printStatus(progressMap,lastReport,console);
+double duration=(System.currentTimeMillis() - startTime) / 1000.0;
+console.printInfo("Status: Finished successfully in " + String.format("%.2f seconds",duration));
+running=false;
+done=true;
+break;
+case KILLED:
+console.printInfo("Status: Killed");
+running=false;
+done=true;
+rc=1;
+break;
+case FAILED:
+case ERROR:
+console.printError("Status: Failed");
+running=false;
+done=true;
+rc=2;
+break;
+}
+}
+if (!done) {
+Thread.sleep(checkInterval);
+}
+}
+ catch (Exception e) {
+console.printInfo("Exception: " + e.getMessage());
+if (++failedCounter % maxRetryInterval / checkInterval == 0 || e instanceof InterruptedException) {
+console.printInfo("Killing Job...");
+console.printError("Execution has failed.");
+rc=1;
+done=true;
+}
+ else {
+console.printInfo("Retrying...");
+}
+}
+ finally {
+if (done) {
+break;
+}
+}
+}
+return rc;
+}
