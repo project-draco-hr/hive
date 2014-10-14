@@ -38,6 +38,13 @@
     outStream=fs.create(resFile);
     List<FieldSchema> cols=null;
     List<ColumnStatisticsObj> colStats=null;
+    Deserializer deserializer=tbl.getDeserializer(true);
+    if (deserializer instanceof AbstractSerDe) {
+      String errorMsgs=((AbstractSerDe)deserializer).getConfigurationErrors();
+      if (errorMsgs != null && !errorMsgs.isEmpty()) {
+        throw new SQLException(errorMsgs);
+      }
+    }
     if (colPath.equals(tableName)) {
       cols=(part == null || tbl.getTableType() == TableType.VIRTUAL_VIEW) ? tbl.getCols() : part.getCols();
       if (!descTbl.isFormatted()) {
@@ -45,7 +52,7 @@
       }
     }
  else {
-      cols=Hive.getFieldsFromDeserializer(colPath,tbl.getDeserializer());
+      cols=Hive.getFieldsFromDeserializer(colPath,deserializer);
       if (descTbl.isFormatted()) {
         String colName=colPath.split("\\.")[1];
         String[] dbTab=Utilities.getDbTableName(tableName);
@@ -68,7 +75,10 @@
     outStream.close();
     outStream=null;
   }
- catch (  IOException e) {
+ catch (  SQLException e) {
+    throw new HiveException(e,ErrorMsg.GENERIC_ERROR,tableName);
+  }
+catch (  IOException e) {
     throw new HiveException(e,ErrorMsg.GENERIC_ERROR,tableName);
   }
  finally {
