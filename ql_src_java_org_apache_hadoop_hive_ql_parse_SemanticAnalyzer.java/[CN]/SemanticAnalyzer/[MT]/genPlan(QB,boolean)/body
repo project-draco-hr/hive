@@ -1,0 +1,76 @@
+{
+  Map<String,Operator> aliasToOpInfo=new HashMap<String,Operator>();
+  for (  String alias : qb.getSubqAliases()) {
+    QBExpr qbexpr=qb.getSubqForAlias(alias);
+    aliasToOpInfo.put(alias,genPlan(qb,qbexpr));
+  }
+  for (  String alias : qb.getTabAliases()) {
+    Operator op=genTablePlan(alias,qb);
+    aliasToOpInfo.put(alias,op);
+  }
+  if (aliasToOpInfo.isEmpty()) {
+    qb.getMetaData().setSrcForAlias(DUMMY_TABLE,getDummyTable());
+    TableScanOperator op=(TableScanOperator)genTablePlan(DUMMY_TABLE,qb);
+    op.getConf().setRowLimit(1);
+    qb.addAlias(DUMMY_TABLE);
+    qb.setTabAlias(DUMMY_TABLE,DUMMY_TABLE);
+    aliasToOpInfo.put(DUMMY_TABLE,op);
+  }
+  Operator srcOpInfo=null;
+  Operator lastPTFOp=null;
+  if (queryProperties.hasPTF()) {
+    HashMap<ASTNode,PTFInvocationSpec> ptfNodeToSpec=qb.getPTFNodeToSpec();
+    if (ptfNodeToSpec != null) {
+      for (      Entry<ASTNode,PTFInvocationSpec> entry : ptfNodeToSpec.entrySet()) {
+        ASTNode ast=entry.getKey();
+        PTFInvocationSpec spec=entry.getValue();
+        String inputAlias=spec.getQueryInputName();
+        Operator inOp=aliasToOpInfo.get(inputAlias);
+        if (inOp == null) {
+          throw new SemanticException(generateErrorMessage(ast,"Cannot resolve input Operator for PTF invocation"));
+        }
+        lastPTFOp=genPTFPlan(spec,inOp);
+        String ptfAlias=spec.getFunction().getAlias();
+        if (ptfAlias != null) {
+          aliasToOpInfo.put(ptfAlias,lastPTFOp);
+        }
+      }
+    }
+  }
+  genLateralViewPlans(aliasToOpInfo,qb);
+  if (qb.getParseInfo().getJoinExpr() != null) {
+    ASTNode joinExpr=qb.getParseInfo().getJoinExpr();
+    if (joinExpr.getToken().getType() == HiveParser.TOK_UNIQUEJOIN) {
+      QBJoinTree joinTree=genUniqueJoinTree(qb,joinExpr,aliasToOpInfo);
+      qb.setQbJoinTree(joinTree);
+    }
+ else {
+      QBJoinTree joinTree=genJoinTree(qb,joinExpr,aliasToOpInfo);
+      qb.setQbJoinTree(joinTree);
+      Set<String> dests=qb.getParseInfo().getClauseNames();
+      if (dests.size() == 1) {
+        String dest=dests.iterator().next();
+        ASTNode whereClause=qb.getParseInfo().getWhrForClause(dest);
+        if (whereClause != null) {
+          extractJoinCondsFromWhereClause(joinTree,qb,dest,(ASTNode)whereClause.getChild(0),aliasToOpInfo);
+        }
+      }
+      if (!disableJoinMerge)       mergeJoinTree(qb);
+    }
+    pushJoinFilters(qb,qb.getQbJoinTree(),aliasToOpInfo);
+    srcOpInfo=genJoinPlan(qb,aliasToOpInfo);
+  }
+ else {
+    srcOpInfo=aliasToOpInfo.values().iterator().next();
+    srcOpInfo=lastPTFOp != null ? lastPTFOp : srcOpInfo;
+  }
+  Operator bodyOpInfo=genBodyPlan(qb,srcOpInfo,aliasToOpInfo);
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Created Plan for Query Block " + qb.getId());
+  }
+  if (qb.getAlias() != null) {
+    rewriteRRForSubQ(qb.getAlias(),bodyOpInfo,skipAmbiguityCheck);
+  }
+  this.qb=qb;
+  return bodyOpInfo;
+}

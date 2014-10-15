@@ -20,7 +20,6 @@
     LOG.debug(msg);
     throw new OptiqSemanticException(msg);
   }
-  subQuery=qb.getParseInfo().getIsSubQ();
   boolean isInTransform=(selExprList.getChild(posn).getChild(0).getType() == HiveParser.TOK_TRANSFORM);
   if (isInTransform) {
     String msg=String.format("SELECT TRANSFORM is currently not supported in CBO," + " turn off cbo to use TRANSFORM.");
@@ -55,14 +54,14 @@
     tabAlias=colRef[0];
     colAlias=colRef[1];
     if (expr.getType() == HiveParser.TOK_ALLCOLREF) {
-      pos=genColListRegex(".*",expr.getChildCount() == 0 ? null : getUnescapedName((ASTNode)expr.getChild(0)).toLowerCase(),expr,col_list,inputRR,pos,out_rwsch,tabAliasesForAllProjs,subQuery);
+      pos=genColListRegex(".*",expr.getChildCount() == 0 ? null : getUnescapedName((ASTNode)expr.getChild(0)).toLowerCase(),expr,col_list,inputRR,pos,out_rwsch,tabAliasesForAllProjs);
       selectStar=true;
     }
  else     if (expr.getType() == HiveParser.TOK_TABLE_OR_COL && !hasAsClause && !inputRR.getIsExprResolver() && isRegex(unescapeIdentifier(expr.getChild(0).getText()),conf)) {
-      pos=genColListRegex(unescapeIdentifier(expr.getChild(0).getText()),null,expr,col_list,inputRR,pos,out_rwsch,tabAliasesForAllProjs,subQuery);
+      pos=genColListRegex(unescapeIdentifier(expr.getChild(0).getText()),null,expr,col_list,inputRR,pos,out_rwsch,tabAliasesForAllProjs);
     }
  else     if (expr.getType() == HiveParser.DOT && expr.getChild(0).getType() == HiveParser.TOK_TABLE_OR_COL && inputRR.hasTableAlias(unescapeIdentifier(expr.getChild(0).getChild(0).getText().toLowerCase())) && !hasAsClause && !inputRR.getIsExprResolver() && isRegex(unescapeIdentifier(expr.getChild(1).getText()),conf)) {
-      pos=genColListRegex(unescapeIdentifier(expr.getChild(1).getText()),unescapeIdentifier(expr.getChild(0).getChild(0).getText().toLowerCase()),expr,col_list,inputRR,pos,out_rwsch,tabAliasesForAllProjs,subQuery);
+      pos=genColListRegex(unescapeIdentifier(expr.getChild(1).getText()),unescapeIdentifier(expr.getChild(0).getChild(0).getText().toLowerCase()),expr,col_list,inputRR,pos,out_rwsch,tabAliasesForAllProjs);
     }
  else     if (expr.toStringTree().contains("TOK_FUNCTIONDI") && !(srcRel instanceof HiveAggregateRel)) {
       throw new OptiqSemanticException("Distinct without an aggreggation.");
@@ -76,9 +75,6 @@
         colAlias=recommended;
       }
       col_list.add(exp);
-      if (subQuery) {
-        out_rwsch.checkColumn(tabAlias,colAlias);
-      }
       ColumnInfo colInfo=new ColumnInfo(getColumnInternalName(pos),exp.getWritableObjectInspector(),tabAlias,false);
       colInfo.setSkewedCol((exp instanceof ExprNodeColumnDesc) ? ((ExprNodeColumnDesc)exp).isSkewedCol() : false);
       out_rwsch.put(tabAlias,colAlias,colInfo);
