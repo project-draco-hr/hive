@@ -1,0 +1,52 @@
+{
+  boolean isDuplicateState=isSameAsPreviousProgress(progressMap,lastProgressMap);
+  boolean isPassedInterval=System.currentTimeMillis() <= lastPrintTime + printInterval;
+  if (isDuplicateState && isPassedInterval) {
+    return;
+  }
+  StringBuffer reportBuffer=new StringBuffer();
+  SimpleDateFormat dt=new SimpleDateFormat("yyyy-mm-dd hh:mm:ss,SSS");
+  String currentDate=dt.format(new Date());
+  reportBuffer.append(currentDate + "\t");
+  SortedSet<String> keys=new TreeSet<String>(progressMap.keySet());
+  for (  String s : keys) {
+    SparkStageProgress progress=progressMap.get(s);
+    final int complete=progress.getSucceededTaskCount();
+    final int total=progress.getTotalTaskCount();
+    final int running=progress.getRunningTaskCount();
+    final int failed=progress.getFailedTaskCount();
+    String stageName="Stage-" + s;
+    if (total <= 0) {
+      reportBuffer.append(String.format("%s: -/-\t",stageName,complete,total));
+    }
+ else {
+      if (complete == total && !completed.contains(s)) {
+        completed.add(s);
+      }
+      if (complete < total && (complete > 0 || running > 0 || failed > 0)) {
+        if (failed > 0) {
+          reportBuffer.append(String.format("%s: %d(+%d,-%d)/%d\t",stageName,complete,running,failed,total));
+        }
+ else {
+          reportBuffer.append(String.format("%s: %d(+%d)/%d\t",stageName,complete,running,total));
+        }
+      }
+ else {
+        double cost=progress.getCumulativeTime() / 1000.0;
+        if (failed > 0) {
+          reportBuffer.append(String.format("%s: %d(-%d)/%d Finished in %,.2fs\t",stageName,complete,failed,total,cost));
+        }
+ else {
+          if (complete == total) {
+            reportBuffer.append(String.format("%s: %d/%d Finished in %,.2fs\t",stageName,complete,total,cost));
+          }
+ else {
+            reportBuffer.append(String.format("%s: %d/%d\t",stageName,complete,total));
+          }
+        }
+      }
+    }
+  }
+  lastPrintTime=System.currentTimeMillis();
+  console.printInfo(reportBuffer.toString());
+}
