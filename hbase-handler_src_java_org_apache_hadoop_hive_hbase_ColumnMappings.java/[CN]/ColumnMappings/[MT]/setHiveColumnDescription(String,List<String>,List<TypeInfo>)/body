@@ -4,13 +4,19 @@
   }
   for (int i=0; i < columnNames.size(); i++) {
     ColumnMapping colMap=columnsMapping[i];
-    if (colMap.qualifierName == null && !colMap.hbaseRowKey) {
+    colMap.columnName=columnNames.get(i);
+    colMap.columnType=columnTypes.get(i);
+    if (colMap.qualifierName == null && !colMap.hbaseRowKey && !colMap.hbaseTimestamp) {
       TypeInfo typeInfo=columnTypes.get(i);
       if ((typeInfo.getCategory() != ObjectInspector.Category.MAP) || (((MapTypeInfo)typeInfo).getMapKeyTypeInfo().getCategory() != ObjectInspector.Category.PRIMITIVE)) {
         throw new SerDeException(serdeName + ": hbase column family '" + colMap.familyName+ "' should be mapped to Map<? extends LazyPrimitive<?, ?>,?>, that is "+ "the Key for the map should be of primitive type, but is mapped to "+ typeInfo.getTypeName());
       }
     }
-    colMap.columnName=columnNames.get(i);
-    colMap.columnType=columnTypes.get(i);
+    if (colMap.hbaseTimestamp) {
+      TypeInfo typeInfo=columnTypes.get(i);
+      if (!colMap.isCategory(PrimitiveCategory.TIMESTAMP) && !colMap.isCategory(PrimitiveCategory.LONG)) {
+        throw new SerDeException(serdeName + ": timestamp columns should be of " + "timestamp or bigint type, but is mapped to "+ typeInfo.getTypeName());
+      }
+    }
   }
 }
