@@ -56,12 +56,24 @@
       LOG.debug(newAST.dump());
     }
  catch (    Exception e) {
-      LOG.error("CBO failed, skipping CBO. ",e);
-      if (!conf.getBoolVar(ConfVars.HIVE_IN_TEST) || (optiqPlanner.noColsMissingStats.get() > 0) || e instanceof OptiqSemanticException) {
-        reAnalyzeAST=true;
+      boolean isMissingStats=optiqPlanner.noColsMissingStats.get() > 0;
+      if (isMissingStats) {
+        LOG.error("CBO failed due to missing column stats (see previous errors), skipping CBO");
       }
  else {
-        throw e instanceof SemanticException ? (SemanticException)e : new SemanticException(e);
+        LOG.error("CBO failed, skipping CBO. ",e);
+      }
+      if (!conf.getBoolVar(ConfVars.HIVE_IN_TEST) || isMissingStats || e instanceof OptiqSemanticException) {
+        reAnalyzeAST=true;
+      }
+ else       if (e instanceof SemanticException) {
+        throw (SemanticException)e;
+      }
+ else       if (e instanceof RuntimeException) {
+        throw (RuntimeException)e;
+      }
+ else {
+        throw new SemanticException(e);
       }
     }
  finally {
