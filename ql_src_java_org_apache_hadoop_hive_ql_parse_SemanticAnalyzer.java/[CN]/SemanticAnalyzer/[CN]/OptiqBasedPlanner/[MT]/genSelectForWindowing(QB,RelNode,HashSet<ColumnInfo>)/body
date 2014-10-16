@@ -1,0 +1,27 @@
+{
+  QBParseInfo qbp=getQBParseInfo(qb);
+  WindowingSpec wSpec=(!qb.getAllWindowingSpecs().isEmpty()) ? qb.getAllWindowingSpecs().values().iterator().next() : null;
+  if (wSpec == null)   return null;
+  wSpec.validateAndMakeEffective();
+  List<WindowExpressionSpec> windowExpressions=wSpec.getWindowExpressions();
+  if (windowExpressions == null || windowExpressions.isEmpty())   return null;
+  RowResolver inputRR=this.relToHiveRR.get(srcRel);
+  List<RexNode> projsForWindowSelOp=new ArrayList<RexNode>(HiveOptiqUtil.getProjsFromBelowAsInputRef(srcRel));
+  RowResolver out_rwsch=new RowResolver();
+  RowResolver.add(out_rwsch,inputRR,0);
+  for (  WindowExpressionSpec wExprSpec : windowExpressions) {
+    if (out_rwsch.getExpression(wExprSpec.getExpression()) == null) {
+      Pair<RexNode,TypeInfo> wtp=genWindowingProj(qb,wExprSpec,srcRel);
+      projsForWindowSelOp.add(wtp.getKey());
+      ColumnInfo oColInfo=new ColumnInfo(getColumnInternalName(projsForWindowSelOp.size()),wtp.getValue(),null,false);
+      if (false) {
+        out_rwsch.put(null,wExprSpec.getAlias(),oColInfo);
+      }
+ else {
+        out_rwsch.putExpression(wExprSpec.getExpression(),oColInfo);
+      }
+      newColumns.add(oColInfo);
+    }
+  }
+  return genSelectRelNode(projsForWindowSelOp,out_rwsch,srcRel);
+}
