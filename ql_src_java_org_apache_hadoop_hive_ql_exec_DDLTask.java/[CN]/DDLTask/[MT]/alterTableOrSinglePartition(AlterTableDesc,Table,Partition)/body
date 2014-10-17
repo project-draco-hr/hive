@@ -1,0 +1,243 @@
+{
+  List<FieldSchema> oldCols=(part == null ? tbl.getCols() : part.getCols());
+  StorageDescriptor sd=(part == null ? tbl.getTTable().getSd() : part.getTPartition().getSd());
+  if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.RENAME) {
+    tbl.setDbName(Utilities.getDatabaseName(alterTbl.getNewName()));
+    tbl.setTableName(Utilities.getTableName(alterTbl.getNewName()));
+  }
+ else   if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.ADDCOLS) {
+    List<FieldSchema> newCols=alterTbl.getNewCols();
+    String serializationLib=sd.getSerdeInfo().getSerializationLib();
+    if (serializationLib.equals("org.apache.hadoop.hive.serde.thrift.columnsetSerDe")) {
+      console.printInfo("Replacing columns for columnsetSerDe and changing to LazySimpleSerDe");
+      sd.getSerdeInfo().setSerializationLib(LazySimpleSerDe.class.getName());
+      sd.setCols(newCols);
+    }
+ else {
+      Iterator<FieldSchema> iterNewCols=newCols.iterator();
+      while (iterNewCols.hasNext()) {
+        FieldSchema newCol=iterNewCols.next();
+        String newColName=newCol.getName();
+        Iterator<FieldSchema> iterOldCols=oldCols.iterator();
+        while (iterOldCols.hasNext()) {
+          String oldColName=iterOldCols.next().getName();
+          if (oldColName.equalsIgnoreCase(newColName)) {
+            throw new HiveException(ErrorMsg.DUPLICATE_COLUMN_NAMES,newColName);
+          }
+        }
+        oldCols.add(newCol);
+      }
+      sd.setCols(oldCols);
+    }
+  }
+ else   if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.RENAMECOLUMN) {
+    List<FieldSchema> newCols=new ArrayList<FieldSchema>();
+    Iterator<FieldSchema> iterOldCols=oldCols.iterator();
+    String oldName=alterTbl.getOldColName();
+    String newName=alterTbl.getNewColName();
+    String type=alterTbl.getNewColType();
+    String comment=alterTbl.getNewColComment();
+    boolean first=alterTbl.getFirst();
+    String afterCol=alterTbl.getAfterCol();
+    FieldSchema column=null;
+    boolean found=false;
+    int position=-1;
+    if (first) {
+      position=0;
+    }
+    int i=1;
+    while (iterOldCols.hasNext()) {
+      FieldSchema col=iterOldCols.next();
+      String oldColName=col.getName();
+      if (oldColName.equalsIgnoreCase(newName) && !oldColName.equalsIgnoreCase(oldName)) {
+        throw new HiveException(ErrorMsg.DUPLICATE_COLUMN_NAMES,newName);
+      }
+ else       if (oldColName.equalsIgnoreCase(oldName)) {
+        col.setName(newName);
+        if (type != null && !type.trim().equals("")) {
+          col.setType(type);
+        }
+        if (comment != null) {
+          col.setComment(comment);
+        }
+        found=true;
+        if (first || (afterCol != null && !afterCol.trim().equals(""))) {
+          column=col;
+          continue;
+        }
+      }
+      if (afterCol != null && !afterCol.trim().equals("") && oldColName.equalsIgnoreCase(afterCol)) {
+        position=i;
+      }
+      i++;
+      newCols.add(col);
+    }
+    if (!found) {
+      throw new HiveException(ErrorMsg.INVALID_COLUMN,oldName);
+    }
+    if ((afterCol != null && !afterCol.trim().equals("")) && position < 0) {
+      throw new HiveException(ErrorMsg.INVALID_COLUMN,afterCol);
+    }
+    if (position >= 0) {
+      newCols.add(position,column);
+    }
+    sd.setCols(newCols);
+  }
+ else   if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.REPLACECOLS) {
+    String serializationLib=sd.getSerdeInfo().getSerializationLib();
+    if (serializationLib.equals("org.apache.hadoop.hive.serde.thrift.columnsetSerDe")) {
+      console.printInfo("Replacing columns for columnsetSerDe and changing to LazySimpleSerDe");
+      sd.getSerdeInfo().setSerializationLib(LazySimpleSerDe.class.getName());
+    }
+ else     if (!serializationLib.equals(MetadataTypedColumnsetSerDe.class.getName()) && !serializationLib.equals(LazySimpleSerDe.class.getName()) && !serializationLib.equals(ColumnarSerDe.class.getName())&& !serializationLib.equals(DynamicSerDe.class.getName())&& !serializationLib.equals(ParquetHiveSerDe.class.getName())) {
+      throw new HiveException(ErrorMsg.CANNOT_REPLACE_COLUMNS,alterTbl.getOldName());
+    }
+    sd.setCols(alterTbl.getNewCols());
+  }
+ else   if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.ADDPROPS) {
+    tbl.getTTable().getParameters().putAll(alterTbl.getProps());
+  }
+ else   if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.DROPPROPS) {
+    Iterator<String> keyItr=alterTbl.getProps().keySet().iterator();
+    while (keyItr.hasNext()) {
+      tbl.getTTable().getParameters().remove(keyItr.next());
+    }
+  }
+ else   if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.ADDSERDEPROPS) {
+    sd.getSerdeInfo().getParameters().putAll(alterTbl.getProps());
+  }
+ else   if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.ADDSERDE) {
+    String serdeName=alterTbl.getSerdeName();
+    sd.getSerdeInfo().setSerializationLib(serdeName);
+    if ((alterTbl.getProps() != null) && (alterTbl.getProps().size() > 0)) {
+      sd.getSerdeInfo().getParameters().putAll(alterTbl.getProps());
+    }
+    if (part != null) {
+      part.getTPartition().getSd().setCols(part.getTPartition().getSd().getCols());
+    }
+ else {
+      if (!Table.hasMetastoreBasedSchema(conf,serdeName)) {
+        tbl.setFields(Hive.getFieldsFromDeserializer(tbl.getTableName(),tbl.getDeserializer()));
+      }
+    }
+  }
+ else   if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.ADDFILEFORMAT) {
+    sd.setInputFormat(alterTbl.getInputFormat());
+    sd.setOutputFormat(alterTbl.getOutputFormat());
+    if (alterTbl.getSerdeName() != null) {
+      sd.getSerdeInfo().setSerializationLib(alterTbl.getSerdeName());
+    }
+  }
+ else   if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.ALTERPROTECTMODE) {
+    boolean protectModeEnable=alterTbl.isProtectModeEnable();
+    AlterTableDesc.ProtectModeType protectMode=alterTbl.getProtectModeType();
+    ProtectMode mode=null;
+    if (part != null) {
+      mode=part.getProtectMode();
+      setAlterProtectMode(protectModeEnable,protectMode,mode);
+      part.setProtectMode(mode);
+    }
+ else {
+      mode=tbl.getProtectMode();
+      setAlterProtectMode(protectModeEnable,protectMode,mode);
+      tbl.setProtectMode(mode);
+    }
+  }
+ else   if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.ADDCLUSTERSORTCOLUMN) {
+    List<String> columns=Utilities.getColumnNamesFromFieldSchema(tbl.getCols());
+    if (!alterTbl.isTurnOffSorting()) {
+      Utilities.validateColumnNames(columns,alterTbl.getBucketColumns());
+    }
+    if (alterTbl.getSortColumns() != null) {
+      Utilities.validateColumnNames(columns,Utilities.getColumnNamesFromSortCols(alterTbl.getSortColumns()));
+    }
+    if (alterTbl.isTurnOffSorting()) {
+      sd.setSortCols(new ArrayList<Order>());
+    }
+ else     if (alterTbl.getNumberBuckets() == -1) {
+      sd.setBucketCols(new ArrayList<String>());
+      sd.setNumBuckets(-1);
+      sd.setSortCols(new ArrayList<Order>());
+    }
+ else {
+      sd.setBucketCols(alterTbl.getBucketColumns());
+      sd.setNumBuckets(alterTbl.getNumberBuckets());
+      sd.setSortCols(alterTbl.getSortColumns());
+    }
+  }
+ else   if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.ALTERLOCATION) {
+    String newLocation=alterTbl.getNewLocation();
+    try {
+      URI locUri=new URI(newLocation);
+      if (!locUri.isAbsolute() || locUri.getScheme() == null || locUri.getScheme().trim().equals("")) {
+        throw new HiveException(ErrorMsg.BAD_LOCATION_VALUE,newLocation);
+      }
+      sd.setLocation(newLocation);
+    }
+ catch (    URISyntaxException e) {
+      throw new HiveException(e);
+    }
+  }
+ else   if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.ADDSKEWEDBY) {
+    List<String> skewedColNames=null;
+    List<List<String>> skewedValues=null;
+    if (alterTbl.isTurnOffSkewed()) {
+      skewedColNames=new ArrayList<String>();
+      skewedValues=new ArrayList<List<String>>();
+    }
+ else {
+      skewedColNames=alterTbl.getSkewedColNames();
+      skewedValues=alterTbl.getSkewedColValues();
+    }
+    if (null == tbl.getSkewedInfo()) {
+      SkewedInfo skewedInfo=new SkewedInfo();
+      skewedInfo.setSkewedColNames(skewedColNames);
+      skewedInfo.setSkewedColValues(skewedValues);
+      tbl.setSkewedInfo(skewedInfo);
+    }
+ else {
+      tbl.setSkewedColNames(skewedColNames);
+      tbl.setSkewedColValues(skewedValues);
+    }
+    tbl.setStoredAsSubDirectories(alterTbl.isStoredAsSubDirectories());
+  }
+ else   if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.ALTERSKEWEDLOCATION) {
+    Map<List<String>,String> locMaps=alterTbl.getSkewedLocations();
+    Set<List<String>> keys=locMaps.keySet();
+    for (    List<String> key : keys) {
+      String newLocation=locMaps.get(key);
+      try {
+        URI locUri=new URI(newLocation);
+        if (part != null) {
+          List<String> slk=new ArrayList<String>(key);
+          part.setSkewedValueLocationMap(slk,locUri.toString());
+        }
+ else {
+          List<String> slk=new ArrayList<String>(key);
+          tbl.setSkewedValueLocationMap(slk,locUri.toString());
+        }
+      }
+ catch (      URISyntaxException e) {
+        throw new HiveException(e);
+      }
+    }
+  }
+ else   if (alterTbl.getOp() == AlterTableTypes.ALTERBUCKETNUM) {
+    if (part != null) {
+      if (part.getBucketCount() == alterTbl.getNumberBuckets()) {
+        return 0;
+      }
+      part.setBucketCount(alterTbl.getNumberBuckets());
+    }
+ else {
+      if (tbl.getNumBuckets() == alterTbl.getNumberBuckets()) {
+        return 0;
+      }
+      tbl.setNumBuckets(alterTbl.getNumberBuckets());
+    }
+  }
+ else {
+    throw new HiveException(ErrorMsg.UNSUPPORTED_ALTER_TBL_OP,alterTbl.getOp().toString());
+  }
+  return 0;
+}

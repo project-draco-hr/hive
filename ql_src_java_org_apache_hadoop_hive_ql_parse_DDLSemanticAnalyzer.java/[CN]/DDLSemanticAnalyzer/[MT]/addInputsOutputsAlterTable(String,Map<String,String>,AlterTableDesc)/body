@@ -9,11 +9,17 @@
     ReadEntity re=new ReadEntity(tab);
     re.noLockNeeded();
     inputs.add(re);
-    if (desc == null || desc.getOp() != AlterTableDesc.AlterTableTypes.ALTERPROTECTMODE) {
+    if (isFullSpec(tab,partSpec)) {
       Partition part=getPartition(tab,partSpec,true);
       outputs.add(new WriteEntity(part,writeType));
     }
  else {
+      if (desc == null || !AlterTableDesc.doesAlterTableTypeSupportPartialPartitionSpec(desc.getOp())) {
+        throw new SemanticException(ErrorMsg.ALTER_TABLE_TYPE_PARTIAL_PARTITION_SPEC_NO_SUPPORTED,desc.getOp().name());
+      }
+ else       if (!conf.getBoolVar(HiveConf.ConfVars.DYNAMICPARTITIONING)) {
+        throw new SemanticException(ErrorMsg.DYNAMIC_PARTITION_DISABLED);
+      }
       for (      Partition part : getPartitions(tab,partSpec,true)) {
         outputs.add(new WriteEntity(part,writeType));
       }
