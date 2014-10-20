@@ -4,9 +4,11 @@
   String rootNamespace=hiveConf.getVar(HiveConf.ConfVars.HIVE_SERVER2_ZOOKEEPER_NAMESPACE);
   String instanceURI=getServerInstanceURI(hiveConf);
   byte[] znodeDataUTF8=instanceURI.getBytes(Charset.forName("UTF-8"));
+  List<ACL> nodeAcls=new ArrayList<ACL>();
+  setUpAuthAndAcls(hiveConf,nodeAcls);
   zooKeeperClient=new ZooKeeper(zooKeeperEnsemble,zooKeeperSessionTimeout,new ZooKeeperHiveHelper.DummyWatcher());
   try {
-    ZooKeeperHiveHelper.createPathRecursively(zooKeeperClient,rootNamespace,Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+    ZooKeeperHiveHelper.createPathRecursively(zooKeeperClient,rootNamespace,nodeAcls,CreateMode.PERSISTENT);
     LOG.info("Created the root name space: " + rootNamespace + " on ZooKeeper for HiveServer2");
   }
  catch (  KeeperException e) {
@@ -16,8 +18,8 @@
     }
   }
   try {
-    String znodePath=ZooKeeperHiveHelper.ZOOKEEPER_PATH_SEPARATOR + rootNamespace + ZooKeeperHiveHelper.ZOOKEEPER_PATH_SEPARATOR+ "serverUri="+ instanceURI+ ";"+ "version="+ HiveVersionInfo.getVersion()+ ";"+ "sequence=";
-    znodePath=zooKeeperClient.create(znodePath,znodeDataUTF8,Ids.OPEN_ACL_UNSAFE,CreateMode.EPHEMERAL_SEQUENTIAL);
+    String pathPrefix=ZooKeeperHiveHelper.ZOOKEEPER_PATH_SEPARATOR + rootNamespace + ZooKeeperHiveHelper.ZOOKEEPER_PATH_SEPARATOR+ "serverUri="+ instanceURI+ ";"+ "version="+ HiveVersionInfo.getVersion()+ ";"+ "sequence=";
+    znodePath=zooKeeperClient.create(pathPrefix,znodeDataUTF8,nodeAcls,CreateMode.EPHEMERAL_SEQUENTIAL);
     setRegisteredWithZooKeeper(true);
     if (zooKeeperClient.exists(znodePath,new DeRegisterWatcher()) == null) {
       throw new Exception("Unable to create znode for this HiveServer2 instance on ZooKeeper.");
