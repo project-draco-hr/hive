@@ -1,41 +1,45 @@
 {
+  boolean wasCreated=false;
   try {
-    String[] paths=getPaths(makeZnode(type,id));
-    boolean wasCreated=false;
-    for (    String znode : paths) {
-      try {
-        zk.create(znode,new byte[0],Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
-        wasCreated=true;
-      }
- catch (      KeeperException.NodeExistsException e) {
-      }
-    }
-    if (wasCreated) {
-      try {
-        if (type.equals(Type.JOB)) {
-          JobStateTracker jt=new JobStateTracker(id,zk,false,job_trackingpath);
-          jt.create();
-        }
-      }
- catch (      Exception e) {
-        LOG.warn("Error tracking: " + e.getMessage());
-        zk.delete(makeZnode(type,id),-1);
+    zk.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT).withACL(Ids.OPEN_ACL_UNSAFE).forPath(makeZnode(type,id));
+    wasCreated=true;
+  }
+ catch (  KeeperException.NodeExistsException ex) {
+  }
+catch (  Exception ex) {
+    throw new IOException("Error creating " + makeZnode(type,id),ex);
+  }
+  if (wasCreated) {
+    try {
+      if (type.equals(Type.JOB)) {
+        JobStateTracker jt=new JobStateTracker(id,zk,false,job_trackingpath);
+        jt.create();
       }
     }
-    if (zk.exists(makeZnode(type,id),false) == null)     throw new IOException("Unable to create " + makeZnode(type,id));
-    if (wasCreated) {
+ catch (    Exception e) {
+      LOG.error("Error tracking (jobId=" + id + "): "+ e.getMessage());
       try {
-        saveField(type,id,"created",Long.toString(System.currentTimeMillis()));
+        zk.delete().forPath(makeZnode(type,id));
       }
- catch (      NotFoundException nfe) {
-        throw new IOException("Couldn't write to node " + id,nfe);
+ catch (      Exception ex) {
+        throw new IOException("Failed to delete " + makeZnode(type,id) + ":"+ ex);
       }
     }
   }
- catch (  KeeperException e) {
-    throw new IOException("Creating " + id,e);
+  try {
+    if (zk.checkExists().forPath(makeZnode(type,id)) == null) {
+      throw new IOException("Unable to create " + makeZnode(type,id));
+    }
   }
-catch (  InterruptedException e) {
-    throw new IOException("Creating " + id,e);
+ catch (  Exception ex) {
+    throw new IOException(ex);
+  }
+  if (wasCreated) {
+    try {
+      saveField(type,id,"created",Long.toString(System.currentTimeMillis()));
+    }
+ catch (    NotFoundException nfe) {
+      throw new IOException("Couldn't write to node " + id,nfe);
+    }
   }
 }
