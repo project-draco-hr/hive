@@ -1,0 +1,30 @@
+{
+  if (getAllReduceSinks(parentWork).size() <= 1) {
+    return;
+  }
+  List<BaseWork> grandParentWorks=sparkWork.getParents(parentWork);
+  boolean isFirst=true;
+  for (  BaseWork childWork : childWorks) {
+    BaseWork clonedParentWork=Utilities.cloneBaseWork(parentWork);
+    String childReducerName=childWork.getName();
+    SparkEdgeProperty clonedEdgeProperty=sparkWork.getEdgeProperty(parentWork,childWork);
+    for (    Operator<?> op : clonedParentWork.getAllLeafOperators()) {
+      if (op instanceof ReduceSinkOperator) {
+        if (!((ReduceSinkOperator)op).getConf().getOutputName().equals(childReducerName)) {
+          removeOpRecursive(op);
+        }
+      }
+ else       if (!isFirst) {
+        removeOpRecursive(op);
+      }
+    }
+    isFirst=false;
+    sparkWork.add(clonedParentWork);
+    for (    BaseWork gpw : grandParentWorks) {
+      sparkWork.connect(gpw,clonedParentWork,sparkWork.getEdgeProperty(gpw,parentWork));
+    }
+    sparkWork.connect(clonedParentWork,childWork,clonedEdgeProperty);
+    cloneToWork.put(clonedParentWork,parentWork);
+  }
+  sparkWork.remove(parentWork);
+}
