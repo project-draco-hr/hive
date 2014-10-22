@@ -1,2 +1,82 @@
 {
+  SkewJoinOptProcCtx ctx=(SkewJoinOptProcCtx)procCtx;
+  parseContext=ctx.getpGraphContext();
+  JoinOperator joinOp=(JoinOperator)nd;
+  if (ctx.getDoneJoins().contains(joinOp)) {
+    return null;
+  }
+  ctx.getDoneJoins().add(joinOp);
+  Operator<? extends OperatorDesc> currOp=joinOp;
+  boolean processSelect=false;
+  if ((joinOp.getChildOperators().size() == 1) && (joinOp.getChildOperators().get(0) instanceof SelectOperator)) {
+    currOp=joinOp.getChildOperators().get(0);
+    processSelect=true;
+  }
+  List<TableScanOperator> tableScanOpsForJoin=new ArrayList<TableScanOperator>();
+  if (!getTableScanOpsForJoin(joinOp,tableScanOpsForJoin)) {
+    return null;
+  }
+  if ((tableScanOpsForJoin == null) || (tableScanOpsForJoin.isEmpty())) {
+    return null;
+  }
+  Map<List<ExprNodeDesc>,List<List<String>>> skewedValues=getSkewedValues(joinOp,tableScanOpsForJoin);
+  if (skewedValues == null || skewedValues.size() == 0) {
+    return null;
+  }
+  Operator<? extends OperatorDesc> currOpClone;
+  try {
+    currOpClone=currOp.clone();
+    insertRowResolvers(currOp,currOpClone,ctx);
+  }
+ catch (  CloneNotSupportedException e) {
+    LOG.debug("Operator tree could not be cloned");
+    return null;
+  }
+  JoinOperator joinOpClone;
+  if (processSelect) {
+    joinOpClone=(JoinOperator)(currOpClone.getParentOperators().get(0));
+  }
+ else {
+    joinOpClone=(JoinOperator)currOpClone;
+  }
+  List<TableScanOperator> tableScanCloneOpsForJoin=new ArrayList<TableScanOperator>();
+  if (!getTableScanOpsForJoin(joinOpClone,tableScanCloneOpsForJoin)) {
+    LOG.debug("Operator tree not properly cloned!");
+    return null;
+  }
+  insertSkewFilter(tableScanOpsForJoin,skewedValues,true);
+  insertSkewFilter(tableScanCloneOpsForJoin,skewedValues,false);
+  Map<String,Operator<? extends OperatorDesc>> topOps=getTopOps(joinOpClone);
+  Map<String,Operator<? extends OperatorDesc>> origTopOps=parseContext.getTopOps();
+  for (  Entry<String,Operator<? extends OperatorDesc>> topOp : topOps.entrySet()) {
+    TableScanOperator tso=(TableScanOperator)topOp.getValue();
+    Table origTable=parseContext.getTopToTable().get(ctx.getCloneTSOpMap().get(tso));
+    String tabAlias=tso.getConf().getAlias();
+    parseContext.getTopToTable().put(tso,origTable);
+    int initCnt=1;
+    String newAlias="subquery" + initCnt + ":"+ tabAlias;
+    while (origTopOps.containsKey(newAlias)) {
+      initCnt++;
+      newAlias="subquery" + initCnt + ":"+ tabAlias;
+    }
+    parseContext.getTopOps().put(newAlias,tso);
+  }
+  List<Operator<? extends OperatorDesc>> finalOps=currOp.getChildOperators();
+  currOp.setChildOperators(null);
+  currOpClone.setChildOperators(null);
+  List<Operator<? extends OperatorDesc>> oplist=new ArrayList<Operator<? extends OperatorDesc>>();
+  oplist.add(currOp);
+  oplist.add(currOpClone);
+  Operator<? extends OperatorDesc> unionOp=OperatorFactory.getAndMakeChild(new UnionDesc(),new RowSchema(currOp.getSchema().getSignature()),oplist);
+  RowResolver unionRR=parseContext.getOpParseCtx().get(currOp).getRowResolver();
+  GenMapRedUtils.putOpInsertMap(unionOp,unionRR,parseContext);
+  List<Operator<? extends OperatorDesc>> unionList=new ArrayList<Operator<? extends OperatorDesc>>();
+  unionList.add(unionOp);
+  Operator<? extends OperatorDesc> selectUnionOp=OperatorFactory.getAndMakeChild(new SelectDesc(true),new RowSchema(unionOp.getSchema().getSignature()),unionList);
+  GenMapRedUtils.putOpInsertMap(selectUnionOp,unionRR,parseContext);
+  selectUnionOp.setChildOperators(finalOps);
+  for (  Operator<? extends OperatorDesc> finalOp : finalOps) {
+    finalOp.replaceParent(currOp,selectUnionOp);
+  }
+  return null;
 }
