@@ -1,0 +1,44 @@
+{
+  this.activeJobs=Maps.newConcurrentMap();
+  this.shutdownLock=new Object();
+  SparkConf conf=new SparkConf();
+  String remote=null;
+  for (int idx=0; idx < args.length; idx+=2) {
+    String key=args[idx];
+    if (key.equals("--remote")) {
+      remote=getArg(args,idx);
+    }
+ else     if (key.equals("--secret")) {
+      conf.set(ClientUtils.CONF_KEY_SECRET,getArg(args,idx));
+    }
+ else     if (key.equals("--conf")) {
+      String[] val=getArg(args,idx).split("[=]",2);
+      conf.set(val[0],val[1]);
+    }
+ else {
+      throw new IllegalArgumentException("Invalid command line: " + Joiner.on(" ").join(args));
+    }
+  }
+  executor=Executors.newCachedThreadPool();
+  LOG.info("Connecting to: {}",remote);
+  Map<String,String> mapConf=Maps.newHashMap();
+  for (  Tuple2<String,String> e : conf.getAll()) {
+    mapConf.put(e._1(),e._2());
+  }
+  ClientUtils.ActorSystemInfo info=ClientUtils.createActorSystem(mapConf);
+  this.system=info.system;
+  this.actor=system.actorOf(Props.create(ServerActor.class,this),"RemoteDriver");
+  this.client=system.actorSelection(remote);
+  try {
+    JavaSparkContext sc=new JavaSparkContext(conf);
+    sc.sc().addSparkListener(new ClientListener());
+    jc=new JobContextImpl(sc);
+  }
+ catch (  Exception e) {
+    LOG.error("Failed to start SparkContext.",e);
+    shutdown(new Protocol.Error(e));
+    throw e;
+  }
+  client.tell(new Protocol.Hello(info.url + "/RemoteDriver"),actor);
+  running=true;
+}

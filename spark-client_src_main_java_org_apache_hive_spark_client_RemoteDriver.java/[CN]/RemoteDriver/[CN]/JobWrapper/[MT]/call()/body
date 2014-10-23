@@ -1,0 +1,27 @@
+{
+  try {
+    jc.setMonitorCb(new MonitorCallback(){
+      @Override public void call(      JavaFutureAction<?> future){
+        monitorJob(future);
+      }
+    }
+);
+    T result=req.job.call(jc);
+synchronized (completed) {
+      while (completed.get() != jobs.size()) {
+        LOG.debug("Client job {} finished, {} of {} Spark jobs finished.",req.id,completed.get(),jobs.size());
+        completed.wait();
+      }
+    }
+    client.tell(new Protocol.JobResult(req.id,result,null),actor);
+  }
+ catch (  Throwable t) {
+    client.tell(new Protocol.JobResult(req.id,null,t),actor);
+    throw new ExecutionException(t);
+  }
+ finally {
+    jc.setMonitorCb(null);
+    activeJobs.remove(req.id);
+  }
+  return null;
+}

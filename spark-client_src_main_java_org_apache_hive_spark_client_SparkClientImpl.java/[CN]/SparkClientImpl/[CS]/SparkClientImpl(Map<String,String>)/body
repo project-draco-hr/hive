@@ -1,0 +1,24 @@
+{
+  this.conf=conf;
+  this.childIdGenerator=new AtomicInteger();
+  this.name="SparkClient-" + ClientUtils.randomName();
+  this.clientRef=bind(Props.create(ClientActor.class,this),name);
+  this.jobs=Maps.newConcurrentMap();
+  this.driverThread=startDriver();
+  long connectTimeout=Integer.parseInt(Optional.fromNullable(conf.get("spark.client.connectTimeout")).or("10")) * 1000;
+  long endTime=System.currentTimeMillis() + connectTimeout;
+synchronized (this) {
+    while (remoteRef == null) {
+      try {
+        wait(connectTimeout);
+      }
+ catch (      InterruptedException ie) {
+        throw new SparkException("Interrupted.",ie);
+      }
+      connectTimeout=endTime - System.currentTimeMillis();
+      if (remoteRef == null && connectTimeout <= 0) {
+        throw new SparkException("Timed out waiting for remote driver to connect.");
+      }
+    }
+  }
+}

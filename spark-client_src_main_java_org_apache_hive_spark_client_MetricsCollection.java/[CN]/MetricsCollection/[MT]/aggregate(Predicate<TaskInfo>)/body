@@ -1,0 +1,74 @@
+{
+  lock.readLock().lock();
+  try {
+    long executorDeserializeTime=0L;
+    long executorRunTime=0L;
+    long resultSize=0L;
+    long jvmGCTime=0L;
+    long resultSerializationTime=0L;
+    long memoryBytesSpilled=0L;
+    long diskBytesSpilled=0L;
+    boolean hasInputMetrics=false;
+    DataReadMethod readMethod=null;
+    long bytesRead=0L;
+    boolean hasShuffleReadMetrics=false;
+    int remoteBlocksFetched=0;
+    int localBlocksFetched=0;
+    long fetchWaitTime=0L;
+    long remoteBytesRead=0L;
+    boolean hasShuffleWriteMetrics=false;
+    long shuffleBytesWritten=0L;
+    long shuffleWriteTime=0L;
+    for (    TaskInfo info : Collections2.filter(taskMetrics,filter)) {
+      Metrics m=info.metrics;
+      executorDeserializeTime+=m.executorDeserializeTime;
+      executorRunTime+=m.executorRunTime;
+      resultSize+=m.resultSize;
+      jvmGCTime+=m.jvmGCTime;
+      resultSerializationTime+=m.resultSerializationTime;
+      memoryBytesSpilled+=m.memoryBytesSpilled;
+      diskBytesSpilled+=m.diskBytesSpilled;
+      if (m.inputMetrics.isPresent()) {
+        hasInputMetrics=true;
+        InputMetrics im=m.inputMetrics.get();
+        if (readMethod == null) {
+          readMethod=im.readMethod;
+        }
+ else         if (readMethod != im.readMethod) {
+          readMethod=DataReadMethod.Multiple;
+        }
+        bytesRead+=im.bytesRead;
+      }
+      if (m.shuffleReadMetrics.isPresent()) {
+        ShuffleReadMetrics srm=m.shuffleReadMetrics.get();
+        hasShuffleReadMetrics=true;
+        remoteBlocksFetched+=srm.remoteBlocksFetched;
+        localBlocksFetched+=srm.localBlocksFetched;
+        fetchWaitTime+=srm.fetchWaitTime;
+        remoteBytesRead+=srm.remoteBytesRead;
+      }
+      if (m.shuffleWriteMetrics.isPresent()) {
+        ShuffleWriteMetrics swm=m.shuffleWriteMetrics.get();
+        hasShuffleWriteMetrics=true;
+        shuffleBytesWritten+=swm.shuffleBytesWritten;
+        shuffleWriteTime+=swm.shuffleWriteTime;
+      }
+    }
+    Optional<InputMetrics> inputMetrics=Optional.absent();
+    if (hasInputMetrics) {
+      inputMetrics=Optional.of(new InputMetrics(readMethod,bytesRead));
+    }
+    Optional<ShuffleReadMetrics> shuffleReadMetrics=Optional.absent();
+    if (hasShuffleReadMetrics) {
+      shuffleReadMetrics=Optional.of(new ShuffleReadMetrics(remoteBlocksFetched,localBlocksFetched,fetchWaitTime,remoteBytesRead));
+    }
+    Optional<ShuffleWriteMetrics> shuffleWriteMetrics=Optional.absent();
+    if (hasShuffleReadMetrics) {
+      shuffleWriteMetrics=Optional.of(new ShuffleWriteMetrics(shuffleBytesWritten,shuffleWriteTime));
+    }
+    return new Metrics(executorDeserializeTime,executorRunTime,resultSize,jvmGCTime,resultSerializationTime,memoryBytesSpilled,diskBytesSpilled,inputMetrics,shuffleReadMetrics,shuffleWriteMetrics);
+  }
+  finally {
+    lock.readLock().unlock();
+  }
+}
