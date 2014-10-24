@@ -1,4 +1,5 @@
 {
+  numInputsSeenSoFar++;
   LOG.info("On root vertex initialized " + inputName);
   try {
     MRInputUserPayloadProto protoPayload=MRInputHelpers.parseMRInputPayload(inputDescriptor.getUserPayload());
@@ -11,12 +12,14 @@
     throw new RuntimeException(e);
   }
   boolean dataInformationEventSeen=false;
-  Map<String,List<FileSplit>> pathFileSplitsMap=new TreeMap<String,List<FileSplit>>();
+  Map<String,Set<FileSplit>> pathFileSplitsMap=new TreeMap<String,Set<FileSplit>>();
   for (  Event event : events) {
     if (event instanceof InputConfigureVertexTasksEvent) {
+      LOG.info("Got a input configure vertex event for input: " + inputName);
       Preconditions.checkState(dataInformationEventSeen == false);
       InputConfigureVertexTasksEvent cEvent=(InputConfigureVertexTasksEvent)event;
       configureVertexTaskEvent=cEvent;
+      LOG.info("Configure task for input name: " + inputName + " num tasks: "+ configureVertexTaskEvent.getNumTasks());
       dataInformationEvents=Lists.newArrayListWithCapacity(configureVertexTaskEvent.getNumTasks());
     }
     if (event instanceof InputUpdatePayloadEvent) {
@@ -33,35 +36,50 @@
  catch (      IOException e) {
         throw new RuntimeException("Failed to get file split for event: " + diEvent);
       }
-      List<FileSplit> fsList=pathFileSplitsMap.get(fileSplit.getPath().getName());
+      Set<FileSplit> fsList=pathFileSplitsMap.get(Utilities.getBucketFileNameFromPathSubString(fileSplit.getPath().getName()));
       if (fsList == null) {
-        fsList=new ArrayList<FileSplit>();
-        pathFileSplitsMap.put(fileSplit.getPath().getName(),fsList);
+        fsList=new TreeSet<FileSplit>(new PathComparatorForSplit());
+        pathFileSplitsMap.put(Utilities.getBucketFileNameFromPathSubString(fileSplit.getPath().getName()),fsList);
       }
       fsList.add(fileSplit);
     }
   }
+  LOG.info("Path file splits map for input name: " + inputName + " is "+ pathFileSplitsMap);
   Multimap<Integer,InputSplit> bucketToInitialSplitMap=getBucketSplitMapForPath(pathFileSplitsMap);
   try {
     int totalResource=context.getTotalAvailableResource().getMemory();
     int taskResource=context.getVertexTaskResource().getMemory();
     float waves=conf.getFloat(TezMapReduceSplitsGrouper.TEZ_GROUPING_SPLIT_WAVES,TezMapReduceSplitsGrouper.TEZ_GROUPING_SPLIT_WAVES_DEFAULT);
     int availableSlots=totalResource / taskResource;
-    LOG.info("Grouping splits. " + availableSlots + " available slots, "+ waves+ " waves.");
+    LOG.info("Grouping splits. " + availableSlots + " available slots, "+ waves+ " waves. Bucket initial splits map: "+ bucketToInitialSplitMap);
     JobConf jobConf=new JobConf(conf);
     ShimLoader.getHadoopShims().getMergedCredentials(jobConf);
     Multimap<Integer,InputSplit> bucketToGroupedSplitMap=HashMultimap.<Integer,InputSplit>create();
-    for (    Integer key : bucketToInitialSplitMap.keySet()) {
-      InputSplit[] inputSplitArray=(bucketToInitialSplitMap.get(key).toArray(new InputSplit[0]));
-      Multimap<Integer,InputSplit> groupedSplit=HiveSplitGenerator.generateGroupedSplits(jobConf,conf,inputSplitArray,waves,availableSlots,inputName);
-      bucketToGroupedSplitMap.putAll(key,groupedSplit.values());
-    }
-    LOG.info("We have grouped the splits into " + bucketToGroupedSplitMap);
-    if ((mainWorkName.isEmpty() == false) && (mainWorkName.compareTo(inputName) != 0)) {
-      processAllSideEvents(inputName,bucketToGroupedSplitMap);
+    boolean secondLevelGroupingDone=false;
+    if ((mainWorkName.isEmpty()) || (inputName.compareTo(mainWorkName) == 0)) {
+      for (      Integer key : bucketToInitialSplitMap.keySet()) {
+        InputSplit[] inputSplitArray=(bucketToInitialSplitMap.get(key).toArray(new InputSplit[0]));
+        HiveSplitGenerator hiveSplitGenerator=new HiveSplitGenerator();
+        Multimap<Integer,InputSplit> groupedSplit=hiveSplitGenerator.generateGroupedSplits(jobConf,conf,inputSplitArray,waves,availableSlots,inputName,mainWorkName.isEmpty());
+        if (mainWorkName.isEmpty() == false) {
+          Multimap<Integer,InputSplit> singleBucketToGroupedSplit=HashMultimap.<Integer,InputSplit>create();
+          singleBucketToGroupedSplit.putAll(key,groupedSplit.values());
+          groupedSplit=grouper.group(jobConf,singleBucketToGroupedSplit,availableSlots,HiveConf.getFloatVar(conf,HiveConf.ConfVars.TEZ_SMB_NUMBER_WAVES));
+          secondLevelGroupingDone=true;
+        }
+        bucketToGroupedSplitMap.putAll(key,groupedSplit.values());
+      }
+      processAllEvents(inputName,bucketToGroupedSplitMap,secondLevelGroupingDone);
     }
  else {
-      processAllEvents(inputName,bucketToGroupedSplitMap);
+      for (      Integer key : bucketToInitialSplitMap.keySet()) {
+        HiveSplitGenerator hiveSplitGenerator=new HiveSplitGenerator();
+        InputSplit[] inputSplitArray=(bucketToInitialSplitMap.get(key).toArray(new InputSplit[0]));
+        Multimap<Integer,InputSplit> groupedSplit=hiveSplitGenerator.generateGroupedSplits(jobConf,conf,inputSplitArray,waves,availableSlots,inputName,false);
+        bucketToGroupedSplitMap.putAll(key,groupedSplit.values());
+      }
+      LOG.info("This is the side work - multi-mr work.");
+      processAllSideEventsSetParallelism(inputName,bucketToGroupedSplitMap);
     }
   }
  catch (  Exception e) {
