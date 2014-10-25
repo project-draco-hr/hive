@@ -1,26 +1,25 @@
 {
+  boolean hasDuplicates=false;
   String tabAlias;
   String colAlias;
   String[] qualifiedColName;
   int i=0;
+  int outputColPos=outputColPosRef == null ? 0 : outputColPosRef.val;
   for (  ColumnInfo cInfoFrmInput : rrToAddFrom.getRowSchema().getSignature()) {
     if (numColumns >= 0 && i == numColumns) {
       break;
     }
     ColumnInfo newCI=null;
-    qualifiedColName=rrToAddFrom.getInvRslvMap().get(cInfoFrmInput.getInternalName());
+    String internalName=cInfoFrmInput.getInternalName();
+    qualifiedColName=rrToAddFrom.reverseLookup(internalName);
     tabAlias=qualifiedColName[0];
     colAlias=qualifiedColName[1];
     newCI=new ColumnInfo(cInfoFrmInput);
     newCI.setInternalName(SemanticAnalyzer.getColumnInternalName(outputColPos));
     outputColPos++;
-    if (rrToAddTo.get(tabAlias,colAlias) != null) {
-      LOG.debug("Found duplicate column alias in RR: " + rrToAddTo.get(tabAlias,colAlias));
-    }
- else {
-      rrToAddTo.put(tabAlias,colAlias,newCI);
-    }
-    qualifiedColName=rrToAddFrom.getAlternateMappings(cInfoFrmInput.getInternalName());
+    boolean isUnique=rrToAddTo.putWithCheck(tabAlias,colAlias,internalName,newCI);
+    hasDuplicates|=(!isUnique);
+    qualifiedColName=rrToAddFrom.getAlternateMappings(internalName);
     if (qualifiedColName != null) {
       tabAlias=qualifiedColName[0];
       colAlias=qualifiedColName[1];
@@ -28,5 +27,8 @@
     }
     i++;
   }
-  return outputColPos;
+  if (outputColPosRef != null) {
+    outputColPosRef.val=outputColPos;
+  }
+  return !hasDuplicates;
 }
