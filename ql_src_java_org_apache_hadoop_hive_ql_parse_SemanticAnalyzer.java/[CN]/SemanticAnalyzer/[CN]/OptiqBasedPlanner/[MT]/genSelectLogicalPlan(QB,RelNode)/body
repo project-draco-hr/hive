@@ -8,7 +8,6 @@
   QBParseInfo qbp=getQBParseInfo(qb);
   String selClauseName=qbp.getClauseNames().iterator().next();
   ASTNode selExprList=qbp.getSelForClause(selClauseName);
-  LOG.error("TODO# for select clause, got " + selExprList.dump());
   RowResolver out_rwsch=new RowResolver();
   ASTNode trfm=null;
   Integer pos=Integer.valueOf(0);
@@ -79,7 +78,9 @@
       col_list.add(exp);
       ColumnInfo colInfo=new ColumnInfo(getColumnInternalName(pos),exp.getWritableObjectInspector(),tabAlias,false);
       colInfo.setSkewedCol((exp instanceof ExprNodeColumnDesc) ? ((ExprNodeColumnDesc)exp).isSkewedCol() : false);
-      out_rwsch.put(tabAlias,colAlias,colInfo);
+      if (!out_rwsch.putWithCheck(tabAlias,colAlias,null,colInfo)) {
+        throw new OptiqSemanticException("Cannot add column to RR: " + tabAlias + "."+ colAlias+ " => "+ colInfo+ " due to duplication, see previous warnings");
+      }
       if (exp instanceof ExprNodeColumnDesc) {
         ExprNodeColumnDesc colExp=(ExprNodeColumnDesc)exp;
         String[] altMapping=inputRR.getAlternateMappings(colExp.getColumn());
