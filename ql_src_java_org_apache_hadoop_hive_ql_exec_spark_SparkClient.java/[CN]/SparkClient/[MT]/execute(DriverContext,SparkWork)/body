@@ -4,38 +4,23 @@
   refreshLocalResources(sparkWork,hiveConf);
   JobConf jobConf=new JobConf(hiveConf);
   Path emptyScratchDir;
-  try {
-    emptyScratchDir=ctx.getMRTmpPath();
-    FileSystem fs=emptyScratchDir.getFileSystem(jobConf);
-    fs.mkdirs(emptyScratchDir);
-  }
- catch (  IOException e) {
-    LOG.error("Error launching map-reduce job",e);
-    return 5;
-  }
+  emptyScratchDir=ctx.getMRTmpPath();
+  FileSystem fs=emptyScratchDir.getFileSystem(jobConf);
+  fs.mkdirs(emptyScratchDir);
   SparkCounters sparkCounters=new SparkCounters(sc,hiveConf);
+  List<String> prefixes=sparkWork.getRequiredCounterPrefix();
+  if (prefixes != null) {
+    for (    String prefix : prefixes) {
+      sparkCounters.createCounter(prefix,StatsSetupConst.ROW_COUNT);
+      sparkCounters.createCounter(prefix,StatsSetupConst.RAW_DATA_SIZE);
+    }
+  }
   SparkReporter sparkReporter=new SparkReporter(sparkCounters);
   SparkPlanGenerator gen=new SparkPlanGenerator(sc,ctx,jobConf,emptyScratchDir,sparkReporter);
-  SparkPlan plan;
-  try {
-    plan=gen.generate(sparkWork);
-  }
- catch (  Exception e) {
-    LOG.error("Error generating Spark Plan",e);
-    return 2;
-  }
-  try {
-    JavaPairRDD<HiveKey,BytesWritable> finalRDD=plan.generateGraph();
-    JavaFutureAction<Void> future=finalRDD.foreachAsync(HiveVoidFunction.getInstance());
-    List<Integer> jobIds=future.jobIds();
-    int jobId=jobIds.get(jobIds.size() - 1);
-    SimpleSparkJobStatus sparkJobStatus=new SimpleSparkJobStatus(jobId,jobStateListener,jobProgressListener);
-    SparkJobMonitor monitor=new SparkJobMonitor(sparkJobStatus);
-    monitor.startMonitor();
-  }
- catch (  Exception e) {
-    LOG.error("Error executing Spark Plan",e);
-    return 1;
-  }
-  return 0;
+  SparkPlan plan=gen.generate(sparkWork);
+  JavaPairRDD<HiveKey,BytesWritable> finalRDD=plan.generateGraph();
+  JavaFutureAction<Void> future=finalRDD.foreachAsync(HiveVoidFunction.getInstance());
+  int jobId=future.jobIds().get(0);
+  SimpleSparkJobStatus sparkJobStatus=new SimpleSparkJobStatus(jobId,jobStateListener,jobProgressListener,sparkCounters);
+  return new SparkJobRef(jobId,sparkJobStatus);
 }

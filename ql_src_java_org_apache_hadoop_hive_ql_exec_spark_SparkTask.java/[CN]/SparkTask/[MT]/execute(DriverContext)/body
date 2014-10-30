@@ -13,7 +13,17 @@
     }
     sparkSession=sparkSessionManager.getSession(sparkSession,conf,true);
     SessionState.get().setSparkSession(sparkSession);
-    rc=sparkSession.submit(driverContext,getWork());
+    SparkWork sparkWork=getWork();
+    String statsImpl=HiveConf.getVar(conf,HiveConf.ConfVars.HIVESTATSDBCLASS);
+    if (statsImpl.equalsIgnoreCase("counter")) {
+      sparkWork.setRequiredCounterPrefix(SparkUtilities.getRequiredCounterPrefix(this,db));
+    }
+    SparkJobRef jobRef=sparkSession.submit(driverContext,sparkWork);
+    sparkCounters=jobRef.getSparkJobStatus().getCounter();
+    SparkJobMonitor monitor=new SparkJobMonitor(jobRef.getSparkJobStatus());
+    monitor.startMonitor();
+    console.printInfo(sparkCounters.toString());
+    rc=0;
   }
  catch (  Exception e) {
     LOG.error("Failed to execute spark task.",e);

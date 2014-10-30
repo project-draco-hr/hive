@@ -1,0 +1,64 @@
+{
+  List<String> prefixs=new LinkedList<String>();
+  List<BaseWork> works=sparkTask.getWork().getAllWork();
+  for (  BaseWork baseWork : works) {
+    Set<Operator<?>> operators=baseWork.getAllOperators();
+    for (    Operator<?> operator : operators) {
+      if (operator instanceof TableScanOperator) {
+        TableScanOperator tableScanOperator=(TableScanOperator)operator;
+        TableScanDesc tableScanDesc=tableScanOperator.getConf();
+        if (tableScanDesc.isGatherStats()) {
+          List<Task<? extends Serializable>> childTasks=getChildTasks(sparkTask);
+          for (          Task<? extends Serializable> task : childTasks) {
+            if (task instanceof StatsTask) {
+              StatsTask statsTask=(StatsTask)task;
+              StatsWork statsWork=statsTask.getWork();
+              BaseSemanticAnalyzer.tableSpec tblSpec=statsWork.getTableSpecs();
+              Table table=tblSpec.tableHandle;
+              if (!table.isPartitioned()) {
+                prefixs.add(tableScanDesc.getStatsAggPrefix());
+              }
+ else {
+                for (                Partition partition : tblSpec.partitions) {
+                  String aggrPrefix=getAggregationPrefix(table,partition.getSpec(),tableScanDesc.getMaxStatsKeyPrefixLength());
+                  prefixs.add(aggrPrefix);
+                }
+              }
+            }
+          }
+        }
+      }
+ else       if (operator instanceof FileSinkOperator) {
+        FileSinkOperator fileSinkOperator=(FileSinkOperator)operator;
+        FileSinkDesc fileSinkDesc=fileSinkOperator.getConf();
+        if (fileSinkDesc.isGatherStats()) {
+          List<Task<? extends Serializable>> childTasks=getChildTasks(sparkTask);
+          for (          Task<? extends Serializable> task : childTasks) {
+            if (task instanceof MoveTask) {
+              MoveTask moveTask=(MoveTask)task;
+              MoveWork moveWork=moveTask.getWork();
+              LoadTableDesc tbd=moveWork.getLoadTableWork();
+              Table table=db.getTable(tbd.getTable().getTableName());
+              if (!table.isPartitioned()) {
+                prefixs.add(getAggregationPrefix(table,null,fileSinkDesc.getMaxStatsKeyPrefixLength()));
+              }
+ else {
+                DynamicPartitionCtx dpCtx=tbd.getDPCtx();
+                if (dpCtx == null || dpCtx.getNumDPCols() == 0) {
+                  Map<String,String> partitionSpec=tbd.getPartitionSpec();
+                  if (partitionSpec != null && !partitionSpec.isEmpty()) {
+                    String aggrPrefix=getAggregationPrefix(table,partitionSpec,fileSinkDesc.getMaxStatsKeyPrefixLength());
+                    prefixs.add(aggrPrefix);
+                  }
+                }
+ else {
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return prefixs;
+}
