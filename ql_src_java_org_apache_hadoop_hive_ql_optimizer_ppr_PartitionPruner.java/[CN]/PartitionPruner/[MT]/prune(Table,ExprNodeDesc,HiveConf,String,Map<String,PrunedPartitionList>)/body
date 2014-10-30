@@ -15,11 +15,16 @@
   }
   Set<String> partColsUsedInFilter=new LinkedHashSet<String>();
   prunerExpr=removeNonPartCols(prunerExpr,extractPartColNames(tab),partColsUsedInFilter);
-  ExprNodeGenericFuncDesc compactExpr=(ExprNodeGenericFuncDesc)compactExpr(prunerExpr.clone());
+  ExprNodeDesc compactExpr=compactExpr(prunerExpr.clone());
   String oldFilter=prunerExpr.getExprString();
-  if (compactExpr == null) {
-    LOG.debug("Filter " + oldFilter + " was null after compacting");
-    return getAllPartsFromCacheOrServer(tab,key,true,prunedPartitionsMap);
+  if (isBooleanExpr(compactExpr)) {
+    if (!isFalseExpr(compactExpr)) {
+      LOG.debug("Filter " + oldFilter + " was null after compacting");
+      return getAllPartsFromCacheOrServer(tab,key,true,prunedPartitionsMap);
+    }
+ else {
+      return new PrunedPartitionList(tab,new LinkedHashSet<Partition>(new ArrayList<Partition>()),new ArrayList<String>(),false);
+    }
   }
   LOG.debug("Filter w/ compacting: " + compactExpr.getExprString() + "; filter w/o compacting: "+ oldFilter);
   key=key + compactExpr.getExprString();
@@ -27,7 +32,7 @@
   if (ppList != null) {
     return ppList;
   }
-  ppList=getPartitionsFromServer(tab,compactExpr,conf,alias,partColsUsedInFilter,oldFilter.equals(compactExpr.getExprString()));
+  ppList=getPartitionsFromServer(tab,(ExprNodeGenericFuncDesc)compactExpr,conf,alias,partColsUsedInFilter,oldFilter.equals(compactExpr.getExprString()));
   prunedPartitionsMap.put(key,ppList);
   return ppList;
 }

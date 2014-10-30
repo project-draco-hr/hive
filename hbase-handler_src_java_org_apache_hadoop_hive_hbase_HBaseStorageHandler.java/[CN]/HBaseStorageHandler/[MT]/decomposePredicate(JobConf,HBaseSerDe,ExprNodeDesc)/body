@@ -1,17 +1,20 @@
 {
   ColumnMapping keyMapping=hBaseSerDe.getHBaseSerdeParam().getKeyColumnMapping();
-  IndexPredicateAnalyzer analyzer=HiveHBaseTableInputFormat.newIndexPredicateAnalyzer(keyMapping.columnName,keyMapping.columnType,keyMapping.binaryStorage.get(0));
-  List<IndexSearchCondition> searchConditions=new ArrayList<IndexSearchCondition>();
-  ExprNodeGenericFuncDesc residualPredicate=(ExprNodeGenericFuncDesc)analyzer.analyzePredicate(predicate,searchConditions);
-  int scSize=searchConditions.size();
-  if (scSize < 1 || 2 < scSize) {
-    return null;
-  }
-  if (scSize == 2 && (searchConditions.get(0).getComparisonOp().equals("org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPEqual") || searchConditions.get(1).getComparisonOp().equals("org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPEqual"))) {
-    return null;
+  ColumnMapping tsMapping=hBaseSerDe.getHBaseSerdeParam().getTimestampColumnMapping();
+  IndexPredicateAnalyzer analyzer=HiveHBaseTableInputFormat.newIndexPredicateAnalyzer(keyMapping.columnName,keyMapping.isComparable(),tsMapping == null ? null : tsMapping.columnName);
+  List<IndexSearchCondition> conditions=new ArrayList<IndexSearchCondition>();
+  ExprNodeGenericFuncDesc residualPredicate=(ExprNodeGenericFuncDesc)analyzer.analyzePredicate(predicate,conditions);
+  for (  List<IndexSearchCondition> searchConditions : HiveHBaseInputFormatUtil.decompose(conditions).values()) {
+    int scSize=searchConditions.size();
+    if (scSize < 1 || 2 < scSize) {
+      return null;
+    }
+    if (scSize == 2 && (searchConditions.get(0).getComparisonOp().equals("org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPEqual") || searchConditions.get(1).getComparisonOp().equals("org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPEqual"))) {
+      return null;
+    }
   }
   DecomposedPredicate decomposedPredicate=new DecomposedPredicate();
-  decomposedPredicate.pushedPredicate=analyzer.translateSearchConditions(searchConditions);
+  decomposedPredicate.pushedPredicate=analyzer.translateSearchConditions(conditions);
   decomposedPredicate.residualPredicate=residualPredicate;
   return decomposedPredicate;
 }

@@ -1,5 +1,5 @@
 {
-  ExprWalkerInfo prunePreds=owi.getPrunedPreds((Operator<? extends OperatorDesc>)nd);
+  ExprWalkerInfo prunePreds=owi.getPrunedPreds(nd);
   if (prunePreds != null) {
     Map<String,RowResolver> aliasToRR=new HashMap<String,RowResolver>();
     for (    Operator<? extends OperatorDesc> o : (nd).getParentOperators()) {
@@ -10,7 +10,6 @@
     ArrayList<ArrayList<ASTNode>> eqExpressions=owi.getParseContext().getJoinContext().get(nd).getExpressions();
     int numColumns=eqExpressions.size();
     int numEqualities=eqExpressions.get(0).size();
-    JoinCondDesc[] joins=(nd).getConf().getConds();
     Map<String,List<ExprNodeDesc>> oldFilters=prunePreds.getFinalCandidates();
     Map<String,List<ExprNodeDesc>> newFilters=new HashMap<String,List<ExprNodeDesc>>();
     for (int i=0; i < numEqualities; i++) {
@@ -40,8 +39,26 @@
         }
       }
     }
+    Map<String,List<ExprNodeDesc>> candidates=prunePreds.getNonFinalCandidates();
+    List<ExprNodeDesc> exprs;
+    if (null != candidates && candidates.get(null) != null && ((exprs=candidates.get(null)) != null)) {
+      Iterator<ExprNodeDesc> itr=exprs.iterator();
+      while (itr.hasNext()) {
+        ExprNodeDesc expr=itr.next();
+        if (expr instanceof ExprNodeConstantDesc && Boolean.FALSE.equals(((ExprNodeConstantDesc)expr).getValue())) {
+          for (          String alias : aliasToRR.keySet()) {
+            List<ExprNodeDesc> pushedFilters=newFilters.get(alias);
+            if (null == pushedFilters) {
+              newFilters.put(alias,new ArrayList<ExprNodeDesc>());
+            }
+            newFilters.get(alias).add(expr);
+          }
+          itr.remove();
+        }
+      }
+    }
     for (    Entry<String,List<ExprNodeDesc>> aliasToFilters : newFilters.entrySet()) {
-      owi.getPrunedPreds((Operator<? extends OperatorDesc>)nd).addPushDowns(aliasToFilters.getKey(),aliasToFilters.getValue());
+      owi.getPrunedPreds(nd).addPushDowns(aliasToFilters.getKey(),aliasToFilters.getValue());
     }
   }
 }

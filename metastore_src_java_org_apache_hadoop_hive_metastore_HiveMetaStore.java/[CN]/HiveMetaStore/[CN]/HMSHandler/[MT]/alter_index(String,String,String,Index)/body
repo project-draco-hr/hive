@@ -3,7 +3,10 @@
   newIndex.putToParameters(hive_metastoreConstants.DDL_TIME,Long.toString(System.currentTimeMillis() / 1000));
   boolean success=false;
   Exception ex=null;
+  Index oldIndex=null;
   try {
+    oldIndex=get_index_by_name(dbname,base_table_name,index_name);
+    firePreEvent(new PreAlterIndexEvent(oldIndex,newIndex,this));
     getMS().alterIndex(dbname,base_table_name,index_name,newIndex);
     success=true;
   }
@@ -25,6 +28,10 @@ catch (  Exception e) {
   }
  finally {
     endFunction("alter_index",success,ex,base_table_name);
+    for (    MetaStoreEventListener listener : listeners) {
+      AlterIndexEvent alterIndexEvent=new AlterIndexEvent(oldIndex,newIndex,success,this);
+      listener.onAlterIndex(alterIndexEvent);
+    }
   }
   return;
 }

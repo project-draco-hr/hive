@@ -2,7 +2,7 @@
   Map<String,PartitionDesc> pathToPartitionInfo=Utilities.getMapRedWork(hiveConf).getMapWork().getPathToPartitionInfo();
   PartitionDesc part=HiveFileFormatUtils.getPartitionDescFromPathRecursively(pathToPartitionInfo,split.getPath(),IOPrepareCache.get().getPartitionDescMap());
   String partitionPath=split.getPath().getParent().toString();
-  columnTypeMap=Utilities.getScratchColumnVectorTypes(hiveConf).get(partitionPath);
+  columnTypeMap=Utilities.getAllScratchColumnVectorTypeMaps(hiveConf).get(partitionPath);
   Properties partProps=(part.getPartSpec() == null || part.getPartSpec().isEmpty()) ? part.getTableDesc().getProperties() : part.getProperties();
   Class serdeclass=hiveConf.getClassByName(part.getSerdeClassName());
   Deserializer partDeserializer=(Deserializer)serdeclass.newInstance();
@@ -10,9 +10,10 @@
   StructObjectInspector partRawRowObjectInspector=(StructObjectInspector)partDeserializer.getObjectInspector();
   deserializer=partDeserializer;
   String pcols=partProps.getProperty(hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS);
+  String[] partKeys=null;
   if (pcols != null && pcols.length() > 0) {
     LinkedHashMap<String,String> partSpec=part.getPartSpec();
-    String[] partKeys=pcols.trim().split("/");
+    partKeys=pcols.trim().split("/");
     String pcolTypes=partProps.getProperty(hive_metastoreConstants.META_TABLE_PARTITION_COLUMN_TYPES);
     String[] partKeyTypes=pcolTypes.trim().split(":");
     if (partKeys.length > partKeyTypes.length) {
@@ -47,6 +48,12 @@
     StructObjectInspector rowObjectInspector=ObjectInspectorFactory.getUnionStructObjectInspector(Arrays.asList(new StructObjectInspector[]{partRawRowObjectInspector,partObjectInspector}));
     rowOI=rowObjectInspector;
     rawRowOI=partRawRowObjectInspector;
+    partitionCols=new HashSet<Integer>();
+    if (pcols != null && pcols.length() > 0) {
+      for (int i=0; i < partKeys.length; i++) {
+        partitionCols.add(getColIndexBasedOnColName(partKeys[i]));
+      }
+    }
   }
  else {
     rowOI=partRawRowObjectInspector;

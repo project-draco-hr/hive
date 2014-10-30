@@ -1,13 +1,12 @@
 {
   boolean success=false;
+  Index index=null;
   Path tblPath=null;
   List<Path> partPaths=null;
   try {
     ms.openTransaction();
-    Index index=get_index_by_name(dbName,tblName,indexName);
-    if (index == null) {
-      throw new NoSuchObjectException(indexName + " doesn't exist");
-    }
+    index=get_index_by_name(dbName,tblName,indexName);
+    firePreEvent(new PreDropIndexEvent(index,this));
     ms.dropIndex(dbName,tblName,indexName);
     String idxTblName=index.getIndexTableName();
     if (idxTblName != null) {
@@ -22,9 +21,9 @@
           throw new MetaException("Index table metadata not deleted since " + tblPath.getParent() + " is not writable by "+ hiveConf.getUser());
         }
       }
-      partPaths=dropPartitionsAndGetLocations(ms,dbName,idxTblName,tblPath,tbl.getPartitionKeys(),deleteData);
-      if (!ms.dropTable(dbName,idxTblName)) {
-        throw new MetaException("Unable to drop underlying data table " + idxTblName + " for index "+ idxTblName);
+      partPaths=dropPartitionsAndGetLocations(ms,qualified[0],qualified[1],tblPath,tbl.getPartitionKeys(),deleteData);
+      if (!ms.dropTable(qualified[0],qualified[1])) {
+        throw new MetaException("Unable to drop underlying data table " + qualified[0] + "."+ qualified[1]+ " for index "+ indexName);
       }
     }
     success=ms.commitTransaction();
@@ -32,12 +31,15 @@
   finally {
     if (!success) {
       ms.rollbackTransaction();
-      return false;
     }
  else     if (deleteData && tblPath != null) {
       deletePartitionData(partPaths);
       deleteTableData(tblPath);
     }
+    for (    MetaStoreEventListener listener : listeners) {
+      DropIndexEvent dropIndexEvent=new DropIndexEvent(index,success,this);
+      listener.onDropIndex(dropIndexEvent);
+    }
   }
-  return true;
+  return success;
 }

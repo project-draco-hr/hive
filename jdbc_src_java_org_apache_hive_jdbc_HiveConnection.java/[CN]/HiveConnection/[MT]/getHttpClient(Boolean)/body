@@ -2,36 +2,32 @@
   DefaultHttpClient httpClient=new DefaultHttpClient();
   HttpRequestInterceptor requestInterceptor;
   if (isKerberosAuthMode()) {
-    if (useSsl) {
-      String msg="SSL encryption is currently not supported with " + "kerberos authentication";
-      throw new SQLException(msg," 08S01");
-    }
     requestInterceptor=new HttpKerberosRequestInterceptor(sessConfMap.get(JdbcConnectionParams.AUTH_PRINCIPAL),host,getServerHttpUrl(false));
   }
  else {
     requestInterceptor=new HttpBasicAuthInterceptor(getUserName(),getPassword());
-    if (useSsl) {
-      String sslTrustStorePath=sessConfMap.get(JdbcConnectionParams.SSL_TRUST_STORE);
-      String sslTrustStorePassword=sessConfMap.get(JdbcConnectionParams.SSL_TRUST_STORE_PASSWORD);
-      KeyStore sslTrustStore;
-      SSLSocketFactory socketFactory;
-      try {
-        if (sslTrustStorePath == null || sslTrustStorePath.isEmpty()) {
-          socketFactory=SSLSocketFactory.getSocketFactory();
-        }
+  }
+  if (useSsl) {
+    String sslTrustStorePath=sessConfMap.get(JdbcConnectionParams.SSL_TRUST_STORE);
+    String sslTrustStorePassword=sessConfMap.get(JdbcConnectionParams.SSL_TRUST_STORE_PASSWORD);
+    KeyStore sslTrustStore;
+    SSLSocketFactory socketFactory;
+    try {
+      if (sslTrustStorePath == null || sslTrustStorePath.isEmpty()) {
+        socketFactory=SSLSocketFactory.getSocketFactory();
+      }
  else {
-          sslTrustStore=KeyStore.getInstance(JdbcConnectionParams.SSL_TRUST_STORE_TYPE);
-          sslTrustStore.load(new FileInputStream(sslTrustStorePath),sslTrustStorePassword.toCharArray());
-          socketFactory=new SSLSocketFactory(sslTrustStore);
-        }
-        socketFactory.setHostnameVerifier(SSLSocketFactory.ALLOW_ALL_HOSTNAME_VERIFIER);
-        Scheme sslScheme=new Scheme("https",443,socketFactory);
-        httpClient.getConnectionManager().getSchemeRegistry().register(sslScheme);
+        sslTrustStore=KeyStore.getInstance(JdbcConnectionParams.SSL_TRUST_STORE_TYPE);
+        sslTrustStore.load(new FileInputStream(sslTrustStorePath),sslTrustStorePassword.toCharArray());
+        socketFactory=new SSLSocketFactory(sslTrustStore);
       }
- catch (      Exception e) {
-        String msg="Could not create an https connection to " + jdbcUriString + ". "+ e.getMessage();
-        throw new SQLException(msg," 08S01",e);
-      }
+      socketFactory.setHostnameVerifier(SSLSocketFactory.ALLOW_ALL_HOSTNAME_VERIFIER);
+      Scheme sslScheme=new Scheme("https",443,socketFactory);
+      httpClient.getConnectionManager().getSchemeRegistry().register(sslScheme);
+    }
+ catch (    Exception e) {
+      String msg="Could not create an https connection to " + jdbcUriString + ". "+ e.getMessage();
+      throw new SQLException(msg," 08S01",e);
     }
   }
   httpClient.addRequestInterceptor(requestInterceptor);

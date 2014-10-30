@@ -1,0 +1,18 @@
+{
+  List<RexNode> exps=parent.getChildExps();
+  for (  RexNode rexNode : exps) {
+    if (rexNode.getKind() != SqlKind.LITERAL) {
+      throw new RuntimeException("We expect " + parent.toString() + " to contain only constants. However, "+ rexNode.toString()+ " is "+ rexNode.getKind());
+    }
+  }
+  HiveAggregateRel oldAggRel=(HiveAggregateRel)rel;
+  RelDataTypeFactory typeFactory=oldAggRel.getCluster().getTypeFactory();
+  RelDataType longType=TypeConverter.convert(TypeInfoFactory.longTypeInfo,typeFactory);
+  RelDataType intType=TypeConverter.convert(TypeInfoFactory.intTypeInfo,typeFactory);
+  Aggregation countFn=(Aggregation)SqlFunctionConverter.getOptiqAggFn("count",ImmutableList.of(intType),longType);
+  List<Integer> argList=ImmutableList.of(0);
+  AggregateCall dummyCall=new AggregateCall(countFn,false,argList,longType,null);
+  AggregateRelBase newAggRel=oldAggRel.copy(oldAggRel.getTraitSet(),oldAggRel.getChild(),oldAggRel.getGroupSet(),ImmutableList.of(dummyCall));
+  RelNode select=introduceDerivedTable(newAggRel);
+  parent.replaceInput(0,select);
+}

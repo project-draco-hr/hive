@@ -1,11 +1,15 @@
 {
   String zooKeeperEnsemble=connParams.getZooKeeperEnsemble();
   String zooKeeperNamespace=connParams.getSessionVars().get(JdbcConnectionParams.ZOOKEEPER_NAMESPACE);
+  if ((zooKeeperNamespace == null) || (zooKeeperNamespace.isEmpty())) {
+    zooKeeperNamespace=JdbcConnectionParams.ZOOKEEPER_DEFAULT_NAMESPACE;
+  }
   List<String> serverHosts;
   Random randomizer=new Random();
   String serverNode;
+  ZooKeeper zooKeeperClient=null;
   try {
-    ZooKeeper zooKeeperClient=new ZooKeeper(zooKeeperEnsemble,JdbcConnectionParams.ZOOKEEPER_SESSION_TIMEOUT,new ZooKeeperHiveClientHelper.DummyWatcher());
+    zooKeeperClient=new ZooKeeper(zooKeeperEnsemble,JdbcConnectionParams.ZOOKEEPER_SESSION_TIMEOUT,new ZooKeeperHiveClientHelper.DummyWatcher());
     serverHosts=zooKeeperClient.getChildren("/" + zooKeeperNamespace,false);
     serverHosts.removeAll(connParams.getRejectedHostZnodePaths());
     if (serverHosts.isEmpty()) {
@@ -19,5 +23,14 @@
   }
  catch (  Exception e) {
     throw new ZooKeeperHiveClientException("Unable to read HiveServer2 uri from ZooKeeper",e);
+  }
+ finally {
+    if (zooKeeperClient != null) {
+      try {
+        zooKeeperClient.close();
+      }
+ catch (      Exception e) {
+      }
+    }
   }
 }
