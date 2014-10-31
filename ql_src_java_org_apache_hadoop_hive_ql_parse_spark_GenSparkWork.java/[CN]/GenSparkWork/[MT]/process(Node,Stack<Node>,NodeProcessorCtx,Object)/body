@@ -11,13 +11,26 @@
     return null;
   }
   SparkWork sparkWork=context.currentTask.getWork();
+  if (GenSparkUtils.getChildOperator(root,DummyStoreOperator.class) != null) {
+    return null;
+  }
+  SMBMapJoinOperator smbOp=(SMBMapJoinOperator)GenSparkUtils.getChildOperator(root,SMBMapJoinOperator.class);
   BaseWork work;
   if (context.rootToWorkMap.containsKey(root)) {
     work=context.rootToWorkMap.get(root);
   }
  else {
     if (context.preceedingWork == null) {
-      work=utils.createMapWork(context,root,sparkWork,null);
+      if (smbOp != null) {
+        work=utils.createMapWork(context,root,sparkWork,null,true);
+        if (context.smbJoinWorkMap.get(smbOp) != null) {
+          throw new SemanticException("Each SMBMapJoin should be associated only with one Mapwork");
+        }
+        context.smbJoinWorkMap.put(smbOp,(MapWork)work);
+      }
+ else {
+        work=utils.createMapWork(context,root,sparkWork,null);
+      }
     }
  else {
       work=utils.createReduceWork(context,root,sparkWork);
@@ -112,6 +125,13 @@
       }
       if (rWork.getReducer() instanceof JoinOperator) {
         edgeProp.setMRShuffle();
+      }
+      FileSinkOperator fso=GenSparkUtils.getChildOperator(rWork.getReducer(),FileSinkOperator.class);
+      if (fso != null) {
+        String bucketCount=fso.getConf().getTableInfo().getProperties().getProperty(hive_metastoreConstants.BUCKET_COUNT);
+        if (bucketCount != null && Integer.valueOf(bucketCount) > 1) {
+          edgeProp.setMRShuffle();
+        }
       }
       sparkWork.connect(work,rWork,edgeProp);
       context.connectedReduceSinks.add(rs);
