@@ -60,10 +60,18 @@
     }
     String hiveConfArgs=generateCmdLine(conf,ctx);
     Path planPath=new Path(ctx.getLocalTmpPath(),"plan.xml");
-    OutputStream out=FileSystem.getLocal(conf).create(planPath);
     MapredWork plan=getWork();
     LOG.info("Generating plan file " + planPath.toString());
-    Utilities.serializePlan(plan,out,conf);
+    OutputStream out=null;
+    try {
+      out=FileSystem.getLocal(conf).create(planPath);
+      Utilities.serializePlan(plan,out,conf);
+      out.close();
+      out=null;
+    }
+  finally {
+      IOUtils.closeQuietly(out);
+    }
     String isSilent="true".equalsIgnoreCase(System.getProperty("test.silent")) ? "-nolog" : "";
     String jarCmd=hiveJar + " " + ExecDriver.class.getName()+ libJarsOption;
     String cmdLine=hadoopExec + " jar " + jarCmd+ " -plan "+ planPath.toString()+ " "+ isSilent+ " "+ hiveConfArgs;
