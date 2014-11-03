@@ -10,6 +10,19 @@
   Set<StatusGetOpts> opts=new HashSet<StatusGetOpts>();
   Heartbeater heartbeater=new Heartbeater(txnMgr,conf);
   long startTime=0;
+  boolean isProfileEnabled=conf.getBoolVar(conf,HiveConf.ConfVars.TEZ_EXEC_SUMMARY);
+  boolean inPlaceUpdates=conf.getBoolVar(conf,HiveConf.ConfVars.TEZ_EXEC_INPLACE_PROGRESS);
+  boolean wideTerminal=false;
+  boolean isTerminal=inPlaceUpdates == true ? isUnixTerminal() : false;
+  if (isTerminal) {
+    if (getTerminalWidth() >= MIN_TERMINAL_WIDTH) {
+      wideTerminal=true;
+    }
+  }
+  boolean inPlaceEligible=false;
+  if (inPlaceUpdates && isTerminal && wideTerminal&& !console.getIsSilent()) {
+    inPlaceEligible=true;
+  }
   shutdownList.add(dagClient);
   console.printInfo("\n");
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_RUN_DAG);
@@ -33,22 +46,40 @@ case RUNNING:
   if (!running) {
     perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.TEZ_SUBMIT_TO_RUNNING);
     console.printInfo("Status: Running (" + dagClient.getExecutionContext() + ")\n");
-    for (    String s : progressMap.keySet()) {
-      perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_RUN_VERTEX + s);
-    }
     startTime=System.currentTimeMillis();
     running=true;
   }
-lastReport=printStatus(progressMap,lastReport,console);
+if (inPlaceEligible) {
+  printStatusInPlace(progressMap,startTime,false,dagClient);
+  console.logInfo(getReport(progressMap));
+}
+ else {
+  lastReport=printStatus(progressMap,lastReport,console);
+}
 break;
 case SUCCEEDED:
+if (inPlaceEligible) {
+printStatusInPlace(progressMap,startTime,false,dagClient);
+console.logInfo(getReport(progressMap));
+}
+ else {
 lastReport=printStatus(progressMap,lastReport,console);
+}
+if (isProfileEnabled) {
 double duration=(System.currentTimeMillis() - startTime) / 1000.0;
-console.printInfo("Status: Finished successfully in " + String.format("%.2f seconds",duration));
+console.printInfo("Status: DAG finished successfully in " + String.format("%.2f seconds",duration));
+console.printInfo("\n");
+printMethodsSummary();
+printDagSummary(progressMap,console,dagClient,conf,dag);
+}
 running=false;
 done=true;
 break;
 case KILLED:
+if (inPlaceEligible) {
+printStatusInPlace(progressMap,startTime,true,dagClient);
+console.logInfo(getReport(progressMap));
+}
 console.printInfo("Status: Killed");
 running=false;
 done=true;
@@ -56,6 +87,10 @@ rc=1;
 break;
 case FAILED:
 case ERROR:
+if (inPlaceEligible) {
+printStatusInPlace(progressMap,startTime,true,dagClient);
+console.logInfo(getReport(progressMap));
+}
 console.printError("Status: Failed");
 running=false;
 done=true;

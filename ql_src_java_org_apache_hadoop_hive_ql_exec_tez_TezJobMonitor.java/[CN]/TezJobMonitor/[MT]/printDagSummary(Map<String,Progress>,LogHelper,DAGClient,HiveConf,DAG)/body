@@ -1,0 +1,57 @@
+{
+  String hiveCountersGroup=conf.getVar(conf,HiveConf.ConfVars.HIVECOUNTERGROUP);
+  Set<StatusGetOpts> statusGetOpts=EnumSet.of(StatusGetOpts.GET_COUNTERS);
+  TezCounters hiveCounters=null;
+  try {
+    hiveCounters=dagClient.getDAGStatus(statusGetOpts).getDAGCounters();
+  }
+ catch (  IOException e) {
+  }
+catch (  TezException e) {
+  }
+  if (hiveCounters == null) {
+    return;
+  }
+  console.printInfo(SUMMARY_HEADER);
+  SortedSet<String> keys=new TreeSet<String>(progressMap.keySet());
+  Set<StatusGetOpts> statusOptions=new HashSet<StatusGetOpts>(1);
+  statusOptions.add(StatusGetOpts.GET_COUNTERS);
+  for (  String vertexName : keys) {
+    Progress progress=progressMap.get(vertexName);
+    if (progress != null) {
+      final int totalTasks=progress.getTotalTaskCount();
+      final int failedTaskAttempts=progress.getFailedTaskAttemptCount();
+      final int killedTasks=progress.getKilledTaskCount();
+      final double duration=perfLogger.getDuration(PerfLogger.TEZ_RUN_VERTEX + vertexName) / 1000.0;
+      VertexStatus vertexStatus=null;
+      try {
+        vertexStatus=dagClient.getVertexStatus(vertexName,statusOptions);
+      }
+ catch (      IOException e) {
+      }
+catch (      TezException e) {
+      }
+      if (vertexStatus == null) {
+        continue;
+      }
+      Vertex currentVertex=dag.getVertex(vertexName);
+      List<Vertex> inputVerticesList=currentVertex.getInputVertices();
+      long hiveInputRecordsFromOtherVertices=0;
+      if (inputVerticesList.size() > 0) {
+        for (        Vertex inputVertex : inputVerticesList) {
+          String inputVertexName=inputVertex.getName();
+          hiveInputRecordsFromOtherVertices+=getCounterValueByGroupName(hiveCounters,hiveCountersGroup,String.format("%s_",ReduceSinkOperator.Counter.RECORDS_OUT_INTERMEDIATE.toString()) + inputVertexName.replace(" ","_"));
+          hiveInputRecordsFromOtherVertices+=getCounterValueByGroupName(hiveCounters,hiveCountersGroup,String.format("%s_",FileSinkOperator.Counter.RECORDS_OUT.toString()) + inputVertexName.replace(" ","_"));
+        }
+      }
+      final TezCounters vertexCounters=vertexStatus.getVertexCounters();
+      final double cpuTimeMillis=getCounterValueByGroupName(vertexCounters,TaskCounter.class.getName(),TaskCounter.CPU_MILLISECONDS.name());
+      final double gcTimeMillis=getCounterValueByGroupName(vertexCounters,TaskCounter.class.getName(),TaskCounter.GC_TIME_MILLIS.name());
+      final long hiveInputRecords=getCounterValueByGroupName(hiveCounters,hiveCountersGroup,MapOperator.Counter.RECORDS_IN.toString()) + hiveInputRecordsFromOtherVertices;
+      final long hiveOutputIntermediateRecords=getCounterValueByGroupName(hiveCounters,hiveCountersGroup,ReduceSinkOperator.Counter.RECORDS_OUT_INTERMEDIATE.toString());
+      final long hiveOutputRecords=getCounterValueByGroupName(hiveCounters,hiveCountersGroup,FileSinkOperator.Counter.RECORDS_OUT.toString()) + hiveOutputIntermediateRecords;
+      String vertexExecutionStats=String.format(SUMMARY_VERTEX_FORMAT,vertexName,totalTasks,failedTaskAttempts,killedTasks,secondsFormat.format((duration)),commaFormat.format(cpuTimeMillis),commaFormat.format(gcTimeMillis),commaFormat.format(hiveInputRecords),commaFormat.format(hiveOutputRecords));
+      console.printInfo(vertexExecutionStats);
+    }
+  }
+}
