@@ -6,6 +6,10 @@
     TTransportFactory transportFactory=hiveAuthFactory.getAuthTransFactory();
     TProcessorFactory processorFactory=hiveAuthFactory.getAuthProcFactory(this);
     TServerSocket serverSocket=null;
+    List<String> sslVersionBlacklist=new ArrayList<String>();
+    for (    String sslVersion : hiveConf.getVar(ConfVars.HIVE_SSL_PROTOCOL_BLACKLIST).split(",")) {
+      sslVersionBlacklist.add(sslVersion);
+    }
     if (!hiveConf.getBoolVar(ConfVars.HIVE_SERVER2_USE_SSL)) {
       serverSocket=HiveAuthFactory.getServerSocket(hiveHost,portNum);
     }
@@ -15,7 +19,7 @@
         throw new IllegalArgumentException(ConfVars.HIVE_SERVER2_SSL_KEYSTORE_PATH.varname + " Not configured for SSL connection");
       }
       String keyStorePassword=ShimLoader.getHadoopShims().getPassword(hiveConf,HiveConf.ConfVars.HIVE_SERVER2_SSL_KEYSTORE_PASSWORD.varname);
-      serverSocket=HiveAuthFactory.getServerSSLSocket(hiveHost,portNum,keyStorePath,keyStorePassword);
+      serverSocket=HiveAuthFactory.getServerSSLSocket(hiveHost,portNum,keyStorePath,keyStorePassword,sslVersionBlacklist);
     }
     int maxMessageSize=hiveConf.getIntVar(HiveConf.ConfVars.HIVE_SERVER2_THRIFT_MAX_MESSAGE_SIZE);
     TThreadPoolServer.Args sargs=new TThreadPoolServer.Args(serverSocket).processorFactory(processorFactory).transportFactory(transportFactory).protocolFactory(new TBinaryProtocol.Factory()).inputProtocolFactory(new TBinaryProtocol.Factory(true,true,maxMessageSize)).executorService(executorService);
