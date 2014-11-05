@@ -1,0 +1,41 @@
+{
+  ExprWalkerInfo joinPreds=owi.getPrunedPreds(join);
+  if (joinPreds == null || !joinPreds.hasAnyCandidates()) {
+    return;
+  }
+  Map<String,List<ExprNodeDesc>> oldFilters=joinPreds.getFinalCandidates();
+  Map<String,List<ExprNodeDesc>> newFilters=new HashMap<String,List<ExprNodeDesc>>();
+  List<Operator<? extends OperatorDesc>> parentOperators=join.getParentOperators();
+  ReduceSinkOperator target=(ReduceSinkOperator)parentOperators.get(targetPos);
+  List<ExprNodeDesc> targetKeys=target.getConf().getKeyCols();
+  ExprWalkerInfo rsPreds=owi.getPrunedPreds(target);
+  for (int sourcePos=0; sourcePos < parentOperators.size(); sourcePos++) {
+    ReduceSinkOperator source=(ReduceSinkOperator)parentOperators.get(sourcePos);
+    List<ExprNodeDesc> sourceKeys=source.getConf().getKeyCols();
+    Set<String> sourceAliases=new HashSet<String>(Arrays.asList(source.getInputAliases()));
+    for (    Map.Entry<String,List<ExprNodeDesc>> entry : oldFilters.entrySet()) {
+      if (entry.getKey() == null && ExprNodeDescUtils.isAllConstants(entry.getValue())) {
+        for (        String targetAlias : target.getInputAliases()) {
+          rsPreds.addPushDowns(targetAlias,entry.getValue());
+        }
+        continue;
+      }
+      if (!sourceAliases.contains(entry.getKey())) {
+        continue;
+      }
+      for (      ExprNodeDesc predicate : entry.getValue()) {
+        ExprNodeDesc backtrack=ExprNodeDescUtils.backtrack(predicate,join,source);
+        if (backtrack == null) {
+          continue;
+        }
+        ExprNodeDesc replaced=ExprNodeDescUtils.replace(backtrack,sourceKeys,targetKeys);
+        if (replaced == null) {
+          continue;
+        }
+        for (        String targetAlias : target.getInputAliases()) {
+          rsPreds.addFinalCandidate(targetAlias,replaced);
+        }
+      }
+    }
+  }
+}
