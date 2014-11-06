@@ -2,7 +2,6 @@
   OptimizeSparkProcContext context=(OptimizeSparkProcContext)procContext;
   ReduceSinkOperator sink=(ReduceSinkOperator)nd;
   ReduceSinkDesc desc=sink.getConf();
-  long bytesPerReducer=context.getConf().getLongVar(HiveConf.ConfVars.BYTESPERREDUCER);
   int maxReducers=context.getConf().getIntVar(HiveConf.ConfVars.MAXREDUCERS);
   int constantReducers=context.getConf().getIntVar(HiveConf.ConfVars.HADOOPNUMREDUCERS);
   if (context.getVisitedReduceSinks().contains(sink)) {
@@ -25,7 +24,15 @@
           LOG.warn("No stats available from: " + sibling);
         }
       }
+      if (sparkMemoryAndCores == null) {
+        sparkMemoryAndCores=SparkClient.getMemoryAndCores(context.getConf());
+      }
+      long bytesPerReducer=sparkMemoryAndCores._1.longValue() / 2;
       int numReducers=Utilities.estimateReducers(numberOfBytes,bytesPerReducer,maxReducers,false);
+      int cores=sparkMemoryAndCores._2.intValue();
+      if (numReducers < cores) {
+        numReducers=cores;
+      }
       LOG.info("Set parallelism for reduce sink " + sink + " to: "+ numReducers);
       desc.setNumReducers(numReducers);
     }
