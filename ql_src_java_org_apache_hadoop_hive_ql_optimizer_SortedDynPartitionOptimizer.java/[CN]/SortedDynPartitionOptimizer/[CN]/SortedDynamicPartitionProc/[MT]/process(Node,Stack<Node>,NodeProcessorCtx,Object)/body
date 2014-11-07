@@ -15,7 +15,10 @@
     LOG.debug("Bailing out of sort dynamic partition optimization as destination table is null");
     return null;
   }
-  removeRSInsertedByEnforceBucketing(fsOp);
+  if (!removeRSInsertedByEnforceBucketing(fsOp)) {
+    LOG.debug("Bailing out of sort dynamic partition optimization as some partition columns " + "got constant folded.");
+    return null;
+  }
   Operator<? extends OperatorDesc> fsParent=fsOp.getParentOperators().get(0);
   fsParent.getChildOperators().clear();
   DynamicPartitionCtx dpCtx=fsOp.getConf().getDynPartCtx();
@@ -49,7 +52,7 @@
   ArrayList<ExprNodeDesc> newValueCols=Lists.newArrayList();
   Map<String,ExprNodeDesc> colExprMap=Maps.newHashMap();
   for (  ColumnInfo ci : valColInfo) {
-    newValueCols.add(new ExprNodeColumnDesc(ci.getType(),ci.getInternalName(),ci.getTabAlias(),ci.isHiddenVirtualCol()));
+    newValueCols.add(new ExprNodeColumnDesc(ci));
     colExprMap.put(ci.getInternalName(),newValueCols.get(newValueCols.size() - 1));
   }
   ReduceSinkDesc rsConf=getReduceSinkDesc(partitionPositions,sortPositions,sortOrder,newValueCols,bucketColumns,numBuckets,fsParent,fsOp.getConf().getWriteType());

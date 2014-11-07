@@ -1,0 +1,69 @@
+{
+  StringBuffer reportBuffer=new StringBuffer();
+  int sumComplete=0;
+  int sumTotal=0;
+  repositionCursor();
+  reprintLine(separator);
+  reprintLineWithColorAsBold(HEADER,Ansi.Color.CYAN);
+  reprintLine(separator);
+  SortedSet<String> keys=new TreeSet<String>(progressMap.keySet());
+  int idx=0;
+  int maxKeys=keys.size();
+  for (  String s : keys) {
+    idx++;
+    Progress progress=progressMap.get(s);
+    final int complete=progress.getSucceededTaskCount();
+    final int total=progress.getTotalTaskCount();
+    final int running=progress.getRunningTaskCount();
+    final int failed=progress.getFailedTaskAttemptCount();
+    final int pending=progress.getTotalTaskCount() - progress.getSucceededTaskCount() - progress.getRunningTaskCount();
+    final int killed=progress.getKilledTaskCount();
+    VertexStatus.State vertexState=VertexStatus.State.INITIALIZING;
+    if (total > 0) {
+      vertexState=VertexStatus.State.INITED;
+      sumComplete+=complete;
+      sumTotal+=total;
+    }
+    if (complete < total && (complete > 0 || running > 0 || failed > 0)) {
+      vertexState=VertexStatus.State.RUNNING;
+      if (!perfLogger.startTimeHasMethod(PerfLogger.TEZ_RUN_VERTEX + s)) {
+        perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_RUN_VERTEX + s);
+      }
+    }
+    if (complete == total) {
+      vertexState=VertexStatus.State.SUCCEEDED;
+      if (!completed.contains(s)) {
+        completed.add(s);
+        if (!perfLogger.startTimeHasMethod(PerfLogger.TEZ_RUN_VERTEX + s)) {
+          perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_RUN_VERTEX + s);
+        }
+        perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.TEZ_RUN_VERTEX + s);
+      }
+    }
+    if (vextexStatusFromAM) {
+      VertexStatus vertexStatus=null;
+      try {
+        vertexStatus=dagClient.getVertexStatus(s,null);
+      }
+ catch (      IOException e) {
+      }
+catch (      TezException e) {
+      }
+      if (vertexStatus != null) {
+        vertexState=vertexStatus.getState();
+      }
+    }
+    String nameWithProgress=getNameWithProgress(s,complete,total);
+    String vertexStr=String.format(VERTEX_FORMAT,nameWithProgress,vertexState.toString(),total,complete,running,pending,failed,killed);
+    reportBuffer.append(vertexStr);
+    if (idx != maxKeys) {
+      reportBuffer.append("\n");
+    }
+  }
+  reprintMultiLine(reportBuffer.toString());
+  reprintLine(separator);
+  final float progress=(sumTotal == 0) ? 0.0f : (float)sumComplete / (float)sumTotal;
+  String footer=getFooter(keys.size(),completed.size(),progress,startTime);
+  reprintLineWithColorAsBold(footer,Ansi.Color.RED);
+  reprintLine(separator);
+}
