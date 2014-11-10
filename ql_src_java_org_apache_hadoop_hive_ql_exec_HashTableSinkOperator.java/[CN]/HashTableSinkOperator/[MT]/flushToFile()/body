@@ -10,9 +10,16 @@
     String fileName=getExecContext().getLocalWork().getBucketFileName(bigBucketFileName);
     String dumpFilePrefix=conf.getDumpFilePrefix();
     Path path=Utilities.generatePath(tmpURI,dumpFilePrefix,tag,fileName);
-    console.printInfo(Utilities.now() + "\tDump the side-table for tag: " + tag+ " with group count: "+ tableContainer.size()+ " into file: "+ path);
     FileSystem fs=path.getFileSystem(hconf);
-    ObjectOutputStream out=new ObjectOutputStream(new BufferedOutputStream(fs.create(path),4096));
+    short replication=fs.getDefaultReplication(path);
+    if (HiveConf.getVar(hconf,ConfVars.HIVE_EXECUTION_ENGINE).equals("spark")) {
+      fs.mkdirs(path);
+      path=new Path(path,getOperatorId() + "-" + (fileIndex++));
+      int numOfPartitions=10;
+      replication=(short)Math.min(10,numOfPartitions);
+    }
+    console.printInfo(Utilities.now() + "\tDump the side-table for tag: " + tag+ " with group count: "+ tableContainer.size()+ " into file: "+ path);
+    ObjectOutputStream out=new ObjectOutputStream(new BufferedOutputStream(fs.create(path,replication),4096));
     try {
       mapJoinTableSerdes[tag].persist(out,tableContainer);
     }
