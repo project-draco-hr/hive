@@ -9,21 +9,7 @@
   reduceWork.setNumReduceTasks(reduceSink.getConf().getNumReducers());
   setupReduceSink(context,reduceWork,reduceSink);
   sparkWork.add(reduceWork);
-  SparkEdgeProperty edgeProp=new SparkEdgeProperty(SparkEdgeProperty.SHUFFLE_GROUP,reduceWork.getNumReduceTasks());
-  String sortOrder=Strings.nullToEmpty(reduceSink.getConf().getOrder()).trim();
-  if (!sortOrder.isEmpty() && isSortNecessary(reduceSink)) {
-    edgeProp.setShuffleSort();
-  }
-  if (reduceWork.getReducer() instanceof JoinOperator) {
-    edgeProp.setMRShuffle();
-  }
-  FileSinkOperator fso=getChildOperator(reduceWork.getReducer(),FileSinkOperator.class);
-  if (fso != null) {
-    String bucketCount=fso.getConf().getTableInfo().getProperties().getProperty(hive_metastoreConstants.BUCKET_COUNT);
-    if (bucketCount != null && Integer.valueOf(bucketCount) > 1) {
-      edgeProp.setMRShuffle();
-    }
-  }
+  SparkEdgeProperty edgeProp=getEdgeProperty(reduceSink,reduceWork);
   sparkWork.connect(context.preceedingWork,reduceWork,edgeProp);
   context.connectedReduceSinks.add(reduceSink);
   return reduceWork;
