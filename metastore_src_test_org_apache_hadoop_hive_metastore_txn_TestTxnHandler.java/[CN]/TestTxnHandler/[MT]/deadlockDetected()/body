@@ -6,7 +6,7 @@
   stmt.executeUpdate("insert into HIVE_LOCKS (hl_lock_ext_id, hl_lock_int_id, hl_txnid, " + "hl_db, hl_table, hl_partition, hl_lock_state, hl_lock_type, hl_last_heartbeat, " + "hl_user, hl_host) values (1, 1, 1, 'mydb', 'mytable', 'mypartition', '" + txnHandler.LOCK_WAITING + "', '"+ txnHandler.LOCK_EXCLUSIVE+ "', "+ now+ ", 'fred', "+ "'scooby.com')");
   conn.commit();
   txnHandler.closeDbConn(conn);
-  final MetaStoreThread.BooleanPointer sawDeadlock=new MetaStoreThread.BooleanPointer();
+  final AtomicBoolean sawDeadlock=new AtomicBoolean();
   final Connection conn1=txnHandler.getDbConn(Connection.TRANSACTION_SERIALIZABLE);
   final Connection conn2=txnHandler.getDbConn(Connection.TRANSACTION_SERIALIZABLE);
   try {
@@ -28,7 +28,7 @@
               }
  catch (              TxnHandler.DeadlockException de) {
                 LOG.debug("Forced a deadlock, SQLState is " + e.getSQLState() + " class of "+ "exception is "+ e.getClass().getName()+ " msg is <"+ e.getMessage()+ ">");
-                sawDeadlock.boolVal=true;
+                sawDeadlock.set(true);
               }
             }
             conn1.rollback();
@@ -56,7 +56,7 @@
               }
  catch (              TxnHandler.DeadlockException de) {
                 LOG.debug("Forced a deadlock, SQLState is " + e.getSQLState() + " class of "+ "exception is "+ e.getClass().getName()+ " msg is <"+ e.getMessage()+ ">");
-                sawDeadlock.boolVal=true;
+                sawDeadlock.set(true);
               }
             }
             conn2.rollback();
@@ -71,9 +71,9 @@
       t2.start();
       t1.join();
       t2.join();
-      if (sawDeadlock.boolVal)       break;
+      if (sawDeadlock.get())       break;
     }
-    assertTrue(sawDeadlock.boolVal);
+    assertTrue(sawDeadlock.get());
   }
   finally {
     conn1.rollback();
