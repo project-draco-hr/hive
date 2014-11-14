@@ -14,7 +14,7 @@
     List<Operator<?>> parents=new ArrayList(mapJoinOp.getParentOperators());
     context.mapJoinParentMap.put(mapJoinOp,parents);
   }
-  List<BaseWork> mapJoinWork=null;
+  List<BaseWork> mapJoinWork;
   mapJoinWork=context.mapJoinWorkMap.get(mapJoinOp);
   BaseWork parentWork;
   if (context.unionWorkMap.containsKey(parentRS)) {
@@ -31,14 +31,13 @@
   }
   LOG.debug("Mapjoin " + mapJoinOp + ", pos: "+ pos+ " --> "+ parentWork.getName());
   mapJoinOp.getConf().getParentToInput().put(pos,parentWork.getName());
-  int numBuckets=-1;
   SparkEdgeProperty edgeProp=new SparkEdgeProperty(SparkEdgeProperty.SHUFFLE_NONE);
   if (mapJoinWork != null) {
     for (    BaseWork myWork : mapJoinWork) {
       SparkWork sparkWork=context.currentTask.getWork();
       LOG.debug("connecting " + parentWork.getName() + " with "+ myWork.getName());
       sparkWork.connect(parentWork,myWork,edgeProp);
-      ReduceSinkOperator r=null;
+      ReduceSinkOperator r;
       if (parentRS.getConf().getOutputName() != null) {
         LOG.debug("Cloning reduce sink for multi-child broadcast edge");
         r=(ReduceSinkOperator)OperatorFactory.getAndMakeChild((ReduceSinkDesc)parentRS.getConf().clone(),parentRS.getParentOperators());
@@ -101,13 +100,34 @@
   }
   context.linkChildOpWithDummyOp.put(mapJoinOp,dummyOperators);
   MapJoinDesc mjDesc=mapJoinOp.getConf();
+  HiveConf conf=context.conf;
+  float hashtableMemoryUsage;
+  if (hasGroupBy(mapJoinOp,context)) {
+    hashtableMemoryUsage=conf.getFloatVar(HiveConf.ConfVars.HIVEHASHTABLEFOLLOWBYGBYMAXMEMORYUSAGE);
+  }
+ else {
+    hashtableMemoryUsage=conf.getFloatVar(HiveConf.ConfVars.HIVEHASHTABLEMAXMEMORYUSAGE);
+  }
+  mjDesc.setHashTableMemoryUsage(hashtableMemoryUsage);
   SparkHashTableSinkDesc hashTableSinkDesc=new SparkHashTableSinkDesc(mjDesc);
   SparkHashTableSinkOperator hashTableSinkOp=(SparkHashTableSinkOperator)OperatorFactory.get(hashTableSinkDesc);
+  byte tag=(byte)pos;
+  int[] valueIndex=mjDesc.getValueIndex(tag);
+  if (valueIndex != null) {
+    List<ExprNodeDesc> newValues=new ArrayList<ExprNodeDesc>();
+    List<ExprNodeDesc> values=hashTableSinkDesc.getExprs().get(tag);
+    for (int index=0; index < values.size(); index++) {
+      if (valueIndex[index] < 0) {
+        newValues.add(values.get(index));
+      }
+    }
+    hashTableSinkDesc.getExprs().put(tag,newValues);
+  }
   List<Operator<? extends OperatorDesc>> RSparentOps=parentRS.getParentOperators();
   for (  Operator<? extends OperatorDesc> parent : RSparentOps) {
     parent.replaceChild(parentRS,hashTableSinkOp);
   }
   hashTableSinkOp.setParentOperators(RSparentOps);
-  hashTableSinkOp.setTag((byte)pos);
+  hashTableSinkOp.setTag(tag);
   return true;
 }
