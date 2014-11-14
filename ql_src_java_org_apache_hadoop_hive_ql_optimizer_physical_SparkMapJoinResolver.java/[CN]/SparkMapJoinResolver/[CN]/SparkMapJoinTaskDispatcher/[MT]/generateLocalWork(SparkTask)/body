@@ -1,0 +1,27 @@
+{
+  SparkWork originalWork=originalTask.getWork();
+  Collection<BaseWork> allBaseWorks=originalWork.getAllWorkUnsorted();
+  for (  BaseWork work : allBaseWorks) {
+    if (containsOp(work,SparkHashTableSinkOperator.class) || containsOp(work,MapJoinOperator.class)) {
+      work.setMapRedLocalWork(new MapredLocalWork());
+    }
+  }
+  Context ctx=physicalContext.getContext();
+  for (  BaseWork work : allBaseWorks) {
+    if (containsOp(work,MapJoinOperator.class)) {
+      Path tmpPath=Utilities.generateTmpPath(ctx.getMRTmpPath(),originalTask.getId());
+      MapredLocalWork bigTableLocalWork=work.getMapRedLocalWork();
+      List<Operator<? extends OperatorDesc>> dummyOps=new ArrayList<Operator<? extends OperatorDesc>>(work.getDummyOps());
+      bigTableLocalWork.setDummyParentOp(dummyOps);
+      for (      BaseWork parentWork : originalWork.getParents(work)) {
+        if (containsOp(parentWork,SparkHashTableSinkOperator.class)) {
+          parentWork.getMapRedLocalWork().setTmpHDFSPath(tmpPath);
+          parentWork.getMapRedLocalWork().setDummyParentOp(new ArrayList<Operator<? extends OperatorDesc>>());
+        }
+      }
+      bigTableLocalWork.setAliasToWork(new LinkedHashMap<String,Operator<? extends OperatorDesc>>());
+      bigTableLocalWork.setAliasToFetchWork(new LinkedHashMap<String,FetchWork>());
+      bigTableLocalWork.setTmpPath(tmpPath);
+    }
+  }
+}
