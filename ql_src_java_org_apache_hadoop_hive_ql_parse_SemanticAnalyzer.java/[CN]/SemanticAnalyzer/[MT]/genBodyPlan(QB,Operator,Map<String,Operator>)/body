@@ -12,7 +12,7 @@
     for (    String dest : ks) {
       curr=input;
       curr=genGroupByPlan2MRMultiGroupBy(dest,qb,curr);
-      curr=genSelectPlan(dest,qb,curr);
+      curr=genSelectPlan(dest,qb,curr,null);
       Integer limit=qbp.getDestLimit(dest);
       if (limit != null) {
         curr=genLimitMapRedPlan(dest,qb,curr,limit.intValue(),true);
@@ -49,6 +49,7 @@
               ASTNode whereExpr=qb.getParseInfo().getWhrForClause(dest);
               curr=genFilterPlan((ASTNode)whereExpr.getChild(0),qb,curr,aliasToOpInfo,false);
             }
+            Operator<?> gbySource=curr;
             if (qbp.getAggregationExprsForClause(dest).size() != 0 || getGroupByForClause(qbp,dest).size() > 0) {
               if (conf.getBoolVar(HiveConf.ConfVars.HIVEGROUPBYSKEW) && qbp.getDistinctFuncExprsForClause(dest).size() > 1) {
                 throw new SemanticException(ErrorMsg.UNSUPPORTED_MULTIPLE_DISTINCTS.getMsg());
@@ -69,7 +70,10 @@
                 curr=genGroupByPlan1MR(dest,qb,curr);
               }
             }
-            curr=genPostGroupByBodyPlan(curr,dest,qb,aliasToOpInfo);
+            if (LOG.isDebugEnabled()) {
+              LOG.debug("RR before GB " + opParseCtx.get(gbySource).getRowResolver() + " after GB "+ opParseCtx.get(curr).getRowResolver());
+            }
+            curr=genPostGroupByBodyPlan(curr,dest,qb,aliasToOpInfo,gbySource);
           }
         }
  else {

@@ -1,5 +1,8 @@
 {
-  if (tabAlias != null && !input.hasTableAlias(tabAlias)) {
+  if (colSrcRR == null) {
+    colSrcRR=input;
+  }
+  if (tabAlias != null && !colSrcRR.hasTableAlias(tabAlias)) {
     throw new SemanticException(ErrorMsg.INVALID_TABLE_ALIAS.getMsg(sel));
   }
   Pattern regex=null;
@@ -16,7 +19,7 @@
   }
   Map<ColumnInfo,ColumnInfo> inputColsProcessed=new HashMap<ColumnInfo,ColumnInfo>();
   for (  String alias : aliases) {
-    HashMap<String,ColumnInfo> fMap=input.getFieldMap(alias);
+    HashMap<String,ColumnInfo> fMap=colSrcRR.getFieldMap(alias);
     if (fMap == null) {
       continue;
     }
@@ -26,7 +29,7 @@
         continue;
       }
       String name=colInfo.getInternalName();
-      String[] tmp=input.reverseLookup(name);
+      String[] tmp=colSrcRR.reverseLookup(name);
       if (tabAlias != null && !tmp[0].equalsIgnoreCase(tabAlias)) {
         continue;
       }
@@ -35,6 +38,23 @@
       }
       if (!regex.matcher(tmp[1]).matches()) {
         continue;
+      }
+      if (input != colSrcRR) {
+        colInfo=input.get(tabAlias,tmp[1]);
+        if (colInfo == null) {
+          LOG.error("Cannot find colInfo for " + tabAlias + "."+ tmp[1]+ ", derived from ["+ colSrcRR+ "], in ["+ input+ "]");
+          throw new SemanticException(ErrorMsg.NON_KEY_EXPR_IN_GROUPBY,tmp[1]);
+        }
+        String oldCol=null;
+        if (LOG.isDebugEnabled()) {
+          oldCol=name + " => " + (tmp == null ? "null" : (tmp[0] + "." + tmp[1]));
+        }
+        name=colInfo.getInternalName();
+        tmp=input.reverseLookup(name);
+        if (LOG.isDebugEnabled()) {
+          String newCol=name + " => " + (tmp == null ? "null" : (tmp[0] + "." + tmp[1]));
+          LOG.debug("Translated [" + oldCol + "] to ["+ newCol+ "]");
+        }
       }
       ColumnInfo oColInfo=inputColsProcessed.get(colInfo);
       if (oColInfo == null) {
