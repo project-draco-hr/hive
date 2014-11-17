@@ -1,0 +1,93 @@
+{
+  if (colSrcRR == null) {
+    colSrcRR=input;
+  }
+  if (tabAlias != null && !colSrcRR.hasTableAlias(tabAlias)) {
+    throw new SemanticException(ErrorMsg.INVALID_TABLE_ALIAS.getMsg(sel));
+  }
+  Pattern regex=null;
+  try {
+    regex=Pattern.compile(colRegex,Pattern.CASE_INSENSITIVE);
+  }
+ catch (  PatternSyntaxException e) {
+    throw new SemanticException(ErrorMsg.INVALID_COLUMN.getMsg(sel,e.getMessage()));
+  }
+  StringBuilder replacementText=new StringBuilder();
+  int matched=0;
+  if (!aliases.contains("")) {
+    aliases.add("");
+  }
+  Map<ColumnInfo,ColumnInfo> inputColsProcessed=new HashMap<ColumnInfo,ColumnInfo>();
+  for (  String alias : aliases) {
+    HashMap<String,ColumnInfo> fMap=colSrcRR.getFieldMap(alias);
+    if (fMap == null) {
+      continue;
+    }
+    for (    Map.Entry<String,ColumnInfo> entry : fMap.entrySet()) {
+      ColumnInfo colInfo=entry.getValue();
+      if (excludeCols != null && excludeCols.contains(colInfo)) {
+        continue;
+      }
+      String name=colInfo.getInternalName();
+      String[] tmp=colSrcRR.reverseLookup(name);
+      if (tabAlias != null && !tmp[0].equalsIgnoreCase(tabAlias)) {
+        continue;
+      }
+      if (colInfo.getIsVirtualCol() && colInfo.isHiddenVirtualCol()) {
+        continue;
+      }
+      if (!regex.matcher(tmp[1]).matches()) {
+        continue;
+      }
+      if (input != colSrcRR) {
+        colInfo=input.get(tabAlias,tmp[1]);
+        if (colInfo == null) {
+          LOG.error("Cannot find colInfo for " + tabAlias + "."+ tmp[1]+ ", derived from ["+ colSrcRR+ "], in ["+ input+ "]");
+          throw new SemanticException(ErrorMsg.NON_KEY_EXPR_IN_GROUPBY,tmp[1]);
+        }
+        String oldCol=null;
+        if (LOG.isDebugEnabled()) {
+          oldCol=name + " => " + (tmp == null ? "null" : (tmp[0] + "." + tmp[1]));
+        }
+        name=colInfo.getInternalName();
+        tmp=input.reverseLookup(name);
+        if (LOG.isDebugEnabled()) {
+          String newCol=name + " => " + (tmp == null ? "null" : (tmp[0] + "." + tmp[1]));
+          LOG.debug("Translated [" + oldCol + "] to ["+ newCol+ "]");
+        }
+      }
+      ColumnInfo oColInfo=inputColsProcessed.get(colInfo);
+      if (oColInfo == null) {
+        ExprNodeColumnDesc expr=new ExprNodeColumnDesc(colInfo.getType(),name,colInfo.getTabAlias(),colInfo.getIsVirtualCol(),colInfo.isSkewedCol());
+        col_list.add(expr);
+        oColInfo=new ColumnInfo(getColumnInternalName(pos),colInfo.getType(),colInfo.getTabAlias(),colInfo.getIsVirtualCol(),colInfo.isHiddenVirtualCol());
+        inputColsProcessed.put(colInfo,oColInfo);
+      }
+      if (ensureUniqueCols) {
+        if (!output.putWithCheck(tmp[0],tmp[1],null,oColInfo)) {
+          throw new OptiqSemanticException("Cannot add column to RR: " + tmp[0] + "."+ tmp[1]+ " => "+ oColInfo+ " due to duplication, see previous warnings");
+        }
+      }
+ else {
+        output.put(tmp[0],tmp[1],oColInfo);
+      }
+      pos=Integer.valueOf(pos.intValue() + 1);
+      matched++;
+      if (unparseTranslator.isEnabled()) {
+        if (replacementText.length() > 0) {
+          replacementText.append(", ");
+        }
+        replacementText.append(HiveUtils.unparseIdentifier(tmp[0],conf));
+        replacementText.append(".");
+        replacementText.append(HiveUtils.unparseIdentifier(tmp[1],conf));
+      }
+    }
+  }
+  if (matched == 0) {
+    throw new SemanticException(ErrorMsg.INVALID_COLUMN.getMsg(sel));
+  }
+  if (unparseTranslator.isEnabled()) {
+    unparseTranslator.addTranslation(sel,replacementText.toString());
+  }
+  return pos;
+}

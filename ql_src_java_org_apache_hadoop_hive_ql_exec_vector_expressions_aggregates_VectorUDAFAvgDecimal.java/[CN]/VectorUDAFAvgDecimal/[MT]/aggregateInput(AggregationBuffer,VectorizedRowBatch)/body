@@ -6,17 +6,32 @@
     return;
   }
   Aggregation myagg=(Aggregation)agg;
-  Decimal128[] vector=inputVector.vector;
+  HiveDecimalWritable[] vector=inputVector.vector;
   if (inputVector.isRepeating) {
     if (inputVector.noNulls) {
       if (myagg.isNull) {
         myagg.isNull=false;
-        myagg.sum.zeroClear();
+        myagg.sum.set(HiveDecimal.ZERO);
         myagg.count=0;
       }
-      scratchDecimal.update(batchSize);
-      scratchDecimal.multiplyDestructive(vector[0],vector[0].getScale());
-      myagg.sum.update(scratchDecimal);
+      HiveDecimal value=vector[0].getHiveDecimal();
+      HiveDecimal multiple;
+      try {
+        multiple=value.multiply(HiveDecimal.create(batchSize));
+      }
+ catch (      ArithmeticException e) {
+        myagg.isOutOfRange=true;
+        return;
+      }
+      HiveDecimal result;
+      try {
+        result=myagg.sum.getHiveDecimal().add(multiple);
+      }
+ catch (      ArithmeticException e) {
+        myagg.isOutOfRange=true;
+        return;
+      }
+      myagg.sum.set(result);
       myagg.count+=batchSize;
     }
     return;

@@ -1,8 +1,41 @@
 {
   try {
-    BinaryComparable key1=(BinaryComparable)kvReadr1.getCurrentValue();
-    BinaryComparable key2=(BinaryComparable)kvReadr2.getCurrentValue();
-    return key1.compareTo(key2);
+    ObjectInspector oi=inputObjInspectors[0];
+    List<Object> row1, row2;
+    try {
+      if (kvReaderStandardObjMap.containsKey(kvReadr1)) {
+        row1=kvReaderStandardObjMap.get(kvReadr1);
+      }
+ else {
+        row1=(List<Object>)ObjectInspectorUtils.copyToStandardObject(deserializer.deserialize((Writable)kvReadr1.getCurrentValue()),oi,ObjectInspectorCopyOption.WRITABLE);
+        kvReaderStandardObjMap.put(kvReadr1,row1);
+      }
+      if (kvReaderStandardObjMap.containsKey(kvReadr2)) {
+        row2=kvReaderStandardObjMap.get(kvReadr2);
+      }
+ else {
+        row2=(List<Object>)ObjectInspectorUtils.copyToStandardObject(deserializer.deserialize((Writable)kvReadr2.getCurrentValue()),oi,ObjectInspectorCopyOption.WRITABLE);
+        kvReaderStandardObjMap.put(kvReadr2,row2);
+      }
+    }
+ catch (    SerDeException e) {
+      throw new IOException(e);
+    }
+    StructObjectInspector structOI=(StructObjectInspector)oi;
+    int compare=0;
+    int index=0;
+    for (    StructField sf : structFields) {
+      int pos=structOI.getAllStructFieldRefs().indexOf(sf);
+      Object key1=row1.get(pos);
+      Object key2=row2.get(pos);
+      ObjectInspector stdOI=fieldOIs.get(index);
+      compare=ObjectInspectorUtils.compare(key1,stdOI,key2,stdOI);
+      index++;
+      if (compare != 0) {
+        return compare;
+      }
+    }
+    return compare;
   }
  catch (  IOException e) {
     l4j.error("Caught exception while reading shuffle input",e);

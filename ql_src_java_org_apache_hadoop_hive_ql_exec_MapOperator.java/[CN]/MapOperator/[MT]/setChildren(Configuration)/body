@@ -1,45 +1,32 @@
 {
-  Path fpath=IOContext.get(hconf.get(Utilities.INPUT_NAME)).getInputPath();
-  boolean schemeless=fpath.toUri().getScheme() == null;
   List<Operator<? extends OperatorDesc>> children=new ArrayList<Operator<? extends OperatorDesc>>();
   Map<TableDesc,StructObjectInspector> convertedOI=getConvertedOI(hconf);
-  try {
-    for (    Map.Entry<String,ArrayList<String>> entry : conf.getPathToAliases().entrySet()) {
-      String onefile=entry.getKey();
-      List<String> aliases=entry.getValue();
-      Path onepath=new Path(onefile);
-      if (schemeless) {
-        onepath=new Path(onepath.toUri().getPath());
+  for (  Map.Entry<String,ArrayList<String>> entry : conf.getPathToAliases().entrySet()) {
+    String onefile=entry.getKey();
+    List<String> aliases=entry.getValue();
+    PartitionDesc partDesc=conf.getPathToPartitionInfo().get(onefile);
+    for (    String alias : aliases) {
+      Operator<? extends OperatorDesc> op=conf.getAliasToWork().get(alias);
+      if (isLogDebugEnabled) {
+        LOG.debug("Adding alias " + alias + " to work list for file "+ onefile);
       }
-      PartitionDesc partDesc=conf.getPathToPartitionInfo().get(onefile);
-      for (      String onealias : aliases) {
-        Operator<? extends OperatorDesc> op=conf.getAliasToWork().get(onealias);
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("Adding alias " + onealias + " to work list for file "+ onefile);
-        }
-        MapInputPath inp=new MapInputPath(onefile,onealias,op,partDesc);
-        if (opCtxMap.containsKey(inp)) {
-          continue;
-        }
-        MapOpCtx opCtx=initObjectInspector(hconf,inp,convertedOI);
-        opCtxMap.put(inp,opCtx);
-        op.setParentOperators(new ArrayList<Operator<? extends OperatorDesc>>());
+      Map<Operator<?>,MapOpCtx> contexts=opCtxMap.get(onefile);
+      if (contexts == null) {
+        opCtxMap.put(onefile,contexts=new LinkedHashMap<Operator<?>,MapOpCtx>());
+      }
+      if (contexts.containsKey(op)) {
+        continue;
+      }
+      MapOpCtx context=new MapOpCtx(alias,op,partDesc);
+      StructObjectInspector tableRowOI=convertedOI.get(partDesc.getTableDesc());
+      contexts.put(op,initObjectInspector(hconf,context,tableRowOI));
+      if (children.contains(op) == false) {
+        op.setParentOperators(new ArrayList<Operator<? extends OperatorDesc>>(1));
         op.getParentOperators().add(this);
-        if (!onepath.toUri().relativize(fpath.toUri()).equals(fpath.toUri())) {
-          children.add(op);
-          childrenOpToOpCtxMap.put(op,opCtx);
-          LOG.info("dump " + op + " "+ opCtxMap.get(inp).rowObjectInspector.getTypeName());
-        }
-        current=opCtx;
+        children.add(op);
       }
     }
-    if (children.size() == 0) {
-      LOG.error("Configuration does not have any alias for path: " + fpath.toUri());
-      throw new HiveException("Configuration and input path are inconsistent");
-    }
-    setChildOperators(children);
   }
- catch (  Exception e) {
-    throw new HiveException(e);
-  }
+  initOperatorContext(children);
+  setChildOperators(children);
 }

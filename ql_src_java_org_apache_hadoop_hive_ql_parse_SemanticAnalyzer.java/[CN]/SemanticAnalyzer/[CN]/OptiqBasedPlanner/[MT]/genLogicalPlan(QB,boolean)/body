@@ -9,15 +9,17 @@
   RelNode limitRel=null;
   RelNode rootRel=null;
   Map<String,RelNode> aliasToRel=new HashMap<String,RelNode>();
-  if (!canHandleQuery(qb,false)) {
-    String msg=String.format("CBO Can not handle Sub Query");
-    LOG.debug(msg);
+  String reason=canHandleQbForCbo(qb,false,LOG.isDebugEnabled());
+  if (reason != null) {
+    String msg="CBO can not handle Sub Query";
+    if (LOG.isDebugEnabled()) {
+      LOG.debug(msg + " because it: " + reason);
+    }
     throw new OptiqSemanticException(msg);
   }
   for (  String subqAlias : qb.getSubqAliases()) {
     QBExpr qbexpr=qb.getSubqForAlias(subqAlias);
     aliasToRel.put(subqAlias,genLogicalPlan(qbexpr));
-    qbexpr.setAlias(subqAlias);
   }
   for (  String tableAlias : qb.getTabAliases()) {
     RelNode op=genTableLogicalPlan(tableAlias,qb);
@@ -54,7 +56,9 @@
     }
 );
     RowResolver topConstrainingProjRR=new RowResolver();
-    RowResolver.add(topConstrainingProjRR,this.relToHiveRR.get(topConstrainingProjArgsRel),0);
+    if (!RowResolver.add(topConstrainingProjRR,this.relToHiveRR.get(topConstrainingProjArgsRel))) {
+      LOG.warn("Duplicates detected when adding columns to RR: see previous message");
+    }
     srcRel=genSelectRelNode(originalInputRefs,topConstrainingProjRR,srcRel);
   }
   if (qb.getParseInfo().getAlias() != null) {

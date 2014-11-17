@@ -3,45 +3,23 @@
   if (context != null && context.inputFileChanged()) {
     cleanUpInputFileChanged();
   }
-  Object row;
-  try {
-    row=current.readRow(value);
-    if (current.hasVC()) {
-      current.rowWithPartAndVC[0]=row;
-      if (context != null) {
-        populateVirtualColumnValues(context,current.vcs,current.vcValues,current.deserializer);
+  int childrenDone=0;
+  for (  MapOpCtx current : currentCtxs) {
+    Object row=null;
+    try {
+      row=current.readRow(value,context);
+      if (!current.forward(row)) {
+        childrenDone++;
       }
-      int vcPos=current.isPartitioned() ? 2 : 1;
-      current.rowWithPartAndVC[vcPos]=current.vcValues;
-      row=current.rowWithPartAndVC;
     }
- else     if (current.isPartitioned()) {
-      current.rowWithPart[0]=row;
-      row=current.rowWithPart;
+ catch (    Exception e) {
+      String message=toErrorMessage(value,row,current.rowObjectInspector);
+      if (row == null) {
+        deserialize_error_count.set(deserialize_error_count.get() + 1);
+        throw new HiveException("Hive Runtime Error while processing writable " + message,e);
+      }
+      throw new HiveException("Hive Runtime Error while processing row " + message,e);
     }
   }
- catch (  Exception e) {
-    String rawRowString;
-    try {
-      rawRowString=value.toString();
-    }
- catch (    Exception e2) {
-      rawRowString="[Error getting row data with exception " + StringUtils.stringifyException(e2) + " ]";
-    }
-    deserialize_error_count.set(deserialize_error_count.get() + 1);
-    throw new HiveException("Hive Runtime Error while processing writable " + rawRowString,e);
-  }
-  try {
-    forward(row,current.rowObjectInspector);
-  }
- catch (  Exception e) {
-    String rowString;
-    try {
-      rowString=SerDeUtils.getJSONString(row,current.rowObjectInspector);
-    }
- catch (    Exception e2) {
-      rowString="[Error getting row data with exception " + StringUtils.stringifyException(e2) + " ]";
-    }
-    throw new HiveException("Hive Runtime Error while processing row " + rowString,e);
-  }
+  rowsForwarded(childrenDone,1);
 }

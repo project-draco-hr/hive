@@ -20,6 +20,10 @@
   }
   ExprNodeDesc expr1=(ExprNodeDesc)nodeOutputs[0];
   ExprNodeDesc expr2=(ExprNodeDesc)nodeOutputs[1];
+  if (expr1.getTypeInfo().equals(expr2.getTypeInfo())) {
+    expr1=getColumnExpr(expr1);
+    expr2=getColumnExpr(expr2);
+  }
   ExprNodeDesc[] extracted=ExprNodeDescUtils.extractComparePair(expr1,expr2);
   if (extracted == null || (extracted.length > 2 && !acceptsFields)) {
     return expr;
@@ -35,11 +39,12 @@
     columnDesc=(ExprNodeColumnDesc)extracted[0];
     constantDesc=(ExprNodeConstantDesc)extracted[1];
   }
-  String udfName=genericUDF.getUdfName();
-  if (!udfNames.contains(genericUDF.getUdfName())) {
+  Set<String> allowed=columnToUDFs.get(columnDesc.getColumn());
+  if (allowed == null) {
     return expr;
   }
-  if (!allowedColumnNames.contains(columnDesc.getColumn())) {
+  String udfName=genericUDF.getUdfName();
+  if (!allowed.contains(genericUDF.getUdfName())) {
     return expr;
   }
   String[] fields=null;
@@ -50,6 +55,10 @@
     }
     fields=ExprNodeDescUtils.extractFields(fieldDesc);
   }
+  List<ExprNodeDesc> list=new ArrayList<ExprNodeDesc>();
+  list.add(expr1);
+  list.add(expr2);
+  expr=new ExprNodeGenericFuncDesc(expr.getTypeInfo(),expr.getGenericUDF(),list);
   searchConditions.add(new IndexSearchCondition(columnDesc,udfName,constantDesc,expr,fields));
   return fields == null ? null : expr;
 }

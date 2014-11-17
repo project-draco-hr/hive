@@ -1,19 +1,29 @@
 {
-  if (bucketToTaskMap.isEmpty()) {
-    inputToGroupedSplitMap.put(inputName,bucketToGroupedSplitMap);
-    return;
-  }
   List<InputDataInformationEvent> taskEvents=new ArrayList<InputDataInformationEvent>();
+  LOG.info("We have a routing table and we are going to set the destination tasks for the" + " multi mr inputs. " + bucketToTaskMap);
+  Integer[] numSplitsForTask=new Integer[taskCount];
+  Multimap<Integer,ByteBuffer> bucketToSerializedSplitMap=LinkedListMultimap.create();
   for (  Entry<Integer,Collection<InputSplit>> entry : bucketToGroupedSplitMap.asMap().entrySet()) {
+    for (    InputSplit split : entry.getValue()) {
+      MRSplitProto serializedSplit=MRInputHelpers.createSplitProto(split);
+      ByteBuffer bs=serializedSplit.toByteString().asReadOnlyByteBuffer();
+      bucketToSerializedSplitMap.put(entry.getKey(),bs);
+    }
+  }
+  for (  Entry<Integer,Collection<ByteBuffer>> entry : bucketToSerializedSplitMap.asMap().entrySet()) {
     Collection<Integer> destTasks=bucketToTaskMap.get(entry.getKey());
     for (    Integer task : destTasks) {
-      for (      InputSplit split : entry.getValue()) {
-        MRSplitProto serializedSplit=MRInputHelpers.createSplitProto(split);
-        InputDataInformationEvent diEvent=InputDataInformationEvent.createWithSerializedPayload(task,serializedSplit.toByteString().asReadOnlyByteBuffer());
+      int count=0;
+      for (      ByteBuffer buf : entry.getValue()) {
+        count++;
+        InputDataInformationEvent diEvent=InputDataInformationEvent.createWithSerializedPayload(count,buf);
         diEvent.setTargetIndex(task);
         taskEvents.add(diEvent);
       }
+      numSplitsForTask[task]=count;
     }
   }
+  inputNameInputSpecMap.put(inputName,InputSpecUpdate.createPerTaskInputSpecUpdate(Arrays.asList(numSplitsForTask)));
+  LOG.info("For input name: " + inputName + " task events size is "+ taskEvents.size());
   context.addRootInputEvents(inputName,taskEvents);
 }

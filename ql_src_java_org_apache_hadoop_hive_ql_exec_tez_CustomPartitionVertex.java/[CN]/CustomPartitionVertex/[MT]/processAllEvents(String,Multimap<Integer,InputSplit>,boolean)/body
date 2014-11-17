@@ -1,0 +1,70 @@
+{
+  int totalInputsCount=0;
+  List<Integer> numSplitsForTask=new ArrayList<Integer>();
+  for (  Entry<Integer,Collection<InputSplit>> entry : bucketToGroupedSplitMap.asMap().entrySet()) {
+    int bucketNum=entry.getKey();
+    Collection<InputSplit> initialSplits=entry.getValue();
+    finalSplits.addAll(initialSplits);
+    for (    InputSplit inputSplit : initialSplits) {
+      bucketToTaskMap.put(bucketNum,taskCount);
+      if (secondLevelGroupingDone) {
+        TezGroupedSplit groupedSplit=(TezGroupedSplit)inputSplit;
+        numSplitsForTask.add(groupedSplit.getGroupedSplits().size());
+        totalInputsCount+=groupedSplit.getGroupedSplits().size();
+      }
+ else {
+        numSplitsForTask.add(1);
+        totalInputsCount+=1;
+      }
+      taskCount++;
+    }
+  }
+  inputNameInputSpecMap.put(inputName,InputSpecUpdate.createPerTaskInputSpecUpdate(numSplitsForTask));
+  EdgeManagerPluginDescriptor hiveEdgeManagerDesc=null;
+  if ((vertexType == VertexType.MULTI_INPUT_INITIALIZED_EDGES) || (vertexType == VertexType.INITIALIZED_EDGES)) {
+    hiveEdgeManagerDesc=EdgeManagerPluginDescriptor.create(CustomPartitionEdge.class.getName());
+    UserPayload payload=getBytePayload(bucketToTaskMap);
+    hiveEdgeManagerDesc.setUserPayload(payload);
+  }
+  for (  Entry<String,EdgeProperty> edgeEntry : context.getInputVertexEdgeProperties().entrySet()) {
+    if (edgeEntry.getValue().getDataMovementType() == DataMovementType.CUSTOM && edgeEntry.getValue().getEdgeManagerDescriptor().getClassName().equals(CustomPartitionEdge.class.getName())) {
+      emMap.put(edgeEntry.getKey(),hiveEdgeManagerDesc);
+    }
+  }
+  LOG.info("Task count is " + taskCount + " for input name: "+ inputName);
+  List<InputDataInformationEvent> taskEvents=Lists.newArrayListWithCapacity(totalInputsCount);
+  int count=0;
+  for (  InputSplit inputSplit : finalSplits) {
+    if (secondLevelGroupingDone) {
+      TezGroupedSplit tezGroupedSplit=(TezGroupedSplit)inputSplit;
+      for (      InputSplit subSplit : tezGroupedSplit.getGroupedSplits()) {
+        if ((subSplit instanceof TezGroupedSplit) == false) {
+          throw new IOException("Unexpected split type found: " + subSplit.getClass().getCanonicalName());
+        }
+        MRSplitProto serializedSplit=MRInputHelpers.createSplitProto(subSplit);
+        InputDataInformationEvent diEvent=InputDataInformationEvent.createWithSerializedPayload(count,serializedSplit.toByteString().asReadOnlyByteBuffer());
+        diEvent.setTargetIndex(count);
+        taskEvents.add(diEvent);
+      }
+    }
+ else {
+      MRSplitProto serializedSplit=MRInputHelpers.createSplitProto(inputSplit);
+      InputDataInformationEvent diEvent=InputDataInformationEvent.createWithSerializedPayload(count,serializedSplit.toByteString().asReadOnlyByteBuffer());
+      diEvent.setTargetIndex(count);
+      taskEvents.add(diEvent);
+    }
+    count++;
+  }
+  LOG.info("For input name: " + inputName + " task events size is "+ taskEvents.size());
+  context.addRootInputEvents(inputName,taskEvents);
+  if (inputToGroupedSplitMap.isEmpty() == false) {
+    for (    Entry<String,Multimap<Integer,InputSplit>> entry : inputToGroupedSplitMap.entrySet()) {
+      processAllSideEvents(entry.getKey(),entry.getValue());
+    }
+    setVertexParallelismAndRootInputSpec(inputNameInputSpecMap);
+    inputToGroupedSplitMap.clear();
+  }
+  if (numInputsAffectingRootInputSpecUpdate == 1) {
+    setVertexParallelismAndRootInputSpec(inputNameInputSpecMap);
+  }
+}
