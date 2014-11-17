@@ -4,52 +4,39 @@
   boolean done=false;
   int failedCounter=0;
   int rc=0;
-  SparkJobState lastState=null;
+  JobExecutionStatus lastState=null;
   Map<String,SparkStageProgress> lastProgressMap=null;
   long startTime=0;
   while (true) {
     try {
-      Map<String,SparkStageProgress> progressMap=sparkJobStatus.getSparkStageProgress();
-      SparkJobState state=sparkJobStatus.getState();
-      if (state != lastState || state == SparkJobState.RUNNING) {
+      JobExecutionStatus state=sparkJobStatus.getState();
+      if (state != null && (state != lastState || state == JobExecutionStatus.RUNNING)) {
         lastState=state;
+        Map<String,SparkStageProgress> progressMap=sparkJobStatus.getSparkStageProgress();
 switch (state) {
-case SUBMITTED:
-          console.printInfo("Status: Submitted");
-        break;
-case INITING:
-      console.printInfo("Status: Initializing");
-    break;
 case RUNNING:
-  if (!running) {
-    console.printInfo("\nQuery Hive on Spark job[" + sparkJobStatus.getJobId() + "] stages:");
-    for (    int stageId : sparkJobStatus.getStageIds()) {
-      console.printInfo(Integer.toString(stageId));
-    }
-    console.printInfo("\nStatus: Running (Hive on Spark job[" + sparkJobStatus.getJobId() + "])");
-    startTime=System.currentTimeMillis();
-    running=true;
-    console.printInfo("Job Progress Format\nCurrentTime StageId_StageAttemptId: " + "SucceededTasksCount(+RunningTasksCount-FailedTasksCount)/TotalTasksCount [StageCost]");
-  }
-printStatus(progressMap,lastProgressMap);
-lastProgressMap=progressMap;
-break;
+          if (!running) {
+            console.printInfo("\nQuery Hive on Spark job[" + sparkJobStatus.getJobId() + "] stages:");
+            for (            int stageId : sparkJobStatus.getStageIds()) {
+              console.printInfo(Integer.toString(stageId));
+            }
+            console.printInfo("\nStatus: Running (Hive on Spark job[" + sparkJobStatus.getJobId() + "])");
+            startTime=System.currentTimeMillis();
+            running=true;
+            console.printInfo("Job Progress Format\nCurrentTime StageId_StageAttemptId: " + "SucceededTasksCount(+RunningTasksCount-FailedTasksCount)/TotalTasksCount [StageCost]");
+          }
+        printStatus(progressMap,lastProgressMap);
+      lastProgressMap=progressMap;
+    break;
 case SUCCEEDED:
-printStatus(progressMap,lastProgressMap);
+  printStatus(progressMap,lastProgressMap);
 lastProgressMap=progressMap;
 double duration=(System.currentTimeMillis() - startTime) / 1000.0;
 console.printInfo("Status: Finished successfully in " + String.format("%.2f seconds",duration));
 running=false;
 done=true;
 break;
-case KILLED:
-console.printInfo("Status: Killed");
-running=false;
-done=true;
-rc=1;
-break;
 case FAILED:
-case ERROR:
 console.printError("Status: Failed");
 running=false;
 done=true;
