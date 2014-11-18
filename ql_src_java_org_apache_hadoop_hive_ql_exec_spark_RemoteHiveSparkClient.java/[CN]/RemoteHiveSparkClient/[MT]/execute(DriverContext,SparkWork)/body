@@ -1,0 +1,38 @@
+{
+  final Context ctx=driverContext.getCtx();
+  final HiveConf hiveConf=(HiveConf)ctx.getConf();
+  refreshLocalResources(sparkWork,hiveConf);
+  final JobConf jobConf=new JobConf(hiveConf);
+  final Path emptyScratchDir=ctx.getMRTmpPath();
+  FileSystem fs=emptyScratchDir.getFileSystem(jobConf);
+  fs.mkdirs(emptyScratchDir);
+  final byte[] jobConfBytes=KryoSerializer.serializeJobConf(jobConf);
+  final byte[] scratchDirBytes=KryoSerializer.serialize(emptyScratchDir);
+  final byte[] sparkWorkBytes=KryoSerializer.serialize(sparkWork);
+  JobHandle<Serializable> jobHandle=remoteClient.submit(new Job<Serializable>(){
+    @Override public Serializable call(    JobContext jc) throws Exception {
+      JobConf localJobConf=KryoSerializer.deserializeJobConf(jobConfBytes);
+      Path localScratchDir=KryoSerializer.deserialize(scratchDirBytes,Path.class);
+      SparkWork localSparkWork=KryoSerializer.deserialize(sparkWorkBytes,SparkWork.class);
+      SparkCounters sparkCounters=new SparkCounters(jc.sc(),localJobConf);
+      Map<String,List<String>> prefixes=localSparkWork.getRequiredCounterPrefix();
+      if (prefixes != null) {
+        for (        String group : prefixes.keySet()) {
+          for (          String counterName : prefixes.get(group)) {
+            sparkCounters.createCounter(group,counterName);
+          }
+        }
+      }
+      SparkReporter sparkReporter=new SparkReporter(sparkCounters);
+      SparkPlanGenerator gen=new SparkPlanGenerator(jc.sc(),null,localJobConf,localScratchDir,sparkReporter);
+      SparkPlan plan=gen.generate(localSparkWork);
+      JavaPairRDD<HiveKey,BytesWritable> finalRDD=plan.generateGraph();
+      JavaFutureAction<Void> future=finalRDD.foreachAsync(HiveVoidFunction.getInstance());
+      jc.monitor(future);
+      return null;
+    }
+  }
+);
+  jobHandle.get();
+  return new SparkJobRef(jobHandle.getClientJobId());
+}

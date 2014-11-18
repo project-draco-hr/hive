@@ -15,26 +15,38 @@
       desc.setNumReducers(constantReducers);
     }
  else {
-      long numberOfBytes=0;
-      for (      Operator<? extends OperatorDesc> sibling : sink.getChildOperators().get(0).getParentOperators()) {
-        if (sibling.getStatistics() != null) {
-          numberOfBytes+=sibling.getStatistics().getDataSize();
+      try {
+        HiveSparkClient sparkClient=HiveSparkClientFactory.createHiveSparkClient(context.getConf());
+        if (sparkClient instanceof LocalHiveSparkClient) {
+          LocalHiveSparkClient localHiveSparkClient=(LocalHiveSparkClient)sparkClient;
+          long numberOfBytes=0;
+          for (          Operator<? extends OperatorDesc> sibling : sink.getChildOperators().get(0).getParentOperators()) {
+            if (sibling.getStatistics() != null) {
+              numberOfBytes+=sibling.getStatistics().getDataSize();
+            }
+ else {
+              LOG.warn("No stats available from: " + sibling);
+            }
+          }
+          if (sparkMemoryAndCores == null) {
+            sparkMemoryAndCores=localHiveSparkClient.getMemoryAndCores();
+          }
+          long bytesPerReducer=sparkMemoryAndCores._1.longValue() / 2;
+          int numReducers=Utilities.estimateReducers(numberOfBytes,bytesPerReducer,maxReducers,false);
+          int cores=sparkMemoryAndCores._2.intValue();
+          if (numReducers < cores) {
+            numReducers=cores;
+          }
+          LOG.info("Set parallelism for reduce sink " + sink + " to: "+ numReducers);
+          desc.setNumReducers(numReducers);
         }
  else {
-          LOG.warn("No stats available from: " + sibling);
+          sparkClient.close();
         }
       }
-      if (sparkMemoryAndCores == null) {
-        sparkMemoryAndCores=SparkClient.getMemoryAndCores(context.getConf());
+ catch (      Exception e) {
+        LOG.warn("Failed to create spark client.",e);
       }
-      long bytesPerReducer=sparkMemoryAndCores._1.longValue() / 2;
-      int numReducers=Utilities.estimateReducers(numberOfBytes,bytesPerReducer,maxReducers,false);
-      int cores=sparkMemoryAndCores._2.intValue();
-      if (numReducers < cores) {
-        numReducers=cores;
-      }
-      LOG.info("Set parallelism for reduce sink " + sink + " to: "+ numReducers);
-      desc.setNumReducers(numReducers);
     }
   }
  else {
