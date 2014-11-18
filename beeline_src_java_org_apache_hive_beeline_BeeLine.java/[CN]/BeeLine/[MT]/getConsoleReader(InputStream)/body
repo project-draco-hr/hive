@@ -1,29 +1,28 @@
 {
   if (inputStream != null) {
-    consoleReader=new ConsoleReader(inputStream,new PrintWriter(getOutputStream(),true));
+    consoleReader=new ConsoleReader(inputStream,getOutputStream());
   }
  else {
     consoleReader=new ConsoleReader();
   }
-  ByteArrayInputStream historyBuffer=null;
+  consoleReader.setExpandEvents(false);
+  ByteArrayOutputStream hist=null;
   if (new File(getOpts().getHistoryFile()).isFile()) {
     try {
       FileInputStream historyIn=new FileInputStream(getOpts().getHistoryFile());
-      ByteArrayOutputStream hist=new ByteArrayOutputStream();
+      hist=new ByteArrayOutputStream();
       int n;
       while ((n=historyIn.read()) != -1) {
         hist.write(n);
       }
       historyIn.close();
-      historyBuffer=new ByteArrayInputStream(hist.toByteArray());
     }
  catch (    Exception e) {
       handleException(e);
     }
   }
   try {
-    PrintWriter historyOut=new PrintWriter(new FileWriter(getOpts().getHistoryFile()),true);
-    consoleReader.getHistory().setOutput(historyOut);
+    consoleReader.setHistory(new FileHistory(new File(getOpts().getHistoryFile())));
   }
  catch (  Exception e) {
     handleException(e);
@@ -32,13 +31,33 @@
     return consoleReader;
   }
   try {
-    if (historyBuffer != null) {
-      consoleReader.getHistory().load(historyBuffer);
+    if (hist != null) {
+      History h=consoleReader.getHistory();
+      if (h instanceof FileHistory) {
+        ((FileHistory)consoleReader.getHistory()).load(new ByteArrayInputStream(hist.toByteArray()));
+      }
+ else {
+        consoleReader.getHistory().add(hist.toString());
+      }
     }
   }
  catch (  Exception e) {
     handleException(e);
   }
-  consoleReader.addCompletor(new BeeLineCompletor(this));
+  Runtime.getRuntime().addShutdownHook(new Thread(new Runnable(){
+    @Override public void run(){
+      History h=consoleReader.getHistory();
+      if (h instanceof FileHistory) {
+        try {
+          ((FileHistory)h).flush();
+        }
+ catch (        IOException e) {
+          error(e);
+        }
+      }
+    }
+  }
+));
+  consoleReader.addCompleter(new BeeLineCompleter(this));
   return consoleReader;
 }
