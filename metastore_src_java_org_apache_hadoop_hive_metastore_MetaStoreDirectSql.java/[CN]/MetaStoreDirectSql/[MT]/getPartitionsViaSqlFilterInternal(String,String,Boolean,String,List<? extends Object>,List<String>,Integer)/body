@@ -1,2 +1,40 @@
 {
+  boolean doTrace=LOG.isDebugEnabled();
+  dbName=dbName.toLowerCase();
+  tblName=tblName.toLowerCase();
+  String orderForFilter=(max != null) ? " order by \"PART_NAME\" asc" : "";
+  doDbSpecificInitializationsBeforeQuery();
+  String queryText="select \"PARTITIONS\".\"PART_ID\" from \"PARTITIONS\"" + "  inner join \"TBLS\" on \"PARTITIONS\".\"TBL_ID\" = \"TBLS\".\"TBL_ID\" " + "    and \"TBLS\".\"TBL_NAME\" = ? "+ "  inner join \"DBS\" on \"TBLS\".\"DB_ID\" = \"DBS\".\"DB_ID\" "+ "     and \"DBS\".\"NAME\" = ? " + join(joinsForFilter,' ') + (StringUtils.isBlank(sqlFilter) ? "" : (" where " + sqlFilter))+ orderForFilter;
+  Object[] params=new Object[paramsForFilter.size() + 2];
+  params[0]=tblName;
+  params[1]=dbName;
+  for (int i=0; i < paramsForFilter.size(); ++i) {
+    params[i + 2]=paramsForFilter.get(i);
+  }
+  long start=doTrace ? System.nanoTime() : 0;
+  Query query=pm.newQuery("javax.jdo.query.SQL",queryText);
+  if (max != null) {
+    query.setRange(0,max.shortValue());
+  }
+  List<Object> sqlResult=executeWithArray(query,params,queryText);
+  long queryTime=doTrace ? System.nanoTime() : 0;
+  if (sqlResult.isEmpty()) {
+    timingTrace(doTrace,queryText,start,queryTime);
+    return new ArrayList<Partition>();
+  }
+  List<Partition> result=null;
+  if (batchSize != NO_BATCHING && batchSize < sqlResult.size()) {
+    result=new ArrayList<Partition>(sqlResult.size());
+    while (result.size() < sqlResult.size()) {
+      int toIndex=Math.min(result.size() + batchSize,sqlResult.size());
+      List<Object> batchedSqlResult=sqlResult.subList(result.size(),toIndex);
+      result.addAll(getPartitionsFromPartitionIds(dbName,tblName,isView,batchedSqlResult));
+    }
+  }
+ else {
+    result=getPartitionsFromPartitionIds(dbName,tblName,isView,sqlResult);
+  }
+  timingTrace(doTrace,queryText,start,queryTime);
+  query.closeAll();
+  return result;
 }
