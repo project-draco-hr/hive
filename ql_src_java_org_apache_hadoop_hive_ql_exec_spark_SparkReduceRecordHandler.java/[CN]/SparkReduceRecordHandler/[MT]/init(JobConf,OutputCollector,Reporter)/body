@@ -68,14 +68,21 @@
     throw new RuntimeException(e);
   }
   ExecMapperContext execContext=new ExecMapperContext(job);
+  localWork=gWork.getMapRedLocalWork();
   execContext.setJc(jc);
-  execContext.setLocalWork(gWork.getMapRedLocalWork());
+  execContext.setLocalWork(localWork);
   reducer.setExecContext(execContext);
   reducer.setReporter(rp);
   OperatorUtils.setChildrenCollector(Arrays.<Operator<? extends OperatorDesc>>asList(reducer),output);
   try {
     LOG.info(reducer.dump(0));
     reducer.initialize(jc,rowObjectInspector);
+    if (localWork != null) {
+      for (      Operator<? extends OperatorDesc> dummyOp : localWork.getDummyParentOp()) {
+        dummyOp.setExecContext(execContext);
+        dummyOp.initialize(jc,null);
+      }
+    }
   }
  catch (  Throwable e) {
     abort=true;
