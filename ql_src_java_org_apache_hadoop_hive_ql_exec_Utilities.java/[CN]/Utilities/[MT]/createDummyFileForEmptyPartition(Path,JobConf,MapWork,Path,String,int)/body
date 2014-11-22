@@ -1,15 +1,16 @@
 {
   String strPath=path.toString();
   PartitionDesc partDesc=work.getPathToPartitionInfo().get(strPath);
-  boolean nonNative=partDesc.getTableDesc().isNonNative();
-  boolean oneRow=partDesc.getInputFileFormatClass() == OneNullRowInputFormat.class;
-  Properties props=SerDeUtils.createOverlayedProperties(partDesc.getTableDesc().getProperties(),partDesc.getProperties());
-  Class<? extends HiveOutputFormat> outFileFormat=partDesc.getOutputFileFormatClass();
-  if (nonNative) {
+  if (partDesc.getTableDesc().isNonNative()) {
     return path;
   }
+  Properties props=SerDeUtils.createOverlayedProperties(partDesc.getTableDesc().getProperties(),partDesc.getProperties());
+  HiveOutputFormat outFileFormat=HiveFileFormatUtils.getHiveOutputFormat(job,partDesc);
+  boolean oneRow=partDesc.getInputFileFormatClass() == OneNullRowInputFormat.class;
   Path newPath=createEmptyFile(hiveScratchDir,outFileFormat,job,sequenceNumber,props,oneRow);
-  LOG.info("Changed input file to " + newPath);
+  if (LOG.isInfoEnabled()) {
+    LOG.info("Changed input file " + strPath + " to empty file "+ newPath);
+  }
   String strNewPath=newPath.toString();
   LinkedHashMap<String,ArrayList<String>> pathToAliases=work.getPathToAliases();
   pathToAliases.put(strNewPath,pathToAliases.get(strPath));
