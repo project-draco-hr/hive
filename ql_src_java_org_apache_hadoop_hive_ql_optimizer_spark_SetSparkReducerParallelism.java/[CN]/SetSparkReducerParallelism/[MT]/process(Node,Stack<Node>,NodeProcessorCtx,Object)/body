@@ -16,33 +16,42 @@
     }
  else {
       try {
-        HiveSparkClient sparkClient=HiveSparkClientFactory.createHiveSparkClient(context.getConf());
-        if (sparkClient instanceof LocalHiveSparkClient) {
-          LocalHiveSparkClient localHiveSparkClient=(LocalHiveSparkClient)sparkClient;
-          long numberOfBytes=0;
-          for (          Operator<? extends OperatorDesc> sibling : sink.getChildOperators().get(0).getParentOperators()) {
-            if (sibling.getStatistics() != null) {
-              numberOfBytes+=sibling.getStatistics().getDataSize();
-            }
+        long numberOfBytes=0;
+        for (        Operator<? extends OperatorDesc> sibling : sink.getChildOperators().get(0).getParentOperators()) {
+          if (sibling.getStatistics() != null) {
+            numberOfBytes+=sibling.getStatistics().getDataSize();
+          }
  else {
-              LOG.warn("No stats available from: " + sibling);
+            LOG.warn("No stats available from: " + sibling);
+          }
+        }
+        if (sparkMemoryAndCores == null) {
+          SparkSessionManager sparkSessionManager=null;
+          SparkSession sparkSession=null;
+          try {
+            sparkSessionManager=SparkSessionManagerImpl.getInstance();
+            sparkSession=SparkUtilities.getSparkSession(context.getConf(),sparkSessionManager);
+            sparkMemoryAndCores=sparkSession.getMemoryAndCores();
+          }
+  finally {
+            if (sparkSession != null && sparkSessionManager != null) {
+              try {
+                sparkSessionManager.returnSession(sparkSession);
+              }
+ catch (              HiveException ex) {
+                LOG.error("Failed to return the session to SessionManager",ex);
+              }
             }
           }
-          if (sparkMemoryAndCores == null) {
-            sparkMemoryAndCores=localHiveSparkClient.getMemoryAndCores();
-          }
-          long bytesPerReducer=sparkMemoryAndCores._1.longValue() / 2;
-          int numReducers=Utilities.estimateReducers(numberOfBytes,bytesPerReducer,maxReducers,false);
-          int cores=sparkMemoryAndCores._2.intValue();
-          if (numReducers < cores) {
-            numReducers=cores;
-          }
-          LOG.info("Set parallelism for reduce sink " + sink + " to: "+ numReducers);
-          desc.setNumReducers(numReducers);
         }
- else {
-          sparkClient.close();
+        long bytesPerReducer=sparkMemoryAndCores._1.longValue() / 2;
+        int numReducers=Utilities.estimateReducers(numberOfBytes,bytesPerReducer,maxReducers,false);
+        int cores=sparkMemoryAndCores._2.intValue();
+        if (numReducers < cores) {
+          numReducers=cores;
         }
+        LOG.info("Set parallelism for reduce sink " + sink + " to: "+ numReducers);
+        desc.setNumReducers(numReducers);
       }
  catch (      Exception e) {
         LOG.warn("Failed to create spark client.",e);
