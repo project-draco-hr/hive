@@ -1,7 +1,26 @@
 {
   Integer sparkJobId=jobHandle.getSparkJobIds().size() == 1 ? jobHandle.getSparkJobIds().get(0) : null;
   if (sparkJobId == null) {
-    return null;
+    int duration=(int)((System.currentTimeMillis() - startTime) / 1000);
+    if (duration <= WAIT_SUBMISSION_TIMEOUT) {
+      return null;
+    }
+ else {
+      LOG.info("Job hasn't been submitted after " + duration + "s. Aborting it.");
+      jobHandle.cancel(false);
+      return new SparkJobInfo(){
+        @Override public int jobId(){
+          return -1;
+        }
+        @Override public int[] stageIds(){
+          return new int[0];
+        }
+        @Override public JobExecutionStatus status(){
+          return JobExecutionStatus.FAILED;
+        }
+      }
+;
+    }
   }
   JobHandle<HiveSparkJobInfo> getJobInfo=sparkClient.submit(new GetJobInfoJob(jobHandle.getClientJobId(),sparkJobId));
   try {
