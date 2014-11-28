@@ -43,8 +43,12 @@
     String master=conf.get("spark.master");
     Preconditions.checkArgument(master != null,"spark.master is not defined.");
     List<String> argv=Lists.newArrayList();
-    if (conf.get("spark.home") != null) {
-      argv.add(new File(conf.get("spark.home"),"bin/spark-submit").getAbsolutePath());
+    String sparkHome=conf.get("spark.home");
+    if (sparkHome == null) {
+      sparkHome=System.getProperty("spark.home");
+    }
+    if (sparkHome != null) {
+      argv.add(new File(sparkHome,"bin/spark-submit").getAbsolutePath());
     }
  else {
       LOG.info("No spark.home provided, calling SparkSubmit directly.");
@@ -88,11 +92,10 @@
     argv.add(String.format("%s/%s",SparkClientFactory.akkaUrl,name));
     LOG.debug("Running client driver with argv: {}",Joiner.on(" ").join(argv));
     ProcessBuilder pb=new ProcessBuilder(argv.toArray(new String[argv.size()]));
-    pb.environment().clear();
     final Process child=pb.start();
     int childId=childIdGenerator.incrementAndGet();
-    redirect("stdout-redir-" + childId,child.getInputStream(),System.out);
-    redirect("stderr-redir-" + childId,child.getErrorStream(),System.err);
+    redirect("stdout-redir-" + childId,child.getInputStream());
+    redirect("stderr-redir-" + childId,child.getErrorStream());
     runnable=new Runnable(){
       @Override public void run(){
         try {
