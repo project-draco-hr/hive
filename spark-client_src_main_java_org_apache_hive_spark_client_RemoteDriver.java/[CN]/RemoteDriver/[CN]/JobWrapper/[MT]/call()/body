@@ -1,8 +1,8 @@
 {
   try {
     jc.setMonitorCb(new MonitorCallback(){
-      @Override public void call(      JavaFutureAction<?> future){
-        monitorJob(future);
+      @Override public void call(      JavaFutureAction<?> future,      SparkCounters sparkCounters){
+        monitorJob(future,sparkCounters);
       }
     }
 );
@@ -13,10 +13,13 @@ synchronized (completed) {
         completed.wait();
       }
     }
-    client.tell(new Protocol.JobResult(req.id,result,null),actor);
+    if (sparkCounters != null) {
+      sparkCounters.dumpAllCounters();
+    }
+    client.tell(new Protocol.JobResult(req.id,result,null,sparkCounters),actor);
   }
  catch (  Throwable t) {
-    client.tell(new Protocol.JobResult(req.id,null,t),actor);
+    client.tell(new Protocol.JobResult(req.id,null,t,null),actor);
     throw new ExecutionException(t);
   }
  finally {
