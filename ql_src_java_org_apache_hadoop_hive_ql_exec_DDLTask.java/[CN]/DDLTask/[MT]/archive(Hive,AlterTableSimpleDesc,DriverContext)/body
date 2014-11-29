@@ -60,7 +60,6 @@
     recovery=true;
     console.printInfo("Starting recovery after failed ARCHIVE");
   }
-  HadoopShims shim=ShimLoader.getHadoopShims();
   if (!pathExists(intermediateArchivedDir) && !pathExists(intermediateOriginalDir)) {
     Path tmpPath=new Path(driverContext.getCtx().getExternalTmpPath(originalDir),"partlevel");
     console.printInfo("Creating " + archiveName + " for "+ originalDir.toString());
@@ -72,7 +71,15 @@
       String jobname=String.format("Archiving %s@%s",tbl.getTableName(),partSpecInfo.getName());
       jobname=Utilities.abbreviate(jobname,maxJobNameLen - 6);
       conf.setVar(HiveConf.ConfVars.HADOOPJOBNAME,jobname);
-      ret=shim.createHadoopArchive(conf,originalDir,tmpPath,archiveName);
+      HadoopArchives har=new HadoopArchives(conf);
+      List<String> args=new ArrayList<String>();
+      args.add("-archiveName");
+      args.add(archiveName);
+      args.add("-p");
+      args.add(originalDir.toString());
+      args.add(tmpPath.toString());
+      ret=ToolRunner.run(har,args.toArray(new String[0]));
+      ;
     }
  catch (    Exception e) {
       throw new HiveException(e);
@@ -113,8 +120,7 @@
   try {
     for (    Partition p : partitions) {
       URI originalPartitionUri=ArchiveUtils.addSlash(p.getDataLocation().toUri());
-      URI test=p.getDataLocation().toUri();
-      URI harPartitionDir=harHelper.getHarUri(originalPartitionUri,shim);
+      URI harPartitionDir=harHelper.getHarUri(originalPartitionUri);
       StringBuilder authority=new StringBuilder();
       if (harPartitionDir.getUserInfo() != null) {
         authority.append(harPartitionDir.getUserInfo()).append("@");

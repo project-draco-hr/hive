@@ -1,0 +1,27 @@
+{
+  HiveConf testConf=new HiveConf();
+  assertTrue(testConf.getVar(ConfVars.HIVE_SERVER2_BUILTIN_UDF_WHITELIST).isEmpty());
+  Statement stmt=hs2Conn.createStatement();
+  stmt.executeQuery("SELECT substr('foobar', 4) ");
+  hs2Conn.close();
+  miniHS2.stop();
+  Set<String> funcNames=FunctionRegistry.getFunctionNames();
+  funcNames.remove("reflect");
+  String funcNameStr="";
+  for (  String funcName : funcNames) {
+    funcNameStr+="," + funcName;
+  }
+  funcNameStr=funcNameStr.substring(1);
+  testConf.setVar(ConfVars.HIVE_SERVER2_BUILTIN_UDF_WHITELIST,funcNameStr);
+  miniHS2=new MiniHS2(testConf);
+  miniHS2.start(new HashMap<String,String>());
+  hs2Conn=getConnection(miniHS2.getJdbcURL(),System.getProperty("user.name"),"bar");
+  stmt=hs2Conn.createStatement();
+  stmt.executeQuery("SELECT substr('foobar', 3) ");
+  try {
+    stmt.executeQuery("SELECT reflect('java.lang.String', 'valueOf', 1) ");
+    fail("reflect() udf invocation should fail");
+  }
+ catch (  SQLException e) {
+  }
+}
