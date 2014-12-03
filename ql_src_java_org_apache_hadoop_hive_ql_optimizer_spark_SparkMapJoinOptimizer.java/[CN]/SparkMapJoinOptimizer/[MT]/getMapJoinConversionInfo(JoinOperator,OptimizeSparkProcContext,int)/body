@@ -10,19 +10,19 @@
     Statistics currInputStat=parentOp.getStatistics();
     if (currInputStat == null) {
       LOG.warn("Couldn't get statistics from: " + parentOp);
-      return -1;
+      return new ObjectPair(-1,0);
     }
     if (containUnionWithoutRS(parentOp.getParentOperators().get(0))) {
-      return -1;
+      return new ObjectPair(-1,0);
     }
     long inputSize=currInputStat.getDataSize();
     if ((bigInputStat == null) || ((bigInputStat != null) && (inputSize > bigInputStat.getDataSize()))) {
       if (bigTableFound) {
-        return -1;
+        return new ObjectPair(-1,0);
       }
       if (inputSize / buckets > maxSize) {
         if (!bigTableCandidateSet.contains(pos)) {
-          return -1;
+          return new ObjectPair(-1,0);
         }
         bigTableFound=true;
       }
@@ -30,7 +30,7 @@
         totalSize+=bigInputStat.getDataSize();
       }
       if (totalSize / buckets > maxSize) {
-        return -1;
+        return new ObjectPair(-1,0);
       }
       if (bigTableCandidateSet.contains(pos)) {
         bigTablePosition=pos;
@@ -40,10 +40,17 @@
  else {
       totalSize+=currInputStat.getDataSize();
       if (totalSize / buckets > maxSize) {
-        return -1;
+        return new ObjectPair(-1,0);
       }
     }
     pos++;
   }
-  return bigTablePosition;
+  if (bigTablePosition == -1) {
+    return new ObjectPair(-1,0);
+  }
+  long connectedMapJoinSize=getConnectedMapJoinSize(joinOp.getParentOperators().get(bigTablePosition),joinOp,context);
+  if ((connectedMapJoinSize + (totalSize / buckets)) > maxSize) {
+    return new ObjectPair(-1,0);
+  }
+  return new ObjectPair(bigTablePosition,connectedMapJoinSize + (totalSize / buckets));
 }
