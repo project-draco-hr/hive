@@ -1,0 +1,204 @@
+{
+  if (!GenMRSkewJoinProcessor.skewJoinEnabled(parseCtx.getConf(),joinOp) || !(currTask instanceof SparkTask)) {
+    return;
+  }
+  SparkWork currentWork=((SparkTask)currTask).getWork();
+  if (!supportRuntimeSkewJoin(currentWork,reduceWork)) {
+    return;
+  }
+  List<Task<? extends Serializable>> children=currTask.getChildTasks();
+  if (children != null && children.size() > 1) {
+    LOG.warn("Skip runtime skew join as current task has multiple children.");
+    return;
+  }
+  Task<? extends Serializable> child=children != null && children.size() == 1 ? children.get(0) : null;
+  Path baseTmpDir=parseCtx.getContext().getMRTmpPath();
+  JoinDesc joinDescriptor=joinOp.getConf();
+  Map<Byte,List<ExprNodeDesc>> joinValues=joinDescriptor.getExprs();
+  int numAliases=joinValues.size();
+  Map<Byte,Path> bigKeysDirMap=new HashMap<Byte,Path>();
+  Map<Byte,Map<Byte,Path>> smallKeysDirMap=new HashMap<Byte,Map<Byte,Path>>();
+  Map<Byte,Path> skewJoinJobResultsDir=new HashMap<Byte,Path>();
+  Byte[] tags=joinDescriptor.getTagOrder();
+  for (int i=0; i < numAliases; i++) {
+    Byte alias=tags[i];
+    bigKeysDirMap.put(alias,GenMRSkewJoinProcessor.getBigKeysDir(baseTmpDir,alias));
+    Map<Byte,Path> smallKeysMap=new HashMap<Byte,Path>();
+    smallKeysDirMap.put(alias,smallKeysMap);
+    for (    Byte src2 : tags) {
+      if (!src2.equals(alias)) {
+        smallKeysMap.put(src2,GenMRSkewJoinProcessor.getSmallKeysDir(baseTmpDir,alias,src2));
+      }
+    }
+    skewJoinJobResultsDir.put(alias,GenMRSkewJoinProcessor.getBigKeysSkewJoinResultDir(baseTmpDir,alias));
+  }
+  joinDescriptor.setHandleSkewJoin(true);
+  joinDescriptor.setBigKeysDirMap(bigKeysDirMap);
+  joinDescriptor.setSmallKeysDirMap(smallKeysDirMap);
+  joinDescriptor.setSkewKeyDefinition(HiveConf.getIntVar(parseCtx.getConf(),HiveConf.ConfVars.HIVESKEWJOINKEY));
+  TableDesc keyTblDesc=(TableDesc)reduceWork.getKeyDesc().clone();
+  List<String> joinKeys=Utilities.getColumnNames(keyTblDesc.getProperties());
+  List<String> joinKeyTypes=Utilities.getColumnTypes(keyTblDesc.getProperties());
+  Map<Byte,TableDesc> tableDescList=new HashMap<Byte,TableDesc>();
+  Map<Byte,RowSchema> rowSchemaList=new HashMap<Byte,RowSchema>();
+  Map<Byte,List<ExprNodeDesc>> newJoinValues=new HashMap<Byte,List<ExprNodeDesc>>();
+  Map<Byte,List<ExprNodeDesc>> newJoinKeys=new HashMap<Byte,List<ExprNodeDesc>>();
+  List<TableDesc> newJoinValueTblDesc=new ArrayList<TableDesc>();
+  for (  Byte tag : tags) {
+    newJoinValueTblDesc.add(null);
+  }
+  for (int i=0; i < numAliases; i++) {
+    Byte alias=tags[i];
+    List<ExprNodeDesc> valueCols=joinValues.get(alias);
+    String colNames="";
+    String colTypes="";
+    int columnSize=valueCols.size();
+    List<ExprNodeDesc> newValueExpr=new ArrayList<ExprNodeDesc>();
+    List<ExprNodeDesc> newKeyExpr=new ArrayList<ExprNodeDesc>();
+    ArrayList<ColumnInfo> columnInfos=new ArrayList<ColumnInfo>();
+    boolean first=true;
+    for (int k=0; k < columnSize; k++) {
+      TypeInfo type=valueCols.get(k).getTypeInfo();
+      String newColName=i + "_VALUE_" + k;
+      ColumnInfo columnInfo=new ColumnInfo(newColName,type,alias.toString(),false);
+      columnInfos.add(columnInfo);
+      newValueExpr.add(new ExprNodeColumnDesc(columnInfo.getType(),columnInfo.getInternalName(),columnInfo.getTabAlias(),false));
+      if (!first) {
+        colNames=colNames + ",";
+        colTypes=colTypes + ",";
+      }
+      first=false;
+      colNames=colNames + newColName;
+      colTypes=colTypes + valueCols.get(k).getTypeString();
+    }
+    for (int k=0; k < joinKeys.size(); k++) {
+      if (!first) {
+        colNames=colNames + ",";
+        colTypes=colTypes + ",";
+      }
+      first=false;
+      colNames=colNames + joinKeys.get(k);
+      colTypes=colTypes + joinKeyTypes.get(k);
+      ColumnInfo columnInfo=new ColumnInfo(joinKeys.get(k),TypeInfoFactory.getPrimitiveTypeInfo(joinKeyTypes.get(k)),alias.toString(),false);
+      columnInfos.add(columnInfo);
+      newKeyExpr.add(new ExprNodeColumnDesc(columnInfo.getType(),columnInfo.getInternalName(),columnInfo.getTabAlias(),false));
+    }
+    newJoinValues.put(alias,newValueExpr);
+    newJoinKeys.put(alias,newKeyExpr);
+    tableDescList.put(alias,Utilities.getTableDesc(colNames,colTypes));
+    rowSchemaList.put(alias,new RowSchema(columnInfos));
+    String valueColNames="";
+    String valueColTypes="";
+    first=true;
+    for (int k=0; k < columnSize; k++) {
+      String newColName=i + "_VALUE_" + k;
+      if (!first) {
+        valueColNames=valueColNames + ",";
+        valueColTypes=valueColTypes + ",";
+      }
+      valueColNames=valueColNames + newColName;
+      valueColTypes=valueColTypes + valueCols.get(k).getTypeString();
+      first=false;
+    }
+    newJoinValueTblDesc.set((byte)i,Utilities.getTableDesc(valueColNames,valueColTypes));
+  }
+  joinDescriptor.setSkewKeysValuesTables(tableDescList);
+  joinDescriptor.setKeyTableDesc(keyTblDesc);
+  HashMap<Path,Task<? extends Serializable>> bigKeysDirToTaskMap=new HashMap<Path,Task<? extends Serializable>>();
+  List<Serializable> listWorks=new ArrayList<Serializable>();
+  List<Task<? extends Serializable>> listTasks=new ArrayList<Task<? extends Serializable>>();
+  for (int i=0; i < numAliases - 1; i++) {
+    Byte src=tags[i];
+    HiveConf hiveConf=new HiveConf(parseCtx.getConf(),GenSparkSkewJoinProcessor.class);
+    SparkWork sparkWork=new SparkWork(parseCtx.getConf().getVar(HiveConf.ConfVars.HIVEQUERYID));
+    Task<? extends Serializable> skewJoinMapJoinTask=TaskFactory.get(sparkWork,hiveConf);
+    skewJoinMapJoinTask.setFetchSource(currTask.isFetchSource());
+    Operator<? extends OperatorDesc>[] parentOps=new TableScanOperator[tags.length];
+    for (int k=0; k < tags.length; k++) {
+      Operator<? extends OperatorDesc> ts=GenMapRedUtils.createTemporaryTableScanOperator(rowSchemaList.get((byte)k));
+      ((TableScanOperator)ts).setTableDesc(tableDescList.get((byte)k));
+      parentOps[k]=ts;
+    }
+    String dumpFilePrefix="mapfile" + PlanUtils.getCountForMapJoinDumpFilePrefix();
+    MapJoinDesc mapJoinDescriptor=new MapJoinDesc(newJoinKeys,keyTblDesc,newJoinValues,newJoinValueTblDesc,newJoinValueTblDesc,joinDescriptor.getOutputColumnNames(),i,joinDescriptor.getConds(),joinDescriptor.getFilters(),joinDescriptor.getNoOuterJoin(),dumpFilePrefix);
+    mapJoinDescriptor.setTagOrder(tags);
+    mapJoinDescriptor.setHandleSkewJoin(false);
+    mapJoinDescriptor.setNullSafes(joinDescriptor.getNullSafes());
+    MapJoinOperator mapJoinOp=(MapJoinOperator)OperatorFactory.getAndMakeChild(mapJoinDescriptor,null,parentOps);
+    List<Operator<?>> reducerList=new ArrayList<Operator<?>>();
+    reducerList.add(reduceWork.getReducer());
+    Operator<? extends OperatorDesc> reducer=Utilities.cloneOperatorTree(parseCtx.getConf(),reducerList).get(0);
+    Preconditions.checkArgument(reducer instanceof JoinOperator,"Reducer should be join operator, but actually is " + reducer.getName());
+    JoinOperator cloneJoinOp=(JoinOperator)reducer;
+    List<Operator<? extends OperatorDesc>> childOps=cloneJoinOp.getChildOperators();
+    for (    Operator<? extends OperatorDesc> childOp : childOps) {
+      childOp.replaceParent(cloneJoinOp,mapJoinOp);
+    }
+    mapJoinOp.setChildOperators(childOps);
+    setMemUsage(mapJoinOp,skewJoinMapJoinTask,parseCtx);
+    MapWork bigMapWork=null;
+    Map<Byte,Path> smallTblDirs=smallKeysDirMap.get(src);
+    for (int j=0; j < tags.length; j++) {
+      MapWork mapWork=PlanUtils.getMapRedWork().getMapWork();
+      sparkWork.add(mapWork);
+      boolean mapperCannotSpanPartns=parseCtx.getConf().getBoolVar(HiveConf.ConfVars.HIVE_MAPPER_CANNOT_SPAN_MULTIPLE_PARTITIONS);
+      mapWork.setMapperCannotSpanPartns(mapperCannotSpanPartns);
+      Operator<? extends OperatorDesc> tableScan=parentOps[j];
+      String alias=tags[j].toString();
+      ArrayList<String> aliases=new ArrayList<String>();
+      aliases.add(alias);
+      Path path;
+      if (j == i) {
+        path=bigKeysDirMap.get(tags[j]);
+        bigKeysDirToTaskMap.put(path,skewJoinMapJoinTask);
+        bigMapWork=mapWork;
+        cloneWorkGraph(currentWork,sparkWork,reduceWork,mapWork);
+      }
+ else {
+        path=smallTblDirs.get(tags[j]);
+      }
+      mapWork.getPathToAliases().put(path.toString(),aliases);
+      mapWork.getAliasToWork().put(alias,tableScan);
+      PartitionDesc partitionDesc=new PartitionDesc(tableDescList.get(tags[j]),null);
+      mapWork.getPathToPartitionInfo().put(path.toString(),partitionDesc);
+      mapWork.getAliasToPartnInfo().put(alias,partitionDesc);
+      mapWork.setNumMapTasks(HiveConf.getIntVar(hiveConf,HiveConf.ConfVars.HIVESKEWJOINMAPJOINNUMMAPTASK));
+      mapWork.setMinSplitSize(HiveConf.getLongVar(hiveConf,HiveConf.ConfVars.HIVESKEWJOINMAPJOINMINSPLIT));
+      mapWork.setInputformat(HiveInputFormat.class.getName());
+      mapWork.setName("Map " + GenSparkUtils.getUtils().getNextSeqNumber());
+    }
+    Preconditions.checkArgument(bigMapWork != null,"Haven't identified big dir MapWork");
+    for (    BaseWork work : sparkWork.getRoots()) {
+      Preconditions.checkArgument(work instanceof MapWork,"All root work should be MapWork, but got " + work.getClass().getSimpleName());
+      if (work != bigMapWork) {
+        sparkWork.connect(work,bigMapWork,new SparkEdgeProperty(SparkEdgeProperty.SHUFFLE_NONE));
+      }
+    }
+    for (int j=0; j < tags.length; j++) {
+      if (j != i) {
+        insertSHTS(tags[j],(TableScanOperator)parentOps[j],bigMapWork);
+      }
+    }
+    listWorks.add(skewJoinMapJoinTask.getWork());
+    listTasks.add(skewJoinMapJoinTask);
+  }
+  if (children != null) {
+    for (    Task<? extends Serializable> tsk : listTasks) {
+      for (      Task<? extends Serializable> oldChild : children) {
+        tsk.addDependentTask(oldChild);
+      }
+    }
+  }
+  if (child != null) {
+    currTask.removeDependentTask(child);
+    listTasks.add(child);
+  }
+  ConditionalResolverSkewJoin.ConditionalResolverSkewJoinCtx context=new ConditionalResolverSkewJoin.ConditionalResolverSkewJoinCtx(bigKeysDirToTaskMap,child);
+  ConditionalWork cndWork=new ConditionalWork(listWorks);
+  ConditionalTask cndTsk=(ConditionalTask)TaskFactory.get(cndWork,parseCtx.getConf());
+  cndTsk.setListTasks(listTasks);
+  cndTsk.setResolver(new ConditionalResolverSkewJoin());
+  cndTsk.setResolverCtx(context);
+  currTask.setChildTasks(new ArrayList<Task<? extends Serializable>>());
+  currTask.addDependentTask(cndTsk);
+}
