@@ -24,6 +24,21 @@
 ;
   }
  else {
+    String sparkHome=conf.get("spark.home");
+    if (sparkHome == null) {
+      sparkHome=System.getProperty("spark.home");
+    }
+    String sparkLogDir=conf.get("hive.spark.log.dir");
+    if (sparkLogDir == null) {
+      if (sparkHome == null) {
+        sparkLogDir="./target/";
+      }
+ else {
+        sparkLogDir=sparkHome + "/logs/";
+      }
+    }
+    String driverJavaOpts=Joiner.on(" ").skipNulls().join("-Dhive.spark.log.dir=" + sparkLogDir,conf.get(DRIVER_OPTS_KEY));
+    String executorJavaOpts=Joiner.on(" ").skipNulls().join("-Dhive.spark.log.dir=" + sparkLogDir,conf.get(EXECUTOR_OPTS_KEY));
     File properties=File.createTempFile("spark-submit.",".properties");
     if (!properties.setReadable(false) || !properties.setReadable(true,true)) {
       throw new IOException("Cannot change permissions of job properties file.");
@@ -33,6 +48,8 @@
       allProps.put(e.getKey(),conf.get(e.getKey()));
     }
     allProps.put(ClientUtils.CONF_KEY_SECRET,SparkClientFactory.secret);
+    allProps.put(DRIVER_OPTS_KEY,driverJavaOpts);
+    allProps.put(EXECUTOR_OPTS_KEY,executorJavaOpts);
     Writer writer=new OutputStreamWriter(new FileOutputStream(properties),Charsets.UTF_8);
     try {
       allProps.store(writer,"Spark Context configuration");
@@ -43,19 +60,6 @@
     String master=conf.get("spark.master");
     Preconditions.checkArgument(master != null,"spark.master is not defined.");
     List<String> argv=Lists.newArrayList();
-    String sparkHome=conf.get("spark.home");
-    if (sparkHome == null) {
-      sparkHome=System.getProperty("spark.home");
-    }
-    String sparkLogDir=conf.get("spark.log.dir");
-    if (sparkLogDir == null) {
-      if (sparkHome == null) {
-        sparkLogDir="./target/";
-      }
- else {
-        sparkLogDir=sparkHome + "/logs/";
-      }
-    }
     if (sparkHome != null) {
       argv.add(new File(sparkHome,"bin/spark-submit").getAbsolutePath());
     }
@@ -77,7 +81,7 @@
         if (libPath != null) {
           argv.add("-Djava.library.path=" + libPath);
         }
-        String extra=conf.get("spark.driver.extraJavaOptions");
+        String extra=conf.get(DRIVER_OPTS_KEY);
         if (extra != null) {
           for (          String opt : extra.split("[ ]")) {
             if (!opt.trim().isEmpty()) {
@@ -101,9 +105,6 @@
     argv.add(String.format("%s/%s",SparkClientFactory.akkaUrl,name));
     LOG.debug("Running client driver with argv: {}",Joiner.on(" ").join(argv));
     ProcessBuilder pb=new ProcessBuilder(argv.toArray(new String[argv.size()]));
-    Map<String,String> env=pb.environment();
-    String javaOpts=Joiner.on(" ").skipNulls().join("-Dspark.log.dir=" + sparkLogDir,env.get("SPARK_JAVA_OPTS"));
-    env.put("SPARK_JAVA_OPTS",javaOpts);
     final Process child=pb.start();
     int childId=childIdGenerator.incrementAndGet();
     redirect("stdout-redir-" + childId,child.getInputStream());
