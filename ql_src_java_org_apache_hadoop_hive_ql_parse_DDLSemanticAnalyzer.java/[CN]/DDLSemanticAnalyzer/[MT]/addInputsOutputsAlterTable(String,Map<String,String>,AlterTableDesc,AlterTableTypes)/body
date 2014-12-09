@@ -1,10 +1,11 @@
 {
+  boolean isCascade=desc != null && desc.getIsCascade();
   boolean alterPartitions=partSpec != null && !partSpec.isEmpty();
   if (isCascade && alterPartitions) {
-    throw new SemanticException(ErrorMsg.ALTER_TABLE_PARTITION_CASCADE_NOT_SUPPORTED,desc.getOp().name());
+    throw new SemanticException(ErrorMsg.ALTER_TABLE_PARTITION_CASCADE_NOT_SUPPORTED,op.getName());
   }
   Table tab=getTable(tableName,true);
-  WriteEntity.WriteType writeType=desc == null ? WriteEntity.WriteType.DDL_EXCLUSIVE : WriteEntity.determineAlterTableWriteType(desc.getOp());
+  WriteEntity.WriteType writeType=WriteEntity.determineAlterTableWriteType(op);
   if (!alterPartitions) {
     inputs.add(new ReadEntity(tab));
     outputs.add(new WriteEntity(tab,writeType));
@@ -23,9 +24,8 @@
       outputs.add(new WriteEntity(part,writeType));
     }
  else {
-      if (desc == null || !AlterTableDesc.doesAlterTableTypeSupportPartialPartitionSpec(desc.getOp())) {
-        String alterTabletype=(desc != null) ? desc.getOp().name() : "";
-        throw new SemanticException(ErrorMsg.ALTER_TABLE_TYPE_PARTIAL_PARTITION_SPEC_NO_SUPPORTED,alterTabletype);
+      if (!AlterTableDesc.doesAlterTableTypeSupportPartialPartitionSpec(op)) {
+        throw new SemanticException(ErrorMsg.ALTER_TABLE_TYPE_PARTIAL_PARTITION_SPEC_NO_SUPPORTED,op.getName());
       }
  else       if (!conf.getBoolVar(HiveConf.ConfVars.DYNAMICPARTITIONING)) {
         throw new SemanticException(ErrorMsg.DYNAMIC_PARTITION_DISABLED);
@@ -36,12 +36,11 @@
     }
   }
   if (desc != null) {
-    validateAlterTableType(tab,desc.getOp(),desc.getExpectView());
-    if (desc.getOp() == AlterTableDesc.AlterTableTypes.DROPPROPS && desc.getIsDropIfExists() == false) {
-      Iterator<String> keyItr=desc.getProps().keySet().iterator();
-      while (keyItr.hasNext()) {
-        String currKey=keyItr.next();
-        if (tab.getTTable().getParameters().containsKey(currKey) == false) {
+    validateAlterTableType(tab,op,desc.getExpectView());
+    if (op == AlterTableDesc.AlterTableTypes.DROPPROPS && !desc.getIsDropIfExists()) {
+      Map<String,String> tableParams=tab.getTTable().getParameters();
+      for (      String currKey : desc.getProps().keySet()) {
+        if (!tableParams.containsKey(currKey)) {
           String errorMsg="The following property " + currKey + " does not exist in "+ tab.getTableName();
           throw new SemanticException(ErrorMsg.ALTER_TBL_UNSET_NON_EXIST_PROPERTY.getMsg(errorMsg));
         }
