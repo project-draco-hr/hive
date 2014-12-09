@@ -1,0 +1,36 @@
+{
+  RexNode w=null;
+  TypeInfo wHiveRetType=null;
+  if (wExpSpec instanceof WindowFunctionSpec) {
+    WindowFunctionSpec wFnSpec=(WindowFunctionSpec)wExpSpec;
+    ASTNode windowProjAst=wFnSpec.getExpression();
+    int wndSpecASTIndx=getWindowSpecIndx(windowProjAst);
+    AggInfo hiveAggInfo=getHiveAggInfo(windowProjAst,wndSpecASTIndx - 1,this.relToHiveRR.get(srcRel));
+    wHiveRetType=hiveAggInfo.m_returnType;
+    RelDataType calciteAggFnRetType=TypeConverter.convert(hiveAggInfo.m_returnType,this.cluster.getTypeFactory());
+    ImmutableMap<String,Integer> posMap=this.relToHiveColNameCalcitePosMap.get(srcRel);
+    RexNodeConverter converter=new RexNodeConverter(this.cluster,srcRel.getRowType(),posMap,0,false);
+    Builder<RexNode> calciteAggFnArgsBldr=ImmutableList.<RexNode>builder();
+    Builder<RelDataType> calciteAggFnArgsTypeBldr=ImmutableList.<RelDataType>builder();
+    RexNode rexNd=null;
+    for (int i=0; i < hiveAggInfo.m_aggParams.size(); i++) {
+      calciteAggFnArgsBldr.add(converter.convert(hiveAggInfo.m_aggParams.get(i)));
+      calciteAggFnArgsTypeBldr.add(TypeConverter.convert(hiveAggInfo.m_aggParams.get(i).getTypeInfo(),this.cluster.getTypeFactory()));
+    }
+    ImmutableList<RexNode> calciteAggFnArgs=calciteAggFnArgsBldr.build();
+    ImmutableList<RelDataType> calciteAggFnArgsType=calciteAggFnArgsTypeBldr.build();
+    final SqlAggFunction calciteAggFn=SqlFunctionConverter.getCalciteAggFn(hiveAggInfo.m_udfName,calciteAggFnArgsType,calciteAggFnRetType);
+    RowResolver inputRR=relToHiveRR.get(srcRel);
+    WindowSpec wndSpec=((WindowFunctionSpec)wExpSpec).getWindowSpec();
+    List<RexNode> partitionKeys=getPartitionKeys(wndSpec.getPartition(),converter,inputRR);
+    List<RexFieldCollation> orderKeys=getOrderKeys(wndSpec.getOrder(),converter,inputRR);
+    RexWindowBound upperBound=getBound(wndSpec.windowFrame.start,converter);
+    RexWindowBound lowerBound=getBound(wndSpec.windowFrame.end,converter);
+    boolean isRows=((wndSpec.windowFrame.start instanceof RangeBoundarySpec) || (wndSpec.windowFrame.end instanceof RangeBoundarySpec)) ? true : false;
+    w=cluster.getRexBuilder().makeOver(calciteAggFnRetType,calciteAggFn,calciteAggFnArgs,partitionKeys,ImmutableList.<RexFieldCollation>copyOf(orderKeys),lowerBound,upperBound,isRows,true,false);
+  }
+ else {
+    throw new RuntimeException("Unsupported window Spec");
+  }
+  return new Pair(w,wHiveRetType);
+}
