@@ -11,11 +11,19 @@
       return;
     }
     FileSystem fs=FileSystem.get(baseDir.toUri(),hconf);
-    String fileName=localWork.getBucketFileName(currentInputPath);
+    BucketMapJoinContext mapJoinCtx=localWork.getBucketMapjoinContext();
     for (int pos=0; pos < mapJoinTables.length; pos++) {
       if (pos == desc.getPosBigTable() || mapJoinTables[pos] != null) {
         continue;
       }
+      String bigInputPath=currentInputPath;
+      if (currentInputPath != null && mapJoinCtx != null) {
+        Set<String> aliases=((SparkBucketMapJoinContext)mapJoinCtx).getPosToAliasMap().get(pos);
+        String alias=aliases.iterator().next();
+        String smallInputPath=mapJoinCtx.getAliasBucketFileNameMapping().get(alias).get(bigInputPath).get(0);
+        bigInputPath=mapJoinCtx.getMappingBigFile(alias,smallInputPath);
+      }
+      String fileName=localWork.getBucketFileName(bigInputPath);
       Path path=Utilities.generatePath(baseDir,desc.getDumpFilePrefix(),(byte)pos,fileName);
       LOG.info("\tLoad back all hashtable files from tmp folder uri:" + path);
       mapJoinTables[pos]=mapJoinTableSerdes[pos].load(fs,path);

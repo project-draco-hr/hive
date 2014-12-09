@@ -1,25 +1,32 @@
 {
   OptimizeSparkProcContext context=(OptimizeSparkProcContext)procCtx;
   HiveConf conf=context.getConf();
-  ParseContext parseContext=context.getParseContext();
   JoinOperator joinOp=(JoinOperator)nd;
   if (!conf.getBoolVar(HiveConf.ConfVars.HIVECONVERTJOIN)) {
     return null;
   }
-  int numBuckets=1;
-  LOG.info("Estimated number of buckets " + numBuckets);
-  LOG.info("Convert to non-bucketed map join");
-  ObjectPair<Integer,Long> mapJoinInfo=getMapJoinConversionInfo(joinOp,context,1);
-  int mapJoinConversionPos=mapJoinInfo.getFirst();
+  LOG.info("Check if it can be converted to map join");
+  long[] mapJoinInfo=getMapJoinConversionInfo(joinOp,context);
+  int mapJoinConversionPos=(int)mapJoinInfo[0];
   if (mapJoinConversionPos < 0) {
     return null;
   }
+  int numBuckets=-1;
+  List<List<String>> bucketColNames=null;
+  LOG.info("Convert to non-bucketed map join");
   MapJoinOperator mapJoinOp=convertJoinMapJoin(joinOp,context,mapJoinConversionPos);
-  mapJoinOp.setOpTraits(new OpTraits(null,-1,null));
-  mapJoinOp.setStatistics(joinOp.getStatistics());
-  for (  Operator<? extends OperatorDesc> childOp : mapJoinOp.getChildOperators()) {
-    setAllChildrenTraitsToNull(childOp);
+  if (conf.getBoolVar(HiveConf.ConfVars.HIVEOPTBUCKETMAPJOIN)) {
+    LOG.info("Check if it can be converted to bucketed map join");
+    numBuckets=convertJoinBucketMapJoin(joinOp,mapJoinOp,context,mapJoinConversionPos);
+    if (numBuckets > 1) {
+      bucketColNames=joinOp.getOpTraits().getBucketColNames();
+      mapJoinInfo[2]/=numBuckets;
+    }
   }
-  context.getMjOpSizes().put(mapJoinOp,mapJoinInfo.getSecond());
+  OpTraits opTraits=new OpTraits(bucketColNames,numBuckets,null);
+  mapJoinOp.setOpTraits(opTraits);
+  mapJoinOp.setStatistics(joinOp.getStatistics());
+  setNumberOfBucketsOnChildren(mapJoinOp);
+  context.getMjOpSizes().put(mapJoinOp,mapJoinInfo[1] + mapJoinInfo[2]);
   return null;
 }
