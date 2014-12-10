@@ -2,14 +2,18 @@
   this.activeJobs=Maps.newConcurrentMap();
   this.shutdownLock=new Object();
   SparkConf conf=new SparkConf();
-  String remote=null;
+  String serverAddress=null;
+  int serverPort=-1;
   for (int idx=0; idx < args.length; idx+=2) {
     String key=args[idx];
-    if (key.equals("--remote")) {
-      remote=getArg(args,idx);
+    if (key.equals("--remote-host")) {
+      serverAddress=getArg(args,idx);
+    }
+ else     if (key.equals("--remote-port")) {
+      serverPort=Integer.parseInt(getArg(args,idx));
     }
  else     if (key.equals("--secret")) {
-      conf.set(ClientUtils.CONF_KEY_SECRET,getArg(args,idx));
+      conf.set(SparkClientFactory.CONF_KEY_SECRET,getArg(args,idx));
     }
  else     if (key.equals("--conf")) {
       String[] val=getArg(args,idx).split("[=]",2);
@@ -20,15 +24,25 @@
     }
   }
   executor=Executors.newCachedThreadPool();
-  LOG.info("Connecting to: {}",remote);
+  LOG.info("Connecting to: {}:{}",serverAddress,serverPort);
   Map<String,String> mapConf=Maps.newHashMap();
   for (  Tuple2<String,String> e : conf.getAll()) {
     mapConf.put(e._1(),e._2());
   }
-  ClientUtils.ActorSystemInfo info=ClientUtils.createActorSystem(mapConf);
-  this.system=info.system;
-  this.actor=system.actorOf(Props.create(ServerActor.class,this),"RemoteDriver");
-  this.client=system.actorSelection(remote);
+  String secret=mapConf.get(SparkClientFactory.CONF_KEY_SECRET);
+  Preconditions.checkArgument(secret != null,"No secret provided.");
+  int threadCount=new RpcConfiguration(mapConf).getRpcThreadCount();
+  this.egroup=new NioEventLoopGroup(threadCount,new ThreadFactoryBuilder().setNameFormat("Driver-RPC-Handler-%d").setDaemon(true).build());
+  this.protocol=new DriverProtocol();
+  this.clientRpc=Rpc.createClient(mapConf,egroup,serverAddress,serverPort,secret,protocol).get();
+  this.running=true;
+  this.clientRpc.addListener(new Rpc.Listener(){
+    @Override public void rpcClosed(    Rpc rpc){
+      LOG.warn("Shutting down driver because RPC channel was closed.");
+      shutdown(null);
+    }
+  }
+);
   try {
     JavaSparkContext sc=new JavaSparkContext(conf);
     sc.sc().addSparkListener(new ClientListener());
@@ -36,9 +50,12 @@
   }
  catch (  Exception e) {
     LOG.error("Failed to start SparkContext.",e);
-    shutdown(new Protocol.Error(e));
+    shutdown(e);
     throw e;
   }
-  client.tell(new Protocol.Hello(info.url + "/RemoteDriver"),actor);
-  running=true;
+synchronized (jobQueue) {
+    for (Iterator<JobWrapper<?>> it=jobQueue.iterator(); it.hasNext(); ) {
+      it.next().submit();
+    }
+  }
 }
