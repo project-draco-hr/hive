@@ -3,7 +3,7 @@
   Preconditions.checkArgument(context != null,"AssertionError: expected context to be not null");
   Preconditions.checkArgument(context.currentTask != null,"AssertionError: expected context.currentTask to be not null");
   Preconditions.checkArgument(context.currentRootOperator != null,"AssertionError: expected context.currentRootOperator to be not null");
-  Operator<?> operator=(Operator<?>)nd;
+  Operator<? extends OperatorDesc> operator=(Operator<? extends OperatorDesc>)nd;
   Operator<?> root=context.currentRootOperator;
   LOG.debug("Root operator: " + root);
   LOG.debug("Leaf operator: " + operator);
@@ -14,7 +14,7 @@
   if (GenSparkUtils.getChildOperator(root,DummyStoreOperator.class) != null) {
     return null;
   }
-  SMBMapJoinOperator smbOp=(SMBMapJoinOperator)GenSparkUtils.getChildOperator(root,SMBMapJoinOperator.class);
+  SMBMapJoinOperator smbOp=GenSparkUtils.getChildOperator(root,SMBMapJoinOperator.class);
   BaseWork work;
   if (context.rootToWorkMap.containsKey(root)) {
     work=context.rootToWorkMap.get(root);
@@ -76,7 +76,6 @@
                 context.clonedReduceSinks.add(r);
               }
               r.getConf().setOutputName(work.getName());
-              context.connectedReduceSinks.add(r);
             }
           }
         }
@@ -84,43 +83,34 @@
     }
     context.currentMapJoinOperators.clear();
   }
-  for (  Operator<?> parent : new ArrayList<Operator<?>>(root.getParentOperators())) {
-    context.leafOperatorToFollowingWork.put(parent,work);
-    LOG.debug("Removing " + parent + " as parent from "+ root);
-    root.removeParent(parent);
+  if (root.getNumParent() > 0) {
+    Preconditions.checkArgument(work instanceof ReduceWork,"AssertionError: expected work to be a ReduceWork, but was " + work.getClass().getName());
+    ReduceWork reduceWork=(ReduceWork)work;
+    for (    Operator<?> parent : new ArrayList<Operator<?>>(root.getParentOperators())) {
+      Preconditions.checkArgument(parent instanceof ReduceSinkOperator,"AssertionError: expected operator to be a ReduceSinkOperator, but was " + parent.getClass().getName());
+      ReduceSinkOperator rsOp=(ReduceSinkOperator)parent;
+      SparkEdgeProperty edgeProp=GenSparkUtils.getEdgeProperty(rsOp,reduceWork);
+      rsOp.getConf().setOutputName(reduceWork.getName());
+      GenMapRedUtils.setKeyAndValueDesc(reduceWork,rsOp);
+      context.leafOpToFollowingWorkInfo.put(rsOp,ObjectPair.create(edgeProp,reduceWork));
+      LOG.debug("Removing " + parent + " as parent from "+ root);
+      root.removeParent(parent);
+    }
   }
   if (!context.currentUnionOperators.isEmpty()) {
-    UnionWork unionWork;
-    if (context.unionWorkMap.containsKey(operator)) {
-      Preconditions.checkArgument(operator.getChildOperators().isEmpty(),"AssertionError: expected operator.getChildOperators() to be empty");
-      unionWork=(UnionWork)context.unionWorkMap.get(operator);
-    }
- else {
-      unionWork=utils.createUnionWork(context,operator,sparkWork);
-    }
-    LOG.debug("Connecting union work (" + unionWork + ") with work ("+ work+ ")");
-    SparkEdgeProperty edgeProp=new SparkEdgeProperty(SparkEdgeProperty.SHUFFLE_NONE);
-    sparkWork.connect(work,unionWork,edgeProp);
-    unionWork.addUnionOperators(context.currentUnionOperators);
     context.currentUnionOperators.clear();
     context.workWithUnionOperators.add(work);
-    work=unionWork;
   }
-  if (context.leafOperatorToFollowingWork.containsKey(operator)) {
-    BaseWork followingWork=context.leafOperatorToFollowingWork.get(operator);
-    long bytesPerReducer=context.conf.getLongVar(HiveConf.ConfVars.BYTESPERREDUCER);
-    LOG.debug("Second pass. Leaf operator: " + operator + " has common downstream work:"+ followingWork);
-    Preconditions.checkArgument(operator instanceof ReduceSinkOperator,"AssertionError: expected operator to be an instance of ReduceSinkOperator, but was " + operator.getClass().getName());
-    Preconditions.checkArgument(followingWork instanceof ReduceWork,"AssertionError: expected followingWork to be an instance of ReduceWork, but was " + followingWork.getClass().getName());
-    ReduceSinkOperator rs=(ReduceSinkOperator)operator;
-    ReduceWork rWork=(ReduceWork)followingWork;
-    GenMapRedUtils.setKeyAndValueDesc(rWork,rs);
-    rWork.getTagToInput().put(rs.getConf().getTag(),work.getName());
-    rs.getConf().setOutputName(rWork.getName());
-    if (!context.connectedReduceSinks.contains(rs)) {
-      SparkEdgeProperty edgeProp=GenSparkUtils.getEdgeProperty(rs,rWork);
-      sparkWork.connect(work,rWork,edgeProp);
-      context.connectedReduceSinks.add(rs);
+  if (context.leafOpToFollowingWorkInfo.containsKey(operator)) {
+    ObjectPair<SparkEdgeProperty,ReduceWork> childWorkInfo=context.leafOpToFollowingWorkInfo.get(operator);
+    SparkEdgeProperty edgeProp=childWorkInfo.getFirst();
+    ReduceWork childWork=childWorkInfo.getSecond();
+    LOG.debug("Second pass. Leaf operator: " + operator + " has common downstream work:"+ childWork);
+    if (sparkWork.getEdgeProperty(work,childWork) == null) {
+      sparkWork.connect(work,childWork,edgeProp);
+    }
+ else {
+      LOG.debug("work " + work.getName() + " is already connected to "+ childWork.getName()+ " before");
     }
   }
  else {
