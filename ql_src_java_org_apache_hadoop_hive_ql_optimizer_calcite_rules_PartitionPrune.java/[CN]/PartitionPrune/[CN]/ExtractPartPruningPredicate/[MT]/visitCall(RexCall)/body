@@ -2,12 +2,27 @@
   if (!deep) {
     return null;
   }
+  GenericUDF hiveUDF=null;
+  try {
+    hiveUDF=SqlFunctionConverter.getHiveUDF(call.getOperator(),call.getType(),call.operands.size());
+    if (hiveUDF != null && !FunctionRegistry.isDeterministic(hiveUDF)) {
+      return null;
+    }
+  }
+  finally {
+    if (hiveUDF != null) {
+      try {
+        hiveUDF.close();
+      }
+ catch (      IOException e) {
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("Exception in closing " + hiveUDF,e);
+        }
+      }
+    }
+  }
   List<RexNode> args=new LinkedList<RexNode>();
   boolean argsPruned=false;
-  GenericUDF hiveUDF=SqlFunctionConverter.getHiveUDF(call.getOperator(),call.getType(),call.operands.size());
-  if (hiveUDF != null && !FunctionRegistry.isDeterministic(hiveUDF)) {
-    return null;
-  }
   for (  RexNode operand : call.operands) {
     RexNode n=operand.accept(this);
     if (n != null) {
