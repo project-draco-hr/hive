@@ -6,7 +6,7 @@
   GenSparkProcContext procCtx=new GenSparkProcContext(conf,tempParseContext,mvTask,rootTasks,inputs,outputs,pCtx.getTopOps());
   Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
   opRules.put(new RuleRegExp("Split Work - ReduceSink",ReduceSinkOperator.getOperatorName() + "%"),genSparkWork);
-  opRules.put(new RuleRegExp("No more walking on ReduceSink-MapJoin",MapJoinOperator.getOperatorName() + "%"),new SparkReduceSinkMapJoinProc());
+  opRules.put(new TypeRule(MapJoinOperator.class),new SparkReduceSinkMapJoinProc());
   opRules.put(new RuleRegExp("Split Work + Move/Merge - FileSink",FileSinkOperator.getOperatorName() + "%"),new CompositeProcessor(new SparkFileSinkProcessor(),genSparkWork));
   opRules.put(new RuleRegExp("Handle Analyze Command",TableScanOperator.getOperatorName() + "%"),new SparkProcessAnalyzeTable(GenSparkUtils.getUtils()));
   opRules.put(new RuleRegExp("Remember union",UnionOperator.getOperatorName() + "%"),new NodeProcessor(){
@@ -15,6 +15,17 @@
       UnionOperator union=(UnionOperator)n;
       context.currentUnionOperators.add(union);
       return null;
+    }
+  }
+);
+  opRules.put(new TypeRule(SMBMapJoinOperator.class),new NodeProcessor(){
+    @Override public Object process(    Node currNode,    Stack<Node> stack,    NodeProcessorCtx procCtx,    Object... os) throws SemanticException {
+      for (      Node stackNode : stack) {
+        if (stackNode instanceof DummyStoreOperator) {
+          return true;
+        }
+      }
+      return false;
     }
   }
 );
