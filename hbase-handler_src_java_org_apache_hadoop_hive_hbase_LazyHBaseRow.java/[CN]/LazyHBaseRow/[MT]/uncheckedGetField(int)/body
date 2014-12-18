@@ -2,13 +2,13 @@
   LazyObjectBase[] fields=getFields();
   boolean[] fieldsInited=getFieldInited();
   if (!fieldsInited[fieldID]) {
-    ByteArrayRef ref=null;
+    fieldsInited[fieldID]=true;
     ColumnMapping colMap=columnsMapping[fieldID];
-    if (colMap.hbaseRowKey) {
-      ref=new ByteArrayRef();
-      ref.setData(result.getRow());
+    if (!colMap.hbaseRowKey && !colMap.hbaseTimestamp && colMap.qualifierName == null) {
+      ((LazyHBaseCellMap)fields[fieldID]).init(result,colMap.familyNameBytes,colMap.binaryStorage,colMap.qualifierPrefixBytes);
+      return fields[fieldID].getObject();
     }
- else     if (colMap.hbaseTimestamp) {
+    if (colMap.hbaseTimestamp) {
       long timestamp=result.rawCells()[0].getTimestamp();
       LazyObjectBase lz=fields[fieldID];
       if (lz instanceof LazyTimestamp) {
@@ -17,26 +17,23 @@
  else {
         ((LazyLong)lz).getWritableObject().set(timestamp);
       }
+      return lz.getObject();
+    }
+    byte[] bytes;
+    if (colMap.hbaseRowKey) {
+      bytes=result.getRow();
     }
  else {
-      if (colMap.qualifierName == null) {
-        ((LazyHBaseCellMap)fields[fieldID]).init(result,colMap.familyNameBytes,colMap.binaryStorage,colMap.qualifierPrefixBytes);
-      }
- else {
-        byte[] res=result.getValue(colMap.familyNameBytes,colMap.qualifierNameBytes);
-        if (res == null) {
-          return null;
-        }
- else {
-          ref=new ByteArrayRef();
-          ref.setData(res);
-        }
-      }
+      bytes=result.getValue(colMap.familyNameBytes,colMap.qualifierNameBytes);
     }
-    if (ref != null) {
-      fields[fieldID].init(ref,0,ref.getData().length);
+    if (bytes == null || isNull(oi.getNullSequence(),bytes,0,bytes.length)) {
+      fields[fieldID].setNull();
+    }
+ else {
+      ByteArrayRef ref=new ByteArrayRef();
+      ref.setData(bytes);
+      fields[fieldID].init(ref,0,bytes.length);
     }
   }
-  fieldsInited[fieldID]=true;
   return fields[fieldID].getObject();
 }
