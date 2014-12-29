@@ -25,29 +25,30 @@ catch (  Exception e) {
     if (forceCreate) {
       if (tpart == null) {
         LOG.debug("creating partition for table " + tbl.getTableName() + " with partition spec : "+ partSpec);
-        tpart=getMSC().appendPartition(tbl.getDbName(),tbl.getTableName(),pvals);
+        try {
+          tpart=getMSC().appendPartition(tbl.getDbName(),tbl.getTableName(),pvals);
+        }
+ catch (        AlreadyExistsException aee) {
+          LOG.debug("Caught already exists exception, trying to alter partition instead");
+          tpart=getMSC().getPartitionWithAuthInfo(tbl.getDbName(),tbl.getTableName(),pvals,getUserName(),getGroupNames());
+          alterPartitionSpec(tbl,partSpec,tpart,inheritTableSpecs,partPath);
+        }
+catch (        Exception e) {
+          if (CheckJDOException.isJDODataStoreException(e)) {
+            LOG.debug("Caught JDO exception, trying to alter partition instead");
+            tpart=getMSC().getPartitionWithAuthInfo(tbl.getDbName(),tbl.getTableName(),pvals,getUserName(),getGroupNames());
+            if (tpart == null) {
+              throw e;
+            }
+            alterPartitionSpec(tbl,partSpec,tpart,inheritTableSpecs,partPath);
+          }
+ else {
+            throw e;
+          }
+        }
       }
  else {
-        LOG.debug("altering partition for table " + tbl.getTableName() + " with partition spec : "+ partSpec);
-        if (inheritTableSpecs) {
-          tpart.getSd().setOutputFormat(tbl.getTTable().getSd().getOutputFormat());
-          tpart.getSd().setInputFormat(tbl.getTTable().getSd().getInputFormat());
-          tpart.getSd().getSerdeInfo().setSerializationLib(tbl.getSerializationLib());
-          tpart.getSd().getSerdeInfo().setParameters(tbl.getTTable().getSd().getSerdeInfo().getParameters());
-          tpart.getSd().setBucketCols(tbl.getBucketCols());
-          tpart.getSd().setNumBuckets(tbl.getNumBuckets());
-          tpart.getSd().setSortCols(tbl.getSortCols());
-        }
-        if (partPath == null || partPath.trim().equals("")) {
-          throw new HiveException("new partition path should not be null or empty.");
-        }
-        tpart.getSd().setLocation(partPath);
-        tpart.getParameters().put(StatsSetupConst.STATS_GENERATED_VIA_STATS_TASK,"true");
-        String fullName=tbl.getTableName();
-        if (!org.apache.commons.lang.StringUtils.isEmpty(tbl.getDbName())) {
-          fullName=tbl.getDbName() + "." + tbl.getTableName();
-        }
-        alterPartition(fullName,new Partition(tbl,tpart));
+        alterPartitionSpec(tbl,partSpec,tpart,inheritTableSpecs,partPath);
       }
     }
     if (tpart == null) {

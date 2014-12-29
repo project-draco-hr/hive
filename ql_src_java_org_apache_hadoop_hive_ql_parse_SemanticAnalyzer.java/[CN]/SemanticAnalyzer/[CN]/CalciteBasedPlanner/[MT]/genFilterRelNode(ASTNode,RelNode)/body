@@ -1,0 +1,14 @@
+{
+  ExprNodeDesc filterCondn=genExprNodeDesc(filterExpr,relToHiveRR.get(srcRel));
+  if (filterCondn instanceof ExprNodeConstantDesc && !filterCondn.getTypeString().equals(serdeConstants.BOOLEAN_TYPE_NAME)) {
+    throw new CalciteSemanticException("Filter expression with non-boolean return type.");
+  }
+  ImmutableMap<String,Integer> hiveColNameCalcitePosMap=this.relToHiveColNameCalcitePosMap.get(srcRel);
+  RexNode convertedFilterExpr=new RexNodeConverter(cluster,srcRel.getRowType(),hiveColNameCalcitePosMap,0,true).convert(filterCondn);
+  RexNode factoredFilterExpr=RexUtil.pullFactors(cluster.getRexBuilder(),convertedFilterExpr);
+  RelNode filterRel=new HiveFilter(cluster,cluster.traitSetOf(HiveRelNode.CONVENTION),srcRel,factoredFilterExpr);
+  this.relToHiveColNameCalcitePosMap.put(filterRel,hiveColNameCalcitePosMap);
+  relToHiveRR.put(filterRel,relToHiveRR.get(srcRel));
+  relToHiveColNameCalcitePosMap.put(filterRel,hiveColNameCalcitePosMap);
+  return filterRel;
+}

@@ -15,13 +15,13 @@
   List<ColStatistics> colStats=StatsUtils.getColStatisticsFromExprMap(conf,parentStats,colExprMap,rs);
   long cardinality;
   long parallelism=1L;
-  boolean mapSide=false;
-  boolean mapSideHashAgg=false;
+  boolean interReduction=false;
+  boolean hashAgg=false;
   long inputSize=1L;
   boolean containsGroupingSet=gop.getConf().isGroupingSetsPresent();
   long sizeOfGroupingSet=containsGroupingSet ? gop.getConf().getListGroupingSets().size() : 1L;
-  if (gop.getChildOperators().get(0) instanceof ReduceSinkOperator || gop.getChildOperators().get(0) instanceof AppMasterEventOperator) {
-    mapSide=true;
+  if (!gop.getConf().getMode().equals(GroupByDesc.Mode.MERGEPARTIAL) && !gop.getConf().getMode().equals(GroupByDesc.Mode.COMPLETE) && !gop.getConf().getMode().equals(GroupByDesc.Mode.FINAL)) {
+    interReduction=true;
     TableScanOperator top=OperatorUtils.findSingleOperatorUpstream(gop,TableScanOperator.class);
     if (top == null) {
       inputSize=parentStats.getDataSize();
@@ -37,9 +37,9 @@
   }
   try {
     if (satisfyPrecondition(parentStats)) {
-      mapSideHashAgg=checkMapSideAggregation(gop,colStats,conf);
+      hashAgg=checkMapSideAggregation(gop,colStats,conf);
       if (isDebugEnabled) {
-        LOG.debug("STATS-" + gop.toString() + " mapSideHashAgg: "+ mapSideHashAgg);
+        LOG.debug("STATS-" + gop.toString() + " hashAgg: "+ hashAgg);
       }
       stats=parentStats.clone();
       stats.setColumnStats(colStats);
@@ -69,8 +69,8 @@
           LOG.debug("STATS-" + gop.toString() + ": ndvProduct became 0 as some column does not"+ " have stats. ndvProduct changed to: "+ ndvProduct);
         }
       }
-      if (mapSide) {
-        if (mapSideHashAgg) {
+      if (interReduction) {
+        if (hashAgg) {
           if (containsGroupingSet) {
             cardinality=Math.min((StatsUtils.safeMult(parentNumRows,sizeOfGroupingSet)) / 2,StatsUtils.safeMult(StatsUtils.safeMult(ndvProduct,parallelism),sizeOfGroupingSet));
             if (isDebugEnabled) {
@@ -124,7 +124,7 @@
       if (parentStats != null) {
         stats=parentStats.clone();
         final long parentNumRows=stats.getNumRows();
-        if (mapSide) {
+        if (interReduction) {
           if (containsGroupingSet) {
             cardinality=StatsUtils.safeMult(parentNumRows,sizeOfGroupingSet);
             if (isDebugEnabled) {

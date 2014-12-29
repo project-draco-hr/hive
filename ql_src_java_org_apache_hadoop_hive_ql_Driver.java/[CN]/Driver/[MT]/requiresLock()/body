@@ -1,0 +1,23 @@
+{
+  if (!checkConcurrency()) {
+    return false;
+  }
+  if (!HiveConf.getBoolVar(conf,ConfVars.HIVE_LOCK_MAPRED_ONLY)) {
+    return true;
+  }
+  Queue<Task<? extends Serializable>> taskQueue=new LinkedList<Task<? extends Serializable>>();
+  taskQueue.addAll(plan.getRootTasks());
+  while (taskQueue.peek() != null) {
+    Task<? extends Serializable> tsk=taskQueue.remove();
+    if (tsk.requireLock()) {
+      return true;
+    }
+    if (tsk instanceof ConditionalTask) {
+      taskQueue.addAll(((ConditionalTask)tsk).getListTasks());
+    }
+    if (tsk.getChildTasks() != null) {
+      taskQueue.addAll(tsk.getChildTasks());
+    }
+  }
+  return false;
+}

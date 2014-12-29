@@ -1,0 +1,55 @@
+{
+  if (rel instanceof HepRelVertex) {
+    throw new RuntimeException("Found HepRelVertex");
+  }
+ else   if (rel instanceof Join) {
+    if (!validJoinParent(rel,parent)) {
+      introduceDerivedTable(rel,parent);
+    }
+  }
+ else   if (rel instanceof MultiJoin) {
+    throw new RuntimeException("Found MultiJoin");
+  }
+ else   if (rel instanceof RelSubset) {
+    throw new RuntimeException("Found RelSubset");
+  }
+ else   if (rel instanceof SetOp) {
+    if (!validSetopParent(rel,parent))     introduceDerivedTable(rel,parent);
+    SetOp setop=(SetOp)rel;
+    for (    RelNode inputRel : setop.getInputs()) {
+      if (!validSetopChild(inputRel)) {
+        introduceDerivedTable(inputRel,setop);
+      }
+    }
+  }
+ else   if (rel instanceof SingleRel) {
+    if (rel instanceof Filter) {
+      if (!validFilterParent(rel,parent)) {
+        introduceDerivedTable(rel,parent);
+      }
+    }
+ else     if (rel instanceof HiveSort) {
+      if (!validSortParent(rel,parent)) {
+        introduceDerivedTable(rel,parent);
+      }
+      if (!validSortChild((HiveSort)rel)) {
+        introduceDerivedTable(((HiveSort)rel).getInput(),rel);
+      }
+    }
+ else     if (rel instanceof HiveAggregate) {
+      RelNode newParent=parent;
+      if (!validGBParent(rel,parent)) {
+        newParent=introduceDerivedTable(rel,parent);
+      }
+      if (isEmptyGrpAggr(rel)) {
+        replaceEmptyGroupAggr(rel,newParent);
+      }
+    }
+  }
+  List<RelNode> childNodes=rel.getInputs();
+  if (childNodes != null) {
+    for (    RelNode r : childNodes) {
+      convertOpTree(r,rel);
+    }
+  }
+}
