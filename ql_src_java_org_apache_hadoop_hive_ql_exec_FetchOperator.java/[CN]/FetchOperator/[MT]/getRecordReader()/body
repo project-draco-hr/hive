@@ -1,62 +1,29 @@
 {
-  if (currPath == null) {
-    getNextPath();
-    if (currPath == null) {
+  if (!iterSplits.hasNext()) {
+    FetchInputFormatSplit[] splits=getNextSplits();
+    if (splits == null) {
       return null;
     }
-    job.set("mapred.input.dir",org.apache.hadoop.util.StringUtils.escapeString(currPath.toString()));
-    if (HiveConf.getBoolVar(job,HiveConf.ConfVars.HIVE_VECTORIZATION_ENABLED)) {
-      HiveConf.setBoolVar(job,HiveConf.ConfVars.HIVE_VECTORIZATION_ENABLED,false);
-    }
-    PartitionDesc partDesc;
-    if (currTbl == null) {
-      partDesc=currPart;
+    if (!isPartitioned || convertedOI == null) {
+      currSerDe=tableSerDe;
+      ObjectConverter=null;
     }
  else {
-      partDesc=new PartitionDesc(currTbl,null);
+      currSerDe=needConversion(currDesc) ? currDesc.getDeserializer(job) : tableSerDe;
+      ObjectInspector inputOI=currSerDe.getObjectInspector();
+      ObjectConverter=ObjectInspectorConverters.getConverter(inputOI,convertedOI);
     }
-    Class<? extends InputFormat> formatter=partDesc.getInputFileFormatClass();
-    inputFormat=getInputFormatFromCache(formatter,job);
-    Utilities.copyTableJobPropertiesToConf(partDesc.getTableDesc(),job);
-    InputSplit[] splits=inputFormat.getSplits(job,1);
-    FetchInputFormatSplit[] inputSplits=new FetchInputFormatSplit[splits.length];
-    for (int i=0; i < splits.length; i++) {
-      inputSplits[i]=new FetchInputFormatSplit(splits[i],formatter.getName());
+    if (isPartitioned) {
+      row[1]=createPartValue(currDesc,partKeyOI);
     }
-    if (work.getSplitSample() != null) {
-      inputSplits=splitSampling(work.getSplitSample(),inputSplits);
-    }
-    this.inputSplits=inputSplits;
-    splitNum=0;
-    serde=partDesc.getDeserializer(job);
-    SerDeUtils.initializeSerDe(serde,job,partDesc.getTableDesc().getProperties(),partDesc.getProperties());
-    if (currTbl != null) {
-      tblSerde=serde;
-    }
- else {
-      tblSerde=currPart.getTableDesc().getDeserializerClass().newInstance();
-      SerDeUtils.initializeSerDe(tblSerde,job,currPart.getTableDesc().getProperties(),null);
-    }
-    ObjectInspector outputOI=ObjectInspectorConverters.getConvertedOI(serde.getObjectInspector(),partitionedTableOI == null ? tblSerde.getObjectInspector() : partitionedTableOI,oiSettableProperties);
-    partTblObjectInspectorConverter=ObjectInspectorConverters.getConverter(serde.getObjectInspector(),outputOI);
+    iterSplits=Arrays.asList(splits).iterator();
     if (LOG.isDebugEnabled()) {
-      LOG.debug("Creating fetchTask with deserializer typeinfo: " + serde.getObjectInspector().getTypeName());
-      LOG.debug("deserializer properties:\ntable properties: " + partDesc.getTableDesc().getProperties() + "\npartition properties: "+ partDesc.getProperties());
-    }
-    if (currPart != null) {
-      getRowInspectorFromPartition(currPart,outputOI);
+      LOG.debug("Creating fetchTask with deserializer typeinfo: " + currSerDe.getObjectInspector().getTypeName());
+      LOG.debug("deserializer properties:\ntable properties: " + currDesc.getTableDesc().getProperties() + "\npartition properties: "+ currDesc.getProperties());
     }
   }
-  if (splitNum >= inputSplits.length) {
-    if (currRecReader != null) {
-      currRecReader.close();
-      currRecReader=null;
-    }
-    currPath=null;
-    return getRecordReader();
-  }
-  final FetchInputFormatSplit target=inputSplits[splitNum];
-  @SuppressWarnings("unchecked") final RecordReader<WritableComparable,Writable> reader=inputFormat.getRecordReader(target.getInputSplit(),job,Reporter.NULL);
+  final FetchInputFormatSplit target=iterSplits.next();
+  @SuppressWarnings("unchecked") final RecordReader<WritableComparable,Writable> reader=target.getRecordReader(job);
   if (hasVC || work.getSplitSample() != null) {
     currRecReader=new HiveRecordReader<WritableComparable,Writable>(reader,job){
       @Override public boolean doNext(      WritableComparable key,      Writable value) throws IOException {
@@ -67,13 +34,13 @@
       }
     }
 ;
-    ((HiveContextAwareRecordReader)currRecReader).initIOContext(target,job,inputFormat.getClass(),reader);
+    ((HiveContextAwareRecordReader)currRecReader).initIOContext(target,job,target.inputFormat.getClass(),reader);
   }
  else {
     currRecReader=reader;
   }
-  splitNum++;
   key=currRecReader.createKey();
   value=currRecReader.createValue();
+  headerCount=footerCount=0;
   return currRecReader;
 }

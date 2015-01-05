@@ -10,25 +10,12 @@
         if (currRecReader == null) {
           return null;
         }
-        headerCount=0;
-        footerCount=0;
-        TableDesc table=null;
-        if (currTbl != null) {
-          table=currTbl;
-        }
- else         if (currPart != null) {
-          table=currPart.getTableDesc();
-        }
-        if (table != null) {
-          headerCount=Utilities.getHeaderCount(table);
-          footerCount=Utilities.getFooterCount(table,job);
-        }
+        headerCount=Utilities.getHeaderCount(currDesc.getTableDesc());
+        footerCount=Utilities.getFooterCount(currDesc.getTableDesc(),job);
         opNotEOF=Utilities.skipHeader(currRecReader,headerCount,key,value);
-        if (opNotEOF) {
-          if (footerCount > 0) {
-            footerBuffer=new FooterBuffer();
-            opNotEOF=footerBuffer.initializeBuffer(job,currRecReader,footerCount,key,value);
-          }
+        if (opNotEOF && footerCount > 0) {
+          footerBuffer=new FooterBuffer();
+          opNotEOF=footerBuffer.initializeBuffer(job,currRecReader,footerCount,key,value);
         }
       }
       if (opNotEOF && footerBuffer == null) {
@@ -39,25 +26,23 @@
       }
       if (opNotEOF) {
         if (operator != null && context != null && context.inputFileChanged()) {
-          try {
-            operator.cleanUpInputFileChanged();
-          }
- catch (          HiveException e) {
-            throw new IOException(e);
-          }
+          operator.cleanUpInputFileChanged();
         }
         if (hasVC) {
-          vcValues=MapOperator.populateVirtualColumnValues(context,vcCols,vcValues,serde);
-          row[isPartitioned ? 2 : 1]=vcValues;
+          row[isPartitioned ? 2 : 1]=MapOperator.populateVirtualColumnValues(context,vcCols,vcValues,currSerDe);
         }
-        row[0]=partTblObjectInspectorConverter.convert(serde.deserialize(value));
+        Object deserialized=currSerDe.deserialize(value);
+        if (ObjectConverter != null) {
+          deserialized=ObjectConverter.convert(deserialized);
+        }
         if (hasVC || isPartitioned) {
+          row[0]=deserialized;
           inspectable.o=row;
-          inspectable.oi=rowObjectInspector;
-          return inspectable;
         }
-        inspectable.o=row[0];
-        inspectable.oi=tblSerde.getObjectInspector();
+ else {
+          inspectable.o=deserialized;
+        }
+        inspectable.oi=currSerDe.getObjectInspector();
         return inspectable;
       }
  else {
