@@ -1,5 +1,9 @@
 {
-  if (hasVC=vcCols != null && !vcCols.isEmpty()) {
+  if (isStatReader) {
+    outputOI=work.getStatRowOI();
+    return;
+  }
+  if (hasVC) {
     List<String> names=new ArrayList<String>(vcCols.size());
     List<ObjectInspector> inspectors=new ArrayList<ObjectInspector>(vcCols.size());
     for (    VirtualColumn vc : vcCols) {
@@ -9,8 +13,6 @@
     vcsOI=ObjectInspectorFactory.getStandardStructObjectInspector(names,inspectors);
     vcValues=new Object[vcCols.size()];
   }
-  isPartitioned=work.isPartitioned();
-  tblDataDone=false;
   if (hasVC && isPartitioned) {
     row=new Object[3];
   }
@@ -20,11 +22,14 @@
  else {
     row=new Object[1];
   }
-  if (work.getTblDesc() != null) {
-    isNativeTable=!work.getTblDesc().isNonNative();
+  if (isPartitioned) {
+    iterPath=work.getPartDir().iterator();
+    iterPartDesc=work.getPartDesc().iterator();
   }
  else {
-    isNativeTable=true;
+    iterPath=Arrays.asList(work.getTblDir()).iterator();
+    iterPartDesc=Iterators.cycle(new PartitionDesc(work.getTblDesc(),null));
   }
-  setupExecContext();
+  outputOI=setupOutputObjectInspector();
+  context=setupExecContext(operator,work.getPathLists());
 }
