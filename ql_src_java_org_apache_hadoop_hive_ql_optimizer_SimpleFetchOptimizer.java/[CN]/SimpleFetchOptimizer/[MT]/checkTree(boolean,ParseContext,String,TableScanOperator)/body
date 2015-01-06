@@ -13,19 +13,20 @@
   }
   ReadEntity parent=PlanUtils.getParentViewInfo(alias,pctx.getViewAliasToInput());
   if (!table.isPartitioned()) {
-    return checkOperators(new FetchData(parent,table,splitSample),ts,aggressive,false);
+    FetchData fetch=new FetchData(ts,parent,table,splitSample);
+    return checkOperators(fetch,aggressive,false);
   }
   boolean bypassFilter=false;
   if (HiveConf.getBoolVar(pctx.getConf(),HiveConf.ConfVars.HIVEOPTPPD)) {
     ExprNodeDesc pruner=pctx.getOpToPartPruner().get(ts);
-    bypassFilter=PartitionPruner.onlyContainsPartnCols(table,pruner);
-  }
-  if (aggressive || bypassFilter) {
-    PrunedPartitionList pruned=pctx.getPrunedPartitions(alias,ts);
-    if (aggressive || !pruned.hasUnknownPartitions()) {
-      bypassFilter&=!pruned.hasUnknownPartitions();
-      return checkOperators(new FetchData(parent,table,pruned,splitSample,bypassFilter),ts,aggressive,bypassFilter);
+    if (PartitionPruner.onlyContainsPartnCols(table,pruner)) {
+      bypassFilter=!pctx.getPrunedPartitions(alias,ts).hasUnknownPartitions();
     }
   }
-  return null;
+  if (!aggressive && !bypassFilter) {
+    return null;
+  }
+  PrunedPartitionList partitions=pctx.getPrunedPartitions(alias,ts);
+  FetchData fetch=new FetchData(ts,parent,table,partitions,splitSample,bypassFilter);
+  return checkOperators(fetch,aggressive,bypassFilter);
 }

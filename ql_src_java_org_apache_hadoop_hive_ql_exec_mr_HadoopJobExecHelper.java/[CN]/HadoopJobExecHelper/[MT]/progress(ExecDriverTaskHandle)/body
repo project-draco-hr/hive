@@ -13,6 +13,7 @@
   int numMap=-1;
   int numReduce=-1;
   List<ClientStatsPublisher> clientStatPublishers=getClientStatPublishers();
+  final boolean localMode=ShimLoader.getHadoopShims().isLocalMode(job);
   Heartbeater heartbeater=new Heartbeater(th.getTxnManager(),job);
   while (!rj.isComplete()) {
     try {
@@ -27,42 +28,44 @@
  else {
       initializing=false;
     }
-    if (!initOutputPrinted) {
-      SessionState ss=SessionState.get();
-      String logMapper;
-      String logReducer;
-      TaskReport[] mappers=jc.getMapTaskReports(rj.getID());
-      if (mappers == null) {
-        logMapper="no information for number of mappers; ";
-      }
- else {
-        numMap=mappers.length;
-        if (ss != null) {
-          ss.getHiveHistory().setTaskProperty(SessionState.get().getQueryId(),getId(),Keys.TASK_NUM_MAPPERS,Integer.toString(numMap));
+    if (!localMode) {
+      if (!initOutputPrinted) {
+        SessionState ss=SessionState.get();
+        String logMapper;
+        String logReducer;
+        TaskReport[] mappers=jc.getMapTaskReports(rj.getID());
+        if (mappers == null) {
+          logMapper="no information for number of mappers; ";
         }
-        logMapper="number of mappers: " + numMap + "; ";
-      }
-      TaskReport[] reducers=jc.getReduceTaskReports(rj.getID());
-      if (reducers == null) {
-        logReducer="no information for number of reducers. ";
-      }
  else {
-        numReduce=reducers.length;
-        if (ss != null) {
-          ss.getHiveHistory().setTaskProperty(SessionState.get().getQueryId(),getId(),Keys.TASK_NUM_REDUCERS,Integer.toString(numReduce));
+          numMap=mappers.length;
+          if (ss != null) {
+            ss.getHiveHistory().setTaskProperty(SessionState.get().getQueryId(),getId(),Keys.TASK_NUM_MAPPERS,Integer.toString(numMap));
+          }
+          logMapper="number of mappers: " + numMap + "; ";
         }
-        logReducer="number of reducers: " + numReduce;
-      }
-      console.printInfo("Hadoop job information for " + getId() + ": "+ logMapper+ logReducer);
-      initOutputPrinted=true;
-    }
-    RunningJob newRj=jc.getJob(rj.getID());
-    if (newRj == null) {
-      throw new IOException("Could not find status of job:" + rj.getID());
-    }
+        TaskReport[] reducers=jc.getReduceTaskReports(rj.getID());
+        if (reducers == null) {
+          logReducer="no information for number of reducers. ";
+        }
  else {
-      th.setRunningJob(newRj);
-      rj=newRj;
+          numReduce=reducers.length;
+          if (ss != null) {
+            ss.getHiveHistory().setTaskProperty(SessionState.get().getQueryId(),getId(),Keys.TASK_NUM_REDUCERS,Integer.toString(numReduce));
+          }
+          logReducer="number of reducers: " + numReduce;
+        }
+        console.printInfo("Hadoop job information for " + getId() + ": "+ logMapper+ logReducer);
+        initOutputPrinted=true;
+      }
+      RunningJob newRj=jc.getJob(rj.getID());
+      if (newRj == null) {
+        throw new IOException("Could not find status of job:" + rj.getID());
+      }
+ else {
+        th.setRunningJob(newRj);
+        rj=newRj;
+      }
     }
     if (fatal) {
       continue;

@@ -1,0 +1,50 @@
+{
+  Set urls=new HashSet();
+  for (ClassLoader loader=ClassNameCompleter.class.getClassLoader(); loader != null; loader=loader.getParent()) {
+    if (!(loader instanceof URLClassLoader)) {
+      continue;
+    }
+    urls.addAll(Arrays.asList(((URLClassLoader)loader).getURLs()));
+  }
+  Class[] systemClasses=new Class[]{String.class,javax.swing.JFrame.class};
+  for (int i=0; i < systemClasses.length; i++) {
+    URL classURL=systemClasses[i].getResource("/" + systemClasses[i].getName().replace('.','/') + ".class");
+    if (classURL != null) {
+      URLConnection uc=classURL.openConnection();
+      if (uc instanceof JarURLConnection) {
+        urls.add(((JarURLConnection)uc).getJarFileURL());
+      }
+    }
+  }
+  Set classes=new HashSet();
+  for (Iterator i=urls.iterator(); i.hasNext(); ) {
+    URL url=(URL)i.next();
+    File file=new File(url.getFile());
+    if (file.isDirectory()) {
+      Set files=getClassFiles(file.getAbsolutePath(),new HashSet(),file,new int[]{200});
+      classes.addAll(files);
+      continue;
+    }
+    if ((file == null) || !file.isFile()) {
+      continue;
+    }
+    JarFile jf=new JarFile(file);
+    for (Enumeration e=jf.entries(); e.hasMoreElements(); ) {
+      JarEntry entry=(JarEntry)e.nextElement();
+      if (entry == null) {
+        continue;
+      }
+      String name=entry.getName();
+      if (!name.endsWith(".class")) {
+        continue;
+      }
+      classes.add(name);
+    }
+  }
+  Set classNames=new TreeSet();
+  for (Iterator i=classes.iterator(); i.hasNext(); ) {
+    String name=(String)i.next();
+    classNames.add(name.replace('/','.').substring(0,name.length() - 6));
+  }
+  return (String[])classNames.toArray(new String[classNames.size()]);
+}

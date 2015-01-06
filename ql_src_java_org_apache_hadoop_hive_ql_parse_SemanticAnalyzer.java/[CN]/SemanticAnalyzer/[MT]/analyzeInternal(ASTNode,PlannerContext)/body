@@ -1,0 +1,61 @@
+{
+  LOG.info("Starting Semantic Analysis");
+  if (!genResolvedParseTree(ast,plannerCtx)) {
+    return;
+  }
+  Operator sinkOp=genOPTree(ast,plannerCtx);
+  if (createVwDesc != null) {
+    resultSchema=convertRowSchemaToViewSchema(opParseCtx.get(sinkOp).getRowResolver());
+  }
+ else {
+    resultSchema=convertRowSchemaToResultSetSchema(opParseCtx.get(sinkOp).getRowResolver(),HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_RESULTSET_USE_UNIQUE_COLUMN_NAMES));
+  }
+  ParseContext pCtx=new ParseContext(conf,qb,plannerCtx.child,opToPartPruner,opToPartList,topOps,topSelOps,opParseCtx,joinContext,smbMapJoinContext,topToTable,topToTableProps,fsopToTable,loadTableWork,loadFileWork,ctx,idToTableNameMap,destTableId,uCtx,listMapJoinOpsNoReducer,groupOpToInputTables,prunedPartitions,opToSamplePruner,globalLimitCtx,nameToSplitSample,inputs,rootTasks,opToPartToSkewedPruner,viewAliasToInput,reduceSinkOperatorsAddedByEnforceBucketingSorting,queryProperties);
+  if (createVwDesc != null) {
+    saveViewDefinition();
+    validateCreateView(createVwDesc);
+    ctx.setResDir(null);
+    ctx.setResFile(null);
+    try {
+      PlanUtils.addInputsForView(pCtx);
+    }
+ catch (    HiveException e) {
+      throw new SemanticException(e);
+    }
+    return;
+  }
+  if (HiveConf.getBoolVar(this.conf,HiveConf.ConfVars.HIVE_STATS_COLLECT_TABLEKEYS) == true) {
+    TableAccessAnalyzer tableAccessAnalyzer=new TableAccessAnalyzer(pCtx);
+    setTableAccessInfo(tableAccessAnalyzer.analyzeTableAccess());
+  }
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Before logical optimization\n" + Operator.toString(pCtx.getTopOps().values()));
+  }
+  Optimizer optm=new Optimizer();
+  optm.setPctx(pCtx);
+  optm.initialize(conf);
+  pCtx=optm.optimize();
+  FetchTask origFetchTask=pCtx.getFetchTask();
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("After logical optimization\n" + Operator.toString(pCtx.getTopOps().values()));
+  }
+  boolean isColumnInfoNeedForAuth=SessionState.get().isAuthorizationModeV2() && HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_AUTHORIZATION_ENABLED);
+  if (isColumnInfoNeedForAuth || HiveConf.getBoolVar(this.conf,HiveConf.ConfVars.HIVE_STATS_COLLECT_SCANCOLS) == true) {
+    ColumnAccessAnalyzer columnAccessAnalyzer=new ColumnAccessAnalyzer(pCtx);
+    setColumnAccessInfo(columnAccessAnalyzer.analyzeColumnAccess());
+  }
+  if (!ctx.getExplainLogical()) {
+    TaskCompiler compiler=TaskCompilerFactory.getCompiler(conf,pCtx);
+    compiler.init(conf,console,db);
+    compiler.compile(pCtx,rootTasks,inputs,outputs);
+    fetchTask=pCtx.getFetchTask();
+  }
+  LOG.info("Completed plan generation");
+  if (HiveConf.getBoolVar(this.conf,HiveConf.ConfVars.HIVE_STATS_COLLECT_SCANCOLS)) {
+    putAccessedColumnsToReadEntity(inputs,columnAccessInfo);
+  }
+  if (!ctx.getExplain()) {
+    enforceScanLimits(pCtx,origFetchTask);
+  }
+  return;
+}

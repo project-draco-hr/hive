@@ -23,19 +23,6 @@
   PerfLogger perfLogger=PerfLogger.getPerfLogger(true);
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.DRIVER_RUN);
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TIME_TO_SUBMIT);
-  boolean requireLock=false;
-  boolean ckLock=false;
-  SessionState ss=SessionState.get();
-  try {
-    ckLock=checkConcurrency();
-  }
- catch (  SemanticException e) {
-    errorMessage="FAILED: Error in semantic analysis: " + e.getMessage();
-    SQLState=ErrorMsg.findSQLState(e.getMessage());
-    downstreamError=e;
-    console.printError(errorMessage,"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
-    return createProcessorResponse(10);
-  }
   int ret;
   if (!alreadyCompiled) {
     ret=compileInternal(command);
@@ -43,31 +30,8 @@
       return createProcessorResponse(ret);
     }
   }
-  ctx.setHiveTxnManager(ss.getTxnMgr());
-  if (ckLock) {
-    boolean lockOnlyMapred=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_LOCK_MAPRED_ONLY);
-    if (lockOnlyMapred) {
-      Queue<Task<? extends Serializable>> taskQueue=new LinkedList<Task<? extends Serializable>>();
-      taskQueue.addAll(plan.getRootTasks());
-      while (taskQueue.peek() != null) {
-        Task<? extends Serializable> tsk=taskQueue.remove();
-        requireLock=requireLock || tsk.requireLock();
-        if (requireLock) {
-          break;
-        }
-        if (tsk instanceof ConditionalTask) {
-          taskQueue.addAll(((ConditionalTask)tsk).getListTasks());
-        }
-        if (tsk.getChildTasks() != null) {
-          taskQueue.addAll(tsk.getChildTasks());
-        }
-      }
-    }
- else {
-      requireLock=true;
-    }
-  }
-  if (requireLock) {
+  ctx.setHiveTxnManager(SessionState.get().getTxnMgr());
+  if (requiresLock()) {
     ret=acquireLocksAndOpenTxn();
     if (ret != 0) {
       try {

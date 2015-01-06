@@ -1,0 +1,21 @@
+{
+  while (getNextPath()) {
+    job.set("mapred.input.dir",StringUtils.escapeString(currPath.toString()));
+    HiveConf.setBoolVar(job,HiveConf.ConfVars.HIVE_VECTORIZATION_ENABLED,false);
+    Class<? extends InputFormat> formatter=currDesc.getInputFileFormatClass();
+    Utilities.copyTableJobPropertiesToConf(currDesc.getTableDesc(),job);
+    InputFormat inputFormat=getInputFormatFromCache(formatter,job);
+    InputSplit[] splits=inputFormat.getSplits(job,1);
+    FetchInputFormatSplit[] inputSplits=new FetchInputFormatSplit[splits.length];
+    for (int i=0; i < splits.length; i++) {
+      inputSplits[i]=new FetchInputFormatSplit(splits[i],inputFormat);
+    }
+    if (work.getSplitSample() != null) {
+      inputSplits=splitSampling(work.getSplitSample(),inputSplits);
+    }
+    if (inputSplits.length > 0) {
+      return inputSplits;
+    }
+  }
+  return null;
+}

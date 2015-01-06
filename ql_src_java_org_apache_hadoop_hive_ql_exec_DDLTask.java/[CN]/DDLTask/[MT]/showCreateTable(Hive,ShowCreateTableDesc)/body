@@ -108,54 +108,45 @@
       }
       tbl_sort_bucket+="INTO " + tbl.getNumBuckets() + " BUCKETS";
     }
-    String tbl_row_format="";
+    StringBuilder tbl_row_format=new StringBuilder();
     StorageDescriptor sd=tbl.getTTable().getSd();
     SerDeInfo serdeInfo=sd.getSerdeInfo();
-    tbl_row_format+="ROW FORMAT";
+    tbl_row_format.append("ROW FORMAT");
     if (tbl.getStorageHandler() == null) {
-      if (serdeInfo.getParametersSize() > 1) {
-        tbl_row_format+=" DELIMITED \n";
-        Map<String,String> delims=serdeInfo.getParameters();
-        if (delims.containsKey(serdeConstants.FIELD_DELIM)) {
-          tbl_row_format+="  FIELDS TERMINATED BY '" + escapeHiveCommand(StringEscapeUtils.escapeJava(delims.get(serdeConstants.FIELD_DELIM))) + "' \n";
-        }
-        if (delims.containsKey(serdeConstants.COLLECTION_DELIM)) {
-          tbl_row_format+="  COLLECTION ITEMS TERMINATED BY '" + escapeHiveCommand(StringEscapeUtils.escapeJava(delims.get(serdeConstants.COLLECTION_DELIM))) + "' \n";
-        }
-        if (delims.containsKey(serdeConstants.MAPKEY_DELIM)) {
-          tbl_row_format+="  MAP KEYS TERMINATED BY '" + escapeHiveCommand(StringEscapeUtils.escapeJava(delims.get(serdeConstants.MAPKEY_DELIM))) + "' \n";
-        }
-        if (delims.containsKey(serdeConstants.LINE_DELIM)) {
-          tbl_row_format+="  LINES TERMINATED BY '" + escapeHiveCommand(StringEscapeUtils.escapeJava(delims.get(serdeConstants.LINE_DELIM))) + "' \n";
-        }
-        if (delims.containsKey(serdeConstants.SERIALIZATION_NULL_FORMAT)) {
-          tbl_row_format+="  NULL DEFINED AS '" + escapeHiveCommand(StringEscapeUtils.escapeJava(delims.get(serdeConstants.SERIALIZATION_NULL_FORMAT))) + "' \n";
+      Map<String,String> serdeParams=serdeInfo.getParameters();
+      String[] delimiters=new String[]{serdeParams.remove(serdeConstants.FIELD_DELIM),serdeParams.remove(serdeConstants.COLLECTION_DELIM),serdeParams.remove(serdeConstants.MAPKEY_DELIM),serdeParams.remove(serdeConstants.LINE_DELIM),serdeParams.remove(serdeConstants.SERIALIZATION_NULL_FORMAT)};
+      serdeParams.remove(serdeConstants.SERIALIZATION_FORMAT);
+      if (containsNonNull(delimiters)) {
+        tbl_row_format.append(" DELIMITED \n");
+        for (int i=0; i < DELIMITER_PREFIXES.length; i++) {
+          if (delimiters[i] != null) {
+            tbl_row_format.append("  ").append(DELIMITER_PREFIXES[i]).append(" '");
+            tbl_row_format.append(escapeHiveCommand(StringEscapeUtils.escapeJava(delimiters[i])));
+            tbl_row_format.append("' \n");
+          }
         }
       }
  else {
-        tbl_row_format+=" SERDE \n  '" + escapeHiveCommand(serdeInfo.getSerializationLib()) + "' \n";
+        tbl_row_format.append(" SERDE \n  '" + escapeHiveCommand(serdeInfo.getSerializationLib()) + "' \n");
       }
-      tbl_row_format+="STORED AS INPUTFORMAT \n  '" + escapeHiveCommand(sd.getInputFormat()) + "' \n";
-      tbl_row_format+="OUTPUTFORMAT \n  '" + escapeHiveCommand(sd.getOutputFormat()) + "'";
+      if (!serdeParams.isEmpty()) {
+        appendSerdeParams(tbl_row_format,serdeParams).append(" \n");
+      }
+      tbl_row_format.append("STORED AS INPUTFORMAT \n  '" + escapeHiveCommand(sd.getInputFormat()) + "' \n");
+      tbl_row_format.append("OUTPUTFORMAT \n  '" + escapeHiveCommand(sd.getOutputFormat()) + "'");
     }
  else {
       duplicateProps.add(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_STORAGE);
-      tbl_row_format+=" SERDE \n  '" + escapeHiveCommand(serdeInfo.getSerializationLib()) + "' \n";
-      tbl_row_format+="STORED BY \n  '" + escapeHiveCommand(tbl.getParameters().get(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_STORAGE)) + "' \n";
+      tbl_row_format.append(" SERDE \n  '" + escapeHiveCommand(serdeInfo.getSerializationLib()) + "' \n");
+      tbl_row_format.append("STORED BY \n  '" + escapeHiveCommand(tbl.getParameters().get(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_STORAGE)) + "' \n");
       if (serdeInfo.getParametersSize() > 0) {
-        tbl_row_format+="WITH SERDEPROPERTIES ( \n";
-        List<String> serdeCols=new ArrayList<String>();
-        for (        Map.Entry<String,String> entry : serdeInfo.getParameters().entrySet()) {
-          serdeCols.add("  '" + entry.getKey() + "'='"+ escapeHiveCommand(StringEscapeUtils.escapeJava(entry.getValue()))+ "'");
-        }
-        tbl_row_format+=StringUtils.join(serdeCols,", \n");
-        tbl_row_format+=")";
+        appendSerdeParams(tbl_row_format,serdeInfo.getParameters());
       }
     }
     String tbl_location="  '" + escapeHiveCommand(sd.getLocation()) + "'";
     String tbl_properties="";
-    Map<String,String> properties=new TreeMap<String,String>(tbl.getParameters());
-    if (properties.size() > 0) {
+    if (!tbl.getParameters().isEmpty()) {
+      Map<String,String> properties=new TreeMap<String,String>(tbl.getParameters());
       List<String> realProps=new ArrayList<String>();
       for (      String key : properties.keySet()) {
         if (properties.get(key) != null && !duplicateProps.contains(key)) {
