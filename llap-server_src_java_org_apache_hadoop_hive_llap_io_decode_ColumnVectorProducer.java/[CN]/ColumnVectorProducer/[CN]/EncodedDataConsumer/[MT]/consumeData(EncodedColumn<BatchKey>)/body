@@ -1,0 +1,39 @@
+{
+  EncodedColumnBatch targetBatch=null;
+  boolean localIsStopped=false;
+synchronized (pendingData) {
+    localIsStopped=isStopped;
+    if (!localIsStopped) {
+      targetBatch=pendingData.get(data.batchKey);
+      if (targetBatch == null) {
+        targetBatch=new EncodedColumnBatch(colCount);
+        pendingData.put(data.batchKey,targetBatch);
+      }
+    }
+  }
+  if (localIsStopped) {
+    upstreamFeedback.returnData(data.columnData);
+    return;
+  }
+  int colsRemaining=-1;
+synchronized (targetBatch) {
+    localIsStopped=(targetBatch.columnDatas == null);
+    if (!localIsStopped) {
+      targetBatch.columnDatas[data.columnIndex]=data.columnData;
+      colsRemaining=--targetBatch.columnsRemaining;
+      if (0 == colsRemaining) {
+synchronized (pendingData) {
+          targetBatch=isStopped ? null : pendingData.remove(data.batchKey);
+        }
+        localIsStopped=(targetBatch == null);
+      }
+    }
+  }
+  if (localIsStopped) {
+    upstreamFeedback.returnData(data.columnData);
+    return;
+  }
+  if (0 == colsRemaining) {
+    ColumnVectorProducer.this.decodeBatch(data.batchKey,targetBatch,downstreamConsumer);
+  }
+}

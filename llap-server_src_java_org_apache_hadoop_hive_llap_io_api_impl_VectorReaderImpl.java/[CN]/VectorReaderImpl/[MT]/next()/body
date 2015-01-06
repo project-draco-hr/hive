@@ -1,0 +1,32 @@
+{
+  ColumnVectorBatch current=null;
+  if (feedback == null) {
+    feedback=cvp.read(split,columnIds,sarg,this);
+  }
+  if (isClosed) {
+    throw new AssertionError("next called after close");
+  }
+synchronized (pendingData) {
+    boolean willBlock=false;
+    if (DebugUtils.isTraceMttEnabled()) {
+      willBlock=!isDone && pendingData.isEmpty() && pendingError == null;
+      if (willBlock) {
+        LlapIoImpl.LOG.info("next will block");
+      }
+    }
+    while (!isDone && pendingData.isEmpty() && pendingError == null) {
+      pendingData.wait(100);
+    }
+    if (willBlock) {
+      LlapIoImpl.LOG.info("next is unblocked");
+    }
+    if (pendingError != null) {
+      rethrowErrorIfAny();
+    }
+    current=pendingData.poll();
+  }
+  if (DebugUtils.isTraceMttEnabled() && current != null) {
+    LlapIoImpl.LOG.info("Processing will receive vector " + current);
+  }
+  return current;
+}
