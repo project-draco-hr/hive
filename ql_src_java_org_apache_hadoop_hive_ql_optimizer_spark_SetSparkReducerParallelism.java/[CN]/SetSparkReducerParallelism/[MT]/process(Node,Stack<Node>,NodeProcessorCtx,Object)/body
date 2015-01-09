@@ -46,7 +46,7 @@
           sparkMemoryAndCores=sparkSession.getMemoryAndCores();
         }
  catch (        Exception e) {
-          throw new SemanticException("Failed to get spark memory/core info: " + e,e);
+          LOG.warn("Failed to get spark memory/core info",e);
         }
  finally {
           if (sparkSession != null && sparkSessionManager != null) {
@@ -59,13 +59,15 @@
           }
         }
       }
-      long bytesPerReducer=sparkMemoryAndCores._1.longValue() / 2;
+      long bytesPerReducer=context.getConf().getLongVar(HiveConf.ConfVars.BYTESPERREDUCER) / 2;
       int numReducers=Utilities.estimateReducers(numberOfBytes,bytesPerReducer,maxReducers,false);
-      int cores=sparkMemoryAndCores._2.intValue();
-      if (numReducers < cores) {
-        numReducers=cores;
+      if (sparkMemoryAndCores != null && sparkMemoryAndCores._1() > 0 && sparkMemoryAndCores._2() > 0) {
+        if ((double)sparkMemoryAndCores._1() / bytesPerReducer < 0.5) {
+          LOG.warn("Average load of a reducer is much larger than its available memory. " + "Consider decreasing hive.exec.reducers.bytes.per.reducer");
+        }
+        numReducers=Math.max(numReducers,sparkMemoryAndCores._2());
       }
-      LOG.info("Set parallelism parameters: cores = " + cores + ", numReducers = "+ numReducers+ ", bytesPerReducer = "+ bytesPerReducer+ ", numberOfBytes = "+ numberOfBytes);
+      numReducers=Math.min(numReducers,maxReducers);
       LOG.info("Set parallelism for reduce sink " + sink + " to: "+ numReducers+ " (calculated)");
       desc.setNumReducers(numReducers);
     }
