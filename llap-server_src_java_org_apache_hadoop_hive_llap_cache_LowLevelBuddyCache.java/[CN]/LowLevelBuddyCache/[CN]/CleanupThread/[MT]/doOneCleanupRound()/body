@@ -1,0 +1,45 @@
+{
+  while (true) {
+    int evictionsSinceLast=newEvictions.getAndSet(0);
+    if (evictionsSinceLast > 0)     break;
+synchronized (newEvictions) {
+      newEvictions.wait(10000);
+    }
+  }
+  long endTime=System.nanoTime() + APPROX_CLEANUP_INTERVAL_SEC * 1000000000L;
+  int leftToCheck=0;
+  for (  FileCache fc : cache.values()) {
+    leftToCheck+=fc.cache.size();
+  }
+  Iterator<Map.Entry<String,FileCache>> iter=cache.entrySet().iterator();
+  while (iter.hasNext()) {
+    FileCache fc=iter.next().getValue();
+    if (!fc.incRef()) {
+      throw new AssertionError("Something other than cleanup is removing elements from map");
+    }
+    Iterator<Map.Entry<Long,LlapCacheableBuffer>> subIter=fc.cache.entrySet().iterator();
+    boolean isEmpty=true;
+    while (subIter.hasNext()) {
+      Thread.sleep((leftToCheck <= 0) ? 1 : (endTime - System.nanoTime()) / (1000000L * leftToCheck));
+      if (subIter.next().getValue().isInvalid()) {
+        subIter.remove();
+      }
+ else {
+        isEmpty=false;
+      }
+      --leftToCheck;
+    }
+    if (!isEmpty) {
+      fc.decRef();
+      continue;
+    }
+    if (!fc.startEvicting())     continue;
+    if (fc.cache.isEmpty()) {
+      fc.commitEvicting();
+      iter.remove();
+    }
+ else {
+      fc.abortEvicting();
+    }
+  }
+}
