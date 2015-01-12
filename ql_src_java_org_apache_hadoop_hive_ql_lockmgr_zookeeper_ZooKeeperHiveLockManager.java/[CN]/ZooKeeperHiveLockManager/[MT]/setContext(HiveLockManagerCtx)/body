@@ -1,25 +1,23 @@
 {
   this.ctx=ctx;
   HiveConf conf=ctx.getConf();
-  sessionTimeout=conf.getIntVar(HiveConf.ConfVars.HIVE_ZOOKEEPER_SESSION_TIMEOUT);
-  quorumServers=ZooKeeperHiveHelper.getQuorumServers(conf);
   sleepTime=conf.getTimeVar(HiveConf.ConfVars.HIVE_LOCK_SLEEP_BETWEEN_RETRIES,TimeUnit.MILLISECONDS);
   numRetriesForLock=conf.getIntVar(HiveConf.ConfVars.HIVE_LOCK_NUMRETRIES);
   numRetriesForUnLock=conf.getIntVar(HiveConf.ConfVars.HIVE_UNLOCK_NUMRETRIES);
   try {
-    renewZookeeperInstance(sessionTimeout,quorumServers);
+    curatorFramework=CuratorFrameworkSingleton.getInstance(conf);
     parent=conf.getVar(HiveConf.ConfVars.HIVE_ZOOKEEPER_NAMESPACE);
     try {
-      zooKeeper.create("/" + parent,new byte[0],Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
+      curatorFramework.create().withMode(CreateMode.PERSISTENT).forPath("/" + parent,new byte[0]);
     }
- catch (    KeeperException e) {
-      if (e.code() != KeeperException.Code.NODEEXISTS) {
+ catch (    Exception e) {
+      if (!(e instanceof KeeperException) || ((KeeperException)e).code() != KeeperException.Code.NODEEXISTS) {
         LOG.warn("Unexpected ZK exception when creating parent node /" + parent,e);
       }
     }
   }
  catch (  Exception e) {
-    LOG.error("Failed to create ZooKeeper object: ",e);
+    LOG.error("Failed to create curatorFramework object: ",e);
     throw new LockException(ErrorMsg.ZOOKEEPER_CLIENT_COULD_NOT_BE_INITIALIZED.getMsg());
   }
 }
