@@ -1,0 +1,24 @@
+{
+  Method handler=handlers.get(msg.getClass());
+  if (handler == null) {
+    handler=getClass().getDeclaredMethod("handle",ChannelHandlerContext.class,msg.getClass());
+    handler.setAccessible(true);
+    handlers.put(msg.getClass(),handler);
+  }
+  Rpc.MessageType replyType;
+  Object replyPayload;
+  try {
+    replyPayload=handler.invoke(this,ctx,msg);
+    if (replyPayload == null) {
+      replyPayload=new Rpc.NullMessage();
+    }
+    replyType=Rpc.MessageType.REPLY;
+  }
+ catch (  InvocationTargetException ite) {
+    LOG.debug(String.format("[%s] Error in RPC handler.",name()),ite.getCause());
+    replyPayload=Throwables.getStackTraceAsString(ite.getCause());
+    replyType=Rpc.MessageType.ERROR;
+  }
+  ctx.channel().write(new Rpc.MessageHeader(lastHeader.id,replyType));
+  ctx.channel().writeAndFlush(replyPayload);
+}

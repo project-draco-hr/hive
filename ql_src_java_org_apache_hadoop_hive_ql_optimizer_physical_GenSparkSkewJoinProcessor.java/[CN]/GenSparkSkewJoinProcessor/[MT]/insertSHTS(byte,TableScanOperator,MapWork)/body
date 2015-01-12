@@ -1,0 +1,32 @@
+{
+  Preconditions.checkArgument(tableScan.getChildOperators().size() == 1 && tableScan.getChildOperators().get(0) instanceof MapJoinOperator);
+  HashTableDummyDesc desc=new HashTableDummyDesc();
+  HashTableDummyOperator dummyOp=(HashTableDummyOperator)OperatorFactory.get(desc);
+  dummyOp.getConf().setTbl(tableScan.getTableDesc());
+  MapJoinOperator mapJoinOp=(MapJoinOperator)tableScan.getChildOperators().get(0);
+  mapJoinOp.replaceParent(tableScan,dummyOp);
+  List<Operator<? extends OperatorDesc>> mapJoinChildren=new ArrayList<Operator<? extends OperatorDesc>>();
+  mapJoinChildren.add(mapJoinOp);
+  dummyOp.setChildOperators(mapJoinChildren);
+  bigMapWork.addDummyOp(dummyOp);
+  MapJoinDesc mjDesc=mapJoinOp.getConf();
+  mjDesc.resetOrder();
+  SparkHashTableSinkDesc hashTableSinkDesc=new SparkHashTableSinkDesc(mjDesc);
+  SparkHashTableSinkOperator hashTableSinkOp=(SparkHashTableSinkOperator)OperatorFactory.get(hashTableSinkDesc);
+  int[] valueIndex=mjDesc.getValueIndex(tag);
+  if (valueIndex != null) {
+    List<ExprNodeDesc> newValues=new ArrayList<ExprNodeDesc>();
+    List<ExprNodeDesc> values=hashTableSinkDesc.getExprs().get(tag);
+    for (int index=0; index < values.size(); index++) {
+      if (valueIndex[index] < 0) {
+        newValues.add(values.get(index));
+      }
+    }
+    hashTableSinkDesc.getExprs().put(tag,newValues);
+  }
+  tableScan.replaceChild(mapJoinOp,hashTableSinkOp);
+  List<Operator<? extends OperatorDesc>> tableScanParents=new ArrayList<Operator<? extends OperatorDesc>>();
+  tableScanParents.add(tableScan);
+  hashTableSinkOp.setParentOperators(tableScanParents);
+  hashTableSinkOp.setTag(tag);
+}

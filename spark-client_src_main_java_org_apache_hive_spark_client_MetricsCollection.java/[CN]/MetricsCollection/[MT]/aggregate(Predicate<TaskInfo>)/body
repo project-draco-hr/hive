@@ -1,0 +1,69 @@
+{
+  lock.readLock().lock();
+  try {
+    long executorDeserializeTime=0L;
+    long executorRunTime=0L;
+    long resultSize=0L;
+    long jvmGCTime=0L;
+    long resultSerializationTime=0L;
+    long memoryBytesSpilled=0L;
+    long diskBytesSpilled=0L;
+    boolean hasInputMetrics=false;
+    DataReadMethod readMethod=null;
+    long bytesRead=0L;
+    boolean hasShuffleReadMetrics=false;
+    int remoteBlocksFetched=0;
+    int localBlocksFetched=0;
+    long fetchWaitTime=0L;
+    long remoteBytesRead=0L;
+    long shuffleBytesWritten=0L;
+    long shuffleWriteTime=0L;
+    for (    TaskInfo info : Collections2.filter(taskMetrics,filter)) {
+      Metrics m=info.metrics;
+      executorDeserializeTime+=m.executorDeserializeTime;
+      executorRunTime+=m.executorRunTime;
+      resultSize+=m.resultSize;
+      jvmGCTime+=m.jvmGCTime;
+      resultSerializationTime+=m.resultSerializationTime;
+      memoryBytesSpilled+=m.memoryBytesSpilled;
+      diskBytesSpilled+=m.diskBytesSpilled;
+      if (m.inputMetrics != null) {
+        hasInputMetrics=true;
+        if (readMethod == null) {
+          readMethod=m.inputMetrics.readMethod;
+        }
+ else         if (readMethod != m.inputMetrics.readMethod) {
+          readMethod=DataReadMethod.Multiple;
+        }
+        bytesRead+=m.inputMetrics.bytesRead;
+      }
+      if (m.shuffleReadMetrics != null) {
+        hasShuffleReadMetrics=true;
+        remoteBlocksFetched+=m.shuffleReadMetrics.remoteBlocksFetched;
+        localBlocksFetched+=m.shuffleReadMetrics.localBlocksFetched;
+        fetchWaitTime+=m.shuffleReadMetrics.fetchWaitTime;
+        remoteBytesRead+=m.shuffleReadMetrics.remoteBytesRead;
+      }
+      if (m.shuffleWriteMetrics != null) {
+        shuffleBytesWritten+=m.shuffleWriteMetrics.shuffleBytesWritten;
+        shuffleWriteTime+=m.shuffleWriteMetrics.shuffleWriteTime;
+      }
+    }
+    InputMetrics inputMetrics=null;
+    if (hasInputMetrics) {
+      inputMetrics=new InputMetrics(readMethod,bytesRead);
+    }
+    ShuffleReadMetrics shuffleReadMetrics=null;
+    if (hasShuffleReadMetrics) {
+      shuffleReadMetrics=new ShuffleReadMetrics(remoteBlocksFetched,localBlocksFetched,fetchWaitTime,remoteBytesRead);
+    }
+    ShuffleWriteMetrics shuffleWriteMetrics=null;
+    if (hasShuffleReadMetrics) {
+      shuffleWriteMetrics=new ShuffleWriteMetrics(shuffleBytesWritten,shuffleWriteTime);
+    }
+    return new Metrics(executorDeserializeTime,executorRunTime,resultSize,jvmGCTime,resultSerializationTime,memoryBytesSpilled,diskBytesSpilled,inputMetrics,shuffleReadMetrics,shuffleWriteMetrics);
+  }
+  finally {
+    lock.readLock().unlock();
+  }
+}

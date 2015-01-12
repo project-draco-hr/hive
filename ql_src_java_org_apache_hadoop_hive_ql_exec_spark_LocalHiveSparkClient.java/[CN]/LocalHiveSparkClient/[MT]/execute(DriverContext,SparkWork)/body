@@ -1,0 +1,27 @@
+{
+  Context ctx=driverContext.getCtx();
+  HiveConf hiveConf=(HiveConf)ctx.getConf();
+  refreshLocalResources(sparkWork,hiveConf);
+  JobConf jobConf=new JobConf(hiveConf);
+  Path emptyScratchDir;
+  emptyScratchDir=ctx.getMRTmpPath();
+  FileSystem fs=emptyScratchDir.getFileSystem(jobConf);
+  fs.mkdirs(emptyScratchDir);
+  SparkCounters sparkCounters=new SparkCounters(sc);
+  Map<String,List<String>> prefixes=sparkWork.getRequiredCounterPrefix();
+  if (prefixes != null) {
+    for (    String group : prefixes.keySet()) {
+      for (      String counterName : prefixes.get(group)) {
+        sparkCounters.createCounter(group,counterName);
+      }
+    }
+  }
+  SparkReporter sparkReporter=new SparkReporter(sparkCounters);
+  SparkPlanGenerator gen=new SparkPlanGenerator(sc,ctx,jobConf,emptyScratchDir,sparkReporter);
+  SparkPlan plan=gen.generate(sparkWork);
+  JavaPairRDD<HiveKey,BytesWritable> finalRDD=plan.generateGraph();
+  JavaFutureAction<Void> future=finalRDD.foreachAsync(HiveVoidFunction.getInstance());
+  int jobId=future.jobIds().get(0);
+  LocalSparkJobStatus sparkJobStatus=new LocalSparkJobStatus(sc,jobId,jobMetricsListener,sparkCounters,plan.getCachedRDDIds(),future);
+  return new SparkJobRef(Integer.toString(jobId),sparkJobStatus);
+}

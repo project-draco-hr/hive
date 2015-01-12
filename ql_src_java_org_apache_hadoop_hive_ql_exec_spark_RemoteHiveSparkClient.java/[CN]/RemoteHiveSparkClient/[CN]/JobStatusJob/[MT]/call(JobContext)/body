@@ -1,0 +1,21 @@
+{
+  JobConf localJobConf=KryoSerializer.deserializeJobConf(jobConfBytes);
+  Path localScratchDir=KryoSerializer.deserialize(scratchDirBytes,Path.class);
+  SparkWork localSparkWork=KryoSerializer.deserialize(sparkWorkBytes,SparkWork.class);
+  SparkCounters sparkCounters=new SparkCounters(jc.sc());
+  Map<String,List<String>> prefixes=localSparkWork.getRequiredCounterPrefix();
+  if (prefixes != null) {
+    for (    String group : prefixes.keySet()) {
+      for (      String counterName : prefixes.get(group)) {
+        sparkCounters.createCounter(group,counterName);
+      }
+    }
+  }
+  SparkReporter sparkReporter=new SparkReporter(sparkCounters);
+  SparkPlanGenerator gen=new SparkPlanGenerator(jc.sc(),null,localJobConf,localScratchDir,sparkReporter);
+  SparkPlan plan=gen.generate(localSparkWork);
+  JavaPairRDD<HiveKey,BytesWritable> finalRDD=plan.generateGraph();
+  JavaFutureAction<Void> future=finalRDD.foreachAsync(HiveVoidFunction.getInstance());
+  jc.monitor(future,sparkCounters,plan.getCachedRDDIds());
+  return null;
+}

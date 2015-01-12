@@ -1,0 +1,52 @@
+{
+  perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.SPARK_FLUSH_HASHTABLE + this.getName());
+  MapredLocalWork localWork=getExecContext().getLocalWork();
+  BucketMapJoinContext mapJoinCtx=localWork.getBucketMapjoinContext();
+  Path inputPath=getExecContext().getCurrentInputPath();
+  String bigInputPath=null;
+  if (inputPath != null && mapJoinCtx != null) {
+    Set<String> aliases=((SparkBucketMapJoinContext)mapJoinCtx).getPosToAliasMap().get((int)tag);
+    bigInputPath=mapJoinCtx.getMappingBigFile(aliases.iterator().next(),inputPath.toString());
+  }
+  Path tmpURI=localWork.getTmpHDFSPath();
+  LOG.info("Temp URI for side table: " + tmpURI);
+  String fileName=localWork.getBucketFileName(bigInputPath);
+  String dumpFilePrefix=conf.getDumpFilePrefix();
+  Path path=Utilities.generatePath(tmpURI,dumpFilePrefix,tag,fileName);
+  FileSystem fs=path.getFileSystem(htsOperator.getConfiguration());
+  short replication=fs.getDefaultReplication(path);
+  fs.mkdirs(path);
+  while (true) {
+    path=new Path(path,getOperatorId() + "-" + Math.abs(Utilities.randGen.nextInt()));
+    try {
+      if (fs.createNewFile(path)) {
+        break;
+      }
+    }
+ catch (    FileExistsException e) {
+    }
+    int numOfPartitions=replication;
+    replication=(short)Math.min(MIN_REPLICATION,numOfPartitions);
+  }
+  htsOperator.console.printInfo(Utilities.now() + "\tDump the side-table for tag: " + tag+ " with group count: "+ tableContainer.size()+ " into file: "+ path);
+  OutputStream os=null;
+  ObjectOutputStream out=null;
+  try {
+    os=fs.create(path,replication);
+    out=new ObjectOutputStream(new BufferedOutputStream(os,4096));
+    MapJoinTableContainerSerDe mapJoinTableSerde=htsOperator.mapJoinTableSerdes[tag];
+    mapJoinTableSerde.persist(out,tableContainer);
+  }
+  finally {
+    if (out != null) {
+      out.close();
+    }
+ else     if (os != null) {
+      os.close();
+    }
+  }
+  tableContainer.clear();
+  FileStatus status=fs.getFileStatus(path);
+  htsOperator.console.printInfo(Utilities.now() + "\tUploaded 1 File to: " + path+ " ("+ status.getLen()+ " bytes)");
+  perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.SPARK_FLUSH_HASHTABLE + this.getName());
+}
