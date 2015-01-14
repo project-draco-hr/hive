@@ -1,0 +1,20 @@
+{
+  while (memoryToReserve > 0) {
+    long usedMem=usedMemory.get(), newUsedMem=usedMem + memoryToReserve;
+    if (newUsedMem <= maxSize) {
+      if (usedMemory.compareAndSet(usedMem,newUsedMem))       break;
+      continue;
+    }
+    long evicted=evictSomeBlocks(memoryToReserve,evictionListener);
+    if (!waitForEviction && evicted == 0)     return false;
+    while (true) {
+      long reserveWithEviction=Math.min(memoryToReserve,maxSize - usedMem + evicted);
+      if (usedMemory.compareAndSet(usedMem,usedMem - evicted + reserveWithEviction)) {
+        memoryToReserve-=reserveWithEviction;
+        break;
+      }
+      usedMem=usedMemory.get();
+    }
+  }
+  return true;
+}

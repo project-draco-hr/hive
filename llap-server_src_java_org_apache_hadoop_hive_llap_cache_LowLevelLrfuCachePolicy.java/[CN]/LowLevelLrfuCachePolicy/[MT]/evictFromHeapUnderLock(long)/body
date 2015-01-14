@@ -1,23 +1,22 @@
 {
-  if (heapSize == 0)   return null;
-  LlapCacheableBuffer result=heap[0];
-  if (!result.invalidate()) {
+  while (true) {
+    if (heapSize == 0)     return null;
+    LlapCacheableBuffer result=heap[0];
     if (DebugUtils.isTraceCachingEnabled()) {
-      LlapIoImpl.LOG.info("Failed to invalidate head " + result.toString() + "; size = "+ heapSize);
+      LlapIoImpl.LOG.info("Evicting " + result + " at "+ time);
     }
-    return null;
+    result.indexInHeap=-1;
+    --heapSize;
+    boolean canEvict=result.invalidate();
+    if (heapSize > 0) {
+      LlapCacheableBuffer newRoot=heap[heapSize];
+      newRoot.indexInHeap=0;
+      if (newRoot.lastUpdate != time) {
+        newRoot.priority=expirePriority(time,newRoot.lastUpdate,newRoot.priority);
+        newRoot.lastUpdate=time;
+      }
+      heapifyDownUnderLock(newRoot,time);
+    }
+    if (canEvict)     return result;
   }
-  if (DebugUtils.isTraceCachingEnabled()) {
-    LlapIoImpl.LOG.info("Evicting " + result + " at "+ time);
-  }
-  result.indexInHeap=-1;
-  --heapSize;
-  LlapCacheableBuffer newRoot=heap[heapSize];
-  newRoot.indexInHeap=0;
-  if (newRoot.lastUpdate != time && !newRoot.isLockedInHeap) {
-    newRoot.priority=expirePriority(time,newRoot.lastUpdate,newRoot.priority);
-    newRoot.lastUpdate=time;
-  }
-  heapifyDownUnderLock(newRoot,time);
-  return result;
 }

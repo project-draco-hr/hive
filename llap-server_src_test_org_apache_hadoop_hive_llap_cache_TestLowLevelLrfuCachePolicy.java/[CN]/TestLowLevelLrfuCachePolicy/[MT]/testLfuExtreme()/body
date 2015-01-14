@@ -1,0 +1,23 @@
+{
+  int heapSize=4;
+  LOG.info("Testing lambda 0 (LFU)");
+  Random rdm=new Random(1234);
+  HiveConf conf=new HiveConf();
+  ArrayList<LlapCacheableBuffer> inserted=new ArrayList<LlapCacheableBuffer>(heapSize);
+  conf.setFloat(HiveConf.ConfVars.LLAP_LRFU_LAMBDA.varname,0.0f);
+  EvictionTracker et=new EvictionTracker();
+  LowLevelLrfuCachePolicy lfu=new LowLevelLrfuCachePolicy(conf,1,heapSize,et);
+  for (int i=0; i < heapSize; ++i) {
+    LlapCacheableBuffer buffer=LowLevelBuddyCache.allocateFake();
+    assertTrue(cache(lfu,et,buffer));
+    inserted.add(buffer);
+  }
+  Collections.shuffle(inserted,rdm);
+  for (int i=inserted.size() - 1; i >= 0; --i) {
+    for (int j=0; j < i + 1; ++j) {
+      lfu.notifyLock(inserted.get(i));
+      lfu.notifyUnlock(inserted.get(i));
+    }
+  }
+  verifyOrder(lfu,et,inserted);
+}

@@ -1,7 +1,42 @@
 {
   long evicted=0;
+  LlapCacheableBuffer nextCandidate, firstCandidate;
+  listLock.lock();
+  try {
+    nextCandidate=firstCandidate=listTail;
+    while (evicted < memoryToReserve && nextCandidate != null) {
+      if (!nextCandidate.invalidate()) {
+        LlapCacheableBuffer lockedBuffer=nextCandidate;
+        nextCandidate=nextCandidate.prev;
+        removeFromListUnderLock(lockedBuffer);
+        continue;
+      }
+      nextCandidate.indexInHeap=LlapCacheableBuffer.NOT_IN_CACHE;
+      evicted+=nextCandidate.length;
+    }
+    if (firstCandidate != nextCandidate) {
+      if (nextCandidate == null) {
+        listHead=listTail=null;
+      }
+ else {
+        removeFromListUnderLock(nextCandidate.next,firstCandidate);
+      }
+    }
+  }
+  finally {
+    listLock.unlock();
+  }
+  while (firstCandidate != nextCandidate) {
+    listener.notifyEvicted(firstCandidate);
+    firstCandidate=firstCandidate.prev;
+  }
+  if (evicted >= memoryToReserve)   return evicted;
+  long time=timer.get();
   while (evicted < memoryToReserve) {
-    LlapCacheableBuffer buffer=evictOneMoreBlock();
+    LlapCacheableBuffer buffer=null;
+synchronized (heap) {
+      buffer=evictFromHeapUnderLock(time);
+    }
     if (buffer == null)     return evicted;
     evicted+=buffer.length;
     listener.notifyEvicted(buffer);
