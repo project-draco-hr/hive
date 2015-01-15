@@ -1,5 +1,6 @@
 {
   this.activeJobs=Maps.newConcurrentMap();
+  this.jcLock=new Object();
   this.shutdownLock=new Object();
   SparkConf conf=new SparkConf();
   String serverAddress=null;
@@ -46,14 +47,20 @@
   try {
     JavaSparkContext sc=new JavaSparkContext(conf);
     sc.sc().addSparkListener(new ClientListener());
-    jc=new JobContextImpl(sc);
+synchronized (jcLock) {
+      jc=new JobContextImpl(sc);
+      jcLock.notifyAll();
+    }
   }
  catch (  Exception e) {
     LOG.error("Failed to start SparkContext.",e);
     shutdown(e);
+synchronized (jcLock) {
+      jcLock.notifyAll();
+    }
     throw e;
   }
-synchronized (jobQueue) {
+synchronized (jcLock) {
     for (Iterator<JobWrapper<?>> it=jobQueue.iterator(); it.hasNext(); ) {
       it.next().submit();
     }
