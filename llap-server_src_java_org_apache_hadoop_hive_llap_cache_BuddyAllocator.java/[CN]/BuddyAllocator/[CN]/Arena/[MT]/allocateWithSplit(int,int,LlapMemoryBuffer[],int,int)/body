@@ -1,0 +1,64 @@
+{
+  if (data == null)   return -1;
+  FreeList freeList=freeLists[freeListIx];
+  int remaining=-1;
+  freeList.lock.lock();
+  try {
+    ix=allocateFromFreeListUnderLock(arenaIx,freeList,freeListIx,dest,ix,allocationSize);
+    remaining=dest.length - ix;
+    if (remaining == 0)     return ix;
+  }
+  finally {
+    freeList.lock.unlock();
+  }
+  byte headerData=makeHeader(freeListIx,true);
+  int headerStep=1 << freeListIx;
+  int splitListIx=freeListIx + 1;
+  while (remaining > 0 && splitListIx < freeLists.length) {
+    int splitWays=1 << (splitListIx - freeListIx);
+    int lastSplitBlocksRemaining=-1, lastSplitNextHeader=-1;
+    FreeList splitList=freeLists[splitListIx];
+    splitList.lock.lock();
+    try {
+      int headerIx=splitList.listHead;
+      while (headerIx >= 0 && remaining > 0) {
+        int origOffset=offsetFromHeaderIndex(headerIx), offset=origOffset;
+        int toTake=Math.min(splitWays,remaining);
+        remaining-=toTake;
+        lastSplitBlocksRemaining=splitWays - toTake;
+        for (; toTake > 0; ++ix, --toTake, headerIx+=headerStep, offset+=allocationSize) {
+          headers[headerIx]=headerData;
+          ((LlapCacheableBuffer)dest[ix]).initialize(arenaIx,data,offset,allocationSize);
+        }
+        lastSplitNextHeader=headerIx;
+        headerIx=data.getInt(origOffset + 4);
+      }
+      replaceListHeadUnderLock(splitList,headerIx);
+    }
+  finally {
+      splitList.lock.unlock();
+    }
+    if (remaining == 0) {
+      int newListIndex=freeListIx;
+      while (lastSplitBlocksRemaining > 0) {
+        if ((lastSplitBlocksRemaining & 1) == 1) {
+          FreeList newFreeList=freeLists[newListIndex];
+          newFreeList.lock.lock();
+          headers[lastSplitNextHeader]=makeHeader(newListIndex,false);
+          try {
+            addBlockToFreeListUnderLock(newFreeList,lastSplitNextHeader);
+          }
+  finally {
+            newFreeList.lock.unlock();
+          }
+          lastSplitNextHeader+=(1 << newListIndex);
+        }
+        lastSplitBlocksRemaining>>>=1;
+        ++newListIndex;
+        continue;
+      }
+    }
+    ++splitListIx;
+  }
+  return ix;
+}

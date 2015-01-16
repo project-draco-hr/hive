@@ -1,0 +1,37 @@
+{
+  final int min=3, max=8, maxAlloc=1 << max, allocsPerSize=3;
+  Configuration conf=createConf(1 << min,maxAlloc,maxAlloc * 8,maxAlloc * 24);
+  final BuddyAllocator a=new BuddyAllocator(conf,new DummyMemoryManager());
+  ExecutorService executor=Executors.newFixedThreadPool(3);
+  FutureTask<Object> upTask=new FutureTask<Object>(new Runnable(){
+    public void run(){
+      allocateUp(a,min,max,allocsPerSize,false);
+      allocateUp(a,min,max,allocsPerSize,true);
+    }
+  }
+,null), downTask=new FutureTask<Object>(new Runnable(){
+    public void run(){
+      allocateDown(a,min,max,allocsPerSize,false);
+      allocateDown(a,min,max,allocsPerSize,true);
+    }
+  }
+,null), sameTask=new FutureTask<Object>(new Runnable(){
+    public void run(){
+      for (int i=min; i <= max; i<<=1) {
+        allocSameSize(a,(1 << (max - i)) * allocsPerSize,i);
+      }
+    }
+  }
+,null);
+  executor.execute(sameTask);
+  executor.execute(upTask);
+  executor.execute(downTask);
+  try {
+    upTask.get();
+    downTask.get();
+    sameTask.get();
+  }
+ catch (  Throwable t) {
+    throw new RuntimeException(t);
+  }
+}
