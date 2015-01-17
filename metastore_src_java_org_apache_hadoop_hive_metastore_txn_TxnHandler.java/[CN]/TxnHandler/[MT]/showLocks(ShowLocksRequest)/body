@@ -1,31 +1,33 @@
 {
-  Connection dbConn=getDbConn(Connection.TRANSACTION_READ_COMMITTED);
-  ShowLocksResponse rsp=new ShowLocksResponse();
-  List<ShowLocksResponseElement> elems=new ArrayList<ShowLocksResponseElement>();
-  Statement stmt=null;
   try {
-    stmt=dbConn.createStatement();
-    String s="select hl_lock_ext_id, hl_txnid, hl_db, hl_table, hl_partition, hl_lock_state, " + "hl_lock_type, hl_last_heartbeat, hl_acquired_at, hl_user, hl_host from HIVE_LOCKS";
-    LOG.debug("Doing to execute query <" + s + ">");
-    ResultSet rs=stmt.executeQuery(s);
-    while (rs.next()) {
-      ShowLocksResponseElement e=new ShowLocksResponseElement();
-      e.setLockid(rs.getLong(1));
-      long txnid=rs.getLong(2);
-      if (!rs.wasNull())       e.setTxnid(txnid);
-      e.setDbname(rs.getString(3));
-      e.setTablename(rs.getString(4));
-      String partition=rs.getString(5);
-      if (partition != null)       e.setPartname(partition);
+    Connection dbConn=null;
+    ShowLocksResponse rsp=new ShowLocksResponse();
+    List<ShowLocksResponseElement> elems=new ArrayList<ShowLocksResponseElement>();
+    Statement stmt=null;
+    try {
+      dbConn=getDbConn(Connection.TRANSACTION_READ_COMMITTED);
+      stmt=dbConn.createStatement();
+      String s="select hl_lock_ext_id, hl_txnid, hl_db, hl_table, hl_partition, hl_lock_state, " + "hl_lock_type, hl_last_heartbeat, hl_acquired_at, hl_user, hl_host from HIVE_LOCKS";
+      LOG.debug("Doing to execute query <" + s + ">");
+      ResultSet rs=stmt.executeQuery(s);
+      while (rs.next()) {
+        ShowLocksResponseElement e=new ShowLocksResponseElement();
+        e.setLockid(rs.getLong(1));
+        long txnid=rs.getLong(2);
+        if (!rs.wasNull())         e.setTxnid(txnid);
+        e.setDbname(rs.getString(3));
+        e.setTablename(rs.getString(4));
+        String partition=rs.getString(5);
+        if (partition != null)         e.setPartname(partition);
 switch (rs.getString(6).charAt(0)) {
 case LOCK_ACQUIRED:
-        e.setState(LockState.ACQUIRED);
-      break;
+          e.setState(LockState.ACQUIRED);
+        break;
 case LOCK_WAITING:
-    e.setState(LockState.WAITING);
-  break;
+      e.setState(LockState.WAITING);
+    break;
 default :
-throw new MetaException("Unknown lock state " + rs.getString(6).charAt(0));
+  throw new MetaException("Unknown lock state " + rs.getString(6).charAt(0));
 }
 switch (rs.getString(7).charAt(0)) {
 case LOCK_SEMI_SHARED:
@@ -51,6 +53,7 @@ LOG.debug("Going to rollback");
 dbConn.rollback();
 }
  catch (SQLException e) {
+checkRetryable(dbConn,e,"showLocks");
 throw new MetaException("Unable to select from transaction database " + StringUtils.stringifyException(e));
 }
  finally {
@@ -59,4 +62,8 @@ closeDbConn(dbConn);
 }
 rsp.setLocks(elems);
 return rsp;
+}
+ catch (RetryException e) {
+return showLocks(rqst);
+}
 }
