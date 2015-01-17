@@ -3,21 +3,25 @@
   Configuration conf=createConf(1 << min,maxAlloc,maxAlloc * 8,maxAlloc * 24);
   final BuddyAllocator a=new BuddyAllocator(conf,new DummyMemoryManager());
   ExecutorService executor=Executors.newFixedThreadPool(3);
+  final CountDownLatch cdlIn=new CountDownLatch(3), cdlOut=new CountDownLatch(1);
   FutureTask<Object> upTask=new FutureTask<Object>(new Runnable(){
     public void run(){
+      syncThreadStart(cdlIn,cdlOut);
       allocateUp(a,min,max,allocsPerSize,false);
       allocateUp(a,min,max,allocsPerSize,true);
     }
   }
 ,null), downTask=new FutureTask<Object>(new Runnable(){
     public void run(){
+      syncThreadStart(cdlIn,cdlOut);
       allocateDown(a,min,max,allocsPerSize,false);
       allocateDown(a,min,max,allocsPerSize,true);
     }
   }
 ,null), sameTask=new FutureTask<Object>(new Runnable(){
     public void run(){
-      for (int i=min; i <= max; i<<=1) {
+      syncThreadStart(cdlIn,cdlOut);
+      for (int i=min; i <= max; ++i) {
         allocSameSize(a,(1 << (max - i)) * allocsPerSize,i);
       }
     }
@@ -27,6 +31,8 @@
   executor.execute(upTask);
   executor.execute(downTask);
   try {
+    cdlIn.await();
+    cdlOut.countDown();
     upTask.get();
     downTask.get();
     sameTask.get();

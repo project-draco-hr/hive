@@ -1,0 +1,21 @@
+{
+  Configuration conf=createConf();
+  LowLevelCacheImpl cache=new LowLevelCacheImpl(conf,new DummyCachePolicy(10),new DummyAllocator(),-1);
+  String fn1="file1".intern(), fn2="file2".intern();
+  LlapMemoryBuffer[] fakes=new LlapMemoryBuffer[]{fb(),fb(),fb(),fb(),fb(),fb()};
+  verifyRefcount(fakes,1,1,1,1,1,1);
+  assertNull(cache.putFileData(fn1,new long[]{1,2},fbs(fakes,0,1)));
+  assertNull(cache.putFileData(fn2,new long[]{1,2},fbs(fakes,2,3)));
+  assertArrayEquals(fbs(fakes,0,1),cache.getFileData(fn1,new long[]{1,2}));
+  assertArrayEquals(fbs(fakes,2,3),cache.getFileData(fn2,new long[]{1,2}));
+  assertArrayEquals(fbs(fakes,1,-1),cache.getFileData(fn1,new long[]{2,3}));
+  verifyRefcount(fakes,2,3,2,2,1,1);
+  LlapMemoryBuffer[] bufsDiff=fbs(fakes,4,5);
+  long[] mask=cache.putFileData(fn1,new long[]{3,1},bufsDiff);
+  assertEquals(1,mask.length);
+  assertEquals(2,mask[0]);
+  assertSame(fakes[0],bufsDiff[1]);
+  verifyRefcount(fakes,3,3,2,2,1,0);
+  assertArrayEquals(fbs(fakes,0,1,4),cache.getFileData(fn1,new long[]{1,2,3}));
+  verifyRefcount(fakes,4,4,2,2,2,0);
+}

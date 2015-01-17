@@ -4,6 +4,8 @@
     result.append(" not allocated");
     return;
   }
+  byte[] headers=new byte[this.headers.length];
+  System.arraycopy(this.headers,0,headers,0,headers.length);
   for (int i=0; i < headers.length; ++i) {
     byte header=headers[i];
     if (header == 0)     continue;
@@ -14,10 +16,17 @@
   int allocSize=minAllocation;
   for (int i=0; i < freeLists.length; ++i, allocSize<<=1) {
     result.append("\n  free list for size " + allocSize + ": ");
-    int nextItem=freeLists[i].listHead;
-    while (nextItem >= 0) {
-      result.append(nextItem + ", ");
-      nextItem=data.getInt(offsetFromHeaderIndex(nextItem));
+    FreeList freeList=freeLists[i];
+    freeList.lock.lock();
+    try {
+      int nextHeaderIx=freeList.listHead;
+      while (nextHeaderIx >= 0) {
+        result.append(nextHeaderIx + ", ");
+        nextHeaderIx=data.getInt(offsetFromHeaderIndex(nextHeaderIx));
+      }
+    }
+  finally {
+      freeList.lock.unlock();
     }
   }
 }

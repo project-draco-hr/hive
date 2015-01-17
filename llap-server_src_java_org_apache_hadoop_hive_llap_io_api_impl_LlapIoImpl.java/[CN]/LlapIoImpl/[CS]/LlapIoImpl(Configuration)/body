@@ -2,7 +2,13 @@
   this.conf=conf;
   boolean useLowLevelCache=HiveConf.getBoolVar(conf,HiveConf.ConfVars.LLAP_LOW_LEVEL_CACHE);
   Cache<OrcCacheKey> cache=useLowLevelCache ? null : new NoopCache<OrcCacheKey>();
-  LowLevelCacheImpl orcCache=useLowLevelCache ? new LowLevelCacheImpl(conf) : null;
+  LowLevelCacheImpl orcCache=null;
+  if (useLowLevelCache) {
+    boolean useLrfu=HiveConf.getBoolVar(conf,HiveConf.ConfVars.LLAP_USE_LRFU);
+    LowLevelCachePolicyBase cachePolicy=useLrfu ? new LowLevelLrfuCachePolicy(conf) : new LowLevelFifoCachePolicy(conf);
+    Allocator allocator=new BuddyAllocator(conf,cachePolicy);
+    orcCache=new LowLevelCacheImpl(conf,cachePolicy,allocator);
+  }
   this.edp=new OrcEncodedDataProducer(orcCache,cache,conf);
   this.cvp=new OrcColumnVectorProducer(edp,conf);
 }
