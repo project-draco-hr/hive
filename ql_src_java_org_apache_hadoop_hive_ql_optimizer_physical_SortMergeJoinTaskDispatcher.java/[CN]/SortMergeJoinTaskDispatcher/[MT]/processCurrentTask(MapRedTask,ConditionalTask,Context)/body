@@ -6,13 +6,16 @@
   }
   currTask.setTaskTag(Task.CONVERTED_SORTMERGEJOIN);
   ParseContext parseCtx=physicalContext.getParseContext();
-  QBJoinTree joinTree=parseCtx.getSmbMapJoinContext().get(originalSMBJoinOp);
   MapredWork currJoinWork=convertSMBWorkToJoinWork(currWork,originalSMBJoinOp);
   SMBMapJoinOperator newSMBJoinOp=getSMBMapJoinOp(currJoinWork);
   currWork.getMapWork().setOpParseCtxMap(parseCtx.getOpParseCtx());
-  currWork.getMapWork().setJoinTree(joinTree);
+  currWork.getMapWork().setLeftInputJoin(originalSMBJoinOp.getConf().isLeftInputJoin());
+  currWork.getMapWork().setBaseSrc(originalSMBJoinOp.getConf().getBaseSrc());
+  currWork.getMapWork().setMapAliases(originalSMBJoinOp.getConf().getMapAliases());
   currJoinWork.getMapWork().setOpParseCtxMap(parseCtx.getOpParseCtx());
-  currJoinWork.getMapWork().setJoinTree(joinTree);
+  currJoinWork.getMapWork().setLeftInputJoin(originalSMBJoinOp.getConf().isLeftInputJoin());
+  currJoinWork.getMapWork().setBaseSrc(originalSMBJoinOp.getConf().getBaseSrc());
+  currJoinWork.getMapWork().setMapAliases(originalSMBJoinOp.getConf().getMapAliases());
   List<Serializable> listWorks=new ArrayList<Serializable>();
   List<Task<? extends Serializable>> listTasks=new ArrayList<Task<? extends Serializable>>();
   HashMap<Task<? extends Serializable>,Set<String>> taskToAliases=new LinkedHashMap<Task<? extends Serializable>,Set<String>>();
@@ -30,7 +33,7 @@
       if (!bigTableCandidates.contains(bigTablePosition)) {
         continue;
       }
-      MapRedTask newTask=convertSMBTaskToMapJoinTask(currJoinWork,bigTablePosition,newSMBJoinOp,joinTree);
+      MapRedTask newTask=convertSMBTaskToMapJoinTask(currJoinWork,bigTablePosition,newSMBJoinOp);
       MapWork mapWork=newTask.getWork().getMapWork();
       Operator<?> parentOp=originalSMBJoinOp.getParentOperators().get(bigTablePosition);
       Set<String> aliases=GenMapRedUtils.findAliases(mapWork,parentOp);
@@ -57,7 +60,9 @@
   listWorks.add(currTask.getWork());
   listTasks.add(currTask);
   currWork.getMapWork().setOpParseCtxMap(null);
-  currWork.getMapWork().setJoinTree(null);
+  currWork.getMapWork().setLeftInputJoin(false);
+  currWork.getMapWork().setBaseSrc(null);
+  currWork.getMapWork().setMapAliases(null);
   ConditionalWork cndWork=new ConditionalWork(listWorks);
   ConditionalTask cndTsk=(ConditionalTask)TaskFactory.get(cndWork,parseCtx.getConf());
   cndTsk.setListTasks(listTasks);
@@ -70,6 +75,6 @@
   resolverCtx.setLocalTmpDir(context.getLocalScratchDir(false));
   resolverCtx.setHdfsTmpDir(context.getMRScratchDir());
   cndTsk.setResolverCtx(resolverCtx);
-  replaceTaskWithConditionalTask(currTask,cndTsk,physicalContext);
+  replaceTaskWithConditionalTask(currTask,cndTsk);
   return cndTsk;
 }
