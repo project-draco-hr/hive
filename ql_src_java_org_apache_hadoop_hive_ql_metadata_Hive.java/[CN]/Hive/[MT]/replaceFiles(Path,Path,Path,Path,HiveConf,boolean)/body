@@ -1,0 +1,88 @@
+{
+  try {
+    FileSystem destFs=destf.getFileSystem(conf);
+    boolean inheritPerms=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_WAREHOUSE_SUBDIR_INHERIT_PERMS);
+    FileStatus[] srcs;
+    FileSystem srcFs;
+    try {
+      srcFs=srcf.getFileSystem(conf);
+      srcs=srcFs.globStatus(srcf);
+    }
+ catch (    IOException e) {
+      throw new HiveException("Getting globStatus " + srcf.toString(),e);
+    }
+    if (srcs == null) {
+      LOG.info("No sources specified to move: " + srcf);
+      return;
+    }
+    List<List<Path[]>> result=checkPaths(conf,destFs,srcs,srcFs,destf,true);
+    HadoopShims shims=ShimLoader.getHadoopShims();
+    if (oldPath != null) {
+      try {
+        FileSystem fs2=oldPath.getFileSystem(conf);
+        if (fs2.exists(oldPath)) {
+          if (FileUtils.isSubDir(oldPath,destf,fs2)) {
+            FileUtils.trashFilesUnderDir(fs2,oldPath,conf);
+          }
+          if (inheritPerms) {
+            inheritFromTable(tablePath,destf,conf,destFs);
+          }
+        }
+      }
+ catch (      Exception e) {
+        LOG.warn("Directory " + oldPath.toString() + " cannot be removed: "+ e,e);
+      }
+    }
+    if (srcs.length == 1 && srcs[0].isDir()) {
+      Path destfp=destf.getParent();
+      if (!destFs.exists(destfp)) {
+        boolean success=destFs.mkdirs(destfp);
+        if (!success) {
+          LOG.warn("Error creating directory " + destf.toString());
+        }
+        if (inheritPerms && success) {
+          inheritFromTable(tablePath,destfp,conf,destFs);
+        }
+      }
+      for (      List<Path[]> sdpairs : result) {
+        for (        Path[] sdpair : sdpairs) {
+          Path destParent=sdpair[1].getParent();
+          FileSystem destParentFs=destParent.getFileSystem(conf);
+          if (!destParentFs.isDirectory(destParent)) {
+            boolean success=destFs.mkdirs(destParent);
+            if (!success) {
+              LOG.warn("Error creating directory " + destParent);
+            }
+            if (inheritPerms && success) {
+              inheritFromTable(tablePath,destParent,conf,destFs);
+            }
+          }
+          if (!moveFile(conf,sdpair[0],sdpair[1],destFs,true,isSrcLocal)) {
+            throw new IOException("Unable to move file/directory from " + sdpair[0] + " to "+ sdpair[1]);
+          }
+        }
+      }
+    }
+ else {
+      if (!destFs.exists(destf)) {
+        boolean success=destFs.mkdirs(destf);
+        if (!success) {
+          LOG.warn("Error creating directory " + destf.toString());
+        }
+        if (inheritPerms && success) {
+          inheritFromTable(tablePath,destf,conf,destFs);
+        }
+      }
+      for (      List<Path[]> sdpairs : result) {
+        for (        Path[] sdpair : sdpairs) {
+          if (!moveFile(conf,sdpair[0],sdpair[1],destFs,true,isSrcLocal)) {
+            throw new IOException("Error moving: " + sdpair[0] + " into: "+ sdpair[1]);
+          }
+        }
+      }
+    }
+  }
+ catch (  IOException e) {
+    throw new HiveException(e.getMessage(),e);
+  }
+}
