@@ -5,16 +5,27 @@
   int rc=0;
   JobExecutionStatus lastState=null;
   Map<String,SparkStageProgress> lastProgressMap=null;
-  long startTime=-1;
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.SPARK_RUN_JOB);
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.SPARK_SUBMIT_TO_RUNNING);
+  long startTime=System.currentTimeMillis();
   while (true) {
-    JobExecutionStatus state=sparkJobStatus.getState();
     try {
+      JobExecutionStatus state=sparkJobStatus.getState();
       if (LOG.isDebugEnabled()) {
         console.printInfo("state = " + state);
       }
-      if (state != null && state != JobExecutionStatus.UNKNOWN && (state != lastState || state == JobExecutionStatus.RUNNING)) {
+      if (state == null) {
+        long timeCount=(System.currentTimeMillis() - startTime) / 1000;
+        if (timeCount > monitorTimeoutInteval) {
+          LOG.info("Job hasn't been submitted after " + timeCount + "s. Aborting it.");
+          console.printError("Status: " + state);
+          running=false;
+          done=true;
+          rc=2;
+          break;
+        }
+      }
+ else       if (state != lastState || state == JobExecutionStatus.RUNNING) {
         lastState=state;
         Map<String,SparkStageProgress> progressMap=sparkJobStatus.getSparkStageProgress();
 switch (state) {
@@ -26,7 +37,6 @@ case RUNNING:
               console.printInfo(Integer.toString(stageId));
             }
             console.printInfo("\nStatus: Running (Hive on Spark job[" + sparkJobStatus.getJobId() + "])");
-            startTime=System.currentTimeMillis();
             running=true;
             console.printInfo("Job Progress Format\nCurrentTime StageId_StageAttemptId: " + "SucceededTasksCount(+RunningTasksCount-FailedTasksCount)/TotalTasksCount [StageCost]");
           }
@@ -36,13 +46,8 @@ case RUNNING:
 case SUCCEEDED:
   printStatus(progressMap,lastProgressMap);
 lastProgressMap=progressMap;
-if (startTime < 0) {
-console.printInfo("Status: Finished successfully within a check interval.");
-}
- else {
 double duration=(System.currentTimeMillis() - startTime) / 1000.0;
 console.printInfo("Status: Finished successfully in " + String.format("%.2f seconds",duration));
-}
 running=false;
 done=true;
 break;
@@ -50,13 +55,13 @@ case FAILED:
 console.printError("Status: Failed");
 running=false;
 done=true;
-rc=2;
+rc=3;
 break;
 case UNKNOWN:
 console.printError("Status: Unknown");
 running=false;
 done=true;
-rc=2;
+rc=4;
 break;
 }
 }
@@ -66,15 +71,11 @@ Thread.sleep(checkInterval);
 }
  catch (Exception e) {
 String msg=" with exception '" + Utilities.getNameMessage(e) + "'";
-if (state == null || state.equals(JobExecutionStatus.UNKNOWN)) {
-msg="Job Submission failed" + msg;
-}
- else {
-msg="Ended Job = " + sparkJobStatus.getJobId() + msg;
-}
+msg="Failed to monitor Job[ " + sparkJobStatus.getJobId() + "]"+ msg;
 LOG.error(msg,e);
 console.printError(msg,"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
 rc=1;
+done=true;
 }
  finally {
 if (done) {
