@@ -1,0 +1,61 @@
+{
+  boolean success=false;
+  boolean inheritPerms=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_WAREHOUSE_SUBDIR_INHERIT_PERMS);
+  HadoopShims shims=ShimLoader.getHadoopShims();
+  HadoopShims.HdfsFileStatus destStatus=null;
+  HadoopShims.HdfsEncryptionShim hdfsEncryptionShim=SessionState.get().getHdfsEncryptionShim();
+  boolean destIsSubDir=isSubDir(srcf,destf,fs,isSrcLocal);
+  try {
+    if (inheritPerms || replace) {
+      try {
+        destStatus=shims.getFullFileStatus(conf,fs,destf.getParent());
+        if (replace && !destIsSubDir) {
+          LOG.debug("The path " + destf.toString() + " is deleted");
+          fs.delete(destf,true);
+        }
+      }
+ catch (      FileNotFoundException ignore) {
+        if (inheritPerms) {
+          destStatus=shims.getFullFileStatus(conf,fs,destf.getParent());
+        }
+      }
+    }
+    if (!isSrcLocal) {
+      if (hdfsEncryptionShim != null && (hdfsEncryptionShim.isPathEncrypted(srcf) || hdfsEncryptionShim.isPathEncrypted(destf)) && !hdfsEncryptionShim.arePathsOnSameEncryptionZone(srcf,destf)) {
+        LOG.info("Copying source " + srcf + " to "+ destf+ " because HDFS encryption zones are different.");
+        success=FileUtils.copy(srcf.getFileSystem(conf),srcf,destf.getFileSystem(conf),destf,true,replace,conf);
+      }
+ else {
+        if (destIsSubDir) {
+          FileStatus[] srcs=fs.listStatus(srcf,FileUtils.HIDDEN_FILES_PATH_FILTER);
+          for (          FileStatus status : srcs) {
+            success=FileUtils.copy(srcf.getFileSystem(conf),status.getPath(),destf.getFileSystem(conf),destf,true,replace,conf);
+            if (!success) {
+              throw new HiveException("Unable to move source " + status.getPath() + " to destination "+ destf);
+            }
+          }
+        }
+ else {
+          success=fs.rename(srcf,destf);
+        }
+      }
+    }
+ else {
+      fs.copyFromLocalFile(srcf,destf);
+      success=true;
+    }
+    LOG.info((replace ? "Replacing src:" : "Renaming src: ") + srcf.toString() + ", dest: "+ destf.toString()+ ", Status:"+ success);
+  }
+ catch (  IOException ioe) {
+    throw new HiveException("Unable to move source " + srcf + " to destination "+ destf,ioe);
+  }
+  if (success && inheritPerms) {
+    try {
+      ShimLoader.getHadoopShims().setFullFileStatus(conf,destStatus,fs,destf);
+    }
+ catch (    IOException e) {
+      LOG.warn("Error setting permission of file " + destf + ": "+ e.getMessage(),e);
+    }
+  }
+  return success;
+}

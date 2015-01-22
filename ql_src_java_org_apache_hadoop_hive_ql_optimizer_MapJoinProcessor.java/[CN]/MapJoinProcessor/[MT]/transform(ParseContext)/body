@@ -1,30 +1,28 @@
 {
-  pGraphContext=pactx;
   List<MapJoinOperator> listMapJoinOps=new ArrayList<MapJoinOperator>();
-  if (pGraphContext.getJoinContext() != null) {
-    Map<JoinOperator,QBJoinTree> joinMap=new HashMap<JoinOperator,QBJoinTree>();
-    Map<MapJoinOperator,QBJoinTree> mapJoinMap=pGraphContext.getMapJoinContext();
+  if (pactx.getJoinOps() != null) {
+    Set<JoinOperator> joinMap=new HashSet<JoinOperator>();
+    Set<MapJoinOperator> mapJoinMap=pactx.getMapJoinOps();
     if (mapJoinMap == null) {
-      mapJoinMap=new HashMap<MapJoinOperator,QBJoinTree>();
-      pGraphContext.setMapJoinContext(mapJoinMap);
+      mapJoinMap=new HashSet<MapJoinOperator>();
+      pactx.setMapJoinOps(mapJoinMap);
     }
-    Set<Map.Entry<JoinOperator,QBJoinTree>> joinCtx=pGraphContext.getJoinContext().entrySet();
-    Iterator<Map.Entry<JoinOperator,QBJoinTree>> joinCtxIter=joinCtx.iterator();
+    Iterator<JoinOperator> joinCtxIter=pactx.getJoinOps().iterator();
     while (joinCtxIter.hasNext()) {
-      Map.Entry<JoinOperator,QBJoinTree> joinEntry=joinCtxIter.next();
-      JoinOperator joinOp=joinEntry.getKey();
-      QBJoinTree qbJoin=joinEntry.getValue();
-      int mapJoinPos=mapSideJoin(joinOp,qbJoin);
+      JoinOperator joinOp=joinCtxIter.next();
+      int mapJoinPos=mapSideJoin(joinOp);
       if (mapJoinPos >= 0) {
-        MapJoinOperator mapJoinOp=generateMapJoinOperator(pactx,joinOp,qbJoin,mapJoinPos);
+        MapJoinOperator mapJoinOp=generateMapJoinOperator(pactx,joinOp,mapJoinPos);
         listMapJoinOps.add(mapJoinOp);
-        mapJoinMap.put(mapJoinOp,qbJoin);
+        mapJoinOp.getConf().setQBJoinTreeProps(joinOp.getConf());
+        mapJoinMap.add(mapJoinOp);
       }
  else {
-        joinMap.put(joinOp,qbJoin);
+        joinOp.getConf().setQBJoinTreeProps(joinOp.getConf());
+        joinMap.add(joinOp);
       }
     }
-    pGraphContext.setJoinContext(joinMap);
+    pactx.setJoinOps(joinMap);
   }
   List<AbstractMapJoinOperator<? extends MapJoinDesc>> listMapJoinOpsNoRed=new ArrayList<AbstractMapJoinOperator<? extends MapJoinDesc>>();
   Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
@@ -32,11 +30,11 @@
   opRules.put(new RuleRegExp("R1",MapJoinOperator.getOperatorName() + "%.*" + FileSinkOperator.getOperatorName()+ "%"),getMapJoinFS());
   opRules.put(new RuleRegExp("R2",MapJoinOperator.getOperatorName() + "%.*" + ReduceSinkOperator.getOperatorName()+ "%"),getMapJoinDefault());
   opRules.put(new RuleRegExp("R4",MapJoinOperator.getOperatorName() + "%.*" + UnionOperator.getOperatorName()+ "%"),getMapJoinDefault());
-  Dispatcher disp=new DefaultRuleDispatcher(getDefault(),opRules,new MapJoinWalkerCtx(listMapJoinOpsNoRed,pGraphContext));
+  Dispatcher disp=new DefaultRuleDispatcher(getDefault(),opRules,new MapJoinWalkerCtx(listMapJoinOpsNoRed,pactx));
   GraphWalker ogw=new GenMapRedWalker(disp);
   ArrayList<Node> topNodes=new ArrayList<Node>();
   topNodes.addAll(listMapJoinOps);
   ogw.startWalking(topNodes,null);
-  pGraphContext.setListMapJoinOpsNoReducer(listMapJoinOpsNoRed);
-  return pGraphContext;
+  pactx.setListMapJoinOpsNoReducer(listMapJoinOpsNoRed);
+  return pactx;
 }

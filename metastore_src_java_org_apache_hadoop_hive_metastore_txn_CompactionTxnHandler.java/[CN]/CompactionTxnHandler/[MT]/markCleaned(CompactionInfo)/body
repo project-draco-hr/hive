@@ -1,8 +1,9 @@
 {
   try {
-    Connection dbConn=getDbConn(Connection.TRANSACTION_SERIALIZABLE);
+    Connection dbConn=null;
     Statement stmt=null;
     try {
+      dbConn=getDbConn(Connection.TRANSACTION_SERIALIZABLE);
       stmt=dbConn.createStatement();
       String s="delete from COMPACTION_QUEUE where cq_id = " + info.id;
       LOG.debug("Going to execute update <" + s + ">");
@@ -52,14 +53,10 @@
       dbConn.commit();
     }
  catch (    SQLException e) {
-      try {
-        LOG.error("Unable to delete from compaction queue " + e.getMessage());
-        LOG.debug("Going to rollback");
-        dbConn.rollback();
-      }
- catch (      SQLException e1) {
-      }
-      detectDeadlock(dbConn,e,"markCleaned");
+      LOG.error("Unable to delete from compaction queue " + e.getMessage());
+      LOG.debug("Going to rollback");
+      rollbackDBConn(dbConn);
+      checkRetryable(dbConn,e,"markCleaned");
       throw new MetaException("Unable to connect to transaction database " + StringUtils.stringifyException(e));
     }
  finally {
@@ -67,10 +64,7 @@
       closeStmt(stmt);
     }
   }
- catch (  DeadlockException e) {
+ catch (  RetryException e) {
     markCleaned(info);
-  }
- finally {
-    deadlockCnt=0;
   }
 }

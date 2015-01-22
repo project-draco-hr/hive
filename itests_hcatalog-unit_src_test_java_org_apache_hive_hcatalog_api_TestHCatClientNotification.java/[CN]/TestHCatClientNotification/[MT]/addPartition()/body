@@ -1,0 +1,22 @@
+{
+  String dbName="default";
+  String tableName="hcataddparttable";
+  String partColName="pc";
+  HCatTable table=new HCatTable(dbName,tableName);
+  table.partCol(new HCatFieldSchema(partColName,TypeInfoFactory.stringTypeInfo,""));
+  table.cols(Arrays.asList(new HCatFieldSchema("onecol",TypeInfoFactory.stringTypeInfo,"")));
+  hCatClient.createTable(HCatCreateTableDesc.create(table).build());
+  String partName="testpart";
+  Map<String,String> partSpec=new HashMap<String,String>(1);
+  partSpec.put(partColName,partName);
+  hCatClient.addPartition(HCatAddPartitionDesc.create(new HCatPartition(table,partSpec,null)).build());
+  List<HCatNotificationEvent> events=hCatClient.getNextNotification(firstEventId,0,null);
+  assertEquals(2,events.size());
+  HCatNotificationEvent event=events.get(1);
+  assertEquals(firstEventId + 2,event.getEventId());
+  assertTrue(event.getEventTime() >= startTime);
+  assertEquals(HCatConstants.HCAT_ADD_PARTITION_EVENT,event.getEventType());
+  assertEquals("default",event.getDbName());
+  assertEquals(tableName,event.getTableName());
+  assertTrue(event.getMessage().matches("\\{\"eventType\":\"ADD_PARTITION\",\"server\":\"\"," + "\"servicePrincipal\":\"\",\"db\":\"default\",\"table\":" + "\"hcataddparttable\",\"timestamp\":[0-9]+,\"partitions\":\\[\\{\"pc\":\"testpart\"}]}"));
+}

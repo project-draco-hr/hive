@@ -1,46 +1,68 @@
 {
-  Set<Integer> bigTableCandidateSet=MapJoinProcessor.getBigTableCandidates(joinOp.getConf().getConds());
-  long maxSize=context.conf.getLongVar(HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASKTHRESHOLD);
-  int bigTablePosition=-1;
-  Statistics bigInputStat=null;
-  long totalSize=0;
-  int pos=0;
-  boolean bigTableFound=false;
-  for (  Operator<? extends OperatorDesc> parentOp : joinOp.getParentOperators()) {
-    Statistics currInputStat=parentOp.getStatistics();
-    if (currInputStat == null) {
-      LOG.warn("Couldn't get statistics from: " + parentOp);
-      return -1;
-    }
-    long inputSize=currInputStat.getDataSize();
-    if ((bigInputStat == null) || ((bigInputStat != null) && (inputSize > bigInputStat.getDataSize()))) {
-      if (bigTableFound) {
-        return -1;
-      }
-      if (inputSize / buckets > maxSize) {
-        if (!bigTableCandidateSet.contains(pos)) {
-          return -1;
-        }
-        bigTableFound=true;
-      }
-      if (bigInputStat != null) {
-        totalSize+=bigInputStat.getDataSize();
-      }
-      if (totalSize / buckets > maxSize) {
-        return -1;
-      }
-      if (bigTableCandidateSet.contains(pos)) {
-        bigTablePosition=pos;
-        bigInputStat=currInputStat;
-      }
-    }
+  if (joinOp.getConf().getConds().length > 1) {
+    boolean hasOuter=false;
+    for (    JoinCondDesc joinCondDesc : joinOp.getConf().getConds()) {
+switch (joinCondDesc.getType()) {
+case JoinDesc.INNER_JOIN:
+case JoinDesc.LEFT_SEMI_JOIN:
+case JoinDesc.UNIQUE_JOIN:
+        hasOuter=false;
+      break;
+case JoinDesc.FULL_OUTER_JOIN:
+case JoinDesc.LEFT_OUTER_JOIN:
+case JoinDesc.RIGHT_OUTER_JOIN:
+    hasOuter=true;
+  break;
+default :
+throw new SemanticException("Unknown join type " + joinCondDesc.getType());
+}
+}
+if (hasOuter) {
+return -1;
+}
+}
+Set<Integer> bigTableCandidateSet=MapJoinProcessor.getBigTableCandidates(joinOp.getConf().getConds());
+long maxSize=context.conf.getLongVar(HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASKTHRESHOLD);
+int bigTablePosition=-1;
+Statistics bigInputStat=null;
+long totalSize=0;
+int pos=0;
+boolean bigTableFound=false;
+for (Operator<? extends OperatorDesc> parentOp : joinOp.getParentOperators()) {
+Statistics currInputStat=parentOp.getStatistics();
+if (currInputStat == null) {
+LOG.warn("Couldn't get statistics from: " + parentOp);
+return -1;
+}
+long inputSize=currInputStat.getDataSize();
+if ((bigInputStat == null) || ((bigInputStat != null) && (inputSize > bigInputStat.getDataSize()))) {
+if (bigTableFound) {
+return -1;
+}
+if (inputSize / buckets > maxSize) {
+if (!bigTableCandidateSet.contains(pos)) {
+return -1;
+}
+bigTableFound=true;
+}
+if (bigInputStat != null) {
+totalSize+=bigInputStat.getDataSize();
+}
+if (totalSize / buckets > maxSize) {
+return -1;
+}
+if (bigTableCandidateSet.contains(pos)) {
+bigTablePosition=pos;
+bigInputStat=currInputStat;
+}
+}
  else {
-      totalSize+=currInputStat.getDataSize();
-      if (totalSize / buckets > maxSize) {
-        return -1;
-      }
-    }
-    pos++;
-  }
-  return bigTablePosition;
+totalSize+=currInputStat.getDataSize();
+if (totalSize / buckets > maxSize) {
+return -1;
+}
+}
+pos++;
+}
+return bigTablePosition;
 }
