@@ -1,0 +1,111 @@
+{
+  if (min == null) {
+    if (predicate.getOperator() == PredicateLeaf.Operator.IS_NULL) {
+      return TruthValue.YES;
+    }
+ else {
+      return TruthValue.NULL;
+    }
+  }
+  Location loc;
+  try {
+    Object baseObj=predicate.getLiteral(PredicateLeaf.FileFormat.ORC);
+    Object minValue=getConvertedStatsObj(min,baseObj);
+    Object maxValue=getConvertedStatsObj(max,baseObj);
+    Object predObj=getBaseObjectForComparison(baseObj,minValue);
+switch (predicate.getOperator()) {
+case NULL_SAFE_EQUALS:
+      loc=compareToRange((Comparable)predObj,minValue,maxValue);
+    if (loc == Location.BEFORE || loc == Location.AFTER) {
+      return TruthValue.NO;
+    }
+ else {
+      return TruthValue.YES_NO;
+    }
+case EQUALS:
+  loc=compareToRange((Comparable)predObj,minValue,maxValue);
+if (minValue.equals(maxValue) && loc == Location.MIN) {
+  return hasNull ? TruthValue.YES_NULL : TruthValue.YES;
+}
+ else if (loc == Location.BEFORE || loc == Location.AFTER) {
+  return hasNull ? TruthValue.NO_NULL : TruthValue.NO;
+}
+ else {
+  return hasNull ? TruthValue.YES_NO_NULL : TruthValue.YES_NO;
+}
+case LESS_THAN:
+loc=compareToRange((Comparable)predObj,minValue,maxValue);
+if (loc == Location.AFTER) {
+return hasNull ? TruthValue.YES_NULL : TruthValue.YES;
+}
+ else if (loc == Location.BEFORE || loc == Location.MIN) {
+return hasNull ? TruthValue.NO_NULL : TruthValue.NO;
+}
+ else {
+return hasNull ? TruthValue.YES_NO_NULL : TruthValue.YES_NO;
+}
+case LESS_THAN_EQUALS:
+loc=compareToRange((Comparable)predObj,minValue,maxValue);
+if (loc == Location.AFTER || loc == Location.MAX) {
+return hasNull ? TruthValue.YES_NULL : TruthValue.YES;
+}
+ else if (loc == Location.BEFORE) {
+return hasNull ? TruthValue.NO_NULL : TruthValue.NO;
+}
+ else {
+return hasNull ? TruthValue.YES_NO_NULL : TruthValue.YES_NO;
+}
+case IN:
+if (minValue.equals(maxValue)) {
+for (Object arg : predicate.getLiteralList(PredicateLeaf.FileFormat.ORC)) {
+predObj=getBaseObjectForComparison(arg,minValue);
+loc=compareToRange((Comparable)predObj,minValue,maxValue);
+if (loc == Location.MIN) {
+return hasNull ? TruthValue.YES_NULL : TruthValue.YES;
+}
+}
+return hasNull ? TruthValue.NO_NULL : TruthValue.NO;
+}
+ else {
+for (Object arg : predicate.getLiteralList(PredicateLeaf.FileFormat.ORC)) {
+predObj=getBaseObjectForComparison(arg,minValue);
+loc=compareToRange((Comparable)predObj,minValue,maxValue);
+if (loc == Location.MIN || loc == Location.MIDDLE || loc == Location.MAX) {
+return hasNull ? TruthValue.YES_NO_NULL : TruthValue.YES_NO;
+}
+}
+return hasNull ? TruthValue.NO_NULL : TruthValue.NO;
+}
+case BETWEEN:
+List<Object> args=predicate.getLiteralList(PredicateLeaf.FileFormat.ORC);
+Object predObj1=getBaseObjectForComparison(args.get(0),minValue);
+loc=compareToRange((Comparable)predObj1,minValue,maxValue);
+if (loc == Location.BEFORE || loc == Location.MIN) {
+Object predObj2=getBaseObjectForComparison(args.get(1),minValue);
+Location loc2=compareToRange((Comparable)predObj2,minValue,maxValue);
+if (loc2 == Location.AFTER || loc2 == Location.MAX) {
+return hasNull ? TruthValue.YES_NULL : TruthValue.YES;
+}
+ else if (loc2 == Location.BEFORE) {
+return hasNull ? TruthValue.NO_NULL : TruthValue.NO;
+}
+ else {
+return hasNull ? TruthValue.YES_NO_NULL : TruthValue.YES_NO;
+}
+}
+ else if (loc == Location.AFTER) {
+return hasNull ? TruthValue.NO_NULL : TruthValue.NO;
+}
+ else {
+return hasNull ? TruthValue.YES_NO_NULL : TruthValue.YES_NO;
+}
+case IS_NULL:
+return hasNull ? TruthValue.YES : TruthValue.NO;
+default :
+return hasNull ? TruthValue.YES_NO_NULL : TruthValue.YES_NO;
+}
+}
+ catch (NumberFormatException nfe) {
+return hasNull ? TruthValue.YES_NO_NULL : TruthValue.YES_NO;
+}
+}

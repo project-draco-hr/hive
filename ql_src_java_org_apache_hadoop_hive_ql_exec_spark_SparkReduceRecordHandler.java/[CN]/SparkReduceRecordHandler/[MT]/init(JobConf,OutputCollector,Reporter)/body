@@ -1,0 +1,98 @@
+{
+  perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.SPARK_INIT_OPERATORS);
+  super.init(job,output,reporter);
+  rowObjectInspector=new ObjectInspector[Byte.MAX_VALUE];
+  ObjectInspector[] valueObjectInspector=new ObjectInspector[Byte.MAX_VALUE];
+  ObjectInspector keyObjectInspector;
+  ObjectCache cache=ObjectCacheFactory.getCache(jc);
+  ReduceWork gWork=(ReduceWork)cache.retrieve(PLAN_KEY);
+  if (gWork == null) {
+    gWork=Utilities.getReduceWork(job);
+    cache.cache(PLAN_KEY,gWork);
+  }
+ else {
+    Utilities.setReduceWork(job,gWork);
+  }
+  reducer=gWork.getReducer();
+  vectorized=gWork.getVectorMode();
+  reducer.setParentOperators(null);
+  isTagged=gWork.getNeedsTagging();
+  try {
+    keyTableDesc=gWork.getKeyDesc();
+    inputKeyDeserializer=ReflectionUtils.newInstance(keyTableDesc.getDeserializerClass(),null);
+    SerDeUtils.initializeSerDe(inputKeyDeserializer,null,keyTableDesc.getProperties(),null);
+    keyObjectInspector=inputKeyDeserializer.getObjectInspector();
+    valueTableDesc=new TableDesc[gWork.getTagToValueDesc().size()];
+    if (vectorized) {
+      final int maxTags=gWork.getTagToValueDesc().size();
+      keyStructInspector=(StructObjectInspector)keyObjectInspector;
+      batches=new VectorizedRowBatch[maxTags];
+      valueStructInspectors=new StructObjectInspector[maxTags];
+      valueStringWriters=(List<VectorExpressionWriter>[])new List[maxTags];
+      keysColumnOffset=keyStructInspector.getAllStructFieldRefs().size();
+      buffer=new DataOutputBuffer();
+    }
+    for (int tag=0; tag < gWork.getTagToValueDesc().size(); tag++) {
+      valueTableDesc[tag]=gWork.getTagToValueDesc().get(tag);
+      inputValueDeserializer[tag]=ReflectionUtils.newInstance(valueTableDesc[tag].getDeserializerClass(),null);
+      SerDeUtils.initializeSerDe(inputValueDeserializer[tag],null,valueTableDesc[tag].getProperties(),null);
+      valueObjectInspector[tag]=inputValueDeserializer[tag].getObjectInspector();
+      ArrayList<ObjectInspector> ois=new ArrayList<ObjectInspector>();
+      if (vectorized) {
+        valueStructInspectors[tag]=(StructObjectInspector)valueObjectInspector[tag];
+        batches[tag]=VectorizedBatchUtil.constructVectorizedRowBatch(keyStructInspector,valueStructInspectors[tag]);
+        final int totalColumns=keysColumnOffset + valueStructInspectors[tag].getAllStructFieldRefs().size();
+        valueStringWriters[tag]=new ArrayList<VectorExpressionWriter>(totalColumns);
+        valueStringWriters[tag].addAll(Arrays.asList(VectorExpressionWriterFactory.genVectorStructExpressionWritables(keyStructInspector)));
+        valueStringWriters[tag].addAll(Arrays.asList(VectorExpressionWriterFactory.genVectorStructExpressionWritables(valueStructInspectors[tag])));
+        ArrayList<String> colNames=new ArrayList<String>();
+        List<? extends StructField> fields=keyStructInspector.getAllStructFieldRefs();
+        for (        StructField field : fields) {
+          colNames.add(Utilities.ReduceField.KEY.toString() + "." + field.getFieldName());
+          ois.add(field.getFieldObjectInspector());
+        }
+        fields=valueStructInspectors[tag].getAllStructFieldRefs();
+        for (        StructField field : fields) {
+          colNames.add(Utilities.ReduceField.VALUE.toString() + "." + field.getFieldName());
+          ois.add(field.getFieldObjectInspector());
+        }
+        rowObjectInspector[tag]=ObjectInspectorFactory.getStandardStructObjectInspector(colNames,ois);
+      }
+ else {
+        ois.add(keyObjectInspector);
+        ois.add(valueObjectInspector[tag]);
+        rowObjectInspector[tag]=ObjectInspectorFactory.getStandardStructObjectInspector(Utilities.reduceFieldNameList,ois);
+      }
+    }
+  }
+ catch (  Exception e) {
+    throw new RuntimeException(e);
+  }
+  ExecMapperContext execContext=new ExecMapperContext(job);
+  localWork=gWork.getMapRedLocalWork();
+  execContext.setJc(jc);
+  execContext.setLocalWork(localWork);
+  reducer.setExecContext(execContext);
+  reducer.setReporter(rp);
+  OperatorUtils.setChildrenCollector(Arrays.<Operator<? extends OperatorDesc>>asList(reducer),output);
+  try {
+    LOG.info(reducer.dump(0));
+    reducer.initialize(jc,rowObjectInspector);
+    if (localWork != null) {
+      for (      Operator<? extends OperatorDesc> dummyOp : localWork.getDummyParentOp()) {
+        dummyOp.setExecContext(execContext);
+        dummyOp.initialize(jc,null);
+      }
+    }
+  }
+ catch (  Throwable e) {
+    abort=true;
+    if (e instanceof OutOfMemoryError) {
+      throw (OutOfMemoryError)e;
+    }
+ else {
+      throw new RuntimeException("Reduce operator initialization failed",e);
+    }
+  }
+  perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.SPARK_INIT_OPERATORS);
+}

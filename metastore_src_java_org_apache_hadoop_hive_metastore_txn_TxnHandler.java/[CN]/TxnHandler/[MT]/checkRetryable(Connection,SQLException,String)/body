@@ -1,0 +1,34 @@
+{
+  if (dbProduct == null && conn != null) {
+    determineDatabaseProduct(conn);
+  }
+  if (e instanceof SQLTransactionRollbackException || ((dbProduct == DatabaseProduct.MYSQL || dbProduct == DatabaseProduct.POSTGRES || dbProduct == DatabaseProduct.SQLSERVER) && e.getSQLState().equals("40001")) || (dbProduct == DatabaseProduct.POSTGRES && e.getSQLState().equals("40P01"))|| (dbProduct == DatabaseProduct.ORACLE && (e.getMessage().contains("deadlock detected") || e.getMessage().contains("can't serialize access for this transaction")))) {
+    if (deadlockCnt++ < ALLOWED_REPEATED_DEADLOCKS) {
+      LOG.warn("Deadlock detected in " + caller + ", trying again.");
+      throw new RetryException();
+    }
+ else {
+      LOG.error("Too many repeated deadlocks in " + caller + ", giving up.");
+      deadlockCnt=0;
+    }
+  }
+ else   if (isRetryable(e)) {
+    if (retryNum++ < retryLimit) {
+      try {
+        Thread.sleep(retryInterval);
+      }
+ catch (      InterruptedException ex) {
+      }
+      LOG.warn("Retryable error detected in " + caller + ", trying again: "+ getMessage(e));
+      throw new RetryException();
+    }
+ else {
+      LOG.error("Fatal error. Retry limit (" + retryLimit + ") reached. Last error: "+ getMessage(e));
+      retryNum=0;
+    }
+  }
+ else {
+    deadlockCnt=0;
+    retryNum=0;
+  }
+}

@@ -1,0 +1,36 @@
+{
+  if (workToJobConf.containsKey(work)) {
+    return workToJobConf.get(work);
+  }
+  JobConf cloned=new JobConf(jobConf);
+  HiveConf.setVar(cloned,HiveConf.ConfVars.PLAN,"");
+  try {
+    cloned.setPartitionerClass((Class<? extends Partitioner>)(Class.forName(HiveConf.getVar(cloned,HiveConf.ConfVars.HIVEPARTITIONER))));
+  }
+ catch (  ClassNotFoundException e) {
+    String msg="Could not find partitioner class: " + e.getMessage() + " which is specified by: "+ HiveConf.ConfVars.HIVEPARTITIONER.varname;
+    throw new IllegalArgumentException(msg,e);
+  }
+  if (work instanceof MapWork) {
+    List<Path> inputPaths=Utilities.getInputPaths(cloned,(MapWork)work,scratchDir,context,false);
+    Utilities.setInputPaths(cloned,inputPaths);
+    Utilities.setMapWork(cloned,(MapWork)work,scratchDir,false);
+    Utilities.createTmpDirs(cloned,(MapWork)work);
+    if (work instanceof MergeFileWork) {
+      MergeFileWork mergeFileWork=(MergeFileWork)work;
+      cloned.set(Utilities.MAPRED_MAPPER_CLASS,MergeFileMapper.class.getName());
+      cloned.set("mapred.input.format.class",mergeFileWork.getInputformat());
+      cloned.setClass("mapred.output.format.class",MergeFileOutputFormat.class,FileOutputFormat.class);
+    }
+ else {
+      cloned.set(Utilities.MAPRED_MAPPER_CLASS,ExecMapper.class.getName());
+    }
+    workToJobConf.put(work,cloned);
+  }
+ else   if (work instanceof ReduceWork) {
+    Utilities.setReduceWork(cloned,(ReduceWork)work,scratchDir,false);
+    Utilities.createTmpDirs(cloned,(ReduceWork)work);
+    cloned.set(Utilities.MAPRED_REDUCER_CLASS,ExecReducer.class.getName());
+  }
+  return cloned;
+}

@@ -1,0 +1,49 @@
+{
+  final RpcConfiguration rpcConf=new RpcConfiguration(config);
+  int connectTimeoutMs=rpcConf.getConnectTimeoutMs();
+  final ChannelFuture cf=new Bootstrap().group(eloop).handler(new ChannelInboundHandlerAdapter(){
+  }
+).channel(NioSocketChannel.class).option(ChannelOption.SO_KEEPALIVE,true).option(ChannelOption.CONNECT_TIMEOUT_MILLIS,connectTimeoutMs).connect(host,port);
+  final Promise<Rpc> promise=eloop.next().newPromise();
+  final AtomicReference<Rpc> rpc=new AtomicReference<Rpc>();
+  final Runnable timeoutTask=new Runnable(){
+    @Override public void run(){
+      promise.setFailure(new TimeoutException("Timed out waiting for RPC server connection."));
+    }
+  }
+;
+  final ScheduledFuture<?> timeoutFuture=eloop.schedule(timeoutTask,rpcConf.getServerConnectTimeoutMs(),TimeUnit.MILLISECONDS);
+  cf.addListener(new ChannelFutureListener(){
+    @Override public void operationComplete(    ChannelFuture cf) throws Exception {
+      if (cf.isSuccess()) {
+        rpc.set(createRpc(rpcConf,(SocketChannel)cf.channel(),dispatcher,eloop));
+        Future<Void> hello=rpc.get().call(new Rpc.Hello(secret));
+        hello.addListener(new GenericFutureListener<Future<Void>>(){
+          @Override public void operationComplete(          Future<Void> p){
+            timeoutFuture.cancel(true);
+            if (p.isSuccess()) {
+              promise.setSuccess(rpc.get());
+            }
+ else {
+              promise.setFailure(p.cause());
+            }
+          }
+        }
+);
+      }
+ else {
+        promise.setFailure(cf.cause());
+      }
+    }
+  }
+);
+  promise.addListener(new GenericFutureListener<Promise<Rpc>>(){
+    @Override public void operationComplete(    Promise<Rpc> p){
+      if (p.isCancelled()) {
+        cf.cancel(true);
+      }
+    }
+  }
+);
+  return promise;
+}

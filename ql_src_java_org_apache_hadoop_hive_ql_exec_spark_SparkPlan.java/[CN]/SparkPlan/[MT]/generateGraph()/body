@@ -1,0 +1,37 @@
+{
+  perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.SPARK_BUILD_RDD_GRAPH);
+  Map<SparkTran,JavaPairRDD<HiveKey,BytesWritable>> tranToOutputRDDMap=new HashMap<SparkTran,JavaPairRDD<HiveKey,BytesWritable>>();
+  for (  SparkTran tran : getAllTrans()) {
+    JavaPairRDD<HiveKey,BytesWritable> rdd=null;
+    List<SparkTran> parents=getParents(tran);
+    if (parents.size() == 0) {
+      Preconditions.checkArgument(tran instanceof MapInput,"AssertionError: tran must be an instance of MapInput");
+      rdd=tran.transform(null);
+    }
+ else {
+      for (      SparkTran parent : parents) {
+        JavaPairRDD<HiveKey,BytesWritable> prevRDD=tranToOutputRDDMap.get(parent);
+        if (rdd == null) {
+          rdd=prevRDD;
+        }
+ else {
+          rdd=rdd.union(prevRDD);
+        }
+      }
+      rdd=tran.transform(rdd);
+    }
+    tranToOutputRDDMap.put(tran,rdd);
+  }
+  JavaPairRDD<HiveKey,BytesWritable> finalRDD=null;
+  for (  SparkTran leafTran : leafTrans) {
+    JavaPairRDD<HiveKey,BytesWritable> rdd=tranToOutputRDDMap.get(leafTran);
+    if (finalRDD == null) {
+      finalRDD=rdd;
+    }
+ else {
+      finalRDD=finalRDD.union(rdd);
+    }
+  }
+  perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.SPARK_BUILD_RDD_GRAPH);
+  return finalRDD;
+}

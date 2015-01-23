@@ -1,0 +1,19 @@
+{
+  List<FieldSchema> cols=new ArrayList<FieldSchema>();
+  cols.add(new FieldSchema("col1","int","nocomment"));
+  SerDeInfo serde=new SerDeInfo("serde","seriallib",null);
+  StorageDescriptor sd=new StorageDescriptor(cols,"file:/tmp","input","output",false,0,serde,null,null,emptyParameters);
+  Table table=new Table("alttable","default","me",startTime,startTime,0,sd,new ArrayList<FieldSchema>(),emptyParameters,null,null,null);
+  msClient.createTable(table);
+  table=new Table("alttable","default","me",startTime,startTime + 1,0,sd,new ArrayList<FieldSchema>(),emptyParameters,null,null,null);
+  msClient.alter_table("default","alttable",table);
+  NotificationEventResponse rsp=msClient.getNextNotification(firstEventId,0,null);
+  assertEquals(2,rsp.getEventsSize());
+  NotificationEvent event=rsp.getEvents().get(1);
+  assertEquals(firstEventId + 2,event.getEventId());
+  assertTrue(event.getEventTime() >= startTime);
+  assertEquals(HCatConstants.HCAT_ALTER_TABLE_EVENT,event.getEventType());
+  assertEquals("default",event.getDbName());
+  assertEquals("alttable",event.getTableName());
+  assertTrue(event.getMessage().matches("\\{\"eventType\":\"ALTER_TABLE\",\"server\":\"\"," + "\"servicePrincipal\":\"\",\"db\":\"default\",\"table\":\"alttable\"," + "\"timestamp\":[0-9]+}"));
+}

@@ -1,0 +1,26 @@
+{
+  final String jobId=UUID.randomUUID().toString();
+  final Promise<T> promise=driverRpc.createPromise();
+  JobHandleImpl<T> handle=new JobHandleImpl<T>(SparkClientImpl.this,promise,jobId);
+  jobs.put(jobId,handle);
+  final io.netty.util.concurrent.Future<Void> rpc=driverRpc.call(new JobRequest(jobId,job));
+  LOG.debug("Send JobRequest[{}].",jobId);
+  rpc.addListener(new GenericFutureListener<io.netty.util.concurrent.Future<Void>>(){
+    @Override public void operationComplete(    io.netty.util.concurrent.Future<Void> f){
+      if (!f.isSuccess() && !promise.isDone()) {
+        promise.setFailure(f.cause());
+      }
+    }
+  }
+);
+  promise.addListener(new GenericFutureListener<Promise<T>>(){
+    @Override public void operationComplete(    Promise<T> p){
+      jobs.remove(jobId);
+      if (p.isCancelled() && !rpc.isDone()) {
+        rpc.cancel(true);
+      }
+    }
+  }
+);
+  return handle;
+}

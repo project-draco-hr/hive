@@ -1,0 +1,35 @@
+{
+  if (createdTaskMap.containsKey(sparkWork)) {
+    return createdTaskMap.get(sparkWork);
+  }
+  SparkTask resultTask=originalTask.getWork() == sparkWork ? originalTask : (SparkTask)TaskFactory.get(sparkWork,physicalContext.conf);
+  if (!dependencyGraph.get(sparkWork).isEmpty()) {
+    for (    SparkWork parentWork : dependencyGraph.get(sparkWork)) {
+      SparkTask parentTask=createSparkTask(originalTask,parentWork,createdTaskMap,conditionalTask);
+      parentTask.addDependentTask(resultTask);
+    }
+  }
+ else {
+    if (originalTask != resultTask) {
+      List<Task<? extends Serializable>> parentTasks=originalTask.getParentTasks();
+      if (parentTasks != null && parentTasks.size() > 0) {
+        originalTask.setParentTasks(new ArrayList<Task<? extends Serializable>>());
+        for (        Task<? extends Serializable> parentTask : parentTasks) {
+          parentTask.addDependentTask(resultTask);
+          parentTask.removeDependentTask(originalTask);
+        }
+      }
+ else {
+        if (conditionalTask == null) {
+          physicalContext.addToRootTask(resultTask);
+          physicalContext.removeFromRootTask(originalTask);
+        }
+ else {
+          updateConditionalTask(conditionalTask,originalTask,resultTask);
+        }
+      }
+    }
+  }
+  createdTaskMap.put(sparkWork,resultTask);
+  return resultTask;
+}

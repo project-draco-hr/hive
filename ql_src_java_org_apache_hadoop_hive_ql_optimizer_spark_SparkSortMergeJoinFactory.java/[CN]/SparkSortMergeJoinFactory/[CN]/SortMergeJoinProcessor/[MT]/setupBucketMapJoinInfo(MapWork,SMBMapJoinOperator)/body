@@ -1,0 +1,32 @@
+{
+  if (currMapJoinOp != null) {
+    Map<String,Map<String,List<String>>> aliasBucketFileNameMapping=currMapJoinOp.getConf().getAliasBucketFileNameMapping();
+    if (aliasBucketFileNameMapping != null) {
+      MapredLocalWork localPlan=plan.getMapRedLocalWork();
+      if (localPlan == null) {
+        localPlan=currMapJoinOp.getConf().getLocalWork();
+      }
+ else {
+        MapredLocalWork smbLocalWork=currMapJoinOp.getConf().getLocalWork();
+        if (smbLocalWork != null) {
+          localPlan.getAliasToFetchWork().putAll(smbLocalWork.getAliasToFetchWork());
+          localPlan.getAliasToWork().putAll(smbLocalWork.getAliasToWork());
+        }
+      }
+      if (localPlan == null) {
+        return;
+      }
+      plan.setMapRedLocalWork(null);
+      currMapJoinOp.getConf().setLocalWork(localPlan);
+      BucketMapJoinContext bucketMJCxt=new BucketMapJoinContext();
+      localPlan.setBucketMapjoinContext(bucketMJCxt);
+      bucketMJCxt.setAliasBucketFileNameMapping(aliasBucketFileNameMapping);
+      bucketMJCxt.setBucketFileNameMapping(currMapJoinOp.getConf().getBigTableBucketNumMapping());
+      localPlan.setInputFileChangeSensitive(true);
+      bucketMJCxt.setMapJoinBigTableAlias(currMapJoinOp.getConf().getBigTableAlias());
+      bucketMJCxt.setBucketMatcherClass(org.apache.hadoop.hive.ql.exec.DefaultBucketMatcher.class);
+      bucketMJCxt.setBigTablePartSpecToFileMapping(currMapJoinOp.getConf().getBigTablePartSpecToFileMapping());
+      plan.setUseBucketizedHiveInputFormat(true);
+    }
+  }
+}

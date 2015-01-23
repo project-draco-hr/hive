@@ -1,0 +1,79 @@
+{
+  OptimizeSparkProcContext context=(OptimizeSparkProcContext)procContext;
+  ReduceSinkOperator sink=(ReduceSinkOperator)nd;
+  ReduceSinkDesc desc=sink.getConf();
+  int maxReducers=context.getConf().getIntVar(HiveConf.ConfVars.MAXREDUCERS);
+  int constantReducers=context.getConf().getIntVar(HiveConf.ConfVars.HADOOPNUMREDUCERS);
+  if (context.getVisitedReduceSinks().contains(sink)) {
+    LOG.debug("Already processed reduce sink: " + sink.getName());
+    return true;
+  }
+  context.getVisitedReduceSinks().add(sink);
+  if (desc.getNumReducers() <= 0) {
+    if (constantReducers > 0) {
+      LOG.info("Parallelism for reduce sink " + sink + " set by user to "+ constantReducers);
+      desc.setNumReducers(constantReducers);
+    }
+ else {
+      FileSinkOperator fso=GenSparkUtils.getChildOperator(sink,FileSinkOperator.class);
+      if (fso != null) {
+        String bucketCount=fso.getConf().getTableInfo().getProperties().getProperty(hive_metastoreConstants.BUCKET_COUNT);
+        int numBuckets=bucketCount == null ? 0 : Integer.parseInt(bucketCount);
+        if (numBuckets > 0) {
+          LOG.info("Set parallelism for reduce sink " + sink + " to: "+ numBuckets+ " (buckets)");
+          desc.setNumReducers(numBuckets);
+          return false;
+        }
+      }
+      long numberOfBytes=0;
+      for (      Operator<? extends OperatorDesc> sibling : sink.getChildOperators().get(0).getParentOperators()) {
+        if (sibling.getStatistics() != null) {
+          numberOfBytes+=sibling.getStatistics().getDataSize();
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Sibling " + sibling + " has stats: "+ sibling.getStatistics());
+          }
+        }
+ else {
+          LOG.warn("No stats available from: " + sibling);
+        }
+      }
+      if (sparkMemoryAndCores == null) {
+        SparkSessionManager sparkSessionManager=null;
+        SparkSession sparkSession=null;
+        try {
+          sparkSessionManager=SparkSessionManagerImpl.getInstance();
+          sparkSession=SparkUtilities.getSparkSession(context.getConf(),sparkSessionManager);
+          sparkMemoryAndCores=sparkSession.getMemoryAndCores();
+        }
+ catch (        Exception e) {
+          LOG.warn("Failed to get spark memory/core info",e);
+        }
+ finally {
+          if (sparkSession != null && sparkSessionManager != null) {
+            try {
+              sparkSessionManager.returnSession(sparkSession);
+            }
+ catch (            HiveException ex) {
+              LOG.error("Failed to return the session to SessionManager: " + ex,ex);
+            }
+          }
+        }
+      }
+      long bytesPerReducer=context.getConf().getLongVar(HiveConf.ConfVars.BYTESPERREDUCER) / 2;
+      int numReducers=Utilities.estimateReducers(numberOfBytes,bytesPerReducer,maxReducers,false);
+      if (sparkMemoryAndCores != null && sparkMemoryAndCores._1() > 0 && sparkMemoryAndCores._2() > 0) {
+        if ((double)sparkMemoryAndCores._1() / bytesPerReducer < 0.5) {
+          LOG.warn("Average load of a reducer is much larger than its available memory. " + "Consider decreasing hive.exec.reducers.bytes.per.reducer");
+        }
+        numReducers=Math.max(numReducers,sparkMemoryAndCores._2());
+      }
+      numReducers=Math.min(numReducers,maxReducers);
+      LOG.info("Set parallelism for reduce sink " + sink + " to: "+ numReducers+ " (calculated)");
+      desc.setNumReducers(numReducers);
+    }
+  }
+ else {
+    LOG.info("Number of reducers determined to be: " + desc.getNumReducers());
+  }
+  return false;
+}

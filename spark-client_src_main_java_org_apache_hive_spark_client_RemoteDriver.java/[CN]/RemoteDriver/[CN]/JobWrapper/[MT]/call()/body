@@ -1,0 +1,33 @@
+{
+  try {
+    jc.setMonitorCb(new MonitorCallback(){
+      @Override public void call(      JavaFutureAction<?> future,      SparkCounters sparkCounters,      Set<Integer> cachedRDDIds){
+        monitorJob(future,sparkCounters,cachedRDDIds);
+      }
+    }
+);
+    T result=req.job.call(jc);
+synchronized (completed) {
+      while (completed.get() < jobs.size()) {
+        LOG.debug("Client job {} finished, {} of {} Spark jobs finished.",req.id,completed.get(),jobs.size());
+        completed.wait();
+      }
+    }
+    SparkCounters counters=null;
+    if (sparkCounters != null) {
+      counters=sparkCounters.snapshot();
+    }
+    protocol.jobFinished(req.id,result,null,counters);
+  }
+ catch (  Throwable t) {
+    LOG.info("Failed to run job " + req.id,t);
+    protocol.jobFinished(req.id,null,t,sparkCounters != null ? sparkCounters.snapshot() : null);
+    throw new ExecutionException(t);
+  }
+ finally {
+    jc.setMonitorCb(null);
+    activeJobs.remove(req.id);
+    releaseCache();
+  }
+  return null;
+}

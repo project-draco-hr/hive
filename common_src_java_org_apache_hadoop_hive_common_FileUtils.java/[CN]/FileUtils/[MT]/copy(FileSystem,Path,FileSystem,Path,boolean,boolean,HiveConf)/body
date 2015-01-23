@@ -1,8 +1,19 @@
 {
-  boolean copied=FileUtil.copy(srcFS,src,dstFS,dst,deleteSource,overwrite,conf);
+  HadoopShims shims=ShimLoader.getHadoopShims();
+  boolean copied;
+  if (srcFS.getUri().getScheme().equals("hdfs") && srcFS.getFileStatus(src).getLen() > conf.getLongVar(HiveConf.ConfVars.HIVE_EXEC_COPYFILE_MAXSIZE)) {
+    LOG.info("Source is " + srcFS.getFileStatus(src).getLen() + " bytes. (MAX: "+ conf.getLongVar(HiveConf.ConfVars.HIVE_EXEC_COPYFILE_MAXSIZE)+ ")");
+    LOG.info("Launch distributed copy (distcp) job.");
+    copied=shims.runDistCp(src,dst,conf);
+    if (copied && deleteSource) {
+      srcFS.delete(src,true);
+    }
+  }
+ else {
+    copied=FileUtil.copy(srcFS,src,dstFS,dst,deleteSource,overwrite,conf);
+  }
   boolean inheritPerms=conf.getBoolVar(HiveConf.ConfVars.HIVE_WAREHOUSE_SUBDIR_INHERIT_PERMS);
   if (copied && inheritPerms) {
-    HadoopShims shims=ShimLoader.getHadoopShims();
     HdfsFileStatus fullFileStatus=shims.getFullFileStatus(conf,dstFS,dst);
     try {
       shims.setFullFileStatus(conf,fullFileStatus,dstFS,dst);

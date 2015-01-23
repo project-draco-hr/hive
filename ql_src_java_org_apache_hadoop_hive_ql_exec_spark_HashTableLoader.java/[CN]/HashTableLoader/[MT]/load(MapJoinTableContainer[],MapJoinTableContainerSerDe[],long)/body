@@ -1,0 +1,40 @@
+{
+  String currentInputPath=context.getCurrentInputPath() == null ? null : context.getCurrentInputPath().toString();
+  LOG.info("******* Load from HashTable for input file: " + currentInputPath);
+  MapredLocalWork localWork=context.getLocalWork();
+  try {
+    if (localWork.getDirectFetchOp() != null) {
+      loadDirectly(mapJoinTables,currentInputPath);
+    }
+    Path baseDir=localWork.getTmpPath();
+    if (baseDir == null) {
+      return;
+    }
+    FileSystem fs=FileSystem.get(baseDir.toUri(),hconf);
+    BucketMapJoinContext mapJoinCtx=localWork.getBucketMapjoinContext();
+    for (int pos=0; pos < mapJoinTables.length; pos++) {
+      if (pos == desc.getPosBigTable() || mapJoinTables[pos] != null) {
+        continue;
+      }
+      String bigInputPath=currentInputPath;
+      if (currentInputPath != null && mapJoinCtx != null) {
+        if (!desc.isBucketMapJoin()) {
+          bigInputPath=null;
+        }
+ else {
+          Set<String> aliases=((SparkBucketMapJoinContext)mapJoinCtx).getPosToAliasMap().get(pos);
+          String alias=aliases.iterator().next();
+          String smallInputPath=mapJoinCtx.getAliasBucketFileNameMapping().get(alias).get(bigInputPath).get(0);
+          bigInputPath=mapJoinCtx.getMappingBigFile(alias,smallInputPath);
+        }
+      }
+      String fileName=localWork.getBucketFileName(bigInputPath);
+      Path path=Utilities.generatePath(baseDir,desc.getDumpFilePrefix(),(byte)pos,fileName);
+      LOG.info("\tLoad back all hashtable files from tmp folder uri:" + path);
+      mapJoinTables[pos]=mapJoinTableSerdes[pos].load(fs,path);
+    }
+  }
+ catch (  Exception e) {
+    throw new HiveException(e);
+  }
+}

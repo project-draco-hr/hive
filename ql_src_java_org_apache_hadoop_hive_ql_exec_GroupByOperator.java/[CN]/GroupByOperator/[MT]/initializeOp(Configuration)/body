@@ -1,5 +1,4 @@
 {
-  totalMemory=Runtime.getRuntime().totalMemory();
   numRowsInput=0;
   numRowsHashTbl=0;
   heartbeatInterval=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVESENDHEARTBEAT);
@@ -18,12 +17,13 @@
   if (groupingSetsPresent) {
     groupingSets=conf.getListGroupingSets();
     groupingSetsPosition=conf.getGroupingSetPosition();
-    newKeysGroupingSets=new ArrayList<Object>();
-    groupingSetsBitSet=new ArrayList<FastBitSet>();
+    newKeysGroupingSets=new Text[groupingSets.size()];
+    groupingSetsBitSet=new FastBitSet[groupingSets.size()];
+    int pos=0;
     for (    Integer groupingSet : groupingSets) {
-      ExprNodeEvaluator groupingSetValueEvaluator=ExprNodeEvaluatorFactory.get(new ExprNodeConstantDesc(String.valueOf(groupingSet)));
-      newKeysGroupingSets.add(groupingSetValueEvaluator.evaluate(null));
-      groupingSetsBitSet.add(groupingSet2BitSet(groupingSet));
+      newKeysGroupingSets[pos]=new Text(String.valueOf(groupingSet));
+      groupingSetsBitSet[pos]=groupingSet2BitSet(groupingSet);
+      pos++;
     }
   }
   List<? extends StructField> sfs=((StructObjectInspector)rowInspector).getAllStructFieldRefs();
@@ -110,20 +110,11 @@
     AggregationDesc agg=conf.getAggregators().get(i);
     aggregationEvaluators[i]=agg.getGenericUDAFEvaluator();
   }
-  int totalFields=keyFields.length + aggregationEvaluators.length;
-  objectInspectors=new ArrayList<ObjectInspector>(totalFields);
-  for (  ExprNodeEvaluator keyField : keyFields) {
-    objectInspectors.add(null);
-  }
   MapredContext context=MapredContext.get();
   if (context != null) {
     for (    GenericUDAFEvaluator genericUDAFEvaluator : aggregationEvaluators) {
       context.setup(genericUDAFEvaluator);
     }
-  }
-  for (int i=0; i < aggregationEvaluators.length; i++) {
-    ObjectInspector roi=aggregationEvaluators[i].init(conf.getAggregators().get(i).getMode(),aggregationParameterObjectInspectors[i]);
-    objectInspectors.add(roi);
   }
   aggregationsParametersLastInvoke=new Object[conf.getAggregators().size()][];
   if ((conf.getMode() != GroupByDesc.Mode.HASH || conf.getBucketGroup()) && (!groupingSetsPresent)) {
@@ -144,17 +135,16 @@
       keysCurrentGroup=new HashSet<KeyWrapper>();
     }
   }
-  fieldNames=conf.getOutputColumnNames();
-  for (int i=0; i < keyFields.length; i++) {
-    objectInspectors.set(i,currentKeyObjectInspectors[i]);
+  List<String> fieldNames=new ArrayList<String>(conf.getOutputColumnNames());
+  outputKeyLength=conf.pruneGroupingSetId() ? keyFields.length - 1 : keyFields.length;
+  ObjectInspector[] objectInspectors=new ObjectInspector[outputKeyLength + aggregationEvaluators.length];
+  for (int i=0; i < outputKeyLength; i++) {
+    objectInspectors[i]=currentKeyObjectInspectors[i];
   }
-  ArrayList<String> keyNames=new ArrayList<String>(keyFields.length);
-  for (int i=0; i < keyFields.length; i++) {
-    keyNames.add(fieldNames.get(i));
+  for (int i=0; i < aggregationEvaluators.length; i++) {
+    objectInspectors[outputKeyLength + i]=aggregationEvaluators[i].init(conf.getAggregators().get(i).getMode(),aggregationParameterObjectInspectors[i]);
   }
-  newKeyObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(keyNames,Arrays.asList(keyObjectInspectors));
-  currentKeyObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(keyNames,Arrays.asList(currentKeyObjectInspectors));
-  outputObjInspector=ObjectInspectorFactory.getStandardStructObjectInspector(fieldNames,objectInspectors);
+  outputObjInspector=ObjectInspectorFactory.getStandardStructObjectInspector(fieldNames,Arrays.asList(objectInspectors));
   KeyWrapperFactory keyWrapperFactory=new KeyWrapperFactory(keyFields,keyObjectInspectors,currentKeyObjectInspectors);
   newKeys=keyWrapperFactory.getKeyWrapper();
   firstRow=true;

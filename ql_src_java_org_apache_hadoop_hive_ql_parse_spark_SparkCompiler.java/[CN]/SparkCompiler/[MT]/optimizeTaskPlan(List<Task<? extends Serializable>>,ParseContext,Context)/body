@@ -1,0 +1,44 @@
+{
+  PERF_LOGGER.PerfLogBegin(CLASS_NAME,PerfLogger.SPARK_OPTIMIZE_TASK_TREE);
+  PhysicalContext physicalCtx=new PhysicalContext(conf,pCtx,pCtx.getContext(),rootTasks,pCtx.getFetchTask());
+  physicalCtx=new SplitSparkWorkResolver().resolve(physicalCtx);
+  if (conf.getBoolVar(HiveConf.ConfVars.HIVESKEWJOIN)) {
+    (new SparkSkewJoinResolver()).resolve(physicalCtx);
+  }
+ else {
+    LOG.debug("Skipping runtime skew join optimization");
+  }
+  physicalCtx=new SparkMapJoinResolver().resolve(physicalCtx);
+  if (conf.getBoolVar(HiveConf.ConfVars.HIVENULLSCANOPTIMIZE)) {
+    physicalCtx=new NullScanOptimizer().resolve(physicalCtx);
+  }
+ else {
+    LOG.debug("Skipping null scan query optimization");
+  }
+  if (conf.getBoolVar(HiveConf.ConfVars.HIVEMETADATAONLYQUERIES)) {
+    physicalCtx=new MetadataOnlyOptimizer().resolve(physicalCtx);
+  }
+ else {
+    LOG.debug("Skipping metadata only query optimization");
+  }
+  if (conf.getBoolVar(HiveConf.ConfVars.HIVE_CHECK_CROSS_PRODUCT)) {
+    physicalCtx=new SparkCrossProductCheck().resolve(physicalCtx);
+  }
+ else {
+    LOG.debug("Skipping cross product analysis");
+  }
+  if (conf.getBoolVar(HiveConf.ConfVars.HIVE_VECTORIZATION_ENABLED)) {
+    (new Vectorizer()).resolve(physicalCtx);
+  }
+ else {
+    LOG.debug("Skipping vectorization");
+  }
+  if (!"none".equalsIgnoreCase(conf.getVar(HiveConf.ConfVars.HIVESTAGEIDREARRANGE))) {
+    (new StageIDsRearranger()).resolve(physicalCtx);
+  }
+ else {
+    LOG.debug("Skipping stage id rearranger");
+  }
+  PERF_LOGGER.PerfLogEnd(CLASS_NAME,PerfLogger.SPARK_OPTIMIZE_TASK_TREE);
+  return;
+}
