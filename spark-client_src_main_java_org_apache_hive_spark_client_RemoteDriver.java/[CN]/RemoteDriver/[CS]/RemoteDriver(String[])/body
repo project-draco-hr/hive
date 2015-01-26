@@ -1,5 +1,6 @@
 {
   this.activeJobs=Maps.newConcurrentMap();
+  this.jcLock=new Object();
   this.shutdownLock=new Object();
   SparkConf conf=new SparkConf();
   String serverAddress=null;
@@ -28,6 +29,7 @@
   Map<String,String> mapConf=Maps.newHashMap();
   for (  Tuple2<String,String> e : conf.getAll()) {
     mapConf.put(e._1(),e._2());
+    LOG.debug("Remote Driver configured with: " + e._1() + "="+ e._2());
   }
   String secret=mapConf.get(SparkClientFactory.CONF_KEY_SECRET);
   Preconditions.checkArgument(secret != null,"No secret provided.");
@@ -46,14 +48,20 @@
   try {
     JavaSparkContext sc=new JavaSparkContext(conf);
     sc.sc().addSparkListener(new ClientListener());
-    jc=new JobContextImpl(sc);
+synchronized (jcLock) {
+      jc=new JobContextImpl(sc);
+      jcLock.notifyAll();
+    }
   }
  catch (  Exception e) {
     LOG.error("Failed to start SparkContext.",e);
     shutdown(e);
+synchronized (jcLock) {
+      jcLock.notifyAll();
+    }
     throw e;
   }
-synchronized (jobQueue) {
+synchronized (jcLock) {
     for (Iterator<JobWrapper<?>> it=jobQueue.iterator(); it.hasNext(); ) {
       it.next().submit();
     }
