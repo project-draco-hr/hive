@@ -9,21 +9,25 @@
     compressed.position(compressed.position() + len);
     return slice;
   }
- else   if (currentRange >= (bytes.length - 1)) {
+ else   if (currentRange >= (bytes.size() - 1)) {
     throw new IOException("EOF in " + this + " while trying to read "+ chunkLength+ " bytes");
   }
   if (LOG.isDebugEnabled()) {
     LOG.debug(String.format("Crossing into next BufferChunk because compressed only has %d bytes (needs %d)",compressed.remaining(),len));
   }
-  ByteBuffer copy=allocateBuffer(chunkLength);
+  ByteBuffer copy=allocateBuffer(chunkLength,compressed.isDirect());
   currentOffset+=compressed.remaining();
   len-=compressed.remaining();
   copy.put(compressed);
-  while (len > 0 && (++currentRange) < bytes.length) {
+  while (len > 0 && (++currentRange) < bytes.size()) {
     if (LOG.isDebugEnabled()) {
       LOG.debug(String.format("Read slow-path, >1 cross block reads with %s",this.toString()));
     }
-    compressed=bytes[currentRange].duplicate();
+    DiskRange range=bytes.get(currentRange);
+    if (!(range instanceof BufferChunk)) {
+      throw new IOException("Trying to extend compressed block into uncompressed block");
+    }
+    compressed=range.getData().duplicate();
     if (compressed.remaining() >= len) {
       slice=compressed.slice();
       slice.limit(len);

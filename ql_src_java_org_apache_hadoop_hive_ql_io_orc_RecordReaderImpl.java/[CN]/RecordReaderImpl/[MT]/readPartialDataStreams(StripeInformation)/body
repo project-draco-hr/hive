@@ -1,13 +1,17 @@
 {
   List<OrcProto.Stream> streamList=stripeFooter.getStreamsList();
-  List<DiskRange> chunks=planReadPartialDataStreams(streamList,indexes,included,includedRowGroups,codec != null,stripeFooter.getColumnsList(),types,bufferSize);
+  LinkedList<DiskRange> rangesToRead=planReadPartialDataStreams(streamList,indexes,included,includedRowGroups,codec != null,stripeFooter.getColumnsList(),types,bufferSize);
   if (LOG.isDebugEnabled()) {
-    LOG.debug("chunks = " + stringifyDiskRanges(chunks));
+    LOG.debug("chunks = " + stringifyDiskRanges(rangesToRead));
   }
-  mergeDiskRanges(chunks);
+  mergeDiskRanges(rangesToRead);
+  if (this.cache != null) {
+    cache.getFileData(fileName,rangesToRead);
+  }
+  readDiskRanges(file,zcr,stripe.getOffset(),rangesToRead);
+  bufferChunks=rangesToRead;
   if (LOG.isDebugEnabled()) {
-    LOG.debug("merge = " + stringifyDiskRanges(chunks));
+    LOG.debug("merge = " + stringifyDiskRanges(rangesToRead));
   }
-  bufferChunks=readDiskRanges(file,zcr,stripe.getOffset(),chunks);
-  createStreams(streamList,bufferChunks,included,codec,bufferSize,streams);
+  createStreams(streamList,bufferChunks,included,codec,bufferSize,streams,cache);
 }

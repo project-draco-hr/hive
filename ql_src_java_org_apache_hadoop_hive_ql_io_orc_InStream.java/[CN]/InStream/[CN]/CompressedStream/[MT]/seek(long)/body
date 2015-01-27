@@ -1,21 +1,46 @@
 {
-  for (int i=0; i < bytes.length; ++i) {
-    if (offsets[i] <= desired && desired - offsets[i] < bytes[i].remaining()) {
+  for (int i=0; i < bytes.size(); ++i) {
+    DiskRange range=bytes.get(i);
+    if (range.offset <= desired && desired < range.end) {
       currentRange=i;
-      compressed=bytes[i].duplicate();
-      int pos=compressed.position();
-      pos+=(int)(desired - offsets[i]);
-      compressed.position(pos);
+      if (range instanceof BufferChunk) {
+        cacheBuffer=null;
+        compressed=range.getData().duplicate();
+        int pos=compressed.position();
+        pos+=(int)(desired - range.offset);
+        compressed.position(pos);
+      }
+ else {
+        compressed=null;
+        cacheBuffer=((CacheChunk)range).buffer;
+        uncompressed=cacheBuffer.byteBuffer.duplicate();
+        if (desired != range.offset) {
+          throw new IOException("Cannot seek into the middle of uncompressed cached data");
+        }
+      }
       currentOffset=desired;
       return;
     }
   }
-  int segments=bytes.length;
-  if (segments != 0 && desired == offsets[segments - 1] + bytes[segments - 1].remaining()) {
+  int segments=bytes.size();
+  if (segments != 0 && desired == bytes.get(segments - 1).end) {
+    DiskRange range=bytes.get(segments - 1);
     currentRange=segments - 1;
-    compressed=bytes[currentRange].duplicate();
-    compressed.position(compressed.limit());
-    currentOffset=desired;
+    if (range instanceof BufferChunk) {
+      cacheBuffer=null;
+      compressed=range.getData().duplicate();
+      compressed.position(compressed.limit());
+    }
+ else {
+      compressed=null;
+      cacheBuffer=((CacheChunk)range).buffer;
+      uncompressed=cacheBuffer.byteBuffer.duplicate();
+      uncompressed.position(uncompressed.limit());
+      if (desired != range.offset) {
+        throw new IOException("Cannot seek into the middle of uncompressed cached data");
+      }
+      currentOffset=desired;
+    }
     return;
   }
   throw new IOException("Seek outside of data in " + this + " to "+ desired);
