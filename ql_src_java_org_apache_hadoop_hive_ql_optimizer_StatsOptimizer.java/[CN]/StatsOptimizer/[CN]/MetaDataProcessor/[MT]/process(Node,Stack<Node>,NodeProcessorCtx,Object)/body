@@ -16,17 +16,20 @@
     if (rsOp.getConf().getDistinctColumnIndices().size() > 0) {
       return null;
     }
-    selOp=(SelectOperator)rsOp.getChildOperators().get(0).getChildOperators().get(0);
-    List<AggregationDesc> aggrs=gbyOp.getConf().getAggregators();
-    if (!(selOp.getConf().getColList().size() == aggrs.size())) {
-      return null;
-    }
-    for (    ExprNodeDesc desc : selOp.getConf().getColList()) {
-      if (!(desc instanceof ExprNodeColumnDesc)) {
+    Operator<?> last=rsOp.getChildOperators().get(0);
+    if (last.getChildOperators().get(0) instanceof SelectOperator) {
+      selOp=(SelectOperator)rsOp.getChildOperators().get(0).getChildOperators().get(0);
+      last=selOp;
+      if (!(selOp.getConf().getColList().size() == gbyOp.getConf().getAggregators().size())) {
         return null;
       }
+      for (      ExprNodeDesc desc : selOp.getConf().getColList()) {
+        if (!(desc instanceof ExprNodeColumnDesc)) {
+          return null;
+        }
+      }
     }
-    FileSinkOperator fsOp=(FileSinkOperator)(selOp.getChildren().get(0));
+    FileSinkOperator fsOp=(FileSinkOperator)(last.getChildren().get(0));
     if (fsOp.getChildOperators() != null && fsOp.getChildOperators().size() > 0) {
       return null;
     }
@@ -34,7 +37,7 @@
     List<Object> oneRow=new ArrayList<Object>();
     List<ObjectInspector> ois=new ArrayList<ObjectInspector>();
     Hive hive=Hive.get(pctx.getConf());
-    for (    AggregationDesc aggr : aggrs) {
+    for (    AggregationDesc aggr : gbyOp.getConf().getAggregators()) {
       if (aggr.getDistinct()) {
         return null;
       }

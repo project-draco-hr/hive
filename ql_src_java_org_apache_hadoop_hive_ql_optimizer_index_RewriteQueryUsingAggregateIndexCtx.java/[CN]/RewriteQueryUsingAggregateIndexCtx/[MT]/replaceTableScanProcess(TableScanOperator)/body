@@ -2,10 +2,7 @@
   RewriteQueryUsingAggregateIndexCtx rewriteQueryCtx=this;
   String alias=rewriteQueryCtx.getAlias();
   Map<String,Operator<? extends OperatorDesc>> topOps=rewriteQueryCtx.getParseContext().getTopOps();
-  Map<Operator<? extends OperatorDesc>,OpParseContext> opParseContext=rewriteQueryCtx.getParseContext().getOpParseCtx();
-  OpParseContext operatorContext=opParseContext.get(scanOperator);
   topOps.remove(alias);
-  opParseContext.remove(scanOperator);
   String indexTableName=rewriteQueryCtx.getIndexName();
   Table indexTableHandle=null;
   try {
@@ -21,18 +18,18 @@
   String k=indexTableName + Path.SEPARATOR;
   indexTableScanDesc.setStatsAggPrefix(k);
   scanOperator.setConf(indexTableScanDesc);
-  RowResolver rr=new RowResolver();
+  ArrayList<ColumnInfo> sigRS=new ArrayList<ColumnInfo>();
   try {
     StructObjectInspector rowObjectInspector=(StructObjectInspector)indexTableHandle.getDeserializer().getObjectInspector();
     StructField field=rowObjectInspector.getStructFieldRef(rewriteQueryCtx.getIndexKey());
-    rr.put(indexTableName,field.getFieldName(),new ColumnInfo(field.getFieldName(),TypeInfoUtils.getTypeInfoFromObjectInspector(field.getFieldObjectInspector()),indexTableName,false));
+    sigRS.add(new ColumnInfo(field.getFieldName(),TypeInfoUtils.getTypeInfoFromObjectInspector(field.getFieldObjectInspector()),indexTableName,false));
   }
  catch (  SerDeException e) {
     LOG.error("Error while creating the RowResolver for new TableScanOperator.");
     LOG.error(org.apache.hadoop.util.StringUtils.stringifyException(e));
     throw new SemanticException(e.getMessage(),e);
   }
-  operatorContext.setRowResolver(rr);
+  RowSchema rs=new RowSchema(sigRS);
   String newAlias=indexTableName;
   int index=alias.lastIndexOf(":");
   if (index >= 0) {
@@ -41,8 +38,6 @@
   scanOperator.getConf().setAlias(newAlias);
   scanOperator.setAlias(indexTableName);
   topOps.put(newAlias,scanOperator);
-  opParseContext.put(scanOperator,operatorContext);
   rewriteQueryCtx.getParseContext().setTopOps((HashMap<String,Operator<? extends OperatorDesc>>)topOps);
-  rewriteQueryCtx.getParseContext().setOpParseCtx((LinkedHashMap<Operator<? extends OperatorDesc>,OpParseContext>)opParseContext);
-  ColumnPrunerProcFactory.setupNeededColumns(scanOperator,rr,Arrays.asList(rewriteQueryCtx.getIndexKey()));
+  ColumnPrunerProcFactory.setupNeededColumns(scanOperator,rs,Arrays.asList(rewriteQueryCtx.getIndexKey()));
 }

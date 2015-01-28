@@ -9,8 +9,6 @@
     }
     cGBYr.setColumnExprMap(cGBYm.getColumnExprMap());
     cGBYr.setSchema(cGBYm.getSchema());
-    RowResolver resolver=context.getOpParseCtx().get(cGBYm).getRowResolver();
-    context.getOpParseCtx().get(cGBYr).setRowResolver(resolver);
   }
  else {
     cGBYr.getConf().setKeys(ExprNodeDescUtils.backtrack(cGBYr.getConf().getKeys(),cGBYr,cRS));
@@ -18,23 +16,21 @@
       aggr.setParameters(ExprNodeDescUtils.backtrack(aggr.getParameters(),cGBYr,cRS));
     }
     Map<String,ExprNodeDesc> oldMap=cGBYr.getColumnExprMap();
-    RowResolver oldRR=context.getOpParseCtx().get(cGBYr).getRowResolver();
+    RowSchema oldRS=cGBYr.getSchema();
     Map<String,ExprNodeDesc> newMap=new HashMap<String,ExprNodeDesc>();
-    RowResolver newRR=new RowResolver();
+    ArrayList<ColumnInfo> newRS=new ArrayList<ColumnInfo>();
     List<String> outputCols=cGBYr.getConf().getOutputColumnNames();
     for (int i=0; i < outputCols.size(); i++) {
       String colName=outputCols.get(i);
-      String[] nm=oldRR.reverseLookup(colName);
-      ColumnInfo colInfo=oldRR.get(nm[0],nm[1]);
-      newRR.put(nm[0],nm[1],colInfo);
+      ColumnInfo colInfo=oldRS.getColumnInfo(colName);
+      newRS.add(colInfo);
       ExprNodeDesc colExpr=ExprNodeDescUtils.backtrack(oldMap.get(colName),cGBYr,cRS);
       if (colExpr != null) {
         newMap.put(colInfo.getInternalName(),colExpr);
       }
     }
     cGBYr.setColumnExprMap(newMap);
-    cGBYr.setSchema(new RowSchema(newRR.getColumnInfos()));
-    context.getOpParseCtx().get(cGBYr).setRowResolver(newRR);
+    cGBYr.setSchema(new RowSchema(newRS));
   }
   cGBYr.getConf().setMode(GroupByDesc.Mode.COMPLETE);
   removeOperator(cRS,cGBYr,parent,context);

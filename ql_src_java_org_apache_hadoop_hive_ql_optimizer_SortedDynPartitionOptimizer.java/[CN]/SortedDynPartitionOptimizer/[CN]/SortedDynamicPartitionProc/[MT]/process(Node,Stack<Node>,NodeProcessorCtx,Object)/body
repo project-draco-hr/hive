@@ -40,14 +40,12 @@
   for (  int i : sortPositions)   LOG.debug("sort position " + i);
   for (  int i : sortOrder)   LOG.debug("sort order " + i);
   List<Integer> partitionPositions=getPartitionPositions(dpCtx,fsParent.getSchema());
-  List<ColumnInfo> colInfos=parseCtx.getOpParseCtx().get(fsParent).getRowResolver().getColumnInfos();
+  List<ColumnInfo> colInfos=fsParent.getSchema().getSignature();
   ArrayList<ExprNodeDesc> bucketColumns=getPositionsToExprNodes(bucketPositions,colInfos);
   fsOp.getConf().setMultiFileSpray(false);
   fsOp.getConf().setNumFiles(1);
   fsOp.getConf().setTotalFiles(1);
-  RowResolver inputRR=parseCtx.getOpParseCtx().get(fsParent).getRowResolver();
-  ObjectPair<String,RowResolver> pair=copyRowResolver(inputRR);
-  RowResolver outRR=pair.getSecond();
+  RowSchema outRS=new RowSchema(fsParent.getSchema());
   ArrayList<ColumnInfo> valColInfo=Lists.newArrayList(fsParent.getSchema().getSignature());
   ArrayList<ExprNodeDesc> newValueCols=Lists.newArrayList();
   Map<String,ExprNodeDesc> colExprMap=Maps.newHashMap();
@@ -57,16 +55,15 @@
   }
   ReduceSinkDesc rsConf=getReduceSinkDesc(partitionPositions,sortPositions,sortOrder,newValueCols,bucketColumns,numBuckets,fsParent,fsOp.getConf().getWriteType());
   if (!bucketColumns.isEmpty()) {
-    String tableAlias=outRR.getColumnInfos().get(0).getTabAlias();
+    String tableAlias=outRS.getSignature().get(0).getTabAlias();
     ColumnInfo ci=new ColumnInfo(BUCKET_NUMBER_COL_NAME,TypeInfoFactory.stringTypeInfo,tableAlias,true,true);
-    outRR.put(tableAlias,BUCKET_NUMBER_COL_NAME,ci);
+    outRS.getSignature().add(ci);
   }
-  ReduceSinkOperator rsOp=(ReduceSinkOperator)putOpInsertMap(OperatorFactory.getAndMakeChild(rsConf,new RowSchema(outRR.getColumnInfos()),fsParent),outRR,parseCtx);
+  ReduceSinkOperator rsOp=(ReduceSinkOperator)OperatorFactory.getAndMakeChild(rsConf,new RowSchema(outRS.getSignature()),fsParent);
   rsOp.setColumnExprMap(colExprMap);
-  ObjectPair<String,RowResolver> exPair=copyRowResolver(outRR);
-  RowResolver exRR=exPair.getSecond();
+  RowSchema exRR=new RowSchema(outRS);
   ExtractDesc exConf=new ExtractDesc(new ExprNodeColumnDesc(TypeInfoFactory.stringTypeInfo,Utilities.ReduceField.VALUE.toString(),"",false));
-  ExtractOperator exOp=(ExtractOperator)putOpInsertMap(OperatorFactory.getAndMakeChild(exConf,new RowSchema(exRR.getColumnInfos()),rsOp),exRR,parseCtx);
+  ExtractOperator exOp=(ExtractOperator)OperatorFactory.getAndMakeChild(exConf,exRR,rsOp);
   fsOp.getParentOperators().clear();
   fsOp.getParentOperators().add(exOp);
   exOp.getChildOperators().add(fsOp);
