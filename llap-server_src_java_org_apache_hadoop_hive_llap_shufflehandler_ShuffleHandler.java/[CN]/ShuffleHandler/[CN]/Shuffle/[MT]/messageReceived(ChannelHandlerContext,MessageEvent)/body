@@ -1,0 +1,97 @@
+{
+  HttpRequest request=(HttpRequest)evt.getMessage();
+  if (request.getMethod() != GET) {
+    sendError(ctx,METHOD_NOT_ALLOWED);
+    return;
+  }
+  if (!ShuffleHeader.DEFAULT_HTTP_HEADER_NAME.equals(request.getHeader(ShuffleHeader.HTTP_HEADER_NAME)) || !ShuffleHeader.DEFAULT_HTTP_HEADER_VERSION.equals(request.getHeader(ShuffleHeader.HTTP_HEADER_VERSION))) {
+    sendError(ctx,"Incompatible shuffle request version",BAD_REQUEST);
+  }
+  final Map<String,List<String>> q=new QueryStringDecoder(request.getUri()).getParameters();
+  final List<String> keepAliveList=q.get("keepAlive");
+  boolean keepAliveParam=false;
+  if (keepAliveList != null && keepAliveList.size() == 1) {
+    keepAliveParam=Boolean.valueOf(keepAliveList.get(0));
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("KeepAliveParam : " + keepAliveList + " : "+ keepAliveParam);
+    }
+  }
+  final List<String> mapIds=splitMaps(q.get("map"));
+  final List<String> reduceQ=q.get("reduce");
+  final List<String> jobQ=q.get("job");
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("RECV: " + request.getUri() + "\n  mapId: "+ mapIds+ "\n  reduceId: "+ reduceQ+ "\n  jobId: "+ jobQ+ "\n  keepAlive: "+ keepAliveParam);
+  }
+  if (mapIds == null || reduceQ == null || jobQ == null) {
+    sendError(ctx,"Required param job, map and reduce",BAD_REQUEST);
+    return;
+  }
+  if (reduceQ.size() != 1 || jobQ.size() != 1) {
+    sendError(ctx,"Too many job/reduce parameters",BAD_REQUEST);
+    return;
+  }
+  int reduceId;
+  String jobId;
+  try {
+    reduceId=Integer.parseInt(reduceQ.get(0));
+    jobId=jobQ.get(0);
+  }
+ catch (  NumberFormatException e) {
+    sendError(ctx,"Bad reduce parameter",BAD_REQUEST);
+    return;
+  }
+catch (  IllegalArgumentException e) {
+    sendError(ctx,"Bad job parameter",BAD_REQUEST);
+    return;
+  }
+  final String reqUri=request.getUri();
+  if (null == reqUri) {
+    sendError(ctx,FORBIDDEN);
+    return;
+  }
+  HttpResponse response=new DefaultHttpResponse(HTTP_1_1,OK);
+  try {
+    verifyRequest(jobId,ctx,request,response,new URL("http","",this.port,reqUri));
+  }
+ catch (  IOException e) {
+    LOG.warn("Shuffle failure ",e);
+    sendError(ctx,e.getMessage(),UNAUTHORIZED);
+    return;
+  }
+  Map<String,MapOutputInfo> mapOutputInfoMap=new HashMap<String,MapOutputInfo>();
+  Channel ch=evt.getChannel();
+  String user=userRsrc.get(jobId);
+  String outputBasePathStr=getBaseLocation(jobId,user);
+  try {
+    populateHeaders(mapIds,outputBasePathStr,user,reduceId,request,response,keepAliveParam,mapOutputInfoMap);
+  }
+ catch (  IOException e) {
+    ch.write(response);
+    LOG.error("Shuffle error in populating headers :",e);
+    String errorMessage=getErrorMessage(e);
+    sendError(ctx,errorMessage,INTERNAL_SERVER_ERROR);
+    return;
+  }
+  ch.write(response);
+  ChannelFuture lastMap=null;
+  for (  String mapId : mapIds) {
+    try {
+      MapOutputInfo info=mapOutputInfoMap.get(mapId);
+      if (info == null) {
+        info=getMapOutputInfo(outputBasePathStr,mapId,reduceId,user);
+      }
+      lastMap=sendMapOutput(ctx,ch,user,mapId,reduceId,info);
+      if (null == lastMap) {
+        sendError(ctx,NOT_FOUND);
+        return;
+      }
+    }
+ catch (    IOException e) {
+      LOG.error("Shuffle error :",e);
+      String errorMessage=getErrorMessage(e);
+      sendError(ctx,errorMessage,INTERNAL_SERVER_ERROR);
+      return;
+    }
+  }
+  lastMap.addListener(ChannelFutureListener.CLOSE);
+}

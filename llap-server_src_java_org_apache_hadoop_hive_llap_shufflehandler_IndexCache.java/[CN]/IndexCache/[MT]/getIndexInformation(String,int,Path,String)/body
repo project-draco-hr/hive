@@ -1,0 +1,23 @@
+{
+  IndexInformation info=cache.get(mapId);
+  if (info == null) {
+    info=readIndexFileToCache(fileName,mapId,expectedIndexOwner);
+  }
+ else {
+synchronized (info) {
+      while (isUnderConstruction(info)) {
+        try {
+          info.wait();
+        }
+ catch (        InterruptedException e) {
+          throw new IOException("Interrupted waiting for construction",e);
+        }
+      }
+    }
+    LOG.debug("IndexCache HIT: MapId " + mapId + " found");
+  }
+  if (info.mapSpillRecord.size() == 0 || info.mapSpillRecord.size() <= reduce) {
+    throw new IOException("Invalid request " + " Map Id = " + mapId + " Reducer = "+ reduce+ " Index Info Length = "+ info.mapSpillRecord.size());
+  }
+  return info.mapSpillRecord.getIndex(reduce);
+}

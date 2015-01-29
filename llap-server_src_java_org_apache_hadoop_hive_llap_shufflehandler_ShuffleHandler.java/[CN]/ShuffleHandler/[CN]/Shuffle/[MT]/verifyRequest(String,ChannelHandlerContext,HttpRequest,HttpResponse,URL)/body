@@ -1,0 +1,26 @@
+{
+  SecretKey tokenSecret=secretManager.retrieveTokenSecret(appid);
+  if (null == tokenSecret) {
+    LOG.info("Request for unknown token " + appid);
+    throw new IOException("could not find jobid");
+  }
+  String enc_str=SecureShuffleUtils.buildMsgFrom(requestUri);
+  String urlHashStr=request.getHeader(SecureShuffleUtils.HTTP_HEADER_URL_HASH);
+  if (urlHashStr == null) {
+    LOG.info("Missing header hash for " + appid);
+    throw new IOException("fetcher cannot be authenticated");
+  }
+  if (LOG.isDebugEnabled()) {
+    int len=urlHashStr.length();
+    LOG.debug("verifying request. enc_str=" + enc_str + "; hash=..."+ urlHashStr.substring(len - len / 2,len - 1));
+  }
+  SecureShuffleUtils.verifyReply(urlHashStr,enc_str,tokenSecret);
+  String reply=SecureShuffleUtils.generateHash(urlHashStr.getBytes(Charsets.UTF_8),tokenSecret);
+  response.setHeader(SecureShuffleUtils.HTTP_HEADER_REPLY_URL_HASH,reply);
+  response.setHeader(ShuffleHeader.HTTP_HEADER_NAME,ShuffleHeader.DEFAULT_HTTP_HEADER_NAME);
+  response.setHeader(ShuffleHeader.HTTP_HEADER_VERSION,ShuffleHeader.DEFAULT_HTTP_HEADER_VERSION);
+  if (LOG.isDebugEnabled()) {
+    int len=reply.length();
+    LOG.debug("Fetcher request verfied. enc_str=" + enc_str + ";reply="+ reply.substring(len - len / 2,len - 1));
+  }
+}

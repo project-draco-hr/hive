@@ -1,0 +1,39 @@
+{
+  IndexInformation info;
+  IndexInformation newInd=new IndexInformation();
+  if ((info=cache.putIfAbsent(mapId,newInd)) != null) {
+synchronized (info) {
+      while (isUnderConstruction(info)) {
+        try {
+          info.wait();
+        }
+ catch (        InterruptedException e) {
+          throw new IOException("Interrupted waiting for construction",e);
+        }
+      }
+    }
+    LOG.debug("IndexCache HIT: MapId " + mapId + " found");
+    return info;
+  }
+  LOG.debug("IndexCache MISS: MapId " + mapId + " not found");
+  TezSpillRecord tmp=null;
+  try {
+    tmp=new TezSpillRecord(indexFileName,conf,expectedIndexOwner);
+  }
+ catch (  Throwable e) {
+    tmp=new TezSpillRecord(0);
+    cache.remove(mapId);
+    throw new IOException("Error Reading IndexFile",e);
+  }
+ finally {
+synchronized (newInd) {
+      newInd.mapSpillRecord=tmp;
+      newInd.notifyAll();
+    }
+  }
+  queue.add(mapId);
+  if (totalMemoryUsed.addAndGet(newInd.getSize()) > totalMemoryAllowed) {
+    freeIndexInformation();
+  }
+  return newInd;
+}

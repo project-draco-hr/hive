@@ -1,0 +1,35 @@
+{
+  final TezIndexRecord info=mapOutputInfo.indexRecord;
+  final ShuffleHeader header=new ShuffleHeader(mapId,info.getPartLength(),info.getRawLength(),reduce);
+  final DataOutputBuffer dob=new DataOutputBuffer();
+  header.write(dob);
+  ch.write(wrappedBuffer(dob.getData(),0,dob.getLength()));
+  final File spillfile=new File(mapOutputInfo.mapOutputFileName.toString());
+  RandomAccessFile spill;
+  try {
+    spill=SecureIOUtils.openForRandomRead(spillfile,"r",user,null);
+  }
+ catch (  FileNotFoundException e) {
+    LOG.info(spillfile + " not found");
+    return null;
+  }
+  ChannelFuture writeFuture;
+  if (ch.getPipeline().get(SslHandler.class) == null) {
+    final FadvisedFileRegion partition=new FadvisedFileRegion(spill,info.getStartOffset(),info.getPartLength(),manageOsCache,readaheadLength,readaheadPool,spillfile.getAbsolutePath(),shuffleBufferSize,shuffleTransferToAllowed);
+    writeFuture=ch.write(partition);
+    writeFuture.addListener(new ChannelFutureListener(){
+      @Override public void operationComplete(      ChannelFuture future){
+        if (future.isSuccess()) {
+          partition.transferSuccessful();
+        }
+        partition.releaseExternalResources();
+      }
+    }
+);
+  }
+ else {
+    final FadvisedChunkedFile chunk=new FadvisedChunkedFile(spill,info.getStartOffset(),info.getPartLength(),sslFileBufferSize,manageOsCache,readaheadLength,readaheadPool,spillfile.getAbsolutePath());
+    writeFuture=ch.write(chunk);
+  }
+  return writeFuture;
+}
