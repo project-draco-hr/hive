@@ -1,0 +1,26 @@
+{
+  LOG.debug("Handling SASL challenge message...");
+  Rpc.SaslMessage response=update(msg);
+  if (response != null) {
+    LOG.debug("Sending SASL challenge response...");
+    hasAuthResponse=true;
+    ctx.channel().writeAndFlush(response).sync();
+  }
+  if (!isComplete()) {
+    return;
+  }
+  ctx.channel().pipeline().remove(this);
+  String qop=getNegotiatedProperty(Sasl.QOP);
+  LOG.debug("SASL negotiation finished with QOP {}.",qop);
+  if (Rpc.SASL_AUTH_CONF.equals(qop)) {
+    LOG.info("SASL confidentiality enabled.");
+    kryo.setEncryptionHandler(this);
+  }
+ else {
+    if (requiresEncryption) {
+      throw new SaslException("Encryption required, but SASL negotiation did not set it up.");
+    }
+    dispose();
+  }
+  onComplete();
+}
