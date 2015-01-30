@@ -20,11 +20,20 @@
 );
   opRules.put(new TypeRule(SMBMapJoinOperator.class),new NodeProcessor(){
     @Override public Object process(    Node currNode,    Stack<Node> stack,    NodeProcessorCtx procCtx,    Object... os) throws SemanticException {
+      GenSparkProcContext context=(GenSparkProcContext)procCtx;
+      SMBMapJoinOperator currSmbNode=(SMBMapJoinOperator)currNode;
+      SparkSMBMapJoinInfo smbMapJoinCtx=context.smbMapJoinCtxMap.get(currSmbNode);
+      if (smbMapJoinCtx == null) {
+        smbMapJoinCtx=new SparkSMBMapJoinInfo();
+        context.smbMapJoinCtxMap.put(currSmbNode,smbMapJoinCtx);
+      }
       for (      Node stackNode : stack) {
         if (stackNode instanceof DummyStoreOperator) {
+          smbMapJoinCtx.smallTableRootOps.add(context.currentRootOperator);
           return true;
         }
       }
+      smbMapJoinCtx.bigTableRootOp=context.currentRootOperator;
       return false;
     }
   }
@@ -34,16 +43,10 @@
   topNodes.addAll(pCtx.getTopOps().values());
   GraphWalker ogw=new GenSparkWorkWalker(disp,procCtx);
   ogw.startWalking(topNodes,null);
-  opRules.clear();
-  opRules.put(new TypeRule(SMBMapJoinOperator.class),SparkSortMergeJoinFactory.getTableScanMapJoin());
-  disp=new DefaultRuleDispatcher(null,opRules,procCtx);
-  topNodes=new ArrayList<Node>();
-  topNodes.addAll(pCtx.getTopOps().values());
-  ogw=new GenSparkWorkWalker(disp,procCtx);
-  ogw.startWalking(topNodes,null);
   for (  BaseWork w : procCtx.workWithUnionOperators) {
     GenSparkUtils.getUtils().removeUnionOperators(conf,procCtx,w);
   }
+  GenSparkUtils.getUtils().annotateMapWork(procCtx);
   for (  FileSinkOperator fileSink : procCtx.fileSinkSet) {
     GenSparkUtils.getUtils().processFileSink(procCtx,fileSink);
   }
