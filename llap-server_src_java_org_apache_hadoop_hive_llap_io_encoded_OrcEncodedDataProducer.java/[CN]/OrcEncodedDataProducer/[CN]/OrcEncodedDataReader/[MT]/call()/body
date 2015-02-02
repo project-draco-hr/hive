@@ -1,48 +1,100 @@
 {
   LlapIoImpl.LOG.info("Processing split for " + internedFilePath);
   if (isStopped)   return null;
-  List<StripeInformation> stripes=metadataCache.getStripes(internedFilePath);
-  List<Type> types=metadataCache.getTypes(internedFilePath);
   orcReader=null;
-  if (stripes == null || types == null) {
+  OrcFileMetadata metadata=metadataCache.getFileMetadata(internedFilePath);
+  if (metadata == null) {
     orcReader=createOrcReader(split);
-    stripes=metadataCache.getStripes(internedFilePath);
-    types=metadataCache.getTypes(internedFilePath);
+    metadata=new OrcFileMetadata(orcReader);
+    metadataCache.putFileMetadata(internedFilePath,metadata);
   }
   if (columnIds == null) {
-    columnIds=new ArrayList<Integer>(types.size());
-    for (int i=1; i < types.size(); ++i) {
+    columnIds=new ArrayList<Integer>(metadata.getTypes().size());
+    for (int i=1; i < metadata.getTypes().size(); ++i) {
       columnIds.add(i);
     }
   }
-  determineWhatToRead(stripes);
+  determineStripesToRead(metadata.getStripes());
+  if (readState.length == 0) {
+    consumer.setDone();
+    return null;
+  }
+  int stride=metadata.getRowIndexStride();
+  ArrayList<OrcStripeMetadata> stripesMetadata=null;
+  boolean[] globalIncludes=OrcInputFormat.genIncludedColumns(metadata.getTypes(),columnIds,true);
+  RecordReader[] stripeReaders=new RecordReader[readState.length];
+  if (sarg != null && stride != 0) {
+    stripesMetadata=readStripesMetadata(metadata,globalIncludes,stripeReaders);
+  }
+  determineRgsToRead(metadata.getStripes(),metadata.getTypes(),globalIncludes,stride,stripesMetadata);
   if (isStopped)   return null;
-  List<Integer>[] stripeColsToRead=produceDataFromCache();
-  for (int stripeIxMod=0; stripeIxMod < readState.length; ++stripeIxMod) {
+  List<Integer>[] stripeColsToRead=produceDataFromCache(metadata.getStripes(),stride);
+  for (int stripeIxMod=0; stripeIxMod < stripeReaders.length; ++stripeIxMod) {
     List<Integer> colsToRead=stripeColsToRead == null ? null : stripeColsToRead[stripeIxMod];
-    long[][] colRgs=readState[stripeIxMod];
+    RecordReader stripeReader=stripeReaders[stripeIxMod];
     if (colsToRead == null) {
       colsToRead=columnIds;
     }
-    if (colsToRead.isEmpty())     continue;
-    if (colsToRead.size() != colRgs.length) {
-      long[][] colRgs2=new long[colsToRead.size()][];
+ else     if (colsToRead.isEmpty()) {
+      if (stripeReader != null) {
+        stripeReader.close();
+        stripeReaders[stripeIxMod]=null;
+      }
+      continue;
+    }
+ else     if (stripeReader != null) {
+      stripeReader.close();
+      stripeReader=null;
+    }
+    if (stripeReader != null)     continue;
+    StripeInformation si=metadata.getStripes().get(stripeIxFrom + stripeIxMod);
+    boolean[] stripeIncludes=OrcInputFormat.genIncludedColumns(metadata.getTypes(),colsToRead,true);
+    if (orcReader == null) {
+      orcReader=createOrcReader(split);
+    }
+    stripeReader=orcReader.rows(si.getOffset(),si.getLength(),stripeIncludes);
+    stripeReader.prepareEncodedColumnRead();
+    stripeReaders[stripeIxMod]=stripeReader;
+  }
+  OrcBatchKey stripeKey=new OrcBatchKey(internedFilePath,-1,0);
+  for (int stripeIxMod=0; stripeIxMod < stripeReaders.length; ++stripeIxMod) {
+    RecordReader stripeReader=stripeReaders[stripeIxMod];
+    if (stripeReader == null)     continue;
+    List<Integer> colsToRead=stripeColsToRead == null ? null : stripeColsToRead[stripeIxMod];
+    if (colsToRead == null) {
+      colsToRead=columnIds;
+    }
+    boolean[][] colRgs=readState[stripeIxMod];
+    if (colsToRead != null && colsToRead.size() != colRgs.length) {
+      boolean[][] colRgs2=new boolean[colsToRead.size()][];
       for (int i=0, i2=-1; i < colRgs.length; ++i) {
         if (colRgs[i] == null)         continue;
         colRgs2[++i2]=colRgs[i];
       }
       colRgs=colRgs2;
     }
-    int stripeIx=stripeIxFrom + stripeIxMod;
-    StripeInformation si=stripes.get(stripeIx);
-    int rgCount=rgsPerStripe[stripeIxMod];
-    boolean[] includes=OrcInputFormat.genIncludedColumns(types,colsToRead,true);
-    if (orcReader == null) {
-      orcReader=createOrcReader(split);
+    OrcStripeMetadata stripeMetadata;
+    int stripeIx=stripeIxMod + stripeIxFrom;
+    if (stripesMetadata != null) {
+      stripeMetadata=stripesMetadata.get(stripeIxMod);
     }
-    RecordReader stripeReader=orcReader.rows(si.getOffset(),si.getLength(),includes);
+ else {
+      stripeKey.stripeIx=stripeIx;
+      stripeMetadata=metadataCache.getStripeMetadata(stripeKey);
+      if (stripeMetadata == null) {
+        stripeMetadata=new OrcStripeMetadata(stripeReader,stripeKey.stripeIx);
+        metadataCache.putStripeMetadata(stripeKey,stripeMetadata);
+        stripeKey=new OrcBatchKey(internedFilePath,-1,0);
+      }
+    }
+    stripeReader.setRowIndex(stripeMetadata.getRowIndexes());
     Consumer<EncodedColumn<OrcBatchKey>> consumer=(cache == null) ? this.consumer : this;
-    stripeReader.readEncodedColumns(colRgs,rgCount,consumer,lowLevelCache);
+    try {
+      stripeReader.readEncodedColumns(stripeIx,colRgs,lowLevelCache,consumer);
+    }
+ catch (    Throwable t) {
+      consumer.setError(t);
+    }
     stripeReader.close();
   }
   consumer.setDone();

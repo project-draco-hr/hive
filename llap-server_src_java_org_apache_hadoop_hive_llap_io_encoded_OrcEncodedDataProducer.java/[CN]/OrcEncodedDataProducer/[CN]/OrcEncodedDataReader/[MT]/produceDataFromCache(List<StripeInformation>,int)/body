@@ -1,0 +1,44 @@
+{
+  if (cache == null)   return null;
+  OrcCacheKey key=new OrcCacheKey(internedFilePath,-1,-1,-1);
+  @SuppressWarnings("unchecked") List<Integer>[] stripeColsNotInCache=new List[readState.length];
+  for (int stripeIxMod=0; stripeIxMod < readState.length; ++stripeIxMod) {
+    key.stripeIx=stripeIxFrom + stripeIxMod;
+    boolean[][] cols=readState[stripeIxMod];
+    for (int colIxMod=0; colIxMod < cols.length; ++colIxMod) {
+      boolean[] readMask=cols[colIxMod];
+      key.colIx=columnIds.get(colIxMod);
+      boolean areAllRgsInCache=true;
+      int rgCount=readMask != null ? readMask.length : getRgCount(stripes.get(key.stripeIx),rowIndexStride);
+      for (int rgIx=0; rgIx < rgCount; ++rgIx) {
+        if (readMask != null && !readMask[rgIx])         continue;
+        key.rgIx=rgIx;
+        StreamBuffer cached=cache.get(key);
+        if (cached == null) {
+          areAllRgsInCache=false;
+          continue;
+        }
+        EncodedColumn<OrcBatchKey> col=null;
+        consumer.consumeData(col);
+        if (readMask == null) {
+          cols[colIxMod]=readMask=new boolean[rgCount];
+          Arrays.fill(readMask,true);
+        }
+        readMask[rgIx]=false;
+      }
+      boolean hasExplicitColList=stripeColsNotInCache[stripeIxMod] != null;
+      if (areAllRgsInCache) {
+        if (!hasExplicitColList) {
+          stripeColsNotInCache[stripeIxMod]=new ArrayList<Integer>(cols.length);
+          if (stripeIxMod > 0) {
+            stripeColsNotInCache[stripeIxMod].addAll(columnIds.subList(0,colIxMod));
+          }
+        }
+      }
+ else       if (hasExplicitColList) {
+        stripeColsNotInCache[stripeIxMod].add(columnIds.get(colIxMod));
+      }
+    }
+  }
+  return stripeColsNotInCache;
+}

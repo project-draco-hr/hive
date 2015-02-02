@@ -3,15 +3,21 @@
   while (rangeIter.hasNext()) {
     DiskRange range=rangeIter.next();
     if (range.hasData())     continue;
-    rangeIter.remove();
-    rangeIter.previous();
     int len=(int)(range.end - range.offset);
     long off=range.offset;
     file.seek(base + off);
     if (zcr != null) {
+      boolean hasReplaced=false;
       while (len > 0) {
         ByteBuffer partial=zcr.readBuffer(len,false);
-        ranges.add(new BufferChunk(partial,off));
+        BufferChunk bc=new BufferChunk(partial,off);
+        if (!hasReplaced) {
+          rangeIter.set(bc);
+          hasReplaced=true;
+        }
+ else {
+          rangeIter.add(bc);
+        }
         int read=partial.remaining();
         len-=read;
         off+=read;
@@ -20,7 +26,7 @@
  else {
       byte[] buffer=new byte[len];
       file.readFully(buffer,0,buffer.length);
-      ranges.add(new BufferChunk(ByteBuffer.wrap(buffer),range.offset));
+      rangeIter.set(new BufferChunk(ByteBuffer.wrap(buffer),range.offset));
     }
   }
 }

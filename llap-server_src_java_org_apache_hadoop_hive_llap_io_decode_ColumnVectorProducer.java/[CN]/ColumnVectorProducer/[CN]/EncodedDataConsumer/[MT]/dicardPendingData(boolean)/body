@@ -1,5 +1,5 @@
 {
-  List<ColumnBuffer> dataToDiscard=new ArrayList<ColumnBuffer>(pendingData.size() * colCount);
+  List<StreamBuffer> dataToDiscard=new ArrayList<StreamBuffer>(pendingData.size() * colCount);
   List<EncodedColumnBatch> batches=new ArrayList<EncodedColumnBatch>(pendingData.size());
 synchronized (pendingData) {
     if (isStopped) {
@@ -10,13 +10,17 @@ synchronized (pendingData) {
   }
   for (  EncodedColumnBatch batch : batches) {
 synchronized (batch) {
-      for (      ColumnBuffer b : batch.columnDatas) {
-        dataToDiscard.add(b);
+      for (      StreamBuffer[] bb : batch.columnDatas) {
+        for (        StreamBuffer b : bb) {
+          dataToDiscard.add(b);
+        }
       }
       batch.columnDatas=null;
     }
   }
-  for (  ColumnBuffer data : dataToDiscard) {
-    upstreamFeedback.returnData(data);
+  for (  StreamBuffer data : dataToDiscard) {
+    if (data.decRef() == 0) {
+      upstreamFeedback.returnData(data);
+    }
   }
 }

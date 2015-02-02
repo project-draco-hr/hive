@@ -1,0 +1,44 @@
+{
+  colBuffer.cacheBuffers=new ArrayList<LlapMemoryBuffer>();
+  List<ProcCacheChunk> toDecompress=new ArrayList<ProcCacheChunk>();
+  DiskRange current=findCompressedPosition(ranges,cOffset);
+  int nextCbOffset=(cOffset >= 0) ? (int)(cOffset - current.offset) : -1;
+  long currentCOffset=cOffset;
+  while (true) {
+    if (current instanceof CacheChunk) {
+      if (nextCbOffset > 0)       throw new AssertionError("Compressed offset in the middle of cb");
+      CacheChunk cc=(CacheChunk)current;
+      colBuffer.cacheBuffers.add(cc.buffer);
+      currentCOffset=cc.end;
+    }
+ else {
+      BufferChunk bc=(BufferChunk)current;
+      int chunkLength=addOneCompressionBuffer(bc,ranges,bufferSize,cache,colBuffer.cacheBuffers,toDecompress,nextCbOffset);
+      currentCOffset=bc.offset + chunkLength;
+    }
+    nextCbOffset=-1;
+    if ((endCOffset >= 0 && currentCOffset >= endCOffset) || !ranges.hasNext()) {
+      break;
+    }
+    current=ranges.next();
+  }
+  LlapMemoryBuffer[] targetBuffers=new LlapMemoryBuffer[toDecompress.size()];
+  DiskRange[] cacheKeys=new DiskRange[toDecompress.size()];
+  int ix=0;
+  for (  ProcCacheChunk chunk : toDecompress) {
+    cacheKeys[ix]=chunk;
+    targetBuffers[ix]=chunk.buffer;
+    ++ix;
+  }
+  cache.allocateMultiple(targetBuffers,bufferSize);
+  for (  ProcCacheChunk chunk : toDecompress) {
+    if (chunk.isCompressed) {
+      codec.decompress(chunk.originalData,chunk.buffer.byteBuffer);
+    }
+ else {
+      chunk.buffer.byteBuffer.put(chunk.originalData);
+    }
+    chunk.originalData=null;
+  }
+  cache.putFileData(fileName,cacheKeys,targetBuffers);
+}

@@ -1,0 +1,21 @@
+{
+  ArrayList<OrcStripeMetadata> result=new ArrayList<OrcStripeMetadata>(stripeReaders.length);
+  OrcBatchKey stripeKey=new OrcBatchKey(internedFilePath,0,0);
+  for (int stripeIxMod=0; stripeIxMod < stripeReaders.length; ++stripeIxMod) {
+    stripeKey.stripeIx=stripeIxMod + stripeIxFrom;
+    OrcStripeMetadata value=metadataCache.getStripeMetadata(stripeKey);
+    if (value == null) {
+      if (orcReader == null) {
+        orcReader=createOrcReader(split);
+      }
+      StripeInformation si=metadata.getStripes().get(stripeKey.stripeIx);
+      stripeReaders[stripeIxMod]=orcReader.rows(si.getOffset(),si.getLength(),globalInc);
+      stripeReaders[stripeIxMod].prepareEncodedColumnRead();
+      value=new OrcStripeMetadata(stripeReaders[stripeIxMod],stripeKey.stripeIx);
+      metadataCache.putStripeMetadata(stripeKey,value);
+      stripeKey=new OrcBatchKey(internedFilePath,0,0);
+    }
+    result.add(value);
+  }
+  return result;
+}
