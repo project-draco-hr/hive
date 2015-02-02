@@ -1,0 +1,28 @@
+{
+  ObjectInspector.Category c=typeInfo.getCategory();
+switch (c) {
+case PRIMITIVE:
+    return LazyPrimitiveObjectInspectorFactory.getLazyObjectInspector((PrimitiveTypeInfo)typeInfo,lazyParams);
+case MAP:
+  return LazyObjectInspectorFactory.getLazySimpleMapObjectInspector(createLazyObjectInspector(((MapTypeInfo)typeInfo).getMapKeyTypeInfo(),separatorIndex + 2,lazyParams,option),createLazyObjectInspector(((MapTypeInfo)typeInfo).getMapValueTypeInfo(),separatorIndex + 2,lazyParams,option),LazyUtils.getSeparator(lazyParams.getSeparators(),separatorIndex),LazyUtils.getSeparator(lazyParams.getSeparators(),separatorIndex + 1),lazyParams);
+case LIST:
+return LazyObjectInspectorFactory.getLazySimpleListObjectInspector(createLazyObjectInspector(((ListTypeInfo)typeInfo).getListElementTypeInfo(),separatorIndex + 1,lazyParams,option),LazyUtils.getSeparator(lazyParams.getSeparators(),separatorIndex),lazyParams);
+case STRUCT:
+StructTypeInfo structTypeInfo=(StructTypeInfo)typeInfo;
+List<String> fieldNames=structTypeInfo.getAllStructFieldNames();
+List<TypeInfo> fieldTypeInfos=structTypeInfo.getAllStructFieldTypeInfos();
+List<ObjectInspector> fieldObjectInspectors=new ArrayList<ObjectInspector>(fieldTypeInfos.size());
+for (int i=0; i < fieldTypeInfos.size(); i++) {
+fieldObjectInspectors.add(createLazyObjectInspector(fieldTypeInfos.get(i),separatorIndex + 1,lazyParams,option));
+}
+return LazyObjectInspectorFactory.getLazySimpleStructObjectInspector(fieldNames,fieldObjectInspectors,null,LazyUtils.getSeparator(lazyParams.getSeparators(),separatorIndex),lazyParams,option);
+case UNION:
+UnionTypeInfo unionTypeInfo=(UnionTypeInfo)typeInfo;
+List<ObjectInspector> lazyOIs=new ArrayList<ObjectInspector>();
+for (TypeInfo uti : unionTypeInfo.getAllUnionObjectTypeInfos()) {
+lazyOIs.add(createLazyObjectInspector(uti,separatorIndex + 1,lazyParams,option));
+}
+return LazyObjectInspectorFactory.getLazyUnionObjectInspector(lazyOIs,LazyUtils.getSeparator(lazyParams.getSeparators(),separatorIndex),lazyParams);
+}
+throw new RuntimeException("Hive LazySerDe Internal error.");
+}
