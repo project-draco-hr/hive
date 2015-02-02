@@ -61,18 +61,27 @@
   }
   ReduceSinkOperator rsOp=(ReduceSinkOperator)OperatorFactory.getAndMakeChild(rsConf,new RowSchema(outRS.getSignature()),fsParent);
   rsOp.setColumnExprMap(colExprMap);
-  RowSchema exRR=new RowSchema(outRS);
-  ExtractDesc exConf=new ExtractDesc(new ExprNodeColumnDesc(TypeInfoFactory.stringTypeInfo,Utilities.ReduceField.VALUE.toString(),"",false));
-  ExtractOperator exOp=(ExtractOperator)OperatorFactory.getAndMakeChild(exConf,exRR,rsOp);
+  List<ExprNodeDesc> valCols=rsConf.getValueCols();
+  List<ExprNodeDesc> descs=new ArrayList<ExprNodeDesc>(valCols.size());
+  List<String> colNames=new ArrayList<String>();
+  String colName;
+  for (  ExprNodeDesc valCol : valCols) {
+    colName=PlanUtils.stripQuotes(valCol.getExprString());
+    colNames.add(colName);
+    descs.add(new ExprNodeColumnDesc(valCol.getTypeInfo(),ReduceField.VALUE.toString() + "." + colName,null,false));
+  }
+  SelectDesc selConf=new SelectDesc(descs,colNames);
+  RowSchema selRS=new RowSchema(outRS);
+  SelectOperator selOp=(SelectOperator)OperatorFactory.getAndMakeChild(selConf,selRS,rsOp);
   fsOp.getParentOperators().clear();
-  fsOp.getParentOperators().add(exOp);
-  exOp.getChildOperators().add(fsOp);
+  fsOp.getParentOperators().add(selOp);
+  selOp.getChildOperators().add(fsOp);
   fsOp.getConf().setDpSortState(FileSinkDesc.DPSortState.PARTITION_SORTED);
   if (bucketColumns.size() > 0) {
     fsOp.getConf().setDpSortState(FileSinkDesc.DPSortState.PARTITION_BUCKET_SORTED);
   }
   ArrayList<ExprNodeDesc> partitionColumns=getPositionsToExprNodes(partitionPositions,rsOp.getSchema().getSignature());
   fsOp.getConf().setPartitionCols(partitionColumns);
-  LOG.info("Inserted " + rsOp.getOperatorId() + " and "+ exOp.getOperatorId()+ " as parent of "+ fsOp.getOperatorId()+ " and child of "+ fsParent.getOperatorId());
+  LOG.info("Inserted " + rsOp.getOperatorId() + " and "+ selOp.getOperatorId()+ " as parent of "+ fsOp.getOperatorId()+ " and child of "+ fsParent.getOperatorId());
   return null;
 }
