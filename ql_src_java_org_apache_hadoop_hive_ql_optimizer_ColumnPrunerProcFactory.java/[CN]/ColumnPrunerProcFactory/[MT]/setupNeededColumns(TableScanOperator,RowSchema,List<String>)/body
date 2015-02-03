@@ -1,0 +1,36 @@
+{
+  List<Integer> neededColumnIds=new ArrayList<Integer>();
+  List<String> neededColumnNames=new ArrayList<String>();
+  List<String> referencedColumnNames=new ArrayList<String>();
+  TableScanDesc desc=scanOp.getConf();
+  List<VirtualColumn> virtualCols=desc.getVirtualCols();
+  List<VirtualColumn> newVirtualCols=new ArrayList<VirtualColumn>();
+  if (scanOp.getConf().isGatherStats()) {
+    cols.add(VirtualColumn.RAWDATASIZE.getName());
+  }
+  for (  String column : cols) {
+    ColumnInfo colInfo=inputRS.getColumnInfo(column);
+    if (colInfo == null) {
+      continue;
+    }
+    referencedColumnNames.add(column);
+    if (colInfo.getIsVirtualCol()) {
+      for (int j=0; j < virtualCols.size(); j++) {
+        VirtualColumn vc=virtualCols.get(j);
+        if (vc.getName().equals(colInfo.getInternalName())) {
+          newVirtualCols.add(vc);
+        }
+      }
+      continue;
+    }
+    int position=inputRS.getPosition(column);
+    if (position >= 0) {
+      neededColumnIds.add(position);
+      neededColumnNames.add(column);
+    }
+  }
+  desc.setVirtualCols(newVirtualCols);
+  scanOp.setNeededColumnIDs(neededColumnIds);
+  scanOp.setNeededColumns(neededColumnNames);
+  scanOp.setReferencedColumns(referencedColumnNames);
+}

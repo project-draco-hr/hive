@@ -35,17 +35,16 @@
  else   if (current.getColumnExprMap() != null && !(current instanceof ReduceSinkOperator)) {
     List<ExprNodeDesc> backtrackedKeyCols=ExprNodeDescUtils.backtrack(childKeyCols,child,current);
     List<ExprNodeDesc> backtrackedPartitionCols=ExprNodeDescUtils.backtrack(childPartitionCols,child,current);
-    OpParseContext opCtx=pCtx.getOpParseCtx().get(current);
-    RowResolver rowResolver=opCtx.getRowResolver();
+    RowSchema rowSchema=current.getSchema();
     Set<String> tableNeedToCheck=new HashSet<String>();
     for (    ExprNodeDesc expr : childKeyCols) {
       if (!(expr instanceof ExprNodeColumnDesc)) {
         return correlatedReduceSinkOperators;
       }
       String colName=((ExprNodeColumnDesc)expr).getColumn();
-      String[] nm=rowResolver.reverseLookup(colName);
-      if (nm != null) {
-        tableNeedToCheck.add(nm[0]);
+      ColumnInfo columnInfo=rowSchema.getColumnInfo(colName);
+      if (columnInfo != null) {
+        tableNeedToCheck.add(columnInfo.getTabAlias());
       }
     }
     if (current instanceof JoinOperator) {
@@ -53,7 +52,7 @@
       int expectedNumCorrelatedRsops=current.getParentOperators().size();
       LinkedHashSet<ReduceSinkOperator> correlatedRsops=null;
       for (      Operator<? extends OperatorDesc> parent : current.getParentOperators()) {
-        Set<String> tableNames=pCtx.getOpParseCtx().get(parent).getRowResolver().getTableNames();
+        Set<String> tableNames=parent.getSchema().getTableNames();
         for (        String tbl : tableNames) {
           if (tableNeedToCheck.contains(tbl)) {
             correlatedRsops=findCorrelatedReduceSinkOperators(current,backtrackedKeyCols,backtrackedPartitionCols,childRSOrder,parent,correlation);
