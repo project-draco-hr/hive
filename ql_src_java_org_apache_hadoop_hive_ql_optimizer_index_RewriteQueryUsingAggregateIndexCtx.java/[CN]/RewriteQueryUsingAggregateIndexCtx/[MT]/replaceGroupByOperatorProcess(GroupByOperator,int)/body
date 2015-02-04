@@ -2,10 +2,11 @@
   RewriteQueryUsingAggregateIndexCtx rewriteQueryCtx=this;
   if (index == 0) {
     String selReplacementCommand="select sum(`" + rewriteQueryCtx.getAggregateFunction() + "`)"+ " from "+ rewriteQueryCtx.getIndexName()+ " group by "+ rewriteQueryCtx.getIndexKey()+ " ";
-    ParseContext newDAGContext=RewriteParseContextGenerator.generateOperatorTree(rewriteQueryCtx.getParseContext().getConf(),selReplacementCommand);
-    Map<GroupByOperator,Set<String>> newGbyOpMap=newDAGContext.getGroupOpToInputTables();
-    GroupByOperator newGbyOperator=newGbyOpMap.keySet().iterator().next();
-    GroupByDesc oldConf=operator.getConf();
+    Operator<?> newOperatorTree=RewriteParseContextGenerator.generateOperatorTree(rewriteQueryCtx.getParseContext().getConf(),selReplacementCommand);
+    GroupByOperator newGbyOperator=OperatorUtils.findLastOperatorUpstream(newOperatorTree,GroupByOperator.class);
+    if (newGbyOperator == null) {
+      throw new SemanticException("Error replacing GroupBy operator.");
+    }
     ExprNodeColumnDesc aggrExprNode=null;
     GroupByDesc newConf=newGbyOperator.getConf();
     List<AggregationDesc> newAggrList=newConf.getAggregators();
@@ -16,6 +17,7 @@
         rewriteQueryCtx.setAggrExprNode(aggrExprNode);
       }
     }
+    GroupByDesc oldConf=operator.getConf();
     oldConf.setAggregators((ArrayList<AggregationDesc>)newAggrList);
     operator.setConf(oldConf);
   }
