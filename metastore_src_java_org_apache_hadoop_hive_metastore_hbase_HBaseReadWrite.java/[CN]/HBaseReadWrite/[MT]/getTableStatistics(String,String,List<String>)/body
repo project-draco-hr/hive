@@ -1,0 +1,38 @@
+{
+  byte[] key=HBaseUtils.buildKey(dbName,tableName);
+  ColumnStatistics stats=new ColumnStatistics();
+  ColumnStatisticsDesc desc=new ColumnStatisticsDesc();
+  desc.setIsTblLevel(true);
+  desc.setDbName(dbName);
+  desc.setTableName(tableName);
+  stats.setStatsDesc(desc);
+  List<String> stillLookingFor=new ArrayList<String>();
+  for (int i=0; i < colNames.size(); i++) {
+    StatsCache.StatsInfo info=statsCache.getTableStatistics(dbName,tableName,colNames.get(i));
+    if (info == null) {
+      stillLookingFor.add(colNames.get(i));
+    }
+ else {
+      info.stats.setColName(colNames.get(i));
+      stats.addToStatsObj(info.stats);
+      stats.getStatsDesc().setLastAnalyzed(Math.max(stats.getStatsDesc().getLastAnalyzed(),info.lastAnalyzed));
+    }
+  }
+  if (stillLookingFor.size() == 0)   return stats;
+  byte[][] colKeys=new byte[stillLookingFor.size()][];
+  for (int i=0; i < colKeys.length; i++) {
+    colKeys[i]=HBaseUtils.buildKey(stillLookingFor.get(i));
+  }
+  Result res=read(TABLE_TABLE,key,STATS_CF,colKeys);
+  for (int i=0; i < colKeys.length; i++) {
+    byte[] serialized=res.getValue(STATS_CF,colKeys[i]);
+    if (serialized == null) {
+      continue;
+    }
+    ColumnStatisticsObj obj=HBaseUtils.deserializeStatsForOneColumn(stats,serialized);
+    statsCache.put(dbName,tableName,null,stillLookingFor.get(i),obj,stats.getStatsDesc().getLastAnalyzed());
+    obj.setColName(stillLookingFor.get(i));
+    stats.addToStatsObj(obj);
+  }
+  return stats;
+}

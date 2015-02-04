@@ -1,0 +1,26 @@
+{
+  byte[] sd=HBaseUtils.serializeStorageDescriptor(storageDescriptor);
+  byte[] key=hash(sd);
+  for (int i=0; i < 10; i++) {
+    byte[] serializedRefCnt=read(SD_TABLE,key,CATALOG_CF,REF_COUNT_COL);
+    HTableInterface htab=getHTable(SD_TABLE);
+    if (serializedRefCnt == null) {
+      Put p=new Put(key);
+      p.add(CATALOG_CF,CATALOG_COL,sd);
+      p.add(CATALOG_CF,REF_COUNT_COL,"0".getBytes(HBaseUtils.ENCODING));
+      if (htab.checkAndPut(key,CATALOG_CF,REF_COUNT_COL,null,p)) {
+        sdCache.put(new ByteArrayWrapper(key),storageDescriptor);
+        return key;
+      }
+    }
+ else {
+      int refCnt=Integer.valueOf(new String(serializedRefCnt,HBaseUtils.ENCODING)) + 1;
+      Put p=new Put(key);
+      p.add(CATALOG_CF,REF_COUNT_COL,Integer.toString(refCnt).getBytes(HBaseUtils.ENCODING));
+      if (htab.checkAndPut(key,CATALOG_CF,REF_COUNT_COL,serializedRefCnt,p)) {
+        return key;
+      }
+    }
+  }
+  throw new IOException("Too many unsuccessful attepts to increment storage counter");
+}

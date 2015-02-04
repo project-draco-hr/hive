@@ -1,0 +1,49 @@
+{
+  conf=configuration;
+  try {
+    conn=HConnectionManager.createConnection(conf);
+  }
+ catch (  IOException e) {
+    throw new RuntimeException(e);
+  }
+  tables=new HashMap<String,HTableInterface>();
+  try {
+    md=MessageDigest.getInstance("MD5");
+  }
+ catch (  NoSuchAlgorithmException e) {
+    throw new RuntimeException(e);
+  }
+  int totalObjectsToCache=HiveConf.getIntVar(conf,HiveConf.ConfVars.METASTORE_HBASE_CACHE_SIZE);
+  tableHits=new Counter("table cache hits");
+  tableMisses=new Counter("table cache misses");
+  tableOverflows=new Counter("table cache overflows");
+  partHits=new Counter("partition cache hits");
+  partMisses=new Counter("partition cache misses");
+  partOverflows=new Counter("partition cache overflows");
+  sdHits=new Counter("storage descriptor cache hits");
+  sdMisses=new Counter("storage descriptor cache misses");
+  sdOverflows=new Counter("storage descriptor cache overflows");
+  counters=new ArrayList<Counter>();
+  counters.add(tableHits);
+  counters.add(tableMisses);
+  counters.add(tableOverflows);
+  counters.add(partHits);
+  counters.add(partMisses);
+  counters.add(partOverflows);
+  counters.add(sdHits);
+  counters.add(sdMisses);
+  counters.add(sdOverflows);
+  int sdsCacheSize=totalObjectsToCache / 100;
+  if (conf.getBoolean(NO_CACHE_CONF,false)) {
+    tableCache=new BogusObjectCache<ObjectPair<String,String>,Table>();
+    sdCache=new BogusObjectCache<ByteArrayWrapper,StorageDescriptor>();
+    partCache=new BogusPartitionCache();
+    statsCache=StatsCache.getBogusStatsCache();
+  }
+ else {
+    tableCache=new ObjectCache<ObjectPair<String,String>,Table>(tablesToCache,tableHits,tableMisses,tableOverflows);
+    sdCache=new ObjectCache<ByteArrayWrapper,StorageDescriptor>(sdsCacheSize,sdHits,sdMisses,sdOverflows);
+    partCache=new PartitionCache(totalObjectsToCache / 2,partHits,partMisses,partOverflows);
+    statsCache=StatsCache.getInstance(conf);
+  }
+}

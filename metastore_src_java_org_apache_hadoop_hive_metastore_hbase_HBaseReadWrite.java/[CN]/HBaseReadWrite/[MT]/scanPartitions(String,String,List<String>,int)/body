@@ -1,0 +1,29 @@
+{
+  byte[] keyPrefix;
+  if (partVals == null || partVals.size() == 0) {
+    keyPrefix=HBaseUtils.buildKeyWithTrailingSeparator(dbName,tableName);
+    return scanOnPrefix(PART_TABLE,keyPrefix,CATALOG_CF,CATALOG_COL,maxPartitions);
+  }
+  int firstNull=0;
+  for (; firstNull < partVals.size(); firstNull++) {
+    if (partVals.get(firstNull) == null)     break;
+  }
+  if (firstNull == partVals.size()) {
+    keyPrefix=buildPartitionKey(dbName,tableName,partVals);
+    return scanOnPrefix(PART_TABLE,keyPrefix,CATALOG_CF,CATALOG_COL,maxPartitions);
+  }
+  keyPrefix=buildPartitionKey(dbName,tableName,partVals.subList(0,firstNull));
+  StringBuilder regex=new StringBuilder();
+  regex.append(dbName);
+  regex.append(':');
+  regex.append(tableName);
+  for (  String val : partVals) {
+    regex.append(HBaseUtils.KEY_SEPARATOR);
+    if (val == null)     regex.append("[^" + HBaseUtils.KEY_SEPARATOR + "]+");
+ else     regex.append(val);
+  }
+  Filter filter=new RowFilter(CompareFilter.CompareOp.EQUAL,new RegexStringComparator(regex.toString()));
+  List<Partition> parts=scanOnPrefixWithFilter(PART_TABLE,keyPrefix,CATALOG_CF,CATALOG_COL,maxPartitions,filter);
+  partCache.put(dbName,tableName,parts,false);
+  return parts;
+}

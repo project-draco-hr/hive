@@ -1,0 +1,59 @@
+{
+  String dbName="default";
+  String tableName="sometable";
+  long now=System.currentTimeMillis();
+  ColumnStatistics cs=new ColumnStatistics();
+  ColumnStatisticsDesc desc=new ColumnStatisticsDesc(true,dbName,tableName);
+  desc.setLastAnalyzed(now);
+  cs.setStatsDesc(desc);
+  ColumnStatisticsObj obj=new ColumnStatisticsObj();
+  obj.setColName("col1");
+  obj.setColType("boolean");
+  ColumnStatisticsData data=new ColumnStatisticsData();
+  data.setBooleanStats(new BooleanColumnStatsData());
+  obj.setStatsData(data);
+  cs.addToStatsObj(obj);
+  obj=new ColumnStatisticsObj();
+  obj.setColName("col2");
+  obj.setColType("long");
+  data=new ColumnStatisticsData();
+  data.setLongStats(new LongColumnStatsData());
+  obj.setStatsData(data);
+  cs.addToStatsObj(obj);
+  hrw.updateStatistics(dbName,tableName,null,null,cs);
+  cs=new ColumnStatistics();
+  desc=new ColumnStatisticsDesc(true,dbName,tableName);
+  desc.setLastAnalyzed(now);
+  cs.setStatsDesc(desc);
+  obj=new ColumnStatisticsObj();
+  obj.setColName("col3");
+  obj.setColType("double");
+  data=new ColumnStatisticsData();
+  data.setDoubleStats(new DoubleColumnStatsData());
+  obj.setStatsData(data);
+  cs.addToStatsObj(obj);
+  Put put=new Put(HBaseUtils.buildKey(dbName,tableName));
+  byte[] serialized=HBaseUtils.serializeStatsForOneColumn(cs,obj);
+  put.add(HBaseReadWrite.STATS_CF,"col3".getBytes(HBaseUtils.ENCODING),serialized);
+  puts[0]=put;
+  cs=hrw.getTableStatistics(dbName,tableName,Arrays.asList("col1","col2","col3"));
+  Assert.assertEquals(now,cs.getStatsDesc().getLastAnalyzed());
+  Assert.assertEquals(dbName,cs.getStatsDesc().getDbName());
+  Assert.assertEquals(tableName,cs.getStatsDesc().getTableName());
+  Assert.assertTrue(cs.getStatsDesc().isIsTblLevel());
+  Assert.assertEquals(3,cs.getStatsObjSize());
+  for (  ColumnStatisticsObj csobj : cs.getStatsObj()) {
+    if (csobj.getColName().equals("col1")) {
+      Assert.assertEquals(ColumnStatisticsData._Fields.BOOLEAN_STATS,csobj.getStatsData().getSetField());
+    }
+ else     if (csobj.getColName().equals("col2")) {
+      Assert.assertEquals(ColumnStatisticsData._Fields.LONG_STATS,csobj.getStatsData().getSetField());
+    }
+ else     if (csobj.getColName().equals("col3")) {
+      Assert.assertEquals(ColumnStatisticsData._Fields.DOUBLE_STATS,csobj.getStatsData().getSetField());
+    }
+ else {
+      Assert.fail("Unknown column");
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  List<ColumnStatistics> statsList=new ArrayList<ColumnStatistics>(partNames.size());
+  List<PartStatsInfo> stillLookingFor=new ArrayList<PartStatsInfo>();
+  for (int pOff=0; pOff < partVals.size(); pOff++) {
+    ColumnStatistics stats=new ColumnStatistics();
+    ColumnStatisticsDesc desc=new ColumnStatisticsDesc();
+    desc.setIsTblLevel(false);
+    desc.setDbName(dbName);
+    desc.setTableName(tableName);
+    desc.setPartName(partNames.get(pOff));
+    stats.setStatsDesc(desc);
+    statsList.add(stats);
+    PartStatsInfo missing=null;
+    for (int cOff=0; cOff < colNames.size(); cOff++) {
+      StatsCache.StatsInfo info=statsCache.getPartitionStatistics(dbName,tableName,partNames.get(pOff),colNames.get(cOff));
+      if (info == null) {
+        if (missing == null) {
+          missing=new PartStatsInfo(stats,partVals.get(pOff),partNames.get(pOff));
+          stillLookingFor.add(missing);
+        }
+        missing.colNames.add(colNames.get(cOff));
+      }
+ else {
+        info.stats.setColName(colNames.get(cOff));
+        stats.addToStatsObj(info.stats);
+        stats.getStatsDesc().setLastAnalyzed(Math.max(stats.getStatsDesc().getLastAnalyzed(),info.lastAnalyzed));
+      }
+    }
+  }
+  if (stillLookingFor.size() == 0)   return statsList;
+  List<Get> gets=new ArrayList<Get>();
+  for (  PartStatsInfo pi : stillLookingFor) {
+    byte[][] colKeys=new byte[pi.colNames.size()][];
+    for (int i=0; i < colKeys.length; i++) {
+      colKeys[i]=HBaseUtils.buildKey(pi.colNames.get(i));
+    }
+    pi.colKeys=colKeys;
+    byte[] key=buildPartitionKey(dbName,tableName,pi.partVals);
+    Get g=new Get(key);
+    for (    byte[] colName : colKeys)     g.addColumn(STATS_CF,colName);
+    gets.add(g);
+  }
+  HTableInterface htab=getHTable(PART_TABLE);
+  Result[] results=htab.get(gets);
+  for (int pOff=0; pOff < results.length; pOff++) {
+    PartStatsInfo pi=stillLookingFor.get(pOff);
+    for (int cOff=0; cOff < pi.colNames.size(); cOff++) {
+      byte[] serialized=results[pOff].getValue(STATS_CF,pi.colKeys[cOff]);
+      if (serialized == null) {
+        continue;
+      }
+      ColumnStatisticsObj obj=HBaseUtils.deserializeStatsForOneColumn(pi.stats,serialized);
+      statsCache.put(dbName,tableName,pi.partName,pi.colNames.get(cOff),obj,pi.stats.getStatsDesc().getLastAnalyzed());
+      obj.setColName(pi.colNames.get(cOff));
+      pi.stats.addToStatsObj(obj);
+    }
+  }
+  return statsList;
+}
