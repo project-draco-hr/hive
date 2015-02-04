@@ -5,38 +5,46 @@
   for (int stripeIxMod=0; stripeIxMod < readState.length; ++stripeIxMod) {
     key.stripeIx=stripeIxFrom + stripeIxMod;
     boolean[][] cols=readState[stripeIxMod];
-    for (int colIxMod=0; colIxMod < cols.length; ++colIxMod) {
-      boolean[] readMask=cols[colIxMod];
-      key.colIx=columnIds.get(colIxMod);
-      boolean areAllRgsInCache=true;
-      int rgCount=readMask != null ? readMask.length : getRgCount(stripes.get(key.stripeIx),rowIndexStride);
-      for (int rgIx=0; rgIx < rgCount; ++rgIx) {
-        if (readMask != null && !readMask[rgIx])         continue;
-        key.rgIx=rgIx;
-        StreamBuffer cached=cache.get(key);
+    boolean[] isMissingAnyRgs=new boolean[cols.length];
+    int totalRgCount=getRgCount(stripes.get(key.stripeIx),rowIndexStride);
+    for (int rgIx=0; rgIx < totalRgCount; ++rgIx) {
+      EncodedColumnBatch<OrcBatchKey> col=new EncodedColumnBatch<OrcBatchKey>(new OrcBatchKey(internedFilePath,key.stripeIx,rgIx),cols.length,cols.length);
+      boolean hasAnyCached=false;
+      key.rgIx=rgIx;
+      for (int colIxMod=0; colIxMod < cols.length; ++colIxMod) {
+        boolean[] readMask=cols[colIxMod];
+        if (readMask != null && (readMask.length <= rgIx || !readMask[rgIx]))         continue;
+        key.colIx=columnIds.get(colIxMod);
+        StreamBuffer[] cached=cache.get(key);
         if (cached == null) {
-          areAllRgsInCache=false;
+          isMissingAnyRgs[colIxMod]=true;
           continue;
         }
-        EncodedColumn<OrcBatchKey> col=null;
-        consumer.consumeData(col);
+        col.setAllStreams(colIxMod,key.colIx,cached);
+        hasAnyCached=true;
         if (readMask == null) {
-          cols[colIxMod]=readMask=new boolean[rgCount];
+          cols[colIxMod]=readMask=new boolean[totalRgCount];
           Arrays.fill(readMask,true);
         }
         readMask[rgIx]=false;
       }
-      boolean hasExplicitColList=stripeColsNotInCache[stripeIxMod] != null;
-      if (areAllRgsInCache) {
-        if (!hasExplicitColList) {
-          stripeColsNotInCache[stripeIxMod]=new ArrayList<Integer>(cols.length);
-          if (stripeIxMod > 0) {
-            stripeColsNotInCache[stripeIxMod].addAll(columnIds.subList(0,colIxMod));
-          }
+      if (hasAnyCached) {
+        consumer.consumeData(col);
+      }
+    }
+    boolean makeStripeColList=false;
+    for (int colIxMod=0; colIxMod < cols.length; ++colIxMod) {
+      if (isMissingAnyRgs[colIxMod]) {
+        if (makeStripeColList) {
+          stripeColsNotInCache[stripeIxMod].add(columnIds.get(colIxMod));
         }
       }
- else       if (hasExplicitColList) {
-        stripeColsNotInCache[stripeIxMod].add(columnIds.get(colIxMod));
+ else       if (!makeStripeColList) {
+        makeStripeColList=true;
+        stripeColsNotInCache[stripeIxMod]=new ArrayList<Integer>(cols.length - 1);
+        for (int i=0; i < colIxMod; ++i) {
+          stripeColsNotInCache[stripeIxMod].add(columnIds.get(i));
+        }
       }
     }
   }
