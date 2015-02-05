@@ -4,16 +4,10 @@
     int posn=getIndexPosition(encoding.getKind(),type.getKind(),stream.getKind(),isCompressed,hasNull);
     long start=index.getEntry(group).getPositions(posn);
     final long nextGroupOffset;
-    if (group < includedRowGroups.length - 1) {
-      nextGroupOffset=index.getEntry(group + 1).getPositions(posn);
-    }
- else {
-      nextGroupOffset=length;
-    }
-    final long slop=isCompressed ? 2 * (OutStream.HEADER_SIZE + compressionSize) : WORST_UNCOMPRESSED_SLOP;
-    long end=(group == includedRowGroups.length - 1) ? length : Math.min(length,nextGroupOffset + slop);
+    boolean isLast=group == (includedRowGroups.length - 1);
+    nextGroupOffset=isLast ? length : index.getEntry(group + 1).getPositions(posn);
     start+=offset;
-    end+=offset;
+    long end=offset + estimateRgEndOffset(isCompressed,isLast,nextGroupOffset,length,compressionSize);
     if (lastRange != null && overlap(lastRange.offset,lastRange.end,start,end)) {
       lastRange.offset=Math.min(lastRange.offset,start);
       lastRange.end=Math.max(lastRange.end,end);
