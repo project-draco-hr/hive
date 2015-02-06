@@ -4,16 +4,19 @@
   for (int stripeIxMod=0; stripeIxMod < stripeReaders.length; ++stripeIxMod) {
     stripeKey.stripeIx=stripeIxMod + stripeIxFrom;
     OrcStripeMetadata value=metadataCache.getStripeMetadata(stripeKey);
-    if (value == null) {
-      if (orcReader == null) {
-        orcReader=createOrcReader(split);
-      }
+    if (value == null || !value.hasAllIndexes(globalInc)) {
+      ensureOrcReader();
       StripeInformation si=metadata.getStripes().get(stripeKey.stripeIx);
       stripeReaders[stripeIxMod]=orcReader.rows(si.getOffset(),si.getLength(),globalInc);
       stripeReaders[stripeIxMod].prepareEncodedColumnRead();
-      value=new OrcStripeMetadata(stripeReaders[stripeIxMod],stripeKey.stripeIx,globalInc);
-      metadataCache.putStripeMetadata(stripeKey,value);
-      stripeKey=new OrcBatchKey(internedFilePath,0,0);
+      if (value == null) {
+        value=new OrcStripeMetadata(stripeReaders[stripeIxMod],globalInc);
+        metadataCache.putStripeMetadata(stripeKey,value);
+        stripeKey=new OrcBatchKey(internedFilePath,0,0);
+      }
+ else {
+        updateLoadedIndexes(value,stripeReaders[stripeIxMod],globalInc);
+      }
     }
     result.add(value);
   }
