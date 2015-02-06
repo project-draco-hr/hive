@@ -49,8 +49,7 @@
     ArrayList<ExprNodeDesc> aggParameters=new ArrayList<ExprNodeDesc>();
     boolean isDistinct=(value.getType() == HiveParser.TOK_FUNCTIONDI);
     containsDistinctAggr=containsDistinctAggr || isDistinct;
-    boolean partialAggDone=!(distPartAgg || isDistinct);
-    if (!partialAggDone) {
+    if (isDistinct) {
       for (int i=1; i < value.getChildCount(); i++) {
         ASTNode paraExpr=(ASTNode)value.getChild(i);
         ColumnInfo paraExprInfo=groupByInputRowResolver.getExpression(paraExpr);
@@ -82,18 +81,10 @@
     if (isDistinct) {
       numDistinctUDFs++;
     }
-    boolean isAllColumns=value.getType() == HiveParser.TOK_FUNCTIONSTAR;
     Mode amode=groupByDescModeToUDAFMode(mode,isDistinct);
     GenericUDAFEvaluator genericUDAFEvaluator=null;
-    if (distPartAgg) {
-      genericUDAFEvaluator=getGenericUDAFEvaluator(aggName,aggParameters,value,isDistinct,isAllColumns);
-      assert(genericUDAFEvaluator != null);
-      genericUDAFEvaluators.put(entry.getKey(),genericUDAFEvaluator);
-    }
- else {
-      genericUDAFEvaluator=genericUDAFEvaluators.get(entry.getKey());
-      assert(genericUDAFEvaluator != null);
-    }
+    genericUDAFEvaluator=genericUDAFEvaluators.get(entry.getKey());
+    assert(genericUDAFEvaluator != null);
     GenericUDAFInfo udaf=getGenericUDAFInfo(genericUDAFEvaluator,amode,aggParameters);
     aggregations.add(new AggregationDesc(aggName.toLowerCase(),udaf.genericUDAFEvaluator,udaf.convertedParameters,(mode != GroupByDesc.Mode.FINAL && isDistinct),amode));
     String field=getColumnInternalName(groupByKeys.size() + aggregations.size() - 1);
@@ -102,7 +93,7 @@
   }
   float groupByMemoryUsage=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVEMAPAGGRHASHMEMORY);
   float memoryThreshold=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVEMAPAGGRMEMORYTHRESHOLD);
-  Operator op=putOpInsertMap(OperatorFactory.getAndMakeChild(new GroupByDesc(mode,outputColumnNames,groupByKeys,aggregations,distPartAgg,groupByMemoryUsage,memoryThreshold,groupingSets,groupingSetsPresent && groupingSetsNeedAdditionalMRJob,groupingSetsPosition,containsDistinctAggr),new RowSchema(groupByOutputRowResolver.getColumnInfos()),reduceSinkOperatorInfo),groupByOutputRowResolver);
+  Operator op=putOpInsertMap(OperatorFactory.getAndMakeChild(new GroupByDesc(mode,outputColumnNames,groupByKeys,aggregations,groupByMemoryUsage,memoryThreshold,groupingSets,groupingSetsPresent && groupingSetsNeedAdditionalMRJob,groupingSetsPosition,containsDistinctAggr),new RowSchema(groupByOutputRowResolver.getColumnInfos()),reduceSinkOperatorInfo),groupByOutputRowResolver);
   op.setColumnExprMap(colExprMap);
   return op;
 }
