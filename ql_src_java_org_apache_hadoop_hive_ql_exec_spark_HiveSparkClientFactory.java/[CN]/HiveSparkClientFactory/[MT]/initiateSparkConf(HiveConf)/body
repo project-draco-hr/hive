@@ -2,7 +2,7 @@
   Map<String,String> sparkConf=new HashMap<String,String>();
   sparkConf.put("spark.master",SPARK_DEFAULT_MASTER);
   sparkConf.put("spark.app.name",SPARK_DEFAULT_APP_NAME);
-  sparkConf.put("spark.serializer","org.apache.spark.serializer.KryoSerializer");
+  sparkConf.put("spark.serializer",SPARK_DEFAULT_SERIALIZER);
   InputStream inputStream=null;
   try {
     inputStream=HiveSparkClientFactory.class.getClassLoader().getResourceAsStream(SPARK_DEFAULT_CONF_FILE);
@@ -14,7 +14,7 @@
         if (propertyName.startsWith("spark")) {
           String value=properties.getProperty(propertyName);
           sparkConf.put(propertyName,properties.getProperty(propertyName));
-          LOG.info(String.format("load spark configuration from %s (%s -> %s).",SPARK_DEFAULT_CONF_FILE,propertyName,value));
+          LOG.info(String.format("load spark property from %s (%s -> %s).",SPARK_DEFAULT_CONF_FILE,propertyName,value));
         }
       }
     }
@@ -32,12 +32,26 @@
       }
     }
   }
+  String sparkMaster=hiveConf.get("spark.master");
+  if (sparkMaster == null) {
+    sparkMaster=sparkConf.get("spark.master");
+  }
   for (  Map.Entry<String,String> entry : hiveConf) {
     String propertyName=entry.getKey();
     if (propertyName.startsWith("spark")) {
       String value=hiveConf.get(propertyName);
       sparkConf.put(propertyName,value);
-      LOG.info(String.format("load spark configuration from hive configuration (%s -> %s).",propertyName,value));
+      LOG.info(String.format("load spark property from hive configuration (%s -> %s).",propertyName,value));
+    }
+ else     if (propertyName.startsWith("yarn") && (sparkMaster.equals("yarn-client") || sparkMaster.equals("yarn-cluster"))) {
+      String value=hiveConf.get(propertyName);
+      sparkConf.put("spark.hadoop." + propertyName,value);
+      LOG.info(String.format("load yarn property from hive configuration in %s mode (%s -> %s).",sparkMaster,propertyName,value));
+    }
+    if (RpcConfiguration.HIVE_SPARK_RSC_CONFIGS.contains(propertyName)) {
+      String value=RpcConfiguration.getValue(hiveConf,propertyName);
+      sparkConf.put(propertyName,value);
+      LOG.info(String.format("load RPC property from hive configuration (%s -> %s).",propertyName,value));
     }
   }
   return sparkConf;

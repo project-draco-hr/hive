@@ -1,9 +1,13 @@
 {
   ExprWalkerInfo ctx=(ExprWalkerInfo)procCtx;
   ExprNodeColumnDesc colref=(ExprNodeColumnDesc)nd;
-  RowResolver toRR=ctx.getToRR();
+  RowSchema toRS=ctx.getOp().getSchema();
   Operator<? extends OperatorDesc> op=ctx.getOp();
-  String[] colAlias=toRR.reverseLookup(colref.getColumn());
+  ColumnInfo ci=toRS.getColumnInfo(colref.getColumn());
+  String tabAlias=null;
+  if (ci != null) {
+    tabAlias=ci.getTabAlias();
+  }
   boolean isCandidate=true;
   if (op.getColumnExprMap() != null) {
     ExprNodeDesc exp=op.getColumnExprMap().get(colref.getColumn());
@@ -15,20 +19,20 @@
       if (exp instanceof ExprNodeGenericFuncDesc) {
         isCandidate=false;
       }
-      if (exp instanceof ExprNodeColumnDesc && colAlias == null) {
+      if (exp instanceof ExprNodeColumnDesc && ci == null) {
         ExprNodeColumnDesc column=(ExprNodeColumnDesc)exp;
-        colAlias=new String[]{column.getTabAlias(),column.getColumn()};
+        tabAlias=column.getTabAlias();
       }
     }
     ctx.addConvertedNode(colref,exp);
     ctx.setIsCandidate(exp,isCandidate);
-    ctx.addAlias(exp,colAlias[0]);
+    ctx.addAlias(exp,tabAlias);
   }
  else {
-    if (colAlias == null) {
+    if (ci == null) {
       return false;
     }
-    ctx.addAlias(colref,colAlias[0]);
+    ctx.addAlias(colref,tabAlias);
   }
   ctx.setIsCandidate(colref,isCandidate);
   return isCandidate;

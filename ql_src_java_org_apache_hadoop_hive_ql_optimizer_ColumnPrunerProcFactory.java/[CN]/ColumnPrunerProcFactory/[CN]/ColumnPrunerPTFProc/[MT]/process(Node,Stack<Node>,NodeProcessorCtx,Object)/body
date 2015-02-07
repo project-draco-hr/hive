@@ -2,18 +2,19 @@
   ColumnPrunerProcCtx cppCtx=(ColumnPrunerProcCtx)ctx;
   PTFOperator op=(PTFOperator)nd;
   PTFDesc conf=op.getConf();
-  if (!conf.forWindowing()) {
+  if (!conf.forWindowing() && !Noop.class.isInstance(conf.getFuncDef().getTFunction())) {
     return super.process(nd,stack,cppCtx,nodeOutputs);
   }
-  WindowTableFunctionDef def=(WindowTableFunctionDef)conf.getFuncDef();
-  ArrayList<ColumnInfo> sig=new ArrayList<ColumnInfo>();
   List<String> prunedCols=cppCtx.getPrunedColList(op.getChildOperators().get(0));
-  prunedCols=new ArrayList<String>(prunedCols);
-  prunedColumnsList(prunedCols,def);
-  RowResolver oldRR=cppCtx.getOpToParseCtxMap().get(op).getRowResolver();
-  RowResolver newRR=buildPrunedRR(prunedCols,oldRR,sig);
-  cppCtx.getPrunedColLists().put(op,prunedInputList(prunedCols,def));
-  cppCtx.getOpToParseCtxMap().get(op).setRowResolver(newRR);
+  WindowTableFunctionDef def=null;
+  if (conf.forWindowing()) {
+    def=(WindowTableFunctionDef)conf.getFuncDef();
+    prunedCols=prunedColumnsList(prunedCols,def);
+  }
+  RowSchema oldRS=op.getSchema();
+  ArrayList<ColumnInfo> sig=buildPrunedRR(prunedCols,oldRS);
   op.getSchema().setSignature(sig);
+  prunedCols=def == null ? prunedCols : prunedInputList(prunedCols,def);
+  cppCtx.getPrunedColLists().put(op,prunedCols);
   return null;
 }

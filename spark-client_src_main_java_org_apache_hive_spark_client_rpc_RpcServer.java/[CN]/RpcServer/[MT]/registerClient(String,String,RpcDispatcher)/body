@@ -1,0 +1,23 @@
+{
+  final Promise<Rpc> promise=group.next().newPromise();
+  Runnable timeout=new Runnable(){
+    @Override public void run(){
+      promise.setFailure(new TimeoutException("Timed out waiting for client connection."));
+    }
+  }
+;
+  ScheduledFuture<?> timeoutFuture=group.schedule(timeout,config.getServerConnectTimeoutMs(),TimeUnit.MILLISECONDS);
+  final ClientInfo client=new ClientInfo(clientId,promise,secret,serverDispatcher,timeoutFuture);
+  if (pendingClients.putIfAbsent(clientId,client) != null) {
+    throw new IllegalStateException(String.format("Client '%s' already registered.",clientId));
+  }
+  promise.addListener(new GenericFutureListener<Promise<Rpc>>(){
+    @Override public void operationComplete(    Promise<Rpc> p){
+      if (p.isCancelled()) {
+        pendingClients.remove(clientId);
+      }
+    }
+  }
+);
+  return promise;
+}

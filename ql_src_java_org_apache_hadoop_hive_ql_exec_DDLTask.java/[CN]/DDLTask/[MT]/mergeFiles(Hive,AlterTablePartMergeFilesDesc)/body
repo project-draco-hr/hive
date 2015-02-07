@@ -3,6 +3,11 @@
   boolean lbatc=lbCtx == null ? false : lbCtx.isSkewedStoredAsDir();
   int lbd=lbCtx == null ? 0 : lbCtx.calculateListBucketingLevel();
   MergeFileWork mergeWork=new MergeFileWork(mergeFilesDesc.getInputDir(),mergeFilesDesc.getOutputDir(),mergeFilesDesc.getInputFormatClass().getName());
+  LinkedHashMap<String,ArrayList<String>> pathToAliases=new LinkedHashMap<String,ArrayList<String>>();
+  ArrayList<String> inputDirstr=new ArrayList<String>(1);
+  inputDirstr.add(mergeFilesDesc.getInputDir().toString());
+  pathToAliases.put(mergeFilesDesc.getInputDir().get(0).toString(),inputDirstr);
+  mergeWork.setPathToAliases(pathToAliases);
   mergeWork.setListBucketingCtx(mergeFilesDesc.getLbCtx());
   mergeWork.resolveConcatenateMerge(db.getConf());
   mergeWork.setMapperCannotSpanPartns(true);
@@ -24,10 +29,19 @@
   aliasToWork.put(mergeFilesDesc.getInputDir().toString(),mergeOp);
   mergeWork.setAliasToWork(aliasToWork);
   DriverContext driverCxt=new DriverContext();
-  MergeFileTask taskExec=new MergeFileTask();
-  taskExec.initialize(db.getConf(),null,driverCxt);
-  taskExec.setWork(mergeWork);
-  taskExec.setQueryPlan(this.getQueryPlan());
-  int ret=taskExec.execute(driverCxt);
+  Task task=null;
+  if (conf.getVar(ConfVars.HIVE_EXECUTION_ENGINE).equals("tez")) {
+    TezWork tezWork=new TezWork(conf.getVar(HiveConf.ConfVars.HIVEQUERYID));
+    mergeWork.setName("File Merge");
+    tezWork.add(mergeWork);
+    task=new TezTask();
+    task.setWork(tezWork);
+  }
+ else {
+    task=new MergeFileTask();
+    task.setWork(mergeWork);
+  }
+  task.initialize(db.getConf(),getQueryPlan(),driverCxt);
+  int ret=task.execute(driverCxt);
   return ret;
 }
