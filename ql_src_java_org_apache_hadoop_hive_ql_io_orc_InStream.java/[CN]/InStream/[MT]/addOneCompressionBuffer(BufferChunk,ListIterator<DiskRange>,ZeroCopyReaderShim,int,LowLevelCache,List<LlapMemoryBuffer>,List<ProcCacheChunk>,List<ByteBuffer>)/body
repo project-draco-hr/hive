@@ -1,7 +1,7 @@
 {
   ByteBuffer slice=null;
   ByteBuffer compressed=current.chunk;
-  long cbStartOffset=current.offset + compressed.position();
+  long cbStartOffset=current.offset;
   int b0=compressed.get() & 0xff;
   int b1=compressed.get() & 0xff;
   int b2=compressed.get() & 0xff;
@@ -9,16 +9,18 @@
   if (chunkLength > bufferSize) {
     throw new IllegalArgumentException("Buffer size too small. size = " + bufferSize + " needed = "+ chunkLength);
   }
+  int consumedLength=chunkLength + OutStream.HEADER_SIZE;
+  long cbEndOffset=cbStartOffset + consumedLength;
   boolean isUncompressed=((b0 & 0x01) == 1);
   if (compressed.remaining() >= chunkLength) {
     slice=compressed.slice();
     slice.limit(chunkLength);
-    addOneCompressionBlockByteBuffer(slice,isUncompressed,cbStartOffset,chunkLength,cache,compressed,ranges,toDecompress,cacheBuffers);
-    current.offset+=chunkLength;
+    addOneCompressionBlockByteBuffer(slice,isUncompressed,cbStartOffset,cbEndOffset,compressed,chunkLength,ranges,cache,toDecompress,cacheBuffers);
+    current.offset+=consumedLength;
     if (compressed.remaining() <= 0 && zcr != null) {
       toRelease.add(compressed);
     }
-    return chunkLength;
+    return consumedLength;
   }
   ByteBuffer copy=allocateBuffer(chunkLength,compressed.isDirect());
   int remaining=chunkLength - compressed.remaining();
@@ -42,12 +44,12 @@
       slice=compressed.slice();
       slice.limit(remaining);
       copy.put(slice);
-      addOneCompressionBlockByteBuffer(copy,isUncompressed,cbStartOffset,chunkLength,cache,compressed,ranges,toDecompress,cacheBuffers);
-      range.offset+=chunkLength;
+      addOneCompressionBlockByteBuffer(copy,isUncompressed,cbStartOffset,cbEndOffset,compressed,remaining,ranges,cache,toDecompress,cacheBuffers);
+      range.offset+=remaining;
       if (compressed.remaining() <= 0 && zcr != null) {
         zcr.releaseBuffer(compressed);
       }
-      return chunkLength;
+      return consumedLength;
     }
     remaining-=compressed.remaining();
     copy.put(compressed);

@@ -23,6 +23,24 @@
         off+=read;
       }
     }
+ else     if (doForceDirect) {
+      ByteBuffer directBuf=ByteBuffer.allocateDirect(len);
+      try {
+        while (directBuf.remaining() > 0) {
+          int count=file.read(directBuf);
+          if (count < 0)           throw new EOFException();
+          directBuf.position(directBuf.position() + count);
+        }
+      }
+ catch (      UnsupportedOperationException ex) {
+        LOG.error("Stream does not support direct read; we will copy.");
+        byte[] buffer=new byte[len];
+        file.readFully(buffer,0,buffer.length);
+        directBuf.put(buffer);
+      }
+      directBuf.position(0);
+      rangeIter.set(new BufferChunk(directBuf,range.offset));
+    }
  else {
       byte[] buffer=new byte[len];
       file.readFully(buffer,0,buffer.length);
