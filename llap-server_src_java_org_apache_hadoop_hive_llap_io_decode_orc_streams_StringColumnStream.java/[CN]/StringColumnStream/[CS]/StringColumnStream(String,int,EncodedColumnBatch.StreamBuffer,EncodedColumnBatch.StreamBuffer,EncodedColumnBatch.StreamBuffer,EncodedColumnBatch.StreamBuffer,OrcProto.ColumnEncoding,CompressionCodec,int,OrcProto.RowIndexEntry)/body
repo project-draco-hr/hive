@@ -1,0 +1,23 @@
+{
+  super(file,colIx,present,codec,bufferSize);
+  Preconditions.checkNotNull(data,"DATA stream buffer cannot be null");
+  Preconditions.checkNotNull(columnEncoding,"ColumnEncoding cannot be null");
+  Preconditions.checkNotNull(lengths,"ColumnEncoding is " + columnEncoding + "."+ " Length stream cannot be null");
+  this.dataStream=StreamUtils.createInStream("DATA",file,null,bufferSize,data);
+  this.dataReader=StreamUtils.createIntegerReader(kind,dataStream,false);
+  this.lengthStream=StreamUtils.createInStream("LENGTH",file,null,bufferSize,lengths);
+  this.lengthReader=StreamUtils.createIntegerReader(kind,lengthStream,false);
+  this.kind=columnEncoding.getKind();
+  if (kind.equals(OrcProto.ColumnEncoding.Kind.DICTIONARY) || kind.equals(OrcProto.ColumnEncoding.Kind.DICTIONARY_V2)) {
+    Preconditions.checkNotNull(dictionary,"ColumnEncoding is " + columnEncoding + "."+ " Dictionary stream cannot be null");
+    this.dictionaryStream=StreamUtils.createInStream(kind.toString(),file,null,bufferSize,dictionary);
+  }
+  if (kind.equals(OrcProto.ColumnEncoding.Kind.DIRECT) || kind.equals(OrcProto.ColumnEncoding.Kind.DIRECT_V2)) {
+    this.stringReader=new DirectStringReader(lengthReader,dataStream);
+  }
+ else {
+    this.stringReader=new DictionaryStringReader(lengthReader,dataReader,dictionaryStream,columnEncoding.getDictionarySize());
+  }
+  PositionProvider positionProvider=new RecordReaderImpl.PositionProviderImpl(rowIndex);
+  positionReaders(positionProvider);
+}

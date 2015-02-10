@@ -1,3 +1,34 @@
 {
-  throw new UnsupportedOperationException("not implemented");
+  String fileName=batch.batchKey.file;
+  try {
+    OrcFileMetadata fileMetadata=metadataCache.getFileMetadata(fileName);
+    OrcBatchKey stripeKey=batch.batchKey.clone();
+    stripeKey.rgIx=0;
+    OrcStripeMetadata stripeMetadata=metadataCache.getStripeMetadata(stripeKey);
+    if (cvb == null) {
+      cvb=new ColumnVectorBatch(batch.columnIxs.length);
+    }
+    int rgIdx=batch.batchKey.rgIx;
+    OrcProto.RowIndexEntry rowIndex=stripeMetadata.getRowIndexes()[0].getEntry(rgIdx);
+    long nonNullRowCount=getRowCount(rowIndex);
+    int maxBatchesRG=(int)((nonNullRowCount / VectorizedRowBatch.DEFAULT_SIZE) + 1);
+    int batchSize=VectorizedRowBatch.DEFAULT_SIZE;
+    int numCols=batch.columnIxs.length;
+    ColumnStream[] columnStreams=createColumnStreamReaders(numCols,batch,fileMetadata,stripeMetadata);
+    for (int i=0; i < maxBatchesRG; i++) {
+      if (i == maxBatchesRG - 1) {
+        batchSize=(int)(nonNullRowCount % VectorizedRowBatch.DEFAULT_SIZE);
+      }
+      for (int idx=0; idx < batch.columnIxs.length; idx++) {
+        cvb.cols[idx]=columnStreams[idx].nextVector(null,batchSize);
+      }
+      downstreamConsumer.consumeData(cvb);
+    }
+  }
+ catch (  IOException ioe) {
+    downstreamConsumer.setError(ioe);
+  }
+catch (  CloneNotSupportedException e) {
+    downstreamConsumer.setError(e);
+  }
 }
