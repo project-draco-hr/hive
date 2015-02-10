@@ -1,0 +1,32 @@
+{
+  List<Table> results=new ArrayList<Table>(tableNames.size());
+  ObjectPair<String,String>[] hashKeys=new ObjectPair[tableNames.size()];
+  boolean atLeastOneMissing=false;
+  for (int i=0; i < tableNames.size(); i++) {
+    hashKeys[i]=new ObjectPair<String,String>(dbName,tableNames.get(i));
+    results.add(tableCache.get(hashKeys[i]));
+    if (results.get(i) == null)     atLeastOneMissing=true;
+  }
+  if (!atLeastOneMissing)   return results;
+  List<Get> gets=new ArrayList<Get>();
+  HTableInterface htab=getHTable(TABLE_TABLE);
+  for (int i=0; i < tableNames.size(); i++) {
+    if (results.get(i) != null)     continue;
+    byte[] key=HBaseUtils.buildKey(dbName,tableNames.get(i));
+    Get g=new Get(key);
+    g.addColumn(CATALOG_CF,CATALOG_COL);
+    gets.add(g);
+  }
+  Result[] res=htab.get(gets);
+  for (int i=0, nextGet=0; i < tableNames.size(); i++) {
+    if (results.get(i) != null)     continue;
+    byte[] serialized=res[nextGet++].getValue(CATALOG_CF,CATALOG_COL);
+    if (serialized != null) {
+      TableWritable table=new TableWritable();
+      HBaseUtils.deserialize(table,serialized);
+      tableCache.put(hashKeys[i],table.table);
+      results.set(i,table.table);
+    }
+  }
+  return results;
+}
