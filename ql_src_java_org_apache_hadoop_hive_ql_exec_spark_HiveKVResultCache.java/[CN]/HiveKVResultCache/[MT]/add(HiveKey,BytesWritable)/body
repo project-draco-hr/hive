@@ -1,23 +1,29 @@
 {
-  byte[] hiveKeyBytes=KryoSerializer.serialize(key);
-  BytesWritable wrappedHiveKey=new BytesWritable(hiveKeyBytes);
-  List<BytesWritable> row=new ArrayList<BytesWritable>(2);
-  row.add(wrappedHiveKey);
-  row.add(value);
-synchronized (this) {
-    try {
-      if (cursor == 0) {
-        container.addRow(row);
-      }
- else {
-        if (backupContainer == null) {
-          backupContainer=initRowContainer(conf);
-        }
-        backupContainer.addRow(row);
-      }
+  if (writeCursor >= IN_MEMORY_NUM_ROWS) {
+    if (!readBufferUsed) {
+      switchBufferAndResetCursor();
     }
- catch (    HiveException ex) {
-      throw new RuntimeException("Failed to add KV pair to RowContainer",ex);
+ else {
+      try {
+        if (output == null) {
+          setupOutput();
+        }
+        for (int i=0; i < IN_MEMORY_NUM_ROWS; i++) {
+          ObjectPair<HiveKey,BytesWritable> pair=writeBuffer[i];
+          writeHiveKey(output,pair.getFirst());
+          writeValue(output,pair.getSecond());
+          pair.setFirst(null);
+          pair.setSecond(null);
+        }
+        writeCursor=0;
+      }
+ catch (      Exception e) {
+        clear();
+        throw new RuntimeException("Failed to spill rows to disk",e);
+      }
     }
   }
+  ObjectPair<HiveKey,BytesWritable> pair=writeBuffer[writeCursor++];
+  pair.setFirst(key);
+  pair.setSecond(value);
 }
