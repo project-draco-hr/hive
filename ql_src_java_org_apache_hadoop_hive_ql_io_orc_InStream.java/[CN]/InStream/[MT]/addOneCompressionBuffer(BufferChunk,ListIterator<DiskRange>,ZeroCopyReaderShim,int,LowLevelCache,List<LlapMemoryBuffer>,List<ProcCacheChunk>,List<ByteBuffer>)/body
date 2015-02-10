@@ -12,10 +12,16 @@
   int consumedLength=chunkLength + OutStream.HEADER_SIZE;
   long cbEndOffset=cbStartOffset + consumedLength;
   boolean isUncompressed=((b0 & 0x01) == 1);
+  if (DebugUtils.isTraceOrcEnabled()) {
+    LOG.info("Found CB at " + cbStartOffset + ", chunk length "+ chunkLength+ ", total "+ consumedLength+ ", "+ (isUncompressed ? "not " : "")+ "compressed");
+  }
   if (compressed.remaining() >= chunkLength) {
     slice=compressed.slice();
     slice.limit(chunkLength);
-    addOneCompressionBlockByteBuffer(slice,isUncompressed,cbStartOffset,cbEndOffset,compressed,chunkLength,ranges,cache,toDecompress,cacheBuffers);
+    addOneCompressionBlockByteBuffer(slice,isUncompressed,cbStartOffset,cbEndOffset,chunkLength,ranges,current,cache,toDecompress,cacheBuffers);
+    if (DebugUtils.isTraceOrcEnabled()) {
+      LOG.info("Adjusting " + current + " to consume "+ consumedLength);
+    }
     current.offset+=consumedLength;
     if (compressed.remaining() <= 0 && zcr != null) {
       toRelease.add(compressed);
@@ -24,10 +30,14 @@
   }
   ByteBuffer copy=allocateBuffer(chunkLength,compressed.isDirect());
   int remaining=chunkLength - compressed.remaining();
+  int originalPos=compressed.position();
   copy.put(compressed);
   ranges.remove();
+  if (DebugUtils.isTraceOrcEnabled()) {
+    LOG.info("Removing " + current + " from ranges");
+  }
   if (zcr != null) {
-    if (compressed.position() == 0) {
+    if (originalPos == 0) {
       zcr.releaseBuffer(compressed);
     }
  else {
@@ -44,7 +54,10 @@
       slice=compressed.slice();
       slice.limit(remaining);
       copy.put(slice);
-      addOneCompressionBlockByteBuffer(copy,isUncompressed,cbStartOffset,cbEndOffset,compressed,remaining,ranges,cache,toDecompress,cacheBuffers);
+      addOneCompressionBlockByteBuffer(copy,isUncompressed,cbStartOffset,cbEndOffset,remaining,ranges,current,cache,toDecompress,cacheBuffers);
+      if (DebugUtils.isTraceOrcEnabled()) {
+        LOG.info("Adjusting " + range + " to consume "+ remaining);
+      }
       range.offset+=remaining;
       if (compressed.remaining() <= 0 && zcr != null) {
         zcr.releaseBuffer(compressed);
@@ -55,6 +68,9 @@
     copy.put(compressed);
     if (zcr != null) {
       zcr.releaseBuffer(compressed);
+    }
+    if (DebugUtils.isTraceOrcEnabled()) {
+      LOG.info("Removing " + range + " from ranges");
     }
     ranges.remove();
   }
