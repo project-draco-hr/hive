@@ -1,0 +1,31 @@
+{
+  ArrayList<OrcStripeMetadata> result=new ArrayList<OrcStripeMetadata>(readState.length);
+  OrcBatchKey stripeKey=new OrcBatchKey(internedFilePath,0,0);
+  for (int stripeIxMod=0; stripeIxMod < readState.length; ++stripeIxMod) {
+    stripeKey.stripeIx=stripeIxMod + stripeIxFrom;
+    OrcStripeMetadata value=metadataCache.getStripeMetadata(stripeKey);
+    if (value == null || !value.hasAllIndexes(globalInc)) {
+      ensureMetadataReader();
+      StripeInformation si=metadata.getStripes().get(stripeKey.stripeIx);
+      if (DebugUtils.isTraceOrcEnabled()) {
+        LlapIoImpl.LOG.info("Creating stripe reader " + stripeKey.stripeIx + ": "+ si.getOffset()+ ", "+ si.getLength());
+      }
+      if (value == null) {
+        value=new OrcStripeMetadata(metadataReader,si,globalInc);
+        metadataCache.putStripeMetadata(stripeKey,value);
+        if (DebugUtils.isTraceOrcEnabled()) {
+          LlapIoImpl.LOG.info("Caching stripe " + stripeKey.stripeIx + " metadata with includes: "+ DebugUtils.toString(globalInc));
+        }
+        stripeKey=new OrcBatchKey(internedFilePath,0,0);
+      }
+ else {
+        if (DebugUtils.isTraceOrcEnabled()) {
+          LlapIoImpl.LOG.info("Updating indexes in stripe " + stripeKey.stripeIx + " metadata for includes: "+ DebugUtils.toString(globalInc));
+        }
+        updateLoadedIndexes(value,si,globalInc);
+      }
+    }
+    result.add(value);
+  }
+  return result;
+}
