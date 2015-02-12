@@ -1,0 +1,65 @@
+{
+  String file=batch.batchKey.file;
+  RecordReaderImpl.TreeReader[] treeReaders=new RecordReaderImpl.TreeReader[numCols];
+  for (int i=0; i < numCols; i++) {
+    int colIx=batch.columnIxs[i];
+    int rgIdx=batch.batchKey.rgIx;
+    OrcProto.RowIndexEntry rowIndex=stripeMetadata.getRowIndexes()[colIx].getEntry(rgIdx);
+    EncodedColumnBatch.StreamBuffer[] streamBuffers=batch.columnData[i];
+    OrcProto.Type colType=fileMetadata.getTypes().get(colIx);
+    CompressionCodec codec=fileMetadata.getCompressionCodec();
+    int bufferSize=fileMetadata.getCompressionBufferSize();
+    OrcProto.ColumnEncoding columnEncoding=stripeMetadata.getEncodings().get(colIx);
+    ColumnVector cv=null;
+    EncodedColumnBatch.StreamBuffer present=null;
+    EncodedColumnBatch.StreamBuffer data=null;
+    EncodedColumnBatch.StreamBuffer dictionary=null;
+    EncodedColumnBatch.StreamBuffer lengths=null;
+    EncodedColumnBatch.StreamBuffer secondary=null;
+    for (    EncodedColumnBatch.StreamBuffer streamBuffer : streamBuffers) {
+switch (streamBuffer.streamKind) {
+case 0:
+        present=streamBuffer;
+      break;
+case 1:
+    data=streamBuffer;
+  break;
+case 2:
+lengths=streamBuffer;
+break;
+case 3:
+dictionary=streamBuffer;
+break;
+case 5:
+secondary=streamBuffer;
+break;
+default :
+throw new IOException("Unexpected stream kind: " + streamBuffer.streamKind);
+}
+}
+switch (colType.getKind()) {
+case SHORT:
+treeReaders[i]=ShortStreamReader.builder().setFileName(file).setColumnIndex(colIx).setPresentStream(present).setDataStream(data).setCompressionCodec(codec).setBufferSize(bufferSize).setRowIndex(rowIndex).setColumnEncodingKind(columnEncoding.getKind()).build();
+break;
+case INT:
+treeReaders[i]=IntStreamReader.builder().setFileName(file).setColumnIndex(colIx).setPresentStream(present).setDataStream(data).setCompressionCodec(codec).setBufferSize(bufferSize).setRowIndex(rowIndex).setColumnEncodingKind(columnEncoding.getKind()).build();
+break;
+case LONG:
+treeReaders[i]=LongStreamReader.builder().setFileName(file).setColumnIndex(colIx).setPresentStream(present).setDataStream(data).setCompressionCodec(codec).setBufferSize(bufferSize).setRowIndex(rowIndex).setColumnEncodingKind(columnEncoding.getKind()).skipCorrupt(skipCorrupt).build();
+break;
+case FLOAT:
+treeReaders[i]=FloatStreamReader.builder().setFileName(file).setColumnIndex(colIx).setPresentStream(present).setDataStream(data).setCompressionCodec(codec).setBufferSize(bufferSize).setRowIndex(rowIndex).build();
+break;
+case DOUBLE:
+treeReaders[i]=DoubleStreamReader.builder().setFileName(file).setColumnIndex(colIx).setPresentStream(present).setDataStream(data).setCompressionCodec(codec).setBufferSize(bufferSize).setRowIndex(rowIndex).build();
+break;
+case CHAR:
+case VARCHAR:
+case STRING:
+break;
+default :
+throw new UnsupportedOperationException("Data type not supported yet! " + colType);
+}
+}
+return treeReaders;
+}
