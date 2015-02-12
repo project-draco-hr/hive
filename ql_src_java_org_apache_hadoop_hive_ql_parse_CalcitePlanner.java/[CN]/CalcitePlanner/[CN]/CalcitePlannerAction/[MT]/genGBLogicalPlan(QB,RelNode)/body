@@ -1,0 +1,100 @@
+{
+  RelNode gbRel=null;
+  QBParseInfo qbp=getQBParseInfo(qb);
+  String detsClauseName=qbp.getClauseNames().iterator().next();
+  ASTNode selExprList=qb.getParseInfo().getSelForClause(detsClauseName);
+  if (selExprList.getToken().getType() == HiveParser.TOK_SELECTDI && selExprList.getChildCount() == 1 && selExprList.getChild(0).getChildCount() == 1) {
+    ASTNode node=(ASTNode)selExprList.getChild(0).getChild(0);
+    if (node.getToken().getType() == HiveParser.TOK_ALLCOLREF) {
+      srcRel=genSelectLogicalPlan(qb,srcRel,srcRel);
+      RowResolver rr=this.relToHiveRR.get(srcRel);
+      qbp.setSelExprForClause(detsClauseName,SemanticAnalyzer.genSelectDIAST(rr));
+    }
+  }
+  List<ASTNode> grpByAstExprs=SemanticAnalyzer.getGroupByForClause(qbp,detsClauseName);
+  HashMap<String,ASTNode> aggregationTrees=qbp.getAggregationExprsForClause(detsClauseName);
+  boolean hasGrpByAstExprs=(grpByAstExprs != null && !grpByAstExprs.isEmpty()) ? true : false;
+  boolean hasAggregationTrees=(aggregationTrees != null && !aggregationTrees.isEmpty()) ? true : false;
+  if (hasGrpByAstExprs || hasAggregationTrees) {
+    ArrayList<ExprNodeDesc> gbExprNDescLst=new ArrayList<ExprNodeDesc>();
+    ArrayList<String> outputColumnNames=new ArrayList<String>();
+    RowResolver groupByInputRowResolver=this.relToHiveRR.get(srcRel);
+    RowResolver groupByOutputRowResolver=new RowResolver();
+    groupByOutputRowResolver.setIsExprResolver(true);
+    if (hasGrpByAstExprs) {
+      for (int i=0; i < grpByAstExprs.size(); ++i) {
+        ASTNode grpbyExpr=grpByAstExprs.get(i);
+        Map<ASTNode,ExprNodeDesc> astToExprNDescMap=TypeCheckProcFactory.genExprNode(grpbyExpr,new TypeCheckCtx(groupByInputRowResolver));
+        ExprNodeDesc grpbyExprNDesc=astToExprNDescMap.get(grpbyExpr);
+        if (grpbyExprNDesc == null)         throw new CalciteSemanticException("Invalid Column Reference: " + grpbyExpr.dump());
+        addToGBExpr(groupByOutputRowResolver,groupByInputRowResolver,grpbyExpr,grpbyExprNDesc,gbExprNDescLst,outputColumnNames);
+      }
+    }
+    int groupingColsSize=gbExprNDescLst.size();
+    List<Integer> groupingSets=null;
+    if (!qbp.getDestRollups().isEmpty() || !qbp.getDestGroupingSets().isEmpty() || !qbp.getDestCubes().isEmpty()) {
+      if (qbp.getDestRollups().contains(detsClauseName)) {
+        groupingSets=getGroupingSetsForRollup(grpByAstExprs.size());
+      }
+ else       if (qbp.getDestCubes().contains(detsClauseName)) {
+        groupingSets=getGroupingSetsForCube(grpByAstExprs.size());
+      }
+ else       if (qbp.getDestGroupingSets().contains(detsClauseName)) {
+        groupingSets=getGroupingSets(grpByAstExprs,qbp,detsClauseName);
+      }
+      groupingColsSize=groupingColsSize * 2;
+    }
+    ArrayList<AggInfo> aggregations=new ArrayList<AggInfo>();
+    if (hasAggregationTrees) {
+      assert(aggregationTrees != null);
+      for (      ASTNode value : aggregationTrees.values()) {
+        String aggName=SemanticAnalyzer.unescapeIdentifier(value.getChild(0).getText());
+        boolean isDistinct=value.getType() == HiveParser.TOK_FUNCTIONDI;
+        boolean isAllColumns=value.getType() == HiveParser.TOK_FUNCTIONSTAR;
+        ArrayList<ExprNodeDesc> aggParameters=new ArrayList<ExprNodeDesc>();
+        for (int i=1; i < value.getChildCount(); i++) {
+          ASTNode paraExpr=(ASTNode)value.getChild(i);
+          ExprNodeDesc paraExprNode=genExprNodeDesc(paraExpr,groupByInputRowResolver);
+          aggParameters.add(paraExprNode);
+        }
+        Mode amode=SemanticAnalyzer.groupByDescModeToUDAFMode(GroupByDesc.Mode.COMPLETE,isDistinct);
+        GenericUDAFEvaluator genericUDAFEvaluator=SemanticAnalyzer.getGenericUDAFEvaluator(aggName,aggParameters,value,isDistinct,isAllColumns);
+        assert(genericUDAFEvaluator != null);
+        GenericUDAFInfo udaf=SemanticAnalyzer.getGenericUDAFInfo(genericUDAFEvaluator,amode,aggParameters);
+        AggInfo aInfo=new AggInfo(aggParameters,udaf.returnType,aggName,isDistinct);
+        aggregations.add(aInfo);
+        String field=getColumnInternalName(groupingColsSize + aggregations.size() - 1);
+        outputColumnNames.add(field);
+        groupByOutputRowResolver.putExpression(value,new ColumnInfo(field,aInfo.m_returnType,"",false));
+      }
+    }
+    gbRel=genGBRelNode(gbExprNDescLst,aggregations,groupingSets,srcRel);
+    relToHiveColNameCalcitePosMap.put(gbRel,buildHiveToCalciteColumnMap(groupByOutputRowResolver,gbRel));
+    this.relToHiveRR.put(gbRel,groupByOutputRowResolver);
+    if (groupingSets != null && !groupingSets.isEmpty()) {
+      RowResolver selectOutputRowResolver=new RowResolver();
+      selectOutputRowResolver.setIsExprResolver(true);
+      RowResolver.add(selectOutputRowResolver,groupByOutputRowResolver);
+      outputColumnNames=new ArrayList<String>(outputColumnNames);
+      List<RelDataTypeField> gbOutput=gbRel.getRowType().getFieldList();
+      List<RexNode> calciteColLst=new ArrayList<RexNode>();
+      for (      RelDataTypeField gbOut : gbOutput) {
+        if (gbOut.getIndex() < gbExprNDescLst.size() || gbOut.getIndex() >= gbExprNDescLst.size() * 2) {
+          calciteColLst.add(new RexInputRef(gbOut.getIndex(),gbOut.getType()));
+        }
+      }
+      String field=getColumnInternalName(groupingColsSize + aggregations.size());
+      outputColumnNames.add(field);
+      selectOutputRowResolver.put(null,VirtualColumn.GROUPINGID.getName(),new ColumnInfo(field,TypeInfoFactory.stringTypeInfo,null,true));
+      List<RexNode> identifierCols=new ArrayList<RexNode>();
+      for (int i=gbExprNDescLst.size(); i < gbExprNDescLst.size() * 2; i++) {
+        identifierCols.add(new RexInputRef(i,gbOutput.get(i).getType()));
+      }
+      final RexBuilder rexBuilder=cluster.getRexBuilder();
+      RexNode groupingID=rexBuilder.makeCall(HiveGroupingID.GROUPING__ID,identifierCols);
+      calciteColLst.add(groupingID);
+      gbRel=this.genSelectRelNode(calciteColLst,selectOutputRowResolver,gbRel);
+    }
+  }
+  return gbRel;
+}

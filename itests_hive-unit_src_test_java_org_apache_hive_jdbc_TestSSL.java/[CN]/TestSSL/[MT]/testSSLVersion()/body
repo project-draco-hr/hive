@@ -1,0 +1,30 @@
+{
+  Assume.assumeTrue(execCommand("which openssl") == 0);
+  Assume.assumeTrue(System.getProperty("os.name").toLowerCase().contains("linux"));
+  setSslConfOverlay(confOverlay);
+  setBinaryConfOverlay(confOverlay);
+  miniHS2.start(confOverlay);
+  hs2Conn=DriverManager.getConnection(miniHS2.getJdbcURL() + ";ssl=true;sslTrustStore=" + dataFileDir+ File.separator+ TRUST_STORE_NAME+ ";trustStorePassword="+ KEY_STORE_PASSWORD,System.getProperty("user.name"),"bar");
+  hs2Conn.close();
+  Assert.assertEquals("Expected exit code of 1",1,execCommand("openssl s_client -connect " + miniHS2.getHost() + ":"+ miniHS2.getBinaryPort()+ " -ssl2 < /dev/null"));
+  Assert.assertEquals("Expected exit code of 1",1,execCommand("openssl s_client -connect " + miniHS2.getHost() + ":"+ miniHS2.getBinaryPort()+ " -ssl3 < /dev/null"));
+  miniHS2.stop();
+  setHttpConfOverlay(confOverlay);
+  miniHS2.start(confOverlay);
+  try {
+    hs2Conn=DriverManager.getConnection(miniHS2.getJdbcURL() + ";ssl=true;sslTrustStore=" + dataFileDir+ File.separator+ TRUST_STORE_NAME+ ";trustStorePassword="+ KEY_STORE_PASSWORD+ "?hive.server2.transport.mode="+ HS2_HTTP_MODE+ ";hive.server2.thrift.http.path="+ HS2_HTTP_ENDPOINT,System.getProperty("user.name"),"bar");
+    Assert.fail("Expected SQLException during connect");
+  }
+ catch (  SQLException e) {
+    LOG.info("Expected exception: " + e,e);
+    Assert.assertEquals("08S01",e.getSQLState().trim());
+    Throwable cause=e.getCause();
+    Assert.assertNotNull(cause);
+    while (cause.getCause() != null) {
+      cause=cause.getCause();
+    }
+    Assert.assertEquals("org.apache.http.NoHttpResponseException",cause.getClass().getName());
+    Assert.assertEquals("The target server failed to respond",cause.getMessage());
+  }
+  miniHS2.stop();
+}

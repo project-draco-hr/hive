@@ -1,9 +1,8 @@
 {
   try {
-    verifyHttpConfiguration(hiveConf);
     httpServer=new org.eclipse.jetty.server.Server();
     String threadPoolName="HiveServer2-HttpHandler-Pool";
-    ExecutorService executorService=new ThreadPoolExecutor(minWorkerThreads,maxWorkerThreads,workerKeepAliveTime,TimeUnit.SECONDS,new LinkedBlockingQueue<Runnable>(),new ThreadFactoryWithGarbageCleanup(threadPoolName));
+    ExecutorService executorService=new ThreadPoolExecutor(minWorkerThreads,maxWorkerThreads,workerKeepAliveTime,TimeUnit.SECONDS,new SynchronousQueue<Runnable>(),new ThreadFactoryWithGarbageCleanup(threadPoolName));
     ExecutorThreadPool threadPool=new ExecutorThreadPool(executorService);
     httpServer.setThreadPool(threadPool);
     SelectChannelConnector connector=new SelectChannelConnector();
@@ -16,6 +15,10 @@
         throw new IllegalArgumentException(ConfVars.HIVE_SERVER2_SSL_KEYSTORE_PATH.varname + " Not configured for SSL connection");
       }
       SslContextFactory sslContextFactory=new SslContextFactory();
+      String[] excludedProtocols=hiveConf.getVar(ConfVars.HIVE_SSL_PROTOCOL_BLACKLIST).split(",");
+      LOG.info("HTTP Server SSL: adding excluded protocols: " + Arrays.toString(excludedProtocols));
+      sslContextFactory.addExcludeProtocols(excludedProtocols);
+      LOG.info("HTTP Server SSL: SslContextFactory.getExcludeProtocols = " + Arrays.toString(sslContextFactory.getExcludeProtocols()));
       sslContextFactory.setKeyStorePath(keyStorePath);
       sslContextFactory.setKeyStorePassword(keyStorePassword);
       connector=new SslSelectChannelConnector(sslContextFactory);
@@ -26,8 +29,7 @@
     connector.setMaxIdleTime(maxIdleTime);
     httpServer.addConnector(connector);
     hiveAuthFactory=new HiveAuthFactory(hiveConf);
-    TProcessorFactory processorFactory=hiveAuthFactory.getAuthProcFactory(this);
-    TProcessor processor=processorFactory.getProcessor(null);
+    TProcessor processor=new TCLIService.Processor<Iface>(this);
     TProtocolFactory protocolFactory=new TBinaryProtocol.Factory();
     UserGroupInformation serviceUGI=cliService.getServiceUGI();
     UserGroupInformation httpUGI=cliService.getHttpUGI();

@@ -4,20 +4,32 @@
   }
   StructObjectInspector soi=(StructObjectInspector)objInspector;
   List<? extends StructField> fields=soi.getAllStructFieldRefs();
-  List<Object> list=soi.getStructFieldsDataAsList(obj);
+  List<Object> values=soi.getStructFieldsDataAsList(obj);
   StructField field=fields.get(keyIndex);
-  Object value=list.get(keyIndex);
+  Object value=values.get(keyIndex);
   byte[] key=keyFactory.serializeKey(value,field);
   if (key == null) {
     throw new SerDeException("HBase row key cannot be NULL");
   }
-  Put put=putTimestamp >= 0 ? new Put(key,putTimestamp) : new Put(key);
+  long timestamp=putTimestamp;
+  if (timestamp < 0 && timestampIndex >= 0) {
+    ObjectInspector inspector=fields.get(timestampIndex).getFieldObjectInspector();
+    value=values.get(timestampIndex);
+    if (inspector instanceof LongObjectInspector) {
+      timestamp=((LongObjectInspector)inspector).get(value);
+    }
+ else {
+      PrimitiveObjectInspector primitive=(PrimitiveObjectInspector)inspector;
+      timestamp=PrimitiveObjectInspectorUtils.getTimestamp(value,primitive).getTime();
+    }
+  }
+  Put put=timestamp >= 0 ? new Put(key,timestamp) : new Put(key);
   for (int i=0; i < fields.size(); i++) {
-    if (i == keyIndex) {
+    if (i == keyIndex || i == timestampIndex) {
       continue;
     }
     field=fields.get(i);
-    value=list.get(i);
+    value=values.get(i);
     serializeField(value,field,columnMappings[i],put);
   }
   return new PutWritable(put);

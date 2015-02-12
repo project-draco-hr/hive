@@ -1,0 +1,43 @@
+{
+  RewriteQueryUsingAggregateIndexCtx rewriteQueryCtx=this;
+  String alias=rewriteQueryCtx.getAlias();
+  Map<String,Operator<? extends OperatorDesc>> topOps=rewriteQueryCtx.getParseContext().getTopOps();
+  topOps.remove(alias);
+  String indexTableName=rewriteQueryCtx.getIndexName();
+  Table indexTableHandle=null;
+  try {
+    indexTableHandle=rewriteQueryCtx.getHiveDb().getTable(indexTableName);
+  }
+ catch (  HiveException e) {
+    LOG.error("Error while getting the table handle for index table.");
+    LOG.error(org.apache.hadoop.util.StringUtils.stringifyException(e));
+    throw new SemanticException(e.getMessage(),e);
+  }
+  TableScanDesc indexTableScanDesc=new TableScanDesc(indexTableHandle);
+  indexTableScanDesc.setGatherStats(false);
+  String k=indexTableName + Path.SEPARATOR;
+  indexTableScanDesc.setStatsAggPrefix(k);
+  scanOperator.setConf(indexTableScanDesc);
+  ArrayList<ColumnInfo> sigRS=new ArrayList<ColumnInfo>();
+  try {
+    StructObjectInspector rowObjectInspector=(StructObjectInspector)indexTableHandle.getDeserializer().getObjectInspector();
+    StructField field=rowObjectInspector.getStructFieldRef(rewriteQueryCtx.getIndexKey());
+    sigRS.add(new ColumnInfo(field.getFieldName(),TypeInfoUtils.getTypeInfoFromObjectInspector(field.getFieldObjectInspector()),indexTableName,false));
+  }
+ catch (  SerDeException e) {
+    LOG.error("Error while creating the RowResolver for new TableScanOperator.");
+    LOG.error(org.apache.hadoop.util.StringUtils.stringifyException(e));
+    throw new SemanticException(e.getMessage(),e);
+  }
+  RowSchema rs=new RowSchema(sigRS);
+  String newAlias=indexTableName;
+  int index=alias.lastIndexOf(":");
+  if (index >= 0) {
+    newAlias=alias.substring(0,index) + ":" + indexTableName;
+  }
+  scanOperator.getConf().setAlias(newAlias);
+  scanOperator.setAlias(indexTableName);
+  topOps.put(newAlias,scanOperator);
+  rewriteQueryCtx.getParseContext().setTopOps((HashMap<String,Operator<? extends OperatorDesc>>)topOps);
+  ColumnPrunerProcFactory.setupNeededColumns(scanOperator,rs,Arrays.asList(rewriteQueryCtx.getIndexKey()));
+}

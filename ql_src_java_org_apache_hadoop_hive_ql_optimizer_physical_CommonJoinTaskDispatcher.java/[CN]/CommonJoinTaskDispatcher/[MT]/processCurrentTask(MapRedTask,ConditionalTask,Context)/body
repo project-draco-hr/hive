@@ -7,11 +7,10 @@
   MapWork currWork=currTask.getWork().getMapWork();
   List<Serializable> listWorks=new ArrayList<Serializable>();
   List<Task<? extends Serializable>> listTasks=new ArrayList<Task<? extends Serializable>>();
-  HashMap<Task<? extends Serializable>,Set<String>> taskToAliases=new HashMap<Task<? extends Serializable>,Set<String>>();
+  HashMap<Task<? extends Serializable>,Set<String>> taskToAliases=new LinkedHashMap<Task<? extends Serializable>,Set<String>>();
   HashMap<String,ArrayList<String>> pathToAliases=currWork.getPathToAliases();
   Map<String,Operator<? extends OperatorDesc>> aliasToWork=currWork.getAliasToWork();
   ParseContext parseCtx=physicalContext.getParseContext();
-  QBJoinTree joinTree=parseCtx.getJoinContext().get(joinOp);
   JoinDesc joinDesc=joinOp.getConf();
   if (aliasToSize == null) {
     aliasToSize=new HashMap<String,Long>();
@@ -47,13 +46,14 @@
         }
       }
     }
-    currWork.setOpParseCtxMap(parseCtx.getOpParseCtx());
-    currWork.setJoinTree(joinTree);
+    currWork.setLeftInputJoin(joinOp.getConf().isLeftInputJoin());
+    currWork.setBaseSrc(joinOp.getConf().getBaseSrc());
+    currWork.setMapAliases(joinOp.getConf().getMapAliases());
     if (bigTablePosition >= 0) {
       MapRedTask newTask=convertTaskToMapJoinTask(currTask.getWork(),bigTablePosition);
       newTask.setTaskTag(Task.MAPJOIN_ONLY_NOBACKUP);
       newTask.setFetchSource(currTask.isFetchSource());
-      replaceTask(currTask,newTask,physicalContext);
+      replaceTask(currTask,newTask);
       if ((newTask.getChildTasks() != null) && (newTask.getChildTasks().size() == 1)) {
         mergeMapJoinTaskIntoItsChildMapRedTask(newTask,conf);
       }
@@ -87,8 +87,9 @@
   }
   listWorks.add(currTask.getWork());
   listTasks.add(currTask);
-  currWork.setOpParseCtxMap(null);
-  currWork.setJoinTree(null);
+  currWork.setLeftInputJoin(false);
+  currWork.setBaseSrc(null);
+  currWork.setMapAliases(null);
   ConditionalWork cndWork=new ConditionalWork(listWorks);
   ConditionalTask cndTsk=(ConditionalTask)TaskFactory.get(cndWork,parseCtx.getConf());
   cndTsk.setListTasks(listTasks);
@@ -101,6 +102,6 @@
   resolverCtx.setLocalTmpDir(context.getLocalScratchDir(false));
   resolverCtx.setHdfsTmpDir(context.getMRScratchDir());
   cndTsk.setResolverCtx(resolverCtx);
-  replaceTaskWithConditionalTask(currTask,cndTsk,physicalContext);
+  replaceTaskWithConditionalTask(currTask,cndTsk);
   return cndTsk;
 }

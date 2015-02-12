@@ -1,0 +1,15 @@
+{
+  HiveConf hiveConf=new HiveConf();
+  String zooKeeperEnsemble=ZooKeeperHiveHelper.getQuorumServers(hiveConf);
+  String rootNamespace=hiveConf.getVar(HiveConf.ConfVars.HIVE_SERVER2_ZOOKEEPER_NAMESPACE);
+  CuratorFramework zooKeeperClient=CuratorFrameworkFactory.builder().connectString(zooKeeperEnsemble).retryPolicy(new ExponentialBackoffRetry(1000,3)).build();
+  zooKeeperClient.start();
+  List<String> znodePaths=zooKeeperClient.getChildren().forPath(ZooKeeperHiveHelper.ZOOKEEPER_PATH_SEPARATOR + rootNamespace);
+  for (  String znodePath : znodePaths) {
+    if (znodePath.contains("version=" + versionNumber + ";")) {
+      LOG.info("Removing the znode: " + znodePath + " from ZooKeeper");
+      zooKeeperClient.delete().forPath(ZooKeeperHiveHelper.ZOOKEEPER_PATH_SEPARATOR + rootNamespace + ZooKeeperHiveHelper.ZOOKEEPER_PATH_SEPARATOR+ znodePath);
+    }
+  }
+  zooKeeperClient.close();
+}

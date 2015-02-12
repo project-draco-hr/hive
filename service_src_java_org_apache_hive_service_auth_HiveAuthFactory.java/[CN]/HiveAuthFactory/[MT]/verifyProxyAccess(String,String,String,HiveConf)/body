@@ -1,17 +1,19 @@
 {
   try {
     UserGroupInformation sessionUgi;
-    if (ShimLoader.getHadoopShims().isSecurityEnabled()) {
-      sessionUgi=ShimLoader.getHadoopShims().createProxyUser(realUser);
+    if (UserGroupInformation.isSecurityEnabled()) {
+      KerberosNameShim kerbName=ShimLoader.getHadoopShims().getKerberosNameShim(realUser);
+      sessionUgi=UserGroupInformation.createProxyUser(kerbName.getServiceName(),UserGroupInformation.getLoginUser());
     }
  else {
-      sessionUgi=ShimLoader.getHadoopShims().createRemoteUser(realUser,null);
+      sessionUgi=UserGroupInformation.createRemoteUser(realUser);
     }
     if (!proxyUser.equalsIgnoreCase(realUser)) {
-      ShimLoader.getHadoopShims().authorizeProxyAccess(proxyUser,sessionUgi,ipAddress,hiveConf);
+      ProxyUsers.refreshSuperUserGroupsConfiguration(hiveConf);
+      ProxyUsers.authorize(UserGroupInformation.createProxyUser(proxyUser,sessionUgi),ipAddress,hiveConf);
     }
   }
  catch (  IOException e) {
-    throw new HiveSQLException("Failed to validate proxy privilege of " + realUser + " for "+ proxyUser,e);
+    throw new HiveSQLException("Failed to validate proxy privilege of " + realUser + " for "+ proxyUser,"08S01",e);
   }
 }

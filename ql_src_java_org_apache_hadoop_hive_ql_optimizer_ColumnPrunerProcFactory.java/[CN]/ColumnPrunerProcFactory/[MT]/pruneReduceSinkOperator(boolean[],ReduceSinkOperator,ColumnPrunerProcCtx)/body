@@ -2,8 +2,8 @@
   ReduceSinkDesc reduceConf=reduce.getConf();
   Map<String,ExprNodeDesc> oldMap=reduce.getColumnExprMap();
   LOG.info("RS " + reduce.getIdentifier() + " oldColExprMap: "+ oldMap);
-  RowResolver oldRR=cppCtx.getOpToParseCtxMap().get(reduce).getRowResolver();
-  ArrayList<ColumnInfo> old_signature=oldRR.getRowSchema().getSignature();
+  RowSchema oldRS=reduce.getSchema();
+  ArrayList<ColumnInfo> old_signature=oldRS.getSignature();
   ArrayList<ColumnInfo> signature=new ArrayList<ColumnInfo>(old_signature);
   List<String> valueColNames=reduceConf.getOutputValueColumnNames();
   ArrayList<String> newValueColNames=new ArrayList<String>();
@@ -14,17 +14,15 @@
     String outputCol=valueColNames.get(i);
     ExprNodeDesc outputColExpr=valueExprs.get(i);
     if (!retainFlags[i]) {
-      String[] nm=oldRR.reverseLookup(outputCol);
-      if (nm == null) {
+      ColumnInfo colInfo=oldRS.getColumnInfo(outputCol);
+      if (colInfo == null) {
         outputCol=Utilities.ReduceField.VALUE.toString() + "." + outputCol;
-        nm=oldRR.reverseLookup(outputCol);
+        colInfo=oldRS.getColumnInfo(outputCol);
       }
-      if (nm == null) {
+      if (colInfo == null) {
         continue;
       }
       if (ExprNodeDescUtils.indexOf(outputColExpr,keyExprs) == -1) {
-        ColumnInfo colInfo=oldRR.getFieldMap(nm[0]).remove(nm[1]);
-        oldRR.getInvRslvMap().remove(colInfo.getInternalName());
         oldMap.remove(outputCol);
         signature.remove(colInfo);
       }
@@ -34,7 +32,7 @@
       newValueExprs.add(outputColExpr);
     }
   }
-  oldRR.getRowSchema().setSignature(signature);
+  oldRS.setSignature(signature);
   reduce.getSchema().setSignature(signature);
   reduceConf.setOutputValueColumnNames(newValueColNames);
   reduceConf.setValueCols(newValueExprs);

@@ -3,6 +3,7 @@
     this.hconf=hconf;
     filesCreated=false;
     isNativeTable=!conf.getTableInfo().isNonNative();
+    isTemporary=conf.isTemporary();
     multiFileSpray=conf.isMultiFileSpray();
     totalFiles=conf.getTotalFiles();
     numFiles=conf.getNumFiles();
@@ -13,14 +14,17 @@
     taskId=Utilities.getTaskId(hconf);
     initializeSpecPath();
     fs=specPath.getFileSystem(hconf);
-    hiveOutputFormat=conf.getTableInfo().getOutputFileFormatClass().newInstance();
+    hiveOutputFormat=HiveFileFormatUtils.getHiveOutputFormat(hconf,conf.getTableInfo());
     isCompressed=conf.getCompressed();
     parent=Utilities.toTempPath(conf.getDirName());
     statsCollectRawDataSize=conf.isStatsCollectRawDataSize();
     statsFromRecordWriter=new boolean[numFiles];
     serializer=(Serializer)conf.getTableInfo().getDeserializerClass().newInstance();
-    serializer.initialize(null,conf.getTableInfo().getProperties());
+    serializer.initialize(hconf,conf.getTableInfo().getProperties());
     outputClass=serializer.getSerializedClass();
+    if (isLogInfoEnabled) {
+      LOG.info("Using serializer : " + serializer + " and formatter : "+ hiveOutputFormat+ (isCompressed ? " with compression" : ""));
+    }
     timeOut=hconf.getInt("mapred.healthChecker.script.timeout",600000) / 2;
     if (hconf instanceof JobConf) {
       jc=(JobConf)hconf;
@@ -37,28 +41,25 @@
       partitionObjectInspectors=initEvaluators(partitionEval,outputObjInspector);
       prtner=(HivePartitioner<HiveKey,Object>)ReflectionUtils.newInstance(jc.getPartitionerClass(),null);
     }
-    row_count=new LongWritable();
     if (dpCtx != null) {
       dpSetup();
     }
     if (lbCtx != null) {
       lbSetup();
     }
-    int numPart=0;
-    int numBuck=0;
-    if (conf.getPartitionCols() != null && !conf.getPartitionCols().isEmpty()) {
-      numPart=conf.getPartitionCols().size();
-    }
-    if (conf.getDpSortState().equals(DPSortState.PARTITION_BUCKET_SORTED)) {
-      numBuck=1;
-    }
-    numKeyColToRead=numPart + numBuck;
-    keys=Lists.newArrayListWithCapacity(numKeyColToRead);
-    keyWritables=Lists.newArrayListWithCapacity(numKeyColToRead);
     if (!bDynParts) {
       fsp=new FSPaths(specPath);
       if (!this.isSkewedStoredAsSubDirectories) {
         valToPaths.put("",fsp);
+      }
+    }
+    final StoragePolicyValue tmpStorage=StoragePolicyValue.lookup(HiveConf.getVar(hconf,HIVE_TEMPORARY_TABLE_STORAGE));
+    if (isTemporary && fsp != null && tmpStorage != StoragePolicyValue.DEFAULT) {
+      final Path outputPath=fsp.taskOutputTempPath;
+      StoragePolicyShim shim=ShimLoader.getHadoopShims().getStoragePolicyShim(fs);
+      if (shim != null) {
+        fs.mkdirs(outputPath);
+        shim.setStoragePolicy(outputPath,tmpStorage);
       }
     }
     if (conf.getWriteType() == AcidUtils.Operation.UPDATE || conf.getWriteType() == AcidUtils.Operation.DELETE) {
@@ -67,6 +68,12 @@
       bucketField=recIdInspector.getAllStructFieldRefs().get(1);
       bucketInspector=(IntObjectInspector)bucketField.getFieldObjectInspector();
     }
+    numRows=0;
+    String context=jc.get(Operator.CONTEXT_NAME_KEY,"");
+    if (context != null && !context.isEmpty()) {
+      context="_" + context.replace(" ","_");
+    }
+    statsMap.put(Counter.RECORDS_OUT + context,row_count);
     initializeChildren(hconf);
   }
  catch (  HiveException e) {

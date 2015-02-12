@@ -1,0 +1,53 @@
+{
+  TezContext tezContext=(TezContext)MapredContext.get();
+  Map<Integer,String> parentToInput=desc.getParentToInput();
+  Map<Integer,Long> parentKeyCounts=desc.getParentKeyCounts();
+  boolean useOptimizedTables=HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVEMAPJOINUSEOPTIMIZEDTABLE);
+  boolean isFirstKey=true;
+  TezCacheAccess tezCacheAccess=TezCacheAccess.createInstance(hconf);
+  for (int pos=0; pos < mapJoinTables.length; pos++) {
+    if (pos == desc.getPosBigTable()) {
+      continue;
+    }
+    String inputName=parentToInput.get(pos);
+    LogicalInput input=tezContext.getInput(inputName);
+    try {
+      KeyValueReader kvReader=(KeyValueReader)input.getReader();
+      MapJoinObjectSerDeContext keyCtx=mapJoinTableSerdes[pos].getKeyContext(), valCtx=mapJoinTableSerdes[pos].getValueContext();
+      if (useOptimizedTables) {
+        ObjectInspector keyOi=keyCtx.getSerDe().getObjectInspector();
+        if (!MapJoinBytesTableContainer.isSupportedKey(keyOi)) {
+          if (isFirstKey) {
+            useOptimizedTables=false;
+          }
+ else {
+            throw new HiveException(describeOi("Only a subset of mapjoin keys is supported. Unsupported key: ",keyOi));
+          }
+        }
+      }
+      isFirstKey=false;
+      Long keyCountObj=parentKeyCounts.get(pos);
+      long keyCount=(keyCountObj == null) ? -1 : keyCountObj.longValue();
+      MapJoinTableContainer tableContainer=useOptimizedTables ? new MapJoinBytesTableContainer(hconf,valCtx,keyCount,memUsage) : new HashMapWrapper(hconf,keyCount);
+      while (kvReader.next()) {
+        tableContainer.putRow(keyCtx,(Writable)kvReader.getCurrentKey(),valCtx,(Writable)kvReader.getCurrentValue());
+      }
+      tableContainer.seal();
+      mapJoinTables[pos]=tableContainer;
+    }
+ catch (    IOException e) {
+      throw new HiveException(e);
+    }
+catch (    SerDeException e) {
+      throw new HiveException(e);
+    }
+catch (    Exception e) {
+      throw new HiveException(e);
+    }
+    LOG.info("Is this a bucket map join: " + desc.isBucketMapJoin());
+    if (!desc.isBucketMapJoin()) {
+      tezCacheAccess.registerCachedInput(inputName);
+      LOG.info("Setting Input: " + inputName + " as cached");
+    }
+  }
+}

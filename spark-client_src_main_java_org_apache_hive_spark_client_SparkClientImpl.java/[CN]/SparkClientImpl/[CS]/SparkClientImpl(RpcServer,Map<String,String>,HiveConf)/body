@@ -1,0 +1,34 @@
+{
+  this.conf=conf;
+  this.hiveConf=hiveConf;
+  this.childIdGenerator=new AtomicInteger();
+  this.jobs=Maps.newConcurrentMap();
+  String clientId=UUID.randomUUID().toString();
+  String secret=rpcServer.createSecret();
+  this.driverThread=startDriver(rpcServer,clientId,secret);
+  this.protocol=new ClientProtocol();
+  try {
+    this.driverRpc=rpcServer.registerClient(clientId,secret,protocol).get();
+  }
+ catch (  Exception e) {
+    LOG.warn("Error while waiting for client to connect.",e);
+    driverThread.interrupt();
+    try {
+      driverThread.join();
+    }
+ catch (    InterruptedException ie) {
+      LOG.debug("Interrupted before driver thread was finished.");
+    }
+    throw Throwables.propagate(e);
+  }
+  driverRpc.addListener(new Rpc.Listener(){
+    @Override public void rpcClosed(    Rpc rpc){
+      if (isAlive) {
+        LOG.warn("Client RPC channel closed unexpectedly.");
+        isAlive=false;
+      }
+    }
+  }
+);
+  isAlive=true;
+}

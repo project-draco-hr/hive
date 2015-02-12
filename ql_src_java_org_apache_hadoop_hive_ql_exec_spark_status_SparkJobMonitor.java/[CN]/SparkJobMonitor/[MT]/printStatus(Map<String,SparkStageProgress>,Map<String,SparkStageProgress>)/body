@@ -1,0 +1,58 @@
+{
+  boolean isDuplicateState=isSameAsPreviousProgress(progressMap,lastProgressMap);
+  boolean isPassedInterval=System.currentTimeMillis() <= lastPrintTime + printInterval;
+  if (isDuplicateState && isPassedInterval) {
+    return;
+  }
+  StringBuffer reportBuffer=new StringBuffer();
+  SimpleDateFormat dt=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS");
+  String currentDate=dt.format(new Date());
+  reportBuffer.append(currentDate + "\t");
+  SortedSet<String> keys=new TreeSet<String>(progressMap.keySet());
+  for (  String s : keys) {
+    SparkStageProgress progress=progressMap.get(s);
+    final int complete=progress.getSucceededTaskCount();
+    final int total=progress.getTotalTaskCount();
+    final int running=progress.getRunningTaskCount();
+    final int failed=progress.getFailedTaskCount();
+    String stageName="Stage-" + s;
+    if (total <= 0) {
+      reportBuffer.append(String.format("%s: -/-\t",stageName,complete,total));
+    }
+ else {
+      if (complete == total && !completed.contains(s)) {
+        completed.add(s);
+        if (!perfLogger.startTimeHasMethod(PerfLogger.SPARK_RUN_STAGE + s)) {
+          perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.SPARK_RUN_STAGE);
+        }
+        perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.SPARK_RUN_STAGE);
+      }
+      if (complete < total && (complete > 0 || running > 0 || failed > 0)) {
+        if (!perfLogger.startTimeHasMethod(PerfLogger.SPARK_RUN_STAGE + s)) {
+          perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.SPARK_RUN_STAGE + s);
+        }
+        if (failed > 0) {
+          reportBuffer.append(String.format("%s: %d(+%d,-%d)/%d\t",stageName,complete,running,failed,total));
+        }
+ else {
+          reportBuffer.append(String.format("%s: %d(+%d)/%d\t",stageName,complete,running,total));
+        }
+      }
+ else {
+        if (failed > 0) {
+          reportBuffer.append(String.format("%s: %d(-%d)/%d Finished with failed tasks\t",stageName,complete,failed,total));
+        }
+ else {
+          if (complete == total) {
+            reportBuffer.append(String.format("%s: %d/%d Finished\t",stageName,complete,total));
+          }
+ else {
+            reportBuffer.append(String.format("%s: %d/%d\t",stageName,complete,total));
+          }
+        }
+      }
+    }
+  }
+  lastPrintTime=System.currentTimeMillis();
+  console.printInfo(reportBuffer.toString());
+}

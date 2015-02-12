@@ -1,0 +1,26 @@
+{
+  List<Integer> result=Lists.newArrayList();
+  if (csPK == null || ops == null) {
+    return result;
+  }
+  for (int i=0; i < ops.size(); i++) {
+    Operator<? extends OperatorDesc> op=ops.get(i);
+    if (op != null && op instanceof ReduceSinkOperator) {
+      ReduceSinkOperator rsOp=(ReduceSinkOperator)op;
+      List<String> keys=rsOp.getConf().getOutputKeyColumnNames();
+      List<String> fqCols=StatsUtils.getFullyQualifedReducerKeyNames(keys,rsOp.getColumnExprMap());
+      if (fqCols.size() == 1) {
+        String joinCol=fqCols.get(0);
+        if (rsOp.getStatistics() != null) {
+          ColStatistics cs=rsOp.getStatistics().getColumnStatisticsFromFQColName(joinCol);
+          if (cs != null && !cs.isPrimaryKey()) {
+            if (StatsUtils.inferForeignKey(csPK,cs)) {
+              result.add(i);
+            }
+          }
+        }
+      }
+    }
+  }
+  return result;
+}

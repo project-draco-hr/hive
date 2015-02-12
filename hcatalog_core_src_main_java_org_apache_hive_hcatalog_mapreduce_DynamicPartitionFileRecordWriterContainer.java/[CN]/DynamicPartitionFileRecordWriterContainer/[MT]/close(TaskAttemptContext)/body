@@ -3,11 +3,30 @@
   for (  RecordWriter<? super WritableComparable<?>,? super Writable> bwriter : baseDynamicWriters.values()) {
     bwriter.close(reporter);
   }
-  for (  Map.Entry<String,org.apache.hadoop.mapred.OutputCommitter> entry : baseDynamicCommitters.entrySet()) {
-    org.apache.hadoop.mapred.TaskAttemptContext currContext=dynamicContexts.get(entry.getKey());
-    OutputCommitter baseOutputCommitter=entry.getValue();
-    if (baseOutputCommitter.needsTaskCommit(currContext)) {
-      baseOutputCommitter.commitTask(currContext);
+  TaskCommitContextRegistry.getInstance().register(context,new TaskCommitContextRegistry.TaskCommitterProxy(){
+    @Override public void abortTask(    TaskAttemptContext context) throws IOException {
+      for (      Map.Entry<String,OutputJobInfo> outputJobInfoEntry : dynamicOutputJobInfo.entrySet()) {
+        String dynKey=outputJobInfoEntry.getKey();
+        OutputJobInfo outputJobInfo=outputJobInfoEntry.getValue();
+        LOG.info("Aborting task-attempt for " + outputJobInfo.getLocation());
+        baseDynamicCommitters.get(dynKey).abortTask(dynamicContexts.get(dynKey));
+      }
+    }
+    @Override public void commitTask(    TaskAttemptContext context) throws IOException {
+      for (      Map.Entry<String,OutputJobInfo> outputJobInfoEntry : dynamicOutputJobInfo.entrySet()) {
+        String dynKey=outputJobInfoEntry.getKey();
+        OutputJobInfo outputJobInfo=outputJobInfoEntry.getValue();
+        LOG.info("Committing task-attempt for " + outputJobInfo.getLocation());
+        TaskAttemptContext dynContext=dynamicContexts.get(dynKey);
+        OutputCommitter dynCommitter=baseDynamicCommitters.get(dynKey);
+        if (dynCommitter.needsTaskCommit(dynContext)) {
+          dynCommitter.commitTask(dynContext);
+        }
+ else {
+          LOG.info("Skipping commitTask() for " + outputJobInfo.getLocation());
+        }
+      }
     }
   }
+);
 }

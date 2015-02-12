@@ -1,0 +1,24 @@
+{
+  for (  Operator<? extends OperatorDesc> parentOp : joinOp.getParentOperators()) {
+    if (parentOp instanceof MuxOperator) {
+      return null;
+    }
+  }
+  MapJoinOperator mapJoinOp=MapJoinProcessor.convertJoinOpMapJoinOp(context.getConf(),joinOp,joinOp.getConf().isLeftInputJoin(),joinOp.getConf().getBaseSrc(),joinOp.getConf().getMapAliases(),bigTablePosition,true);
+  Operator<? extends OperatorDesc> parentBigTableOp=mapJoinOp.getParentOperators().get(bigTablePosition);
+  if (parentBigTableOp instanceof ReduceSinkOperator) {
+    mapJoinOp.getParentOperators().remove(bigTablePosition);
+    if (!(mapJoinOp.getParentOperators().contains(parentBigTableOp.getParentOperators().get(0)))) {
+      mapJoinOp.getParentOperators().add(bigTablePosition,parentBigTableOp.getParentOperators().get(0));
+    }
+    parentBigTableOp.getParentOperators().get(0).removeChild(parentBigTableOp);
+    for (    Operator<? extends OperatorDesc> op : mapJoinOp.getParentOperators()) {
+      if (!(op.getChildOperators().contains(mapJoinOp))) {
+        op.getChildOperators().add(mapJoinOp);
+      }
+      op.getChildOperators().remove(joinOp);
+    }
+  }
+  mapJoinOp.getConf().setQBJoinTreeProps(joinOp.getConf());
+  return mapJoinOp;
+}

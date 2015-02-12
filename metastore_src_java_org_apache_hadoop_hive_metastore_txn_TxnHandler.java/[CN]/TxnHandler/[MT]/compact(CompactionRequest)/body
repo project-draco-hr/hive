@@ -1,8 +1,9 @@
 {
   try {
-    Connection dbConn=getDbConn(Connection.TRANSACTION_SERIALIZABLE);
+    Connection dbConn=null;
     Statement stmt=null;
     try {
+      dbConn=getDbConn(Connection.TRANSACTION_SERIALIZABLE);
       stmt=dbConn.createStatement();
       String s="select ncq_next from NEXT_COMPACTION_QUEUE_ID";
       LOG.debug("going to execute query <" + s + ">");
@@ -58,13 +59,9 @@ LOG.debug("Going to commit");
 dbConn.commit();
 }
  catch (SQLException e) {
-try {
 LOG.debug("Going to rollback");
-dbConn.rollback();
-}
- catch (SQLException e1) {
-}
-detectDeadlock(e,"compact");
+rollbackDBConn(dbConn);
+checkRetryable(dbConn,e,"compact");
 throw new MetaException("Unable to select from transaction database " + StringUtils.stringifyException(e));
 }
  finally {
@@ -72,10 +69,7 @@ closeStmt(stmt);
 closeDbConn(dbConn);
 }
 }
- catch (DeadlockException e) {
+ catch (RetryException e) {
 compact(rqst);
-}
- finally {
-deadlockCnt=0;
 }
 }

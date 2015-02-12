@@ -1,12 +1,20 @@
 {
   try {
     HBaseSerDe.configureJobConf(tableDesc,jobConf);
-    TableMapReduceUtil.addDependencyJars(jobConf,HBaseStorageHandler.class,TableInputFormatBase.class,org.cliffc.high_scale_lib.Counter.class);
+    if (counterClass != null) {
+      TableMapReduceUtil.addDependencyJars(jobConf,HBaseStorageHandler.class,TableInputFormatBase.class,counterClass);
+    }
+ else {
+      TableMapReduceUtil.addDependencyJars(jobConf,HBaseStorageHandler.class,TableInputFormatBase.class);
+    }
     Set<String> merged=new LinkedHashSet<String>(jobConf.getStringCollection("tmpjars"));
     Job copy=new Job(jobConf);
     TableMapReduceUtil.addDependencyJars(copy);
     merged.addAll(copy.getConfiguration().getStringCollection("tmpjars"));
     jobConf.set("tmpjars",StringUtils.arrayToString(merged.toArray(new String[0])));
+    JobConf hbaseJobConf=new JobConf(getConf());
+    org.apache.hadoop.hbase.mapred.TableMapReduceUtil.initCredentials(hbaseJobConf);
+    ShimLoader.getHadoopShims().mergeCredentials(jobConf,hbaseJobConf);
   }
  catch (  Exception e) {
     throw new RuntimeException(e);

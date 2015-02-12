@@ -1,9 +1,9 @@
 {
   isConnected=false;
   TTransportException tte=null;
-  HadoopShims shim=ShimLoader.getHadoopShims();
   boolean useSasl=conf.getBoolVar(ConfVars.METASTORE_USE_THRIFT_SASL);
   boolean useFramedTransport=conf.getBoolVar(ConfVars.METASTORE_USE_THRIFT_FRAMED_TRANSPORT);
+  boolean useCompactProtocol=conf.getBoolVar(ConfVars.METASTORE_USE_THRIFT_COMPACT_PROTOCOL);
   int clientSocketTimeout=(int)conf.getTimeVar(ConfVars.METASTORE_CLIENT_SOCKET_TIMEOUT,TimeUnit.MILLISECONDS);
   for (int attempt=0; !isConnected && attempt < retries; ++attempt) {
     for (    URI store : metastoreUris) {
@@ -14,7 +14,7 @@
           try {
             HadoopThriftAuthBridge.Client authBridge=ShimLoader.getHadoopThriftAuthBridge().createClient();
             String tokenSig=conf.get("hive.metastore.token.signature");
-            tokenStrForm=shim.getTokenStrForm(tokenSig);
+            tokenStrForm=Utils.getTokenStrForm(tokenSig);
             if (tokenStrForm != null) {
               transport=authBridge.createClientTransport(null,store.getHost(),"DIGEST",tokenStrForm,transport,MetaStoreUtils.getMetaStoreSaslProperties(conf));
             }
@@ -31,7 +31,14 @@
  else         if (useFramedTransport) {
           transport=new TFramedTransport(transport);
         }
-        client=new ThriftHiveMetastore.Client(new TBinaryProtocol(transport));
+        final TProtocol protocol;
+        if (useCompactProtocol) {
+          protocol=new TCompactProtocol(transport);
+        }
+ else {
+          protocol=new TBinaryProtocol(transport);
+        }
+        client=new ThriftHiveMetastore.Client(protocol);
         try {
           transport.open();
           isConnected=true;
@@ -47,7 +54,7 @@
         }
         if (isConnected && !useSasl && conf.getBoolVar(ConfVars.METASTORE_EXECUTE_SET_UGI)) {
           try {
-            UserGroupInformation ugi=shim.getUGIForConf(conf);
+            UserGroupInformation ugi=Utils.getUGI();
             client.set_ugi(ugi.getUserName(),Arrays.asList(ugi.getGroupNames()));
           }
  catch (          LoginException e) {

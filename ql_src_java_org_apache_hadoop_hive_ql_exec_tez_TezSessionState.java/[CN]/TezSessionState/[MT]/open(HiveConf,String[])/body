@@ -1,8 +1,9 @@
 {
   this.conf=conf;
-  UserGroupInformation ugi;
-  ugi=ShimLoader.getHadoopShims().getUGIForConf(conf);
-  user=ShimLoader.getHadoopShims().getShortUserName(ugi);
+  this.queueName=conf.get("tez.queue.name");
+  this.doAsEnabled=conf.getBoolVar(HiveConf.ConfVars.HIVE_SERVER2_ENABLE_DOAS);
+  UserGroupInformation ugi=Utils.getUGI();
+  user=ugi.getShortUserName();
   LOG.info("User of session id " + sessionId + " is "+ user);
   tezScratchDir=createTezDir(sessionId);
   additionalFilesNotFromConf.clear();
@@ -29,6 +30,7 @@
   }
   session=TezClient.create("HIVE-" + sessionId,tezConfig,true,commonLocalResources,null);
   LOG.info("Opening new Tez Session (id: " + sessionId + ", scratch dir: "+ tezScratchDir+ ")");
+  TezJobMonitor.initShutdownHook();
   session.start();
   if (HiveConf.getBoolVar(conf,ConfVars.HIVE_PREWARM_ENABLED)) {
     int n=HiveConf.getIntVar(conf,ConfVars.HIVE_PREWARM_NUM_CONTAINERS);
@@ -53,7 +55,5 @@
   }
  catch (  InterruptedException ie) {
   }
-  conf.set("mapreduce.framework.name","yarn-tez");
-  conf.set("mapreduce.tez.session.tokill-application-id",session.getAppMasterApplicationId().toString());
   openSessions.add(this);
 }

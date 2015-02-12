@@ -1,0 +1,56 @@
+{
+  return new Iterator<Partition>(){
+    private boolean initialized=false;
+    private Iterator<Partition> ptnsIterator=null;
+    private Iterator<String> partitionNamesIter=null;
+    private Iterator<Partition> batchIter=null;
+    private void initialize(){
+      if (!initialized) {
+        if (currType == Type.LIST_PROVIDED) {
+          ptnsIterator=ptnsProvided.iterator();
+        }
+ else {
+          partitionNamesIter=partitionNames.iterator();
+        }
+        initialized=true;
+      }
+    }
+    public boolean hasNext(){
+      initialize();
+      if (currType == Type.LIST_PROVIDED) {
+        return ptnsIterator.hasNext();
+      }
+ else {
+        return ((batchIter != null) && batchIter.hasNext()) || partitionNamesIter.hasNext();
+      }
+    }
+    @Override public Partition next(){
+      initialize();
+      if (currType == Type.LIST_PROVIDED) {
+        return ptnsIterator.next();
+      }
+      if ((batchIter == null) || !batchIter.hasNext()) {
+        getNextBatch();
+      }
+      return batchIter.next();
+    }
+    private void getNextBatch(){
+      int batch_counter=0;
+      List<String> nameBatch=new ArrayList<String>();
+      while (batch_counter < batch_size && partitionNamesIter.hasNext()) {
+        nameBatch.add(partitionNamesIter.next());
+        batch_counter++;
+      }
+      try {
+        batchIter=db.getPartitionsByNames(table,nameBatch).iterator();
+      }
+ catch (      HiveException e) {
+        throw new RuntimeException(e);
+      }
+    }
+    @Override public void remove(){
+      throw new IllegalStateException("PartitionIterable is a read-only iterable and remove() is unsupported");
+    }
+  }
+;
+}

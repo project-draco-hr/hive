@@ -18,7 +18,18 @@
     stmt.execute("INSERT INTO NEXT_COMPACTION_QUEUE_ID VALUES(1)");
     conn.commit();
   }
-  finally {
+ catch (  SQLException e) {
+    conn.rollback();
+    if (e instanceof SQLTransactionRollbackException && deadlockCnt++ < 5) {
+      LOG.warn("Caught deadlock, retrying db creation");
+      prepDb();
+    }
+ else {
+      throw e;
+    }
+  }
+ finally {
+    deadlockCnt=0;
     closeResources(conn,stmt,null);
   }
 }

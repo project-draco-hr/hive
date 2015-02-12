@@ -1,0 +1,42 @@
+{
+  ObjectPair<PrimitiveObjectInspector,ExprNodeEvaluator> handle=PartExprEvalUtils.prepareExpr(prunerExpr,partColumnNames,partColumnTypeInfos);
+  boolean inPlace=partNames instanceof AbstractSequentialList<?>;
+  List<String> partNamesSeq=inPlace ? partNames : new LinkedList<String>(partNames);
+  ArrayList<String> values=new ArrayList<String>(partColumnNames.size());
+  for (int i=0; i < partColumnNames.size(); ++i) {
+    values.add(null);
+  }
+  boolean hasUnknownPartitions=false;
+  Iterator<String> partIter=partNamesSeq.iterator();
+  while (partIter.hasNext()) {
+    String partName=partIter.next();
+    Warehouse.makeValsFromName(partName,values);
+    ArrayList<Object> convertedValues=new ArrayList<Object>(values.size());
+    for (int i=0; i < values.size(); i++) {
+      Object o=ObjectInspectorConverters.getConverter(PrimitiveObjectInspectorFactory.javaStringObjectInspector,PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(partColumnTypeInfos.get(i))).convert(values.get(i));
+      convertedValues.add(o);
+    }
+    Boolean isNeeded=(Boolean)PartExprEvalUtils.evaluateExprOnPart(handle,convertedValues);
+    boolean isUnknown=(isNeeded == null);
+    if (!isUnknown && !isNeeded) {
+      partIter.remove();
+      continue;
+    }
+    if (isUnknown && values.contains(defaultPartitionName)) {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("skipping default/bad partition: " + partName);
+      }
+      partIter.remove();
+      continue;
+    }
+    hasUnknownPartitions|=isUnknown;
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("retained " + (isUnknown ? "unknown " : "") + "partition: "+ partName);
+    }
+  }
+  if (!inPlace) {
+    partNames.clear();
+    partNames.addAll(partNamesSeq);
+  }
+  return hasUnknownPartitions;
+}

@@ -5,15 +5,20 @@
     fsShell.setConf(conf);
     run(fsShell,new String[]{"-chgrp","-R",group,target.toString()});
     if (isExtendedAclEnabled(conf)) {
-      AclStatus aclStatus=((Hadoop23FileStatus)sourceStatus).getAclStatus();
-      List<AclEntry> aclEntries=aclStatus.getEntries();
-      removeBaseAclEntries(aclEntries);
-      FsPermission sourcePerm=sourceStatus.getFileStatus().getPermission();
-      aclEntries.add(newAclEntry(AclEntryScope.ACCESS,AclEntryType.USER,sourcePerm.getUserAction()));
-      aclEntries.add(newAclEntry(AclEntryScope.ACCESS,AclEntryType.GROUP,sourcePerm.getGroupAction()));
-      aclEntries.add(newAclEntry(AclEntryScope.ACCESS,AclEntryType.OTHER,sourcePerm.getOtherAction()));
-      String aclEntry=Joiner.on(",").join(aclStatus.getEntries());
-      run(fsShell,new String[]{"-setfacl","-R","--set",aclEntry,target.toString()});
+      try {
+        AclStatus aclStatus=((Hadoop23FileStatus)sourceStatus).getAclStatus();
+        List<AclEntry> aclEntries=aclStatus.getEntries();
+        removeBaseAclEntries(aclEntries);
+        FsPermission sourcePerm=sourceStatus.getFileStatus().getPermission();
+        aclEntries.add(newAclEntry(AclEntryScope.ACCESS,AclEntryType.USER,sourcePerm.getUserAction()));
+        aclEntries.add(newAclEntry(AclEntryScope.ACCESS,AclEntryType.GROUP,sourcePerm.getGroupAction()));
+        aclEntries.add(newAclEntry(AclEntryScope.ACCESS,AclEntryType.OTHER,sourcePerm.getOtherAction()));
+        String aclEntry=Joiner.on(",").join(aclStatus.getEntries());
+        run(fsShell,new String[]{"-setfacl","-R","--set",aclEntry,target.toString()});
+      }
+ catch (      Exception e) {
+        LOG.info("Skipping ACL inheritance: File system for path " + target + " "+ "does not support ACLs but dfs.namenode.acls.enabled is set to true: "+ e,e);
+      }
     }
  else {
       String permission=Integer.toString(sourceStatus.getFileStatus().getPermission().toShort(),8);

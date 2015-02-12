@@ -1,0 +1,50 @@
+{
+  RelNode calciteGenPlan=null;
+  RelNode calcitePreCboPlan=null;
+  RelNode calciteOptimizedPlan=null;
+  RelOptPlanner planner=HiveVolcanoPlanner.createPlanner();
+  final RelOptQuery query=new RelOptQuery(planner);
+  final RexBuilder rexBuilder=cluster.getRexBuilder();
+  cluster=query.createCluster(rexBuilder.getTypeFactory(),rexBuilder);
+  this.cluster=cluster;
+  this.relOptSchema=relOptSchema;
+  try {
+    calciteGenPlan=genLogicalPlan(getQB(),true);
+    topLevelFieldSchema=SemanticAnalyzer.convertRowSchemaToResultSetSchema(relToHiveRR.get(calciteGenPlan),HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_RESULTSET_USE_UNIQUE_COLUMN_NAMES));
+  }
+ catch (  SemanticException e) {
+    semanticException=e;
+    throw new RuntimeException(e);
+  }
+  calcitePreCboPlan=applyPreJoinOrderingTransforms(calciteGenPlan,HiveDefaultRelMetadataProvider.INSTANCE);
+  List<RelMetadataProvider> list=Lists.newArrayList();
+  list.add(HiveDefaultRelMetadataProvider.INSTANCE);
+  RelTraitSet desiredTraits=cluster.traitSetOf(HiveRelNode.CONVENTION,RelCollationImpl.EMPTY);
+  HepProgram hepPgm=null;
+  HepProgramBuilder hepPgmBldr=new HepProgramBuilder().addMatchOrder(HepMatchOrder.BOTTOM_UP).addRuleInstance(new JoinToMultiJoinRule(HiveJoin.class));
+  hepPgmBldr.addRuleInstance(new LoptOptimizeJoinRule(HiveJoin.HIVE_JOIN_FACTORY,HiveProject.DEFAULT_PROJECT_FACTORY,HiveFilter.DEFAULT_FILTER_FACTORY));
+  hepPgmBldr.addRuleInstance(ReduceExpressionsRule.JOIN_INSTANCE);
+  hepPgmBldr.addRuleInstance(ReduceExpressionsRule.FILTER_INSTANCE);
+  hepPgmBldr.addRuleInstance(ReduceExpressionsRule.PROJECT_INSTANCE);
+  hepPgmBldr.addRuleInstance(ProjectRemoveRule.NAME_CALC_INSTANCE);
+  hepPgmBldr.addRuleInstance(UnionMergeRule.INSTANCE);
+  hepPgm=hepPgmBldr.build();
+  HepPlanner hepPlanner=new HepPlanner(hepPgm);
+  hepPlanner.registerMetadataProviders(list);
+  RelMetadataProvider chainedProvider=ChainedRelMetadataProvider.of(list);
+  cluster.setMetadataProvider(new CachingRelMetadataProvider(chainedProvider,hepPlanner));
+  RelNode rootRel=calcitePreCboPlan;
+  hepPlanner.setRoot(rootRel);
+  if (!calcitePreCboPlan.getTraitSet().equals(desiredTraits)) {
+    rootRel=hepPlanner.changeTraits(calcitePreCboPlan,desiredTraits);
+  }
+  hepPlanner.setRoot(rootRel);
+  calciteOptimizedPlan=hepPlanner.findBestExp();
+  if (LOG.isDebugEnabled() && !conf.getBoolVar(ConfVars.HIVE_IN_TEST)) {
+    LOG.debug("CBO Planning details:\n");
+    LOG.debug("Original Plan:\n" + RelOptUtil.toString(calciteGenPlan));
+    LOG.debug("Plan After PPD, PartPruning, ColumnPruning:\n" + RelOptUtil.toString(calcitePreCboPlan));
+    LOG.debug("Plan After Join Reordering:\n" + RelOptUtil.toString(calciteOptimizedPlan,SqlExplainLevel.ALL_ATTRIBUTES));
+  }
+  return calciteOptimizedPlan;
+}

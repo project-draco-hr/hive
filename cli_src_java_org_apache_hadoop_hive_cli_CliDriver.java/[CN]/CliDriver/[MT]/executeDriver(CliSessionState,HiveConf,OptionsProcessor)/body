@@ -1,22 +1,4 @@
 {
-  if (ss.getHost() != null) {
-    ss.connect();
-    if (ss.isRemoteMode()) {
-      prompt="[" + ss.host + ':'+ ss.port+ "] "+ prompt;
-      char[] spaces=new char[prompt.length()];
-      Arrays.fill(spaces,' ');
-      prompt2=new String(spaces);
-    }
-  }
-  if (!ss.isRemoteMode()) {
-    ClassLoader loader=conf.getClassLoader();
-    String auxJars=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEAUXJARS);
-    if (StringUtils.isNotBlank(auxJars)) {
-      loader=Utilities.addToClassPath(loader,StringUtils.split(auxJars,","));
-    }
-    conf.setClassLoader(loader);
-    Thread.currentThread().setContextClassLoader(loader);
-  }
   CliDriver cli=new CliDriver();
   cli.setHiveVariables(oproc.getHiveVariables());
   cli.processSelectDatabase(ss);
@@ -36,16 +18,18 @@
   }
   ConsoleReader reader=getConsoleReader();
   reader.setBellEnabled(false);
-  for (  Completor completor : getCommandCompletor()) {
-    reader.addCompletor(completor);
+  for (  Completer completer : getCommandCompleter()) {
+    reader.addCompleter(completer);
   }
   String line;
   final String HISTORYFILE=".hivehistory";
   String historyDirectory=System.getProperty("user.home");
+  PersistentHistory history=null;
   try {
     if ((new File(historyDirectory)).exists()) {
       String historyFile=historyDirectory + File.separator + HISTORYFILE;
-      reader.setHistory(new History(new File(historyFile)));
+      history=new FileHistory(new File(historyFile));
+      reader.setHistory(history);
     }
  else {
       System.err.println("WARNING: Directory for Hive history file: " + historyDirectory + " does not exist.   History will not be available during this session.");
@@ -77,6 +61,9 @@
       curPrompt=prompt2 + dbSpaces;
       continue;
     }
+  }
+  if (history != null) {
+    history.flush();
   }
   return ret;
 }

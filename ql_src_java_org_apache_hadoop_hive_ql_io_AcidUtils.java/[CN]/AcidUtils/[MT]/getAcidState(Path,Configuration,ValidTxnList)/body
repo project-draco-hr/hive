@@ -4,7 +4,7 @@
   long bestBaseTxn=0;
   final List<ParsedDelta> deltas=new ArrayList<ParsedDelta>();
   List<ParsedDelta> working=new ArrayList<ParsedDelta>();
-  final List<FileStatus> original=new ArrayList<FileStatus>();
+  List<FileStatus> originalDirectories=new ArrayList<FileStatus>();
   final List<FileStatus> obsolete=new ArrayList<FileStatus>();
   List<FileStatus> children=SHIMS.listLocatedStatus(fs,directory,hiddenFileFilter);
   for (  FileStatus child : children) {
@@ -27,23 +27,28 @@
     }
  else     if (fn.startsWith(DELTA_PREFIX) && child.isDir()) {
       ParsedDelta delta=parseDelta(child);
-      if (txnList.isTxnRangeCommitted(delta.minTransaction,delta.maxTransaction) != ValidTxnList.RangeResponse.NONE) {
+      if (txnList.isTxnRangeValid(delta.minTransaction,delta.maxTransaction) != ValidTxnList.RangeResponse.NONE) {
         working.add(delta);
       }
     }
  else {
-      findOriginals(fs,child,original);
+      originalDirectories.add(child);
     }
   }
+  final List<FileStatus> original=new ArrayList<FileStatus>();
   if (bestBase != null) {
-    obsolete.addAll(original);
     original.clear();
+  }
+ else {
+    for (    FileStatus origDir : originalDirectories) {
+      findOriginals(fs,origDir,original);
+    }
   }
   Collections.sort(working);
   long current=bestBaseTxn;
   for (  ParsedDelta next : working) {
     if (next.maxTransaction > current) {
-      if (txnList.isTxnRangeCommitted(current + 1,next.maxTransaction) != ValidTxnList.RangeResponse.NONE) {
+      if (txnList.isTxnRangeValid(current + 1,next.maxTransaction) != ValidTxnList.RangeResponse.NONE) {
         deltas.add(next);
         current=next.maxTransaction;
       }

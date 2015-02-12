@@ -1,11 +1,17 @@
 {
+  try {
+    applyAuthorizationConfigPolicy(hiveConf);
+  }
+ catch (  HiveException e) {
+    throw new RuntimeException("Error applying authorization policy on hive configuration",e);
+  }
   this.hiveConf=hiveConf;
-  sessionManager=new SessionManager();
+  sessionManager=new SessionManager(hiveServer2);
   addService(sessionManager);
-  if (ShimLoader.getHadoopShims().isSecurityEnabled()) {
+  if (UserGroupInformation.isSecurityEnabled()) {
     try {
       HiveAuthFactory.loginFromKeytab(hiveConf);
-      this.serviceUGI=ShimLoader.getHadoopShims().getUGIForConf(hiveConf);
+      this.serviceUGI=Utils.getUGI();
     }
  catch (    IOException e) {
       throw new ServiceException("Unable to login to kerberos with given principal/keytab",e);
@@ -28,5 +34,6 @@ catch (    LoginException e) {
       }
     }
   }
+  setupBlockedUdfs();
   super.init(hiveConf);
 }

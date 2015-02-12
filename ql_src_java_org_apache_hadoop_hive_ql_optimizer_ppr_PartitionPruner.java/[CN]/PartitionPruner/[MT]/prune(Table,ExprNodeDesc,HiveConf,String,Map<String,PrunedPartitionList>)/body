@@ -1,8 +1,10 @@
 {
-  LOG.trace("Started pruning partiton");
-  LOG.trace("dbname = " + tab.getDbName());
-  LOG.trace("tabname = " + tab.getTableName());
-  LOG.trace("prune Expression = " + prunerExpr == null ? "" : prunerExpr);
+  if (LOG.isTraceEnabled()) {
+    LOG.trace("Started pruning partiton");
+    LOG.trace("dbname = " + tab.getDbName());
+    LOG.trace("tabname = " + tab.getTableName());
+    LOG.trace("prune Expression = " + (prunerExpr == null ? "" : prunerExpr));
+  }
   String key=tab.getDbName() + "." + tab.getTableName()+ ";";
   if (!tab.isPartitioned()) {
     return getAllPartsFromCacheOrServer(tab,key,false,prunedPartitionsMap);
@@ -15,19 +17,28 @@
   }
   Set<String> partColsUsedInFilter=new LinkedHashSet<String>();
   prunerExpr=removeNonPartCols(prunerExpr,extractPartColNames(tab),partColsUsedInFilter);
-  ExprNodeGenericFuncDesc compactExpr=(ExprNodeGenericFuncDesc)compactExpr(prunerExpr.clone());
+  ExprNodeDesc compactExpr=compactExpr(prunerExpr.clone());
   String oldFilter=prunerExpr.getExprString();
-  if (compactExpr == null) {
-    LOG.debug("Filter " + oldFilter + " was null after compacting");
-    return getAllPartsFromCacheOrServer(tab,key,true,prunedPartitionsMap);
+  if (isBooleanExpr(compactExpr)) {
+    if (!isFalseExpr(compactExpr)) {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Filter " + oldFilter + " was null after compacting");
+      }
+      return getAllPartsFromCacheOrServer(tab,key,true,prunedPartitionsMap);
+    }
+ else {
+      return new PrunedPartitionList(tab,new LinkedHashSet<Partition>(new ArrayList<Partition>()),new ArrayList<String>(),false);
+    }
   }
-  LOG.debug("Filter w/ compacting: " + compactExpr.getExprString() + "; filter w/o compacting: "+ oldFilter);
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Filter w/ compacting: " + compactExpr.getExprString() + "; filter w/o compacting: "+ oldFilter);
+  }
   key=key + compactExpr.getExprString();
   PrunedPartitionList ppList=prunedPartitionsMap.get(key);
   if (ppList != null) {
     return ppList;
   }
-  ppList=getPartitionsFromServer(tab,compactExpr,conf,alias,partColsUsedInFilter,oldFilter.equals(compactExpr.getExprString()));
+  ppList=getPartitionsFromServer(tab,(ExprNodeGenericFuncDesc)compactExpr,conf,alias,partColsUsedInFilter,oldFilter.equals(compactExpr.getExprString()));
   prunedPartitionsMap.put(key,ppList);
   return ppList;
 }

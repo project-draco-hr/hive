@@ -2,8 +2,10 @@
   List<ObjectInspector> objectInspectors=new ArrayList<ObjectInspector>();
   List<ExprNodeDesc> keysDesc=conf.getKeys();
   try {
-    keyOutputWriters=new VectorExpressionWriter[keyExpressions.length];
-    for (int i=0; i < keyExpressions.length; ++i) {
+    List<String> outputFieldNames=conf.getOutputColumnNames();
+    outputKeyLength=conf.pruneGroupingSetId() ? keyExpressions.length - 1 : keyExpressions.length;
+    keyOutputWriters=new VectorExpressionWriter[outputKeyLength];
+    for (int i=0; i < outputKeyLength; ++i) {
       keyOutputWriters[i]=VectorExpressionWriterFactory.genVectorExpressionWritable(keysDesc.get(i));
       objectInspectors.add(keyOutputWriters[i].getObjectInspector());
     }
@@ -17,13 +19,12 @@
       aggregationBatchInfo.compileAggregationBatchInfo(aggregators);
     }
     LOG.warn("VectorGroupByOperator is vector output " + isVectorOutput);
-    List<String> outputFieldNames=conf.getOutputColumnNames();
     outputObjInspector=ObjectInspectorFactory.getStandardStructObjectInspector(outputFieldNames,objectInspectors);
     if (isVectorOutput) {
       vrbCtx=new VectorizedRowBatchCtx();
-      vrbCtx.init(hconf,fileKey,(StructObjectInspector)outputObjInspector);
+      vrbCtx.init(vOutContext.getScratchColumnTypeMap(),(StructObjectInspector)outputObjInspector);
       outputBatch=vrbCtx.createVectorizedRowBatch();
-      vectorColumnAssign=VectorColumnAssignFactory.buildAssigners(outputBatch,outputObjInspector,vOutContext.getColumnMap(),conf.getOutputColumnNames());
+      vectorColumnAssign=VectorColumnAssignFactory.buildAssigners(outputBatch,outputObjInspector,vOutContext.getProjectionColumnMap(),conf.getOutputColumnNames());
     }
   }
  catch (  HiveException he) {
@@ -33,8 +34,8 @@ catch (  Throwable e) {
     throw new HiveException(e);
   }
   initializeChildren(hconf);
-  forwardCache=new Object[keyExpressions.length + aggregators.length];
-  if (keyExpressions.length == 0) {
+  forwardCache=new Object[outputKeyLength + aggregators.length];
+  if (outputKeyLength == 0) {
     processingMode=this.new ProcessingModeGlobalAggregate();
   }
  else   if (conf.getVectorDesc().isVectorGroupBatches()) {

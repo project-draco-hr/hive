@@ -1,12 +1,13 @@
 {
   try {
-    Connection dbConn=getDbConn(Connection.TRANSACTION_SERIALIZABLE);
+    Connection dbConn=null;
     HeartbeatTxnRangeResponse rsp=new HeartbeatTxnRangeResponse();
     Set<Long> nosuch=new HashSet<Long>();
     Set<Long> aborted=new HashSet<Long>();
     rsp.setNosuch(nosuch);
     rsp.setAborted(aborted);
     try {
+      dbConn=getDbConn(Connection.TRANSACTION_SERIALIZABLE);
       for (long txn=rqst.getMin(); txn <= rqst.getMax(); txn++) {
         try {
           heartbeatTxn(dbConn,txn);
@@ -21,20 +22,16 @@ catch (        TxnAbortedException e) {
       return rsp;
     }
  catch (    SQLException e) {
-      try {
-        LOG.debug("Going to rollback");
-        dbConn.rollback();
-      }
- catch (      SQLException e1) {
-      }
-      detectDeadlock(e,"heartbeatTxnRange");
+      LOG.debug("Going to rollback");
+      rollbackDBConn(dbConn);
+      checkRetryable(dbConn,e,"heartbeatTxnRange");
       throw new MetaException("Unable to select from transaction database " + StringUtils.stringifyException(e));
     }
  finally {
       closeDbConn(dbConn);
     }
   }
- catch (  DeadlockException e) {
+ catch (  RetryException e) {
     return heartbeatTxnRange(rqst);
   }
 }

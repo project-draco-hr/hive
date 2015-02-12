@@ -1,0 +1,70 @@
+{
+  RelNode joinRel=null;
+  RowResolver leftRR=this.relToHiveRR.get(leftRel);
+  RowResolver rightRR=this.relToHiveRR.get(rightRel);
+  RowResolver joinRR=null;
+  if (hiveJoinType != JoinType.LEFTSEMI) {
+    joinRR=RowResolver.getCombinedRR(leftRR,rightRR);
+  }
+ else {
+    joinRR=new RowResolver();
+    if (!RowResolver.add(joinRR,leftRR)) {
+      LOG.warn("Duplicates detected when adding columns to RR: see previous message");
+    }
+  }
+  RexNode calciteJoinCond=null;
+  if (joinCond != null) {
+    JoinTypeCheckCtx jCtx=new JoinTypeCheckCtx(leftRR,rightRR,hiveJoinType);
+    Map<ASTNode,ExprNodeDesc> exprNodes=JoinCondTypeCheckProcFactory.genExprNode(joinCond,jCtx);
+    if (jCtx.getError() != null)     throw new SemanticException(SemanticAnalyzer.generateErrorMessage(jCtx.getErrorSrcNode(),jCtx.getError()));
+    ExprNodeDesc joinCondnExprNode=exprNodes.get(joinCond);
+    List<RelNode> inputRels=new ArrayList<RelNode>();
+    inputRels.add(leftRel);
+    inputRels.add(rightRel);
+    calciteJoinCond=RexNodeConverter.convert(cluster,joinCondnExprNode,inputRels,relToHiveRR,relToHiveColNameCalcitePosMap,false);
+  }
+ else {
+    calciteJoinCond=cluster.getRexBuilder().makeLiteral(true);
+  }
+  boolean leftSemiJoin=false;
+  JoinRelType calciteJoinType;
+switch (hiveJoinType) {
+case LEFTOUTER:
+    calciteJoinType=JoinRelType.LEFT;
+  break;
+case RIGHTOUTER:
+calciteJoinType=JoinRelType.RIGHT;
+break;
+case FULLOUTER:
+calciteJoinType=JoinRelType.FULL;
+break;
+case LEFTSEMI:
+calciteJoinType=JoinRelType.INNER;
+leftSemiJoin=true;
+break;
+case INNER:
+default :
+calciteJoinType=JoinRelType.INNER;
+break;
+}
+if (leftSemiJoin) {
+List<RelDataTypeField> sysFieldList=new ArrayList<RelDataTypeField>();
+List<RexNode> leftJoinKeys=new ArrayList<RexNode>();
+List<RexNode> rightJoinKeys=new ArrayList<RexNode>();
+RexNode nonEquiConds=RelOptUtil.splitJoinCondition(sysFieldList,leftRel,rightRel,calciteJoinCond,leftJoinKeys,rightJoinKeys,null,null);
+if (!nonEquiConds.isAlwaysTrue()) {
+throw new SemanticException("Non equality condition not supported in Semi-Join" + nonEquiConds);
+}
+RelNode[] inputRels=new RelNode[]{leftRel,rightRel};
+final List<Integer> leftKeys=new ArrayList<Integer>();
+final List<Integer> rightKeys=new ArrayList<Integer>();
+calciteJoinCond=HiveCalciteUtil.projectNonColumnEquiConditions(HiveProject.DEFAULT_PROJECT_FACTORY,inputRels,leftJoinKeys,rightJoinKeys,0,leftKeys,rightKeys);
+joinRel=new SemiJoin(cluster,cluster.traitSetOf(HiveRelNode.CONVENTION),inputRels[0],inputRels[1],calciteJoinCond,ImmutableIntList.copyOf(leftKeys),ImmutableIntList.copyOf(rightKeys));
+}
+ else {
+joinRel=HiveJoin.getJoin(cluster,leftRel,rightRel,calciteJoinCond,calciteJoinType,leftSemiJoin);
+}
+relToHiveColNameCalcitePosMap.put(joinRel,this.buildHiveToCalciteColumnMap(joinRR,joinRel));
+relToHiveRR.put(joinRel,joinRR);
+return joinRel;
+}

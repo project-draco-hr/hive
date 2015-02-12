@@ -2,11 +2,10 @@
   this.outDir=outDir;
   this.logDir=logDir;
   if (confDir != null && !confDir.isEmpty()) {
-    HiveConf.setHiveSiteLocation(new URL("file://" + confDir + "/hive-site.xml"));
+    HiveConf.setHiveSiteLocation(new URL("file://" + new File(confDir).toURI().getPath() + "/hive-site.xml"));
     System.out.println("Setting hive-site: " + HiveConf.getHiveSiteLocation());
   }
   conf=new HiveConf(Driver.class);
-  this.miniMr=(clusterType == MiniClusterType.mr);
   this.hadoopVer=getHadoopMainVersion(hadoopVer);
   qMap=new TreeMap<String,String>();
   qSkipSet=new HashSet<String>();
@@ -14,15 +13,29 @@
   qSortQuerySet=new HashSet<String>();
   qHashQuerySet=new HashSet<String>();
   qSortNHashQuerySet=new HashSet<String>();
+  qJavaVersionSpecificOutput=new HashSet<String>();
   this.clusterType=clusterType;
   HadoopShims shims=ShimLoader.getHadoopShims();
   int numberOfDataNodes=4;
-  if (clusterType != MiniClusterType.none) {
-    dfs=shims.getMiniDfs(conf,numberOfDataNodes,true,null);
-    FileSystem fs=dfs.getFileSystem();
+  if (clusterType != MiniClusterType.none && clusterType != MiniClusterType.spark) {
+    FileSystem fs=null;
+    if (clusterType == MiniClusterType.encrypted) {
+      conf.set(SECURITY_KEY_PROVIDER_URI_NAME,getKeyProviderURI());
+      dfs=shims.getMiniDfs(conf,numberOfDataNodes,true,null);
+      fs=dfs.getFileSystem();
+      hes=shims.createHdfsEncryptionShim(fs,conf);
+      LOG.info("key provider is initialized");
+    }
+ else {
+      dfs=shims.getMiniDfs(conf,numberOfDataNodes,true,null);
+      fs=dfs.getFileSystem();
+    }
     String uriString=WindowsPathUtil.getHdfsUriString(fs.getUri().toString());
     if (clusterType == MiniClusterType.tez) {
       mr=shims.getMiniTezCluster(conf,4,uriString,1);
+    }
+ else     if (clusterType == MiniClusterType.miniSparkOnYarn) {
+      mr=shims.getMiniSparkCluster(conf,4,uriString,1);
     }
  else {
       mr=shims.getMiniMrCluster(conf,4,uriString,1);

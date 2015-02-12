@@ -1,9 +1,18 @@
 {
   OptimizeTezProcContext context=(OptimizeTezProcContext)procCtx;
-  if (!context.conf.getBoolVar(HiveConf.ConfVars.HIVECONVERTJOIN)) {
-    return null;
-  }
   JoinOperator joinOp=(JoinOperator)nd;
+  TezBucketJoinProcCtx tezBucketJoinProcCtx=new TezBucketJoinProcCtx(context.conf);
+  if (!context.conf.getBoolVar(HiveConf.ConfVars.HIVECONVERTJOIN)) {
+    Object retval=checkAndConvertSMBJoin(context,joinOp,tezBucketJoinProcCtx);
+    if (retval == null) {
+      return retval;
+    }
+ else {
+      int pos=0;
+      convertJoinSMBJoin(joinOp,context,pos,0,false,false);
+      return null;
+    }
+  }
   int numBuckets=-1;
   int estimatedBuckets=-1;
   if (context.conf.getBoolVar(HiveConf.ConfVars.HIVE_CONVERT_JOIN_BUCKET_MAPJOIN_TEZ)) {
@@ -27,22 +36,34 @@
     numBuckets=1;
   }
   LOG.info("Estimated number of buckets " + numBuckets);
-  int mapJoinConversionPos=mapJoinConversionPos(joinOp,context,numBuckets);
+  int mapJoinConversionPos=getMapJoinConversionPos(joinOp,context,numBuckets);
   if (mapJoinConversionPos < 0) {
-    return null;
-  }
-  if (context.conf.getBoolVar(HiveConf.ConfVars.HIVE_CONVERT_JOIN_BUCKET_MAPJOIN_TEZ)) {
-    if (convertJoinBucketMapJoin(joinOp,context,mapJoinConversionPos)) {
+    Object retval=checkAndConvertSMBJoin(context,joinOp,tezBucketJoinProcCtx);
+    if (retval == null) {
+      return retval;
+    }
+ else {
+      convertJoinSMBJoin(joinOp,context,0,0,false,false);
       return null;
     }
   }
+  if (numBuckets > 1) {
+    if (context.conf.getBoolVar(HiveConf.ConfVars.HIVE_CONVERT_JOIN_BUCKET_MAPJOIN_TEZ)) {
+      if (convertJoinBucketMapJoin(joinOp,context,mapJoinConversionPos,tezBucketJoinProcCtx)) {
+        return null;
+      }
+    }
+  }
   LOG.info("Convert to non-bucketed map join");
-  mapJoinConversionPos=mapJoinConversionPos(joinOp,context,1);
+  mapJoinConversionPos=getMapJoinConversionPos(joinOp,context,1);
   if (mapJoinConversionPos < 0) {
+    int pos=0;
+    convertJoinSMBJoin(joinOp,context,pos,0,false,false);
     return null;
   }
   MapJoinOperator mapJoinOp=convertJoinMapJoin(joinOp,context,mapJoinConversionPos);
-  mapJoinOp.setOpTraits(new OpTraits(null,-1));
+  mapJoinOp.setOpTraits(new OpTraits(null,-1,null));
+  mapJoinOp.setStatistics(joinOp.getStatistics());
   for (  Operator<? extends OperatorDesc> childOp : mapJoinOp.getChildOperators()) {
     setAllChildrenTraitsToNull(childOp);
   }

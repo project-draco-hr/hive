@@ -6,15 +6,15 @@
       long startedAt=System.currentTimeMillis();
       try {
         ShowCompactResponse currentCompactions=txnHandler.showCompact(new ShowCompactRequest());
-        ValidTxnList txns=TxnHandler.createValidTxnList(txnHandler.getOpenTxns());
+        ValidTxnList txns=CompactionTxnHandler.createValidCompactTxnList(txnHandler.getOpenTxnsInfo());
         Set<CompactionInfo> potentials=txnHandler.findPotentialCompactions(abortedThreshold);
         LOG.debug("Found " + potentials.size() + " potential compactions, "+ "checking to see if we should compact any of them");
         for (        CompactionInfo ci : potentials) {
           LOG.debug("Checking to see if we should compact " + ci.getFullPartitionName());
           try {
             Table t=resolveTable(ci);
-            if (t.getParameters().get(NO_COMPACTION) != null) {
-              LOG.info("Table " + tableName(t) + " marked "+ NO_COMPACTION+ " so we will not compact it.");
+            if (noAutoCompactSet(t)) {
+              LOG.info("Table " + tableName(t) + " marked true so we will not compact it.");
               continue;
             }
             if (lookForCurrentCompactions(currentCompactions,ci)) {
@@ -39,10 +39,10 @@
         LOG.error("Initiator loop caught unexpected exception this time through the loop: " + StringUtils.stringifyException(t));
       }
       long elapsedTime=System.currentTimeMillis() - startedAt;
-      if (elapsedTime >= checkInterval || stop.boolVal)       continue;
+      if (elapsedTime >= checkInterval || stop.get())       continue;
  else       Thread.sleep(checkInterval - elapsedTime);
     }
- while (!stop.boolVal);
+ while (!stop.get());
   }
  catch (  Throwable t) {
     LOG.error("Caught an exception in the main loop of compactor initiator, exiting " + StringUtils.stringifyException(t));

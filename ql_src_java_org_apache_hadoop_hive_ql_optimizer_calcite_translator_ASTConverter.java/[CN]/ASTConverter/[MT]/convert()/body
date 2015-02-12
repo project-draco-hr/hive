@@ -1,0 +1,87 @@
+{
+  new QBVisitor().go(root);
+  QueryBlockInfo qb=convertSource(from);
+  schema=qb.schema;
+  hiveAST.from=ASTBuilder.construct(HiveParser.TOK_FROM,"TOK_FROM").add(qb.ast).node();
+  if (where != null) {
+    ASTNode cond=where.getCondition().accept(new RexVisitor(schema));
+    hiveAST.where=ASTBuilder.where(cond);
+  }
+  if (groupBy != null) {
+    ASTBuilder b;
+    boolean groupingSetsExpression=false;
+    if (groupBy.indicator) {
+      Group aggregateType=Aggregate.Group.induce(groupBy.getGroupSet(),groupBy.getGroupSets());
+      if (aggregateType == Group.ROLLUP) {
+        b=ASTBuilder.construct(HiveParser.TOK_ROLLUP_GROUPBY,"TOK_ROLLUP_GROUPBY");
+      }
+ else       if (aggregateType == Group.CUBE) {
+        b=ASTBuilder.construct(HiveParser.TOK_CUBE_GROUPBY,"TOK_CUBE_GROUPBY");
+      }
+ else {
+        b=ASTBuilder.construct(HiveParser.TOK_GROUPING_SETS,"TOK_GROUPING_SETS");
+        groupingSetsExpression=true;
+      }
+    }
+ else {
+      b=ASTBuilder.construct(HiveParser.TOK_GROUPBY,"TOK_GROUPBY");
+    }
+    for (    int i : groupBy.getGroupSet()) {
+      RexInputRef iRef=new RexInputRef(i,groupBy.getCluster().getTypeFactory().createSqlType(SqlTypeName.ANY));
+      b.add(iRef.accept(new RexVisitor(schema)));
+    }
+    if (groupingSetsExpression) {
+      for (      ImmutableBitSet groupSet : groupBy.getGroupSets()) {
+        ASTBuilder expression=ASTBuilder.construct(HiveParser.TOK_GROUPING_SETS_EXPRESSION,"TOK_GROUPING_SETS_EXPRESSION");
+        for (        int i : groupSet) {
+          RexInputRef iRef=new RexInputRef(i,groupBy.getCluster().getTypeFactory().createSqlType(SqlTypeName.ANY));
+          expression.add(iRef.accept(new RexVisitor(schema)));
+        }
+        b.add(expression);
+      }
+    }
+    if (!groupBy.getGroupSet().isEmpty()) {
+      hiveAST.groupBy=b.node();
+    }
+    schema=new Schema(schema,groupBy);
+  }
+  if (having != null) {
+    ASTNode cond=having.getCondition().accept(new RexVisitor(schema));
+    hiveAST.having=ASTBuilder.having(cond);
+  }
+  ASTBuilder b=ASTBuilder.construct(HiveParser.TOK_SELECT,"TOK_SELECT");
+  if (select.getChildExps().isEmpty()) {
+    RexLiteral r=select.getCluster().getRexBuilder().makeExactLiteral(new BigDecimal(1));
+    ASTNode selectExpr=ASTBuilder.selectExpr(ASTBuilder.literal(r),"1");
+    b.add(selectExpr);
+  }
+ else {
+    int i=0;
+    for (    RexNode r : select.getChildExps()) {
+      boolean reformulate=false;
+      if (groupBy != null && groupBy.indicator) {
+        RexNode expr=select.getChildExps().get(i);
+        if (expr instanceof RexCall) {
+          if (((RexCall)expr).getOperator().equals(HiveGroupingID.GROUPING__ID)) {
+            reformulate=true;
+          }
+        }
+      }
+      ASTNode expr;
+      if (reformulate) {
+        RexInputRef iRef=new RexInputRef(groupBy.getGroupCount() * 2 + groupBy.getAggCallList().size(),TypeConverter.convert(VirtualColumn.GROUPINGID.getTypeInfo(),groupBy.getCluster().getTypeFactory()));
+        expr=iRef.accept(new RexVisitor(schema));
+      }
+ else {
+        expr=r.accept(new RexVisitor(schema,r instanceof RexLiteral));
+      }
+      String alias=select.getRowType().getFieldNames().get(i++);
+      ASTNode selectExpr=ASTBuilder.selectExpr(expr,alias);
+      b.add(selectExpr);
+    }
+  }
+  hiveAST.select=b.node();
+  convertOBToASTNode((HiveSort)order);
+  convertLimitToASTNode((HiveSort)limit);
+  return hiveAST.getAST();
+}

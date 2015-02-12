@@ -1,0 +1,56 @@
+{
+  SparkWork originalWork=originalTask.getWork();
+  Collection<BaseWork> allBaseWorks=originalWork.getAllWorkUnsorted();
+  for (  BaseWork work : allBaseWorks) {
+    if (containsOp(work,SparkHashTableSinkOperator.class) || containsOp(work,MapJoinOperator.class)) {
+      work.setMapRedLocalWork(new MapredLocalWork());
+    }
+  }
+  Context ctx=physicalContext.getContext();
+  for (  BaseWork work : allBaseWorks) {
+    Set<Operator<?>> ops=getOp(work,MapJoinOperator.class);
+    if (ops == null || ops.isEmpty()) {
+      continue;
+    }
+    Path tmpPath=Utilities.generateTmpPath(ctx.getMRTmpPath(),originalTask.getId());
+    MapredLocalWork bigTableLocalWork=work.getMapRedLocalWork();
+    List<Operator<? extends OperatorDesc>> dummyOps=new ArrayList<Operator<? extends OperatorDesc>>(work.getDummyOps());
+    bigTableLocalWork.setDummyParentOp(dummyOps);
+    bigTableLocalWork.setTmpPath(tmpPath);
+    SparkBucketMapJoinContext bucketMJCxt=null;
+    for (    Operator<? extends OperatorDesc> op : ops) {
+      MapJoinOperator mapJoinOp=(MapJoinOperator)op;
+      MapJoinDesc mapJoinDesc=mapJoinOp.getConf();
+      if (mapJoinDesc.isBucketMapJoin()) {
+        bucketMJCxt=new SparkBucketMapJoinContext(mapJoinDesc);
+        bucketMJCxt.setBucketMatcherClass(org.apache.hadoop.hive.ql.exec.DefaultBucketMatcher.class);
+        bucketMJCxt.setPosToAliasMap(mapJoinOp.getPosToAliasMap());
+        ((MapWork)work).setUseBucketizedHiveInputFormat(true);
+        bigTableLocalWork.setBucketMapjoinContext(bucketMJCxt);
+        bigTableLocalWork.setInputFileChangeSensitive(true);
+        break;
+      }
+    }
+    for (    BaseWork parentWork : originalWork.getParents(work)) {
+      Set<Operator<?>> hashTableSinkOps=getOp(parentWork,SparkHashTableSinkOperator.class);
+      if (hashTableSinkOps == null || hashTableSinkOps.isEmpty()) {
+        continue;
+      }
+      MapredLocalWork parentLocalWork=parentWork.getMapRedLocalWork();
+      parentLocalWork.setTmpHDFSPath(tmpPath);
+      if (bucketMJCxt != null) {
+        for (        Operator<? extends OperatorDesc> op : hashTableSinkOps) {
+          SparkHashTableSinkOperator hashTableSinkOp=(SparkHashTableSinkOperator)op;
+          SparkHashTableSinkDesc hashTableSinkDesc=hashTableSinkOp.getConf();
+          BucketMapJoinContext original=hashTableSinkDesc.getBucketMapjoinContext();
+          if (original != null && original.getBucketFileNameMapping() == bucketMJCxt.getBucketFileNameMapping()) {
+            ((MapWork)parentWork).setUseBucketizedHiveInputFormat(true);
+            parentLocalWork.setBucketMapjoinContext(bucketMJCxt);
+            parentLocalWork.setInputFileChangeSensitive(true);
+            break;
+          }
+        }
+      }
+    }
+  }
+}

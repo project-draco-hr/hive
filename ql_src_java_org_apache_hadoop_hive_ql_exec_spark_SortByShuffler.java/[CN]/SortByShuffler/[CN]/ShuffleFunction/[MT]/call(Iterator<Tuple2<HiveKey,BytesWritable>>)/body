@@ -1,0 +1,40 @@
+{
+  final Iterator<Tuple2<HiveKey,Iterable<BytesWritable>>> resultIt=new Iterator<Tuple2<HiveKey,Iterable<BytesWritable>>>(){
+    HiveKey curKey=null;
+    List<BytesWritable> curValues=new ArrayList<BytesWritable>();
+    @Override public boolean hasNext(){
+      return it.hasNext() || curKey != null;
+    }
+    @Override public Tuple2<HiveKey,Iterable<BytesWritable>> next(){
+      while (it.hasNext()) {
+        Tuple2<HiveKey,BytesWritable> pair=it.next();
+        if (curKey != null && !curKey.equals(pair._1())) {
+          HiveKey key=curKey;
+          List<BytesWritable> values=curValues;
+          curKey=pair._1();
+          curValues=new ArrayList<BytesWritable>();
+          curValues.add(pair._2());
+          return new Tuple2<HiveKey,Iterable<BytesWritable>>(key,values);
+        }
+        curKey=pair._1();
+        curValues.add(pair._2());
+      }
+      if (curKey == null) {
+        throw new NoSuchElementException();
+      }
+      HiveKey key=curKey;
+      curKey=null;
+      return new Tuple2<HiveKey,Iterable<BytesWritable>>(key,curValues);
+    }
+    @Override public void remove(){
+      throw new UnsupportedOperationException();
+    }
+  }
+;
+  return new Iterable<Tuple2<HiveKey,Iterable<BytesWritable>>>(){
+    @Override public Iterator<Tuple2<HiveKey,Iterable<BytesWritable>>> iterator(){
+      return resultIt;
+    }
+  }
+;
+}

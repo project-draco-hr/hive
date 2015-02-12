@@ -1,8 +1,9 @@
 {
   try {
-    Connection dbConn=getDbConn(Connection.TRANSACTION_SERIALIZABLE);
+    Connection dbConn=null;
     Statement stmt=null;
     try {
+      dbConn=getDbConn(Connection.TRANSACTION_SERIALIZABLE);
       stmt=dbConn.createStatement();
       String s="update COMPACTION_QUEUE set cq_worker_id = null, cq_start = null, cq_state = '" + INITIATED_STATE + "' where cq_state = '"+ WORKING_STATE+ "' and cq_worker_id like '"+ hostname+ "%'";
       LOG.debug("Going to execute update <" + s + ">");
@@ -11,14 +12,10 @@
       dbConn.commit();
     }
  catch (    SQLException e) {
-      try {
-        LOG.error("Unable to change dead worker's records back to initiated state " + e.getMessage());
-        LOG.debug("Going to rollback");
-        dbConn.rollback();
-      }
- catch (      SQLException e1) {
-      }
-      detectDeadlock(e,"revokeFromLocalWorkers");
+      LOG.error("Unable to change dead worker's records back to initiated state " + e.getMessage());
+      LOG.debug("Going to rollback");
+      rollbackDBConn(dbConn);
+      checkRetryable(dbConn,e,"revokeFromLocalWorkers");
       throw new MetaException("Unable to connect to transaction database " + StringUtils.stringifyException(e));
     }
  finally {
@@ -26,10 +23,7 @@
       closeStmt(stmt);
     }
   }
- catch (  DeadlockException e) {
+ catch (  RetryException e) {
     revokeFromLocalWorkers(hostname);
-  }
- finally {
-    deadlockCnt=0;
   }
 }

@@ -3,6 +3,9 @@
   if (lockMgr == null)   return;
   List<HiveLockObj> lockObjects=new ArrayList<HiveLockObj>();
   for (  ReadEntity input : plan.getInputs()) {
+    if (!input.needsLock()) {
+      continue;
+    }
     LOG.debug("Adding " + input.getName() + " to list of lock inputs");
     if (input.getType() == ReadEntity.Type.DATABASE) {
       lockObjects.addAll(getLockObjects(plan,input.getDatabase(),null,null,HiveLockMode.SHARED));
@@ -15,16 +18,20 @@
     }
   }
   for (  WriteEntity output : plan.getOutputs()) {
+    HiveLockMode lockMode=getWriteEntityLockMode(output);
+    if (lockMode == null) {
+      continue;
+    }
     LOG.debug("Adding " + output.getName() + " to list of lock outputs");
     List<HiveLockObj> lockObj=null;
     if (output.getType() == WriteEntity.Type.DATABASE) {
-      lockObjects.addAll(getLockObjects(plan,output.getDatabase(),null,null,output.isComplete() ? HiveLockMode.EXCLUSIVE : HiveLockMode.SHARED));
+      lockObjects.addAll(getLockObjects(plan,output.getDatabase(),null,null,lockMode));
     }
  else     if (output.getTyp() == WriteEntity.Type.TABLE) {
-      lockObj=getLockObjects(plan,null,output.getTable(),null,output.isComplete() ? HiveLockMode.EXCLUSIVE : HiveLockMode.SHARED);
+      lockObj=getLockObjects(plan,null,output.getTable(),null,lockMode);
     }
  else     if (output.getTyp() == WriteEntity.Type.PARTITION) {
-      lockObj=getLockObjects(plan,null,null,output.getPartition(),HiveLockMode.EXCLUSIVE);
+      lockObj=getLockObjects(plan,null,null,output.getPartition(),lockMode);
     }
  else     if (output.getTyp() == WriteEntity.Type.DUMMYPARTITION) {
       lockObj=getLockObjects(plan,null,null,output.getPartition(),HiveLockMode.SHARED);

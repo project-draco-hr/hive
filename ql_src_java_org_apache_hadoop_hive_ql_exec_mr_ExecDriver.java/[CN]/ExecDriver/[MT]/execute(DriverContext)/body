@@ -21,7 +21,7 @@
     console.printError("Error launching map-reduce job","\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
     return 5;
   }
-  ShimLoader.getHadoopShims().prepareJobOutput(job);
+  HiveFileFormatUtils.prepareJobOutput(job);
   job.setOutputFormat(HiveOutputFormatImpl.class);
   job.setMapperClass(ExecMapper.class);
   job.setMapOutputKeyClass(HiveKey.class);
@@ -30,7 +30,7 @@
     job.setPartitionerClass((Class<? extends Partitioner>)(Class.forName(HiveConf.getVar(job,HiveConf.ConfVars.HIVEPARTITIONER))));
   }
  catch (  ClassNotFoundException e) {
-    throw new RuntimeException(e.getMessage());
+    throw new RuntimeException(e.getMessage(),e);
   }
   if (mWork.getNumMapTasks() != null) {
     job.setNumMapTasks(mWork.getNumMapTasks().intValue());
@@ -53,9 +53,6 @@
   boolean useSpeculativeExecReducers=HiveConf.getBoolVar(job,HiveConf.ConfVars.HIVESPECULATIVEEXECREDUCERS);
   HiveConf.setBoolVar(job,HiveConf.ConfVars.HADOOPSPECULATIVEEXECREDUCERS,useSpeculativeExecReducers);
   String inpFormat=HiveConf.getVar(job,HiveConf.ConfVars.HIVEINPUTFORMAT);
-  if ((inpFormat == null) || (!StringUtils.isNotBlank(inpFormat))) {
-    inpFormat=ShimLoader.getHadoopShims().getInputFormatClassName();
-  }
   if (mWork.isUseBucketizedHiveInputFormat()) {
     inpFormat=BucketizedHiveInputFormat.class.getName();
   }
@@ -64,7 +61,7 @@
     job.setInputFormat((Class<? extends InputFormat>)(Class.forName(inpFormat)));
   }
  catch (  ClassNotFoundException e) {
-    throw new RuntimeException(e.getMessage());
+    throw new RuntimeException(e.getMessage(),e);
   }
   job.setOutputKeyClass(Text.class);
   job.setOutputValueClass(Text.class);
@@ -89,7 +86,7 @@
     initializeFiles("tmparchives",addedArchives);
   }
   try {
-    MapredLocalWork localwork=mWork.getMapLocalWork();
+    MapredLocalWork localwork=mWork.getMapRedLocalWork();
     if (localwork != null && localwork.hasStagedAlias()) {
       if (!ShimLoader.getHadoopShims().isLocalMode(job)) {
         Path localPath=localwork.getTmpPath();
@@ -159,6 +156,11 @@ catch (      Exception e) {
     }
     Utilities.createTmpDirs(job,mWork);
     Utilities.createTmpDirs(job,rWork);
+    SessionState ss=SessionState.get();
+    if (HiveConf.getVar(job,HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("tez") && ss != null) {
+      TezSessionState session=ss.getTezSession();
+      TezSessionPoolManager.getInstance().close(session,true);
+    }
     rj=jc.submitJob(job);
     if (pwd != null) {
       HiveConf.setVar(job,HiveConf.ConfVars.METASTOREPWD,pwd);

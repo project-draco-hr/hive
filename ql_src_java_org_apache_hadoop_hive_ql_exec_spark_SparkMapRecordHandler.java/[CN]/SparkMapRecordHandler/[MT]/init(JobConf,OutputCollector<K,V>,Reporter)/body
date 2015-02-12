@@ -1,0 +1,55 @@
+{
+  perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.SPARK_INIT_OPERATORS);
+  super.init(job,output,reporter);
+  isLogInfoEnabled=LOG.isInfoEnabled();
+  ObjectCache cache=ObjectCacheFactory.getCache(job);
+  try {
+    jc=job;
+    execContext=new ExecMapperContext(jc);
+    MapWork mrwork=(MapWork)cache.retrieve(PLAN_KEY);
+    if (mrwork == null) {
+      mrwork=Utilities.getMapWork(job);
+      cache.cache(PLAN_KEY,mrwork);
+    }
+ else {
+      Utilities.setMapWork(job,mrwork);
+    }
+    if (mrwork.getVectorMode()) {
+      mo=new VectorMapOperator();
+    }
+ else {
+      mo=new MapOperator();
+    }
+    mo.setConf(mrwork);
+    mo.setChildren(job);
+    LOG.info(mo.dump(0));
+    localWork=mrwork.getMapRedLocalWork();
+    execContext.setLocalWork(localWork);
+    MapredContext.init(true,new JobConf(jc));
+    MapredContext.get().setReporter(reporter);
+    mo.setExecContext(execContext);
+    mo.initializeLocalWork(jc);
+    mo.initialize(jc,null);
+    OperatorUtils.setChildrenCollector(mo.getChildOperators(),output);
+    mo.setReporter(rp);
+    if (localWork == null) {
+      return;
+    }
+    LOG.info("Initializing dummy operator");
+    List<Operator<? extends OperatorDesc>> dummyOps=localWork.getDummyParentOp();
+    for (    Operator<? extends OperatorDesc> dummyOp : dummyOps) {
+      dummyOp.setExecContext(execContext);
+      dummyOp.initialize(jc,null);
+    }
+  }
+ catch (  Throwable e) {
+    abort=true;
+    if (e instanceof OutOfMemoryError) {
+      throw (OutOfMemoryError)e;
+    }
+ else {
+      throw new RuntimeException("Map operator initialization failed: " + e,e);
+    }
+  }
+  perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.SPARK_INIT_OPERATORS);
+}

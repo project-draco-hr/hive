@@ -1,0 +1,64 @@
+{
+  tbl.validatePartColumnNames(partSpec,true);
+  List<String> pvals=new ArrayList<String>();
+  for (  FieldSchema field : tbl.getPartCols()) {
+    String val=partSpec.get(field.getName());
+    if ((val == null && !HiveConf.getBoolVar(conf,HiveConf.ConfVars.DYNAMICPARTITIONING)) || (val != null && val.length() == 0)) {
+      throw new HiveException("get partition: Value for key " + field.getName() + " is null or empty");
+    }
+ else     if (val != null) {
+      pvals.add(val);
+    }
+  }
+  org.apache.hadoop.hive.metastore.api.Partition tpart=null;
+  try {
+    tpart=getMSC().getPartitionWithAuthInfo(tbl.getDbName(),tbl.getTableName(),pvals,getUserName(),getGroupNames());
+  }
+ catch (  NoSuchObjectException nsoe) {
+    tpart=null;
+  }
+catch (  Exception e) {
+    LOG.error(StringUtils.stringifyException(e));
+    throw new HiveException(e);
+  }
+  try {
+    if (forceCreate) {
+      if (tpart == null) {
+        LOG.debug("creating partition for table " + tbl.getTableName() + " with partition spec : "+ partSpec);
+        try {
+          tpart=getMSC().appendPartition(tbl.getDbName(),tbl.getTableName(),pvals);
+        }
+ catch (        AlreadyExistsException aee) {
+          LOG.debug("Caught already exists exception, trying to alter partition instead");
+          tpart=getMSC().getPartitionWithAuthInfo(tbl.getDbName(),tbl.getTableName(),pvals,getUserName(),getGroupNames());
+          alterPartitionSpec(tbl,partSpec,tpart,inheritTableSpecs,partPath);
+        }
+catch (        Exception e) {
+          if (CheckJDOException.isJDODataStoreException(e)) {
+            LOG.debug("Caught JDO exception, trying to alter partition instead");
+            tpart=getMSC().getPartitionWithAuthInfo(tbl.getDbName(),tbl.getTableName(),pvals,getUserName(),getGroupNames());
+            if (tpart == null) {
+              throw e;
+            }
+            alterPartitionSpec(tbl,partSpec,tpart,inheritTableSpecs,partPath);
+          }
+ else {
+            throw e;
+          }
+        }
+      }
+ else {
+        alterPartitionSpec(tbl,partSpec,tpart,inheritTableSpecs,partPath);
+        fireInsertEvent(tbl,partSpec,newFiles);
+      }
+    }
+    if (tpart == null) {
+      return null;
+    }
+  }
+ catch (  Exception e) {
+    LOG.error(StringUtils.stringifyException(e));
+    throw new HiveException(e);
+  }
+  return new Partition(tbl,tpart);
+}

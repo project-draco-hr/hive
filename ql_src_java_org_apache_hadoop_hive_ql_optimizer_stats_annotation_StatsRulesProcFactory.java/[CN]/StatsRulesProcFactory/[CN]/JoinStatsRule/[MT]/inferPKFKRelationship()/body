@@ -1,0 +1,38 @@
+{
+  if (numAttr == 1) {
+    List<Integer> parentsWithPK=getPrimaryKeyCandidates(parents);
+    for (    Integer id : parentsWithPK) {
+      ColStatistics csPK=null;
+      Operator<? extends OperatorDesc> parent=parents.get(id);
+      for (      ColStatistics cs : parent.getStatistics().getColumnStats()) {
+        if (cs.isPrimaryKey()) {
+          csPK=cs;
+          break;
+        }
+      }
+      List<Integer> parentsWithFK=getForeignKeyCandidates(parents,csPK);
+      if (parentsWithFK.size() == 1 && parentsWithFK.size() + parentsWithPK.size() == parents.size()) {
+        Operator<? extends OperatorDesc> parentWithFK=parents.get(parentsWithFK.get(0));
+        List<Float> parentsSel=getSelectivity(parents,parentsWithPK);
+        Float prodSelectivity=1.0f;
+        for (        Float selectivity : parentsSel) {
+          prodSelectivity*=selectivity;
+        }
+        newNumRows=(long)Math.ceil(parentWithFK.getStatistics().getNumRows() * prodSelectivity);
+        pkfkInferred=true;
+        if (isDebugEnabled) {
+          List<String> parentIds=Lists.newArrayList();
+          for (          Integer i : parentsWithPK) {
+            parentIds.add(parents.get(i).toString());
+          }
+          LOG.debug("STATS-" + jop.toString() + ": PK parent id(s) - "+ parentIds);
+          parentIds.clear();
+          for (          Integer i : parentsWithFK) {
+            parentIds.add(parents.get(i).toString());
+          }
+          LOG.debug("STATS-" + jop.toString() + ": FK parent id(s) - "+ parentIds);
+        }
+      }
+    }
+  }
+}

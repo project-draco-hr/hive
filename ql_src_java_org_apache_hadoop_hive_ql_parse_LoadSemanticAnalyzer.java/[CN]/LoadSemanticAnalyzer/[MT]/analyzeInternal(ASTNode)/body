@@ -1,6 +1,6 @@
 {
-  isLocal=false;
-  isOverWrite=false;
+  boolean isLocal=false;
+  boolean isOverWrite=false;
   Tree fromTree=ast.getChild(0);
   Tree tableTree=ast.getChild(1);
   if (ast.getChildCount() == 4) {
@@ -18,7 +18,7 @@
   URI fromURI;
   try {
     String fromPath=stripQuotes(fromTree.getText());
-    fromURI=initializeFromURI(fromPath);
+    fromURI=initializeFromURI(fromPath,isLocal);
   }
  catch (  IOException e) {
     throw new SemanticException(ErrorMsg.INVALID_PATH.getMsg(fromTree,e.getMessage()),e);
@@ -45,8 +45,9 @@ catch (  URISyntaxException e) {
     throw new SemanticException(ErrorMsg.NEED_PARTITION_ERROR.getMsg());
   }
   applyConstraints(fromURI,toURI,fromTree,isLocal);
-  inputs.add(new ReadEntity(new Path(fromURI),isLocal));
+  inputs.add(toReadEntity(new Path(fromURI)));
   Task<? extends Serializable> rTask=null;
+  boolean preservePartitionSpecs=false;
   Map<String,String> partSpec=ts.getPartSpec();
   if (partSpec == null) {
     partSpec=new LinkedHashMap<String,String>();
@@ -59,7 +60,13 @@ catch (  URISyntaxException e) {
         if (part.isOffline()) {
           throw new SemanticException(ErrorMsg.OFFLINE_TABLE_OR_PARTITION.getMsg(ts.tableName + ":" + part.getName()));
         }
-        outputs.add(new WriteEntity(part,(isOverWrite ? WriteEntity.WriteType.INSERT_OVERWRITE : WriteEntity.WriteType.INSERT)));
+        if (isOverWrite) {
+          outputs.add(new WriteEntity(part,WriteEntity.WriteType.INSERT_OVERWRITE));
+        }
+ else {
+          outputs.add(new WriteEntity(part,WriteEntity.WriteType.INSERT));
+          preservePartitionSpecs=true;
+        }
       }
  else {
         outputs.add(new WriteEntity(ts.tableHandle,(isOverWrite ? WriteEntity.WriteType.INSERT_OVERWRITE : WriteEntity.WriteType.INSERT)));
@@ -71,6 +78,9 @@ catch (  URISyntaxException e) {
   }
   LoadTableDesc loadTableWork;
   loadTableWork=new LoadTableDesc(new Path(fromURI),Utilities.getTableDesc(ts.tableHandle),partSpec,isOverWrite);
+  if (preservePartitionSpecs) {
+    loadTableWork.setInheritTableSpecs(false);
+  }
   Task<? extends Serializable> childTask=TaskFactory.get(new MoveWork(getInputs(),getOutputs(),loadTableWork,null,true,isLocal),conf);
   if (rTask != null) {
     rTask.addDependentTask(childTask);

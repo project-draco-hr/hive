@@ -1,5 +1,7 @@
 {
-  ASTNode selectClause=(ASTNode)subQueryAST.getChild(1).getChild(1);
+  ASTNode fromClause=getChildFromSubqueryAST("From",HiveParser.TOK_FROM);
+  ASTNode insertClause=getChildFromSubqueryAST("Insert",HiveParser.TOK_INSERT);
+  ASTNode selectClause=(ASTNode)insertClause.getChild(1);
   int selectExprStart=0;
   if (selectClause.getChild(0).getType() == HiveParser.TOK_HINTLIST) {
     selectExprStart=1;
@@ -11,7 +13,7 @@
       throw new SemanticException(ErrorMsg.UNSUPPORTED_SUBQUERY_EXPRESSION.getMsg(u,"Correlating expression cannot contain unqualified column references."));
     }
   }
-  List<String> sqAliases=SubQueryUtils.getTableAliasesInSubQuery(this);
+  List<String> sqAliases=SubQueryUtils.getTableAliasesInSubQuery(fromClause);
   String sharedAlias=null;
   for (  String s : sqAliases) {
     if (outerQryAliases.contains(s)) {
@@ -19,7 +21,7 @@
     }
   }
   if (sharedAlias != null) {
-    ASTNode whereClause=SubQueryUtils.subQueryWhere(subQueryAST);
+    ASTNode whereClause=SubQueryUtils.subQueryWhere(insertClause);
     if (whereClause != null) {
       ASTNode u=SubQueryUtils.hasUnQualifiedColumnReferences(whereClause);
       if (u != null) {
@@ -40,7 +42,7 @@
     containsWindowing=containsWindowing | (r == 2);
     containsAggregationExprs=containsAggregationExprs | (r == 1);
   }
-  rewrite(outerQueryRR,forHavingClause,outerQueryAlias);
+  rewrite(outerQueryRR,forHavingClause,outerQueryAlias,insertClause,selectClause);
   SubQueryUtils.setOriginDeep(subQueryAST,originalSQASTOrigin);
   if (operator.getType() == SubQueryType.EXISTS && containsAggregationExprs && groupbyAddedToSQ) {
     throw new SemanticException(ErrorMsg.INVALID_SUBQUERY_EXPRESSION.getMsg(subQueryAST,"An Exists predicate on SubQuery with implicit Aggregation(no Group By clause) " + "cannot be rewritten. (predicate will always return true)."));

@@ -2,18 +2,32 @@
   try {
     setPlanPath(conf,hiveScratchDir);
     Path planPath=getPlanPath(conf,name);
-    OutputStream out;
+    OutputStream out=null;
     if (HiveConf.getBoolVar(conf,ConfVars.HIVE_RPC_QUERY_PLAN)) {
       ByteArrayOutputStream byteOut=new ByteArrayOutputStream();
-      out=new DeflaterOutputStream(byteOut,new Deflater(Deflater.BEST_SPEED));
-      serializePlan(w,out,conf);
+      try {
+        out=new DeflaterOutputStream(byteOut,new Deflater(Deflater.BEST_SPEED));
+        serializePlan(w,out,conf);
+        out.close();
+        out=null;
+      }
+  finally {
+        IOUtils.closeStream(out);
+      }
       LOG.info("Setting plan: " + planPath.toUri().getPath());
       conf.set(planPath.toUri().getPath(),Base64.encodeBase64String(byteOut.toByteArray()));
     }
  else {
       FileSystem fs=planPath.getFileSystem(conf);
-      out=fs.create(planPath);
-      serializePlan(w,out,conf);
+      try {
+        out=fs.create(planPath);
+        serializePlan(w,out,conf);
+        out.close();
+        out=null;
+      }
+  finally {
+        IOUtils.closeStream(out);
+      }
       if (useCache && !ShimLoader.getHadoopShims().isLocalMode(conf)) {
         if (!DistributedCache.getSymlink(conf)) {
           DistributedCache.createSymlink(conf);
@@ -24,11 +38,12 @@
         fs.setReplication(planPath,replication);
       }
     }
-    gWorkMap.put(planPath,w);
+    gWorkMap.get().put(planPath,w);
     return planPath;
   }
  catch (  Exception e) {
-    e.printStackTrace();
-    throw new RuntimeException(e);
+    String msg="Error caching " + name + ": "+ e;
+    LOG.error(msg,e);
+    throw new RuntimeException(msg,e);
   }
 }

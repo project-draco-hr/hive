@@ -1,8 +1,10 @@
 {
+  if (expr == null) {
+    return null;
+  }
   if (expr instanceof ExprNodeConstantDesc) {
-    expr=removeTruePredciates(expr);
-    if (expr == null || ((ExprNodeConstantDesc)expr).getValue() == null) {
-      return null;
+    if (isBooleanExpr(expr)) {
+      return expr;
     }
  else {
       throw new IllegalStateException("Unexpected non-null ExprNodeConstantDesc: " + expr.getExprString());
@@ -11,20 +13,30 @@
  else   if (expr instanceof ExprNodeGenericFuncDesc) {
     GenericUDF udf=((ExprNodeGenericFuncDesc)expr).getGenericUDF();
     boolean isAnd=udf instanceof GenericUDFOPAnd;
-    if (isAnd || udf instanceof GenericUDFOPOr) {
+    boolean isOr=udf instanceof GenericUDFOPOr;
+    if (isAnd || isOr) {
       List<ExprNodeDesc> children=expr.getChildren();
-      ExprNodeDesc left=removeTruePredciates(children.get(0));
-      children.set(0,left == null ? null : compactExpr(left));
-      ExprNodeDesc right=removeTruePredciates(children.get(1));
-      children.set(1,right == null ? null : compactExpr(right));
-      if (children.get(0) == null && children.get(1) == null) {
-        return null;
+      ExprNodeDesc left=children.get(0);
+      children.set(0,compactExpr(left));
+      ExprNodeDesc right=children.get(1);
+      children.set(1,compactExpr(right));
+      if (isTrueExpr(children.get(0)) && isTrueExpr(children.get(1))) {
+        return new ExprNodeConstantDesc(Boolean.TRUE);
       }
- else       if (children.get(0) == null) {
-        return isAnd ? children.get(1) : null;
+ else       if (isTrueExpr(children.get(0))) {
+        return isAnd ? children.get(1) : new ExprNodeConstantDesc(Boolean.TRUE);
       }
- else       if (children.get(1) == null) {
-        return isAnd ? children.get(0) : null;
+ else       if (isTrueExpr(children.get(1))) {
+        return isAnd ? children.get(0) : new ExprNodeConstantDesc(Boolean.TRUE);
+      }
+ else       if (isFalseExpr(children.get(0)) && isFalseExpr(children.get(1))) {
+        return new ExprNodeConstantDesc(Boolean.FALSE);
+      }
+ else       if (isFalseExpr(children.get(0))) {
+        return isAnd ? new ExprNodeConstantDesc(Boolean.FALSE) : children.get(1);
+      }
+ else       if (isFalseExpr(children.get(1))) {
+        return isAnd ? new ExprNodeConstantDesc(Boolean.FALSE) : children.get(0);
       }
     }
     return expr;

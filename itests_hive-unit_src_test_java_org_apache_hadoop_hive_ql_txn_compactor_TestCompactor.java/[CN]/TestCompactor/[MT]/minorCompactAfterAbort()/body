@@ -1,0 +1,47 @@
+{
+  String dbName="default";
+  String tblName="cws";
+  List<String> colNames=Arrays.asList("a","b");
+  executeStatementOnDriver("drop table if exists " + tblName,driver);
+  executeStatementOnDriver("CREATE TABLE " + tblName + "(a INT, b STRING) "+ " CLUSTERED BY(a) INTO 1 BUCKETS"+ " STORED AS ORC",driver);
+  HiveEndPoint endPt=new HiveEndPoint(null,dbName,tblName,null);
+  DelimitedInputWriter writer=new DelimitedInputWriter(new String[]{"a","b"},",",endPt);
+  StreamingConnection connection=endPt.newConnection(false);
+  try {
+    for (int i=0; i < 2; i++) {
+      writeBatch(connection,writer,false);
+    }
+    TransactionBatch txnBatch=connection.fetchTransactionBatch(2,writer);
+    txnBatch.beginNextTransaction();
+    txnBatch.abort();
+    txnBatch.beginNextTransaction();
+    txnBatch.abort();
+    CompactionTxnHandler txnHandler=new CompactionTxnHandler(conf);
+    txnHandler.compact(new CompactionRequest(dbName,tblName,CompactionType.MINOR));
+    Worker t=new Worker();
+    t.setThreadId((int)t.getId());
+    t.setHiveConf(conf);
+    AtomicBoolean stop=new AtomicBoolean(true);
+    AtomicBoolean looped=new AtomicBoolean();
+    t.init(stop,looped);
+    t.run();
+    IMetaStoreClient msClient=new HiveMetaStoreClient(conf);
+    Table table=msClient.getTable(dbName,tblName);
+    FileSystem fs=FileSystem.get(conf);
+    FileStatus[] stat=fs.listStatus(new Path(table.getSd().getLocation()),AcidUtils.deltaFileFilter);
+    String[] names=new String[stat.length];
+    Path resultDelta=null;
+    for (int i=0; i < names.length; i++) {
+      names[i]=stat[i].getPath().getName();
+      if (names[i].equals("delta_0000001_0000006")) {
+        resultDelta=stat[i].getPath();
+      }
+    }
+    Arrays.sort(names);
+    Assert.assertArrayEquals(names,new String[]{"delta_0000001_0000002","delta_0000001_0000006","delta_0000003_0000004","delta_0000005_0000006"});
+    checkExpectedTxnsPresent(null,new Path[]{resultDelta},0,1L,4L);
+  }
+  finally {
+    connection.close();
+  }
+}

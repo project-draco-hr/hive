@@ -1,0 +1,21 @@
+{
+  List<FieldSchema> cols=new ArrayList<FieldSchema>();
+  cols.add(new FieldSchema("col1","int","nocomment"));
+  List<FieldSchema> partCols=new ArrayList<FieldSchema>();
+  partCols.add(new FieldSchema("ds","string",""));
+  SerDeInfo serde=new SerDeInfo("serde","seriallib",null);
+  StorageDescriptor sd=new StorageDescriptor(cols,"file:/tmp","input","output",false,0,serde,null,null,emptyParameters);
+  Table table=new Table("addPartTable","default","me",startTime,startTime,0,sd,partCols,emptyParameters,null,null,null);
+  msClient.createTable(table);
+  Partition partition=new Partition(Arrays.asList("today"),"default","addPartTable",startTime,startTime,sd,emptyParameters);
+  msClient.add_partition(partition);
+  NotificationEventResponse rsp=msClient.getNextNotification(firstEventId,0,null);
+  assertEquals(2,rsp.getEventsSize());
+  NotificationEvent event=rsp.getEvents().get(1);
+  assertEquals(firstEventId + 2,event.getEventId());
+  assertTrue(event.getEventTime() >= startTime);
+  assertEquals(HCatConstants.HCAT_ADD_PARTITION_EVENT,event.getEventType());
+  assertEquals("default",event.getDbName());
+  assertEquals("addparttable",event.getTableName());
+  assertTrue(event.getMessage().matches("\\{\"eventType\":\"ADD_PARTITION\",\"server\":\"\"," + "\"servicePrincipal\":\"\",\"db\":\"default\",\"table\":" + "\"addparttable\",\"timestamp\":[0-9]+,\"partitions\":\\[\\{\"ds\":\"today\"}]}"));
+}

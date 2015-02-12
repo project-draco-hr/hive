@@ -1,7 +1,20 @@
 {
-  ZooKeeperHiveLockManager.unlockPrimitive(conf,zooKeeper,zLock,PARENT);
-  verify(zooKeeper).delete(TABLE_LOCK_PATH,-1);
-  verify(zooKeeper).getChildren(PARENT_LOCK_PATH,false);
-  verify(zooKeeper).delete(PARENT_LOCK_PATH,-1);
-  verifyNoMoreInteractions(zooKeeper);
+  client.create().creatingParentsIfNeeded().forPath(TABLE_LOCK_PATH,lockObjData.toString().getBytes());
+  byte[] data=client.getData().forPath(TABLE_LOCK_PATH);
+  Assert.assertArrayEquals(lockObjData.toString().getBytes(),data);
+  ZooKeeperHiveLockManager.unlockPrimitive(zLock,PARENT,client);
+  try {
+    data=client.getData().forPath(TABLE_LOCK_PATH);
+    Assert.fail();
+  }
+ catch (  Exception e) {
+    Assert.assertEquals(e instanceof KeeperException.NoNodeException,true);
+  }
+  try {
+    data=client.getData().forPath(PARENT_LOCK_PATH);
+    Assert.fail();
+  }
+ catch (  Exception e) {
+    Assert.assertEquals(e instanceof KeeperException.NoNodeException,true);
+  }
 }

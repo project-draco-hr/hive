@@ -47,17 +47,39 @@
  else {
       tbl.unsetDataLocation();
     }
+    Class<? extends Deserializer> serdeClass=oldtbl.getDeserializerClass();
     Map<String,String> params=tbl.getParameters();
+    SerDeSpec spec=AnnotationUtils.getAnnotation(serdeClass,SerDeSpec.class);
     String paramsStr=HiveConf.getVar(conf,HiveConf.ConfVars.DDL_CTL_PARAMETERS_WHITELIST);
+    Set<String> retainer=new HashSet<String>();
+    if (spec != null && spec.schemaProps() != null) {
+      retainer.addAll(Arrays.asList(spec.schemaProps()));
+    }
     if (paramsStr != null) {
-      List<String> paramsList=Arrays.asList(paramsStr.split(","));
-      params.keySet().retainAll(paramsList);
+      retainer.addAll(Arrays.asList(paramsStr.split(",")));
+    }
+    if (!retainer.isEmpty()) {
+      params.keySet().retainAll(retainer);
     }
  else {
       params.clear();
     }
     if (crtTbl.getTblProps() != null) {
       params.putAll(crtTbl.getTblProps());
+    }
+    if (crtTbl.isUserStorageFormat()) {
+      tbl.setInputFormatClass(crtTbl.getDefaultInputFormat());
+      tbl.setOutputFormatClass(crtTbl.getDefaultOutputFormat());
+      tbl.getTTable().getSd().setInputFormat(tbl.getInputFormatClass().getName());
+      tbl.getTTable().getSd().setOutputFormat(tbl.getOutputFormatClass().getName());
+      if (crtTbl.getDefaultSerName() == null) {
+        LOG.info("Default to LazySimpleSerDe for like table " + crtTbl.getTableName());
+        tbl.setSerializationLib(org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe.class.getName());
+      }
+ else {
+        validateSerDe(crtTbl.getDefaultSerName());
+        tbl.setSerializationLib(crtTbl.getDefaultSerName());
+      }
     }
     tbl.getTTable().setTemporary(crtTbl.isTemporary());
     if (crtTbl.isExternal()) {
