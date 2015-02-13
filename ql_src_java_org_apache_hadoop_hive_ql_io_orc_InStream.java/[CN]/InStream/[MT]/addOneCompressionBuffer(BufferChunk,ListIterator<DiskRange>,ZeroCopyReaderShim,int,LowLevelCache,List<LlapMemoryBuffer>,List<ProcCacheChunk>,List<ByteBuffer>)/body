@@ -11,9 +11,6 @@
   }
   int consumedLength=chunkLength + OutStream.HEADER_SIZE;
   long cbEndOffset=cbStartOffset + consumedLength;
-  if (current.end < cbEndOffset) {
-    return -1;
-  }
   boolean isUncompressed=((b0 & 0x01) == 1);
   if (DebugUtils.isTraceOrcEnabled()) {
     LOG.info("Found CB at " + cbStartOffset + ", chunk length "+ chunkLength+ ", total "+ consumedLength+ ", "+ (isUncompressed ? "not " : "")+ "compressed");
@@ -31,6 +28,9 @@
     }
     return consumedLength;
   }
+  if (current.end < cbEndOffset && !ranges.hasNext()) {
+    return -1;
+  }
   ByteBuffer copy=allocateBuffer(chunkLength,compressed.isDirect());
   int remaining=chunkLength - compressed.remaining();
   int originalPos=compressed.position();
@@ -47,21 +47,22 @@
       toRelease.add(compressed);
     }
   }
+  DiskRange nextRange=null;
   while (ranges.hasNext()) {
-    DiskRange range=ranges.next();
-    if (!(range instanceof BufferChunk)) {
+    nextRange=ranges.next();
+    if (!(nextRange instanceof BufferChunk)) {
       throw new IOException("Trying to extend compressed block into uncompressed block");
     }
-    compressed=range.getData();
+    compressed=nextRange.getData();
     if (compressed.remaining() >= remaining) {
       slice=compressed.slice();
       slice.limit(remaining);
       copy.put(slice);
       addOneCompressionBlockByteBuffer(copy,isUncompressed,cbStartOffset,cbEndOffset,remaining,ranges,current,cache,toDecompress,cacheBuffers);
       if (DebugUtils.isTraceOrcEnabled()) {
-        LOG.info("Adjusting " + range + " to consume "+ remaining);
+        LOG.info("Adjusting " + nextRange + " to consume "+ remaining);
       }
-      range.offset+=remaining;
+      nextRange.offset+=remaining;
       if (compressed.remaining() <= 0 && zcr != null) {
         zcr.releaseBuffer(compressed);
       }
@@ -73,9 +74,9 @@
       zcr.releaseBuffer(compressed);
     }
     if (DebugUtils.isTraceOrcEnabled()) {
-      LOG.info("Removing " + range + " from ranges");
+      LOG.info("Removing " + nextRange + " from ranges");
     }
     ranges.remove();
   }
-  throw new IOException("EOF in while trying to read " + chunkLength + " bytes at "+ cbStartOffset);
+  return -1;
 }
