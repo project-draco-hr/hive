@@ -1,11 +1,20 @@
 {
   List<Path> newFiles=new ArrayList<Path>();
   Table tbl=getTable(tableName);
+  HiveConf sessionConf=SessionState.getSessionConf();
   if (replace) {
-    tbl.replaceFiles(loadPath,isSrcLocal);
+    Path tableDest=tbl.getPath();
+    replaceFiles(tableDest,loadPath,tableDest,tableDest,sessionConf,isSrcLocal);
   }
  else {
-    tbl.copyFiles(loadPath,isSrcLocal,isAcid,newFiles);
+    FileSystem fs;
+    try {
+      fs=tbl.getDataLocation().getFileSystem(sessionConf);
+      copyFiles(sessionConf,loadPath,tbl.getPath(),fs,isSrcLocal,isAcid,newFiles);
+    }
+ catch (    IOException e) {
+      throw new HiveException("addFiles: filesystem error in check phase",e);
+    }
     tbl.getParameters().put(StatsSetupConst.STATS_GENERATED_VIA_STATS_TASK,"true");
   }
   try {
