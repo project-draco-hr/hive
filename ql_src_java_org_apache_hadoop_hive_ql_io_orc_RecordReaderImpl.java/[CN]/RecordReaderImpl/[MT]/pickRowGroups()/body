@@ -2,7 +2,7 @@
   if (sarg == null || rowIndexStride == 0) {
     return null;
   }
-  readRowIndex(currentStripe);
+  readRowIndex(currentStripe,sargColumns);
   long rowsInStripe=stripes.get(currentStripe).getNumberOfRows();
   int groupsInStripe=(int)((rowsInStripe + rowIndexStride - 1) / rowIndexStride);
   boolean[] result=new boolean[groupsInStripe];
@@ -11,7 +11,11 @@
     for (int pred=0; pred < leafValues.length; ++pred) {
       if (filterColumns[pred] != -1) {
         OrcProto.ColumnStatistics stats=indexes[filterColumns[pred]].getEntry(rowGroup).getStatistics();
-        leafValues[pred]=evaluatePredicate(stats,sargLeaves.get(pred));
+        OrcProto.BloomFilter bf=null;
+        if (bloomFilterIndices[filterColumns[pred]] != null) {
+          bf=bloomFilterIndices[filterColumns[pred]].getBloomFilter(rowGroup);
+        }
+        leafValues[pred]=evaluatePredicateProto(stats,sargLeaves.get(pred),bf);
         if (LOG.isDebugEnabled()) {
           LOG.debug("Stats = " + stats);
           LOG.debug("Setting " + sargLeaves.get(pred) + " to "+ leafValues[pred]);

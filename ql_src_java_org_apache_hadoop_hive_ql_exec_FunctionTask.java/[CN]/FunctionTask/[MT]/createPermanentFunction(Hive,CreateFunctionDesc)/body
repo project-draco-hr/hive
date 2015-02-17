@@ -4,30 +4,14 @@
   String funcName=qualifiedNameParts[1];
   String registeredName=FunctionUtils.qualifyFunctionName(funcName,dbName);
   String className=createFunctionDesc.getClassName();
-  boolean addedToRegistry=false;
-  try {
-    checkLocalFunctionResources(db,createFunctionDesc.getResources());
-    addFunctionResources(createFunctionDesc.getResources());
-    Class<?> udfClass=getUdfClass(createFunctionDesc);
-    if (FunctionUtils.getUDFClassType(udfClass) == UDFClassType.UNKNOWN) {
-      console.printError("FAILED: Class " + createFunctionDesc.getClassName() + " does not implement UDF, GenericUDF, or UDAF");
-      return 1;
-    }
-    addedToRegistry=FunctionRegistry.registerTemporaryFunction(registeredName,udfClass);
-    if (!addedToRegistry) {
-      console.printError("Failed to register " + registeredName + " using class "+ createFunctionDesc.getClassName());
-      return 1;
-    }
-    Function func=new Function(funcName,dbName,className,SessionState.get().getUserName(),PrincipalType.USER,(int)(System.currentTimeMillis() / 1000),org.apache.hadoop.hive.metastore.api.FunctionType.JAVA,createFunctionDesc.getResources());
-    db.createFunction(func);
-    return 0;
-  }
- catch (  ClassNotFoundException e) {
-    console.printError("FAILED: Class " + createFunctionDesc.getClassName() + " not found");
-    LOG.info("create function: " + StringUtils.stringifyException(e));
-    if (addedToRegistry) {
-      FunctionRegistry.unregisterTemporaryUDF(registeredName);
-    }
+  List<ResourceUri> resources=createFunctionDesc.getResources();
+  checkLocalFunctionResources(db,createFunctionDesc.getResources());
+  FunctionInfo registered=FunctionRegistry.registerPermanentFunction(registeredName,className,true,toFunctionResource(resources));
+  if (registered == null) {
+    console.printError("Failed to register " + registeredName + " using class "+ createFunctionDesc.getClassName());
     return 1;
   }
+  Function func=new Function(funcName,dbName,className,SessionState.get().getUserName(),PrincipalType.USER,(int)(System.currentTimeMillis() / 1000),org.apache.hadoop.hive.metastore.api.FunctionType.JAVA,resources);
+  db.createFunction(func);
+  return 0;
 }

@@ -4,15 +4,14 @@
   GlobalLimitCtx globalLimitCtx=pctx.getGlobalLimitCtx();
   Map<TableScanOperator,ExprNodeDesc> opToPartPruner=pctx.getOpToPartPruner();
   Map<String,SplitSample> nameToSplitSample=pctx.getNameToSplitSample();
-  QB qb=pctx.getQB();
-  QBParseInfo qbParseInfo=qb.getParseInfo();
   if (ctx.getTryCount() == 0 && topOps.size() == 1 && !globalLimitCtx.ifHasTransformOrUDTF() && nameToSplitSample.isEmpty()) {
-    Integer tempGlobalLimit=checkQbpForGlobalLimit(qb);
+    TableScanOperator ts=(TableScanOperator)topOps.values().toArray()[0];
+    Integer tempGlobalLimit=checkQbpForGlobalLimit(ts);
     if (tempGlobalLimit != null && tempGlobalLimit != 0) {
-      TableScanOperator ts=(TableScanOperator)topOps.values().toArray()[0];
       Table tab=ts.getConf().getTableMetadata();
       if (!tab.isPartitioned()) {
-        if (qbParseInfo.getDestToWhereExpr().isEmpty()) {
+        Set<FilterOperator> filterOps=OperatorUtils.findOperators(ts,FilterOperator.class);
+        if (filterOps.size() == 0) {
           globalLimitCtx.enableOpt(tempGlobalLimit);
         }
       }

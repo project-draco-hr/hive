@@ -1,0 +1,61 @@
+{
+  List<String> targetTableSchema=qb.getParseInfo().getDestSchemaForClause(dest);
+  if (targetTableSchema == null) {
+    return;
+  }
+  if (targetTableSchema.size() != col_list.size()) {
+    Table target=qb.getMetaData().getDestTableForAlias(dest);
+    Partition partition=target == null ? qb.getMetaData().getDestPartitionForAlias(dest) : null;
+    throw new SemanticException(generateErrorMessage(selExprList,"Expected " + targetTableSchema.size() + " columns for "+ dest+ (target != null ? "/" + target.getCompleteName() : (partition != null ? "/" + partition.getCompleteName() : ""))+ "; select produces "+ col_list.size()+ " columns"));
+  }
+  Map<String,ExprNodeDesc> targetCol2Projection=new HashMap<String,ExprNodeDesc>();
+  Map<String,ColumnInfo> targetCol2ColumnInfo=new HashMap<String,ColumnInfo>();
+  int colListPos=0;
+  for (  String targetCol : targetTableSchema) {
+    targetCol2ColumnInfo.put(targetCol,out_rwsch.getColumnInfos().get(colListPos));
+    targetCol2Projection.put(targetCol,col_list.get(colListPos++));
+  }
+  Table target=qb.getMetaData().getDestTableForAlias(dest);
+  Partition partition=target == null ? qb.getMetaData().getDestPartitionForAlias(dest) : null;
+  if (target == null && partition == null) {
+    throw new SemanticException(generateErrorMessage(selExprList,"No table/partition found in QB metadata for dest='" + dest + "'"));
+  }
+  ArrayList<ExprNodeDesc> new_col_list=new ArrayList<ExprNodeDesc>();
+  ArrayList<ColumnInfo> newSchema=new ArrayList<ColumnInfo>();
+  colListPos=0;
+  List<FieldSchema> targetTableCols=target != null ? target.getCols() : partition.getCols();
+  List<String> targetTableColNames=new ArrayList<String>();
+  for (  FieldSchema fs : targetTableCols) {
+    targetTableColNames.add(fs.getName());
+  }
+  Map<String,String> partSpec=qb.getMetaData().getPartSpecForAlias(dest);
+  if (partSpec != null) {
+    for (    Map.Entry<String,String> partKeyVal : partSpec.entrySet()) {
+      if (partKeyVal.getValue() == null) {
+        targetTableColNames.add(partKeyVal.getKey());
+      }
+    }
+  }
+  for (  String f : targetTableColNames) {
+    if (targetCol2Projection.containsKey(f)) {
+      new_col_list.add(targetCol2Projection.get(f));
+      ColumnInfo ci=targetCol2ColumnInfo.get(f);
+      ci.setInternalName(getColumnInternalName(colListPos));
+      newSchema.add(ci);
+    }
+ else {
+      TypeCheckCtx tcCtx=new TypeCheckCtx(inputRR);
+      CommonToken t=new CommonToken(HiveParser.TOK_NULL);
+      t.setText("TOK_NULL");
+      ExprNodeDesc exp=genExprNodeDesc(new ASTNode(t),inputRR,tcCtx);
+      new_col_list.add(exp);
+      final String tableAlias="";
+      ColumnInfo colInfo=new ColumnInfo(getColumnInternalName(colListPos),exp.getWritableObjectInspector(),tableAlias,false);
+      newSchema.add(colInfo);
+    }
+    colListPos++;
+  }
+  col_list.clear();
+  col_list.addAll(new_col_list);
+  out_rwsch.setRowSchema(new RowSchema(newSchema));
+}
