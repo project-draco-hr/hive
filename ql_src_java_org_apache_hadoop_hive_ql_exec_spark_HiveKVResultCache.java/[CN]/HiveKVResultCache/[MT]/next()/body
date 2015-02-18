@@ -1,20 +1,60 @@
 {
-  try {
-    List<BytesWritable> row;
-synchronized (this) {
-      Preconditions.checkState(hasNext());
-      if (cursor == 0) {
-        row=container.first();
+  Preconditions.checkState(hasNext());
+  if (!readBufferUsed) {
+    try {
+      if (input == null && output != null) {
+        output.close();
+        output=null;
+        FileInputStream fis=null;
+        try {
+          fis=new FileInputStream(tmpFile);
+          input=new Input(fis);
+        }
+  finally {
+          if (input == null && fis != null) {
+            fis.close();
+          }
+        }
+      }
+      if (input != null) {
+        for (int i=0; i < IN_MEMORY_NUM_ROWS; i++) {
+          ObjectPair<HiveKey,BytesWritable> pair=readBuffer[i];
+          pair.setFirst(readHiveKey(input));
+          pair.setSecond(readValue(input));
+        }
+        if (input.eof()) {
+          input.close();
+          input=null;
+        }
+        rowsInReadBuffer=IN_MEMORY_NUM_ROWS;
+        readBufferUsed=true;
+        readCursor=0;
+      }
+ else       if (writeCursor == 1) {
+        ObjectPair<HiveKey,BytesWritable> pair=writeBuffer[0];
+        Tuple2<HiveKey,BytesWritable> row=new Tuple2<HiveKey,BytesWritable>(pair.getFirst(),pair.getSecond());
+        pair.setFirst(null);
+        pair.setSecond(null);
+        writeCursor=0;
+        return row;
       }
  else {
-        row=container.next();
+        switchBufferAndResetCursor();
       }
-      cursor++;
     }
-    HiveKey key=KryoSerializer.deserialize(row.get(0).getBytes(),HiveKey.class);
-    return new Tuple2<HiveKey,BytesWritable>(key,row.get(1));
+ catch (    Exception e) {
+      clear();
+      throw new RuntimeException("Failed to load rows from disk",e);
+    }
   }
- catch (  HiveException ex) {
-    throw new RuntimeException("Failed to get row from RowContainer",ex);
+  ObjectPair<HiveKey,BytesWritable> pair=readBuffer[readCursor];
+  Tuple2<HiveKey,BytesWritable> row=new Tuple2<HiveKey,BytesWritable>(pair.getFirst(),pair.getSecond());
+  pair.setFirst(null);
+  pair.setSecond(null);
+  if (++readCursor >= rowsInReadBuffer) {
+    readBufferUsed=false;
+    rowsInReadBuffer=0;
+    readCursor=0;
   }
+  return row;
 }
