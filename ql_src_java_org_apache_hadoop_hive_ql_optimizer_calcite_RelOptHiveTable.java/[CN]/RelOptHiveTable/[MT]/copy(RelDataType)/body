@@ -1,0 +1,29 @@
+{
+  Map<String,Integer> nameToColIndxMap=new HashMap<String,Integer>();
+  for (  RelDataTypeField f : this.rowType.getFieldList()) {
+    nameToColIndxMap.put(f.getName(),f.getIndex());
+  }
+  List<ColumnInfo> newHiveNonPartitionCols=new ArrayList<ColumnInfo>();
+  List<ColumnInfo> newHivePartitionCols=new ArrayList<ColumnInfo>();
+  List<VirtualColumn> newHiveVirtualCols=new ArrayList<VirtualColumn>();
+  Map<Integer,VirtualColumn> virtualColInfoMap=HiveCalciteUtil.getVColsMap(this.hiveVirtualCols,this.noOfNonVirtualCols);
+  Integer originalColIndx;
+  ColumnInfo cInfo;
+  VirtualColumn vc;
+  for (  RelDataTypeField f : newRowType.getFieldList()) {
+    originalColIndx=nameToColIndxMap.get(f.getName());
+    if ((cInfo=hiveNonPartitionColsMap.get(originalColIndx)) != null) {
+      newHiveNonPartitionCols.add(new ColumnInfo(cInfo));
+    }
+ else     if ((cInfo=hivePartitionColsMap.get(originalColIndx)) != null) {
+      newHivePartitionCols.add(new ColumnInfo(cInfo));
+    }
+ else     if ((vc=virtualColInfoMap.get(originalColIndx)) != null) {
+      newHiveVirtualCols.add(vc);
+    }
+ else {
+      throw new RuntimeException("Copy encountered a column not seen in original TS");
+    }
+  }
+  return new RelOptHiveTable(this.schema,this.name,this.tblAlias,newRowType,this.hiveTblMetadata,newHiveNonPartitionCols,newHivePartitionCols,newHiveVirtualCols,this.hiveConf,this.partitionCache,this.noColsMissingStats,qbID);
+}

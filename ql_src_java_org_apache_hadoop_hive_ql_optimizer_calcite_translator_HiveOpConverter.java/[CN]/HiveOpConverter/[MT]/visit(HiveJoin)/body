@@ -1,0 +1,27 @@
+{
+  OpAttr[] inputs=new OpAttr[joinRel.getInputs().size()];
+  for (int i=0; i < inputs.length; i++) {
+    inputs[i]=dispatch(joinRel.getInput(i));
+  }
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Translating operator rel#" + joinRel.getId() + ":"+ joinRel.getRelTypeName()+ " with row type: ["+ joinRel.getRowType()+ "]");
+  }
+  JoinPredicateInfo joinPredInfo=JoinPredicateInfo.constructJoinPredicateInfo(joinRel);
+  ExprNodeDesc[][] joinKeys=extractJoinKeys(joinPredInfo,joinRel.getInputs());
+  List<Operator<?>> children=new ArrayList<Operator<?>>();
+  for (int i=0; i < inputs.length; i++) {
+    ReduceSinkOperator child=genReduceSink(inputs[i].inputs.get(0),joinKeys[i],i,-1,Operation.NOT_ACID,strictMode);
+    children.add(child);
+  }
+  JoinOperator joinOp=genJoin(joinRel,joinPredInfo,children,joinKeys);
+  Map<Integer,VirtualColumn> vcolMap=new HashMap<Integer,VirtualColumn>();
+  vcolMap.putAll(inputs[0].vcolMap);
+  if (extractJoinType(joinRel) != JoinType.LEFTSEMI) {
+    int shift=inputs[0].inputs.get(0).getSchema().getSignature().size();
+    for (int i=1; i < inputs.length; i++) {
+      vcolMap.putAll(HiveCalciteUtil.shiftVColsMap(inputs[i].vcolMap,shift));
+      shift+=inputs[i].inputs.get(0).getSchema().getSignature().size();
+    }
+  }
+  return new OpAttr(null,vcolMap,joinOp);
+}
