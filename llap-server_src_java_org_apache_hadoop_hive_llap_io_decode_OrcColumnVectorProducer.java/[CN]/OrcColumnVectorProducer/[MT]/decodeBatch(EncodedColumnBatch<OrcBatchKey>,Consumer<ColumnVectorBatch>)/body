@@ -5,9 +5,6 @@
     OrcBatchKey stripeKey=batch.batchKey.clone();
     stripeKey.rgIx=0;
     OrcStripeMetadata stripeMetadata=metadataCache.getStripeMetadata(stripeKey);
-    if (cvb == null) {
-      cvb=new ColumnVectorBatch(batch.columnIxs.length);
-    }
     int rgIdx=batch.batchKey.rgIx;
     OrcProto.RowIndexEntry rowIndex=stripeMetadata.getRowIndexes()[0].getEntry(rgIdx);
     long nonNullRowCount=getRowCount(rowIndex);
@@ -16,6 +13,7 @@
     int numCols=batch.columnIxs.length;
     RecordReaderImpl.TreeReader[] columnStreams=createTreeReaders(numCols,batch,fileMetadata,stripeMetadata);
     for (int i=0; i < maxBatchesRG; i++) {
+      ColumnVectorBatch cvb=new ColumnVectorBatch(batch.columnIxs.length);
       if (i == maxBatchesRG - 1) {
         batchSize=(int)(nonNullRowCount % VectorizedRowBatch.DEFAULT_SIZE);
         cvb.size=batchSize;
@@ -26,10 +24,7 @@
       downstreamConsumer.consumeData(cvb);
     }
   }
- catch (  IOException ioe) {
-    downstreamConsumer.setError(ioe);
-  }
-catch (  CloneNotSupportedException e) {
+ catch (  IOException|CloneNotSupportedException e) {
     downstreamConsumer.setError(e);
   }
 }
