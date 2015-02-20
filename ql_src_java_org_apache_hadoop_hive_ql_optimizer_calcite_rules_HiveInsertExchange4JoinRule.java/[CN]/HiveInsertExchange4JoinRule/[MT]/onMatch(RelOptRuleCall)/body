@@ -1,0 +1,16 @@
+{
+  Join join=call.rel(0);
+  JoinPredicateInfo joinPredInfo=HiveCalciteUtil.JoinPredicateInfo.constructJoinPredicateInfo(join);
+  List<Integer> joinLeftKeyPositions=new ArrayList<Integer>();
+  List<Integer> joinRightKeyPositions=new ArrayList<Integer>();
+  for (int i=0; i < joinPredInfo.getEquiJoinPredicateElements().size(); i++) {
+    JoinLeafPredicateInfo joinLeafPredInfo=joinPredInfo.getEquiJoinPredicateElements().get(i);
+    joinLeftKeyPositions.addAll(joinLeafPredInfo.getProjsFromLeftPartOfJoinKeysInChildSchema());
+    joinRightKeyPositions.addAll(joinLeafPredInfo.getProjsFromRightPartOfJoinKeysInChildSchema());
+  }
+  LogicalExchange left=LogicalExchange.create(join.getLeft(),new HiveRelDistribution(RelDistribution.Type.HASH_DISTRIBUTED,joinLeftKeyPositions));
+  LogicalExchange right=LogicalExchange.create(join.getRight(),new HiveRelDistribution(RelDistribution.Type.HASH_DISTRIBUTED,joinRightKeyPositions));
+  Join newJoin=join.copy(join.getTraitSet(),join.getCondition(),left,right,join.getJoinType(),join.isSemiJoinDone());
+  call.getPlanner().onCopy(join,newJoin);
+  call.transformTo(newJoin);
+}
