@@ -4,20 +4,23 @@
   StringBuilder order=new StringBuilder();
   for (  PartitionExpression partCol : spec.getQueryPartitionSpec().getExpressions()) {
     ExprNodeDesc partExpr=genExprNodeDesc(partCol.getExpression(),inputRR);
-    partCols.add(partExpr);
-    orderCols.add(partExpr);
-    order.append('+');
+    if (ExprNodeDescUtils.indexOf(partExpr,partCols) < 0) {
+      partCols.add(partExpr);
+      orderCols.add(partExpr);
+      order.append('+');
+    }
   }
   if (spec.getQueryOrderSpec() != null) {
     for (    OrderExpression orderCol : spec.getQueryOrderSpec().getExpressions()) {
-      String orderString=orderCol.getOrder().name();
-      if (orderString.equals("ASC")) {
-        order.append('+');
-      }
- else {
-        order.append('-');
+      ExprNodeDesc orderExpr=genExprNodeDesc(orderCol.getExpression(),inputRR);
+      char orderChar=orderCol.getOrder() == PTFInvocationSpec.Order.ASC ? '+' : '-';
+      int index=ExprNodeDescUtils.indexOf(orderExpr,orderCols);
+      if (index >= 0) {
+        order.setCharAt(index,orderChar);
+        continue;
       }
       orderCols.add(genExprNodeDesc(orderCol.getExpression(),inputRR));
+      order.append(orderChar);
     }
   }
   return genReduceSinkPlan(input,partCols,orderCols,order.toString(),-1,Operation.NOT_ACID);

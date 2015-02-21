@@ -28,10 +28,18 @@
   int stride=metadata.getRowIndexStride();
   ArrayList<OrcStripeMetadata> stripeMetadatas=null;
   boolean[] globalIncludes=null;
+  boolean[] sargColumns=null;
   try {
     globalIncludes=OrcInputFormat.genIncludedColumns(metadata.getTypes(),columnIds,true);
     if (sarg != null && stride != 0) {
-      stripeMetadatas=readStripesMetadata(metadata,globalIncludes);
+      int[] filterColumns=RecordReaderImpl.mapSargColumns(sarg.getLeaves(),columnNames,0);
+      sargColumns=new boolean[globalIncludes.length];
+      for (      int i : filterColumns) {
+        if (i > 0) {
+          sargColumns[i]=true;
+        }
+      }
+      stripeMetadatas=readStripesMetadata(metadata,globalIncludes,sargColumns);
     }
     determineRgsToRead(metadata.getStripes(),metadata.getTypes(),globalIncludes,stride,stripeMetadatas);
   }
@@ -101,7 +109,7 @@
         stripeMetadata=metadataCache.getStripeMetadata(stripeKey);
         if (stripeMetadata == null) {
           ensureMetadataReader();
-          stripeMetadata=new OrcStripeMetadata(metadataReader,si,stripeIncludes);
+          stripeMetadata=new OrcStripeMetadata(metadataReader,si,stripeIncludes,sargColumns);
           if (DebugUtils.isTraceOrcEnabled()) {
             LlapIoImpl.LOG.info("Caching stripe " + stripeKey.stripeIx + " metadata with includes: "+ DebugUtils.toString(stripeIncludes));
           }
@@ -114,7 +122,7 @@
           LlapIoImpl.LOG.info("Updating indexes in stripe " + stripeKey.stripeIx + " metadata for includes: "+ DebugUtils.toString(stripeIncludes));
         }
         ensureMetadataReader();
-        updateLoadedIndexes(stripeMetadata,si,stripeIncludes);
+        updateLoadedIndexes(stripeMetadata,si,stripeIncludes,sargColumns);
       }
       stripeReader.readEncodedColumns(stripeIx,si,stripeMetadata.getRowIndexes(),stripeMetadata.getEncodings(),stripeMetadata.getStreams(),stripeIncludes,colRgs);
     }

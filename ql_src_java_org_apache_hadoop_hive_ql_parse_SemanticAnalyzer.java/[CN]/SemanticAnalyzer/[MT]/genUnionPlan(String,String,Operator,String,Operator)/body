@@ -7,37 +7,28 @@
   if (leftmap.size() != rightmap.size()) {
     throw new SemanticException("Schema of both sides of union should match.");
   }
-  for (  Map.Entry<String,ColumnInfo> lEntry : leftmap.entrySet()) {
-    String field=lEntry.getKey();
+  RowResolver unionoutRR=new RowResolver();
+  Iterator<Map.Entry<String,ColumnInfo>> lIter=leftmap.entrySet().iterator();
+  Iterator<Map.Entry<String,ColumnInfo>> rIter=rightmap.entrySet().iterator();
+  while (lIter.hasNext()) {
+    Map.Entry<String,ColumnInfo> lEntry=lIter.next();
+    Map.Entry<String,ColumnInfo> rEntry=rIter.next();
     ColumnInfo lInfo=lEntry.getValue();
-    ColumnInfo rInfo=rightmap.get(field);
-    if (rInfo == null) {
-      throw new SemanticException(generateErrorMessage(tabref,"Schema of both sides of union should match. " + rightalias + " does not have the field "+ field));
-    }
-    if (lInfo == null) {
-      throw new SemanticException(generateErrorMessage(tabref,"Schema of both sides of union should match. " + leftalias + " does not have the field "+ field));
-    }
-    if (!lInfo.getInternalName().equals(rInfo.getInternalName())) {
-      throw new SemanticException(generateErrorMessage(tabref,"Schema of both sides of union should match: field " + field + ":"+ " appears on the left side of the UNION at column position: "+ getPositionFromInternalName(lInfo.getInternalName())+ ", and on the right side of the UNION at column position: "+ getPositionFromInternalName(rInfo.getInternalName())+ ". Column positions should match for a UNION"));
-    }
+    ColumnInfo rInfo=rEntry.getValue();
+    String field=lEntry.getKey();
     TypeInfo commonTypeInfo=FunctionRegistry.getCommonClassForUnionAll(lInfo.getType(),rInfo.getType());
     if (commonTypeInfo == null) {
       throw new SemanticException(generateErrorMessage(tabref,"Schema of both sides of union should match: Column " + field + " is of type "+ lInfo.getType().getTypeName()+ " on first table and type "+ rInfo.getType().getTypeName()+ " on second table"));
     }
-  }
-  RowResolver unionoutRR=new RowResolver();
-  for (  Map.Entry<String,ColumnInfo> lEntry : leftmap.entrySet()) {
-    String field=lEntry.getKey();
-    ColumnInfo lInfo=lEntry.getValue();
-    ColumnInfo rInfo=rightmap.get(field);
     ColumnInfo unionColInfo=new ColumnInfo(lInfo);
     unionColInfo.setType(FunctionRegistry.getCommonClassForUnionAll(lInfo.getType(),rInfo.getType()));
     unionoutRR.put(unionalias,field,unionColInfo);
   }
-  if (!(leftOp instanceof UnionOperator)) {
+  boolean isSpark=HiveConf.getVar(conf,HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("spark");
+  if (isSpark || !(leftOp instanceof UnionOperator)) {
     leftOp=genInputSelectForUnion(leftOp,leftmap,leftalias,unionoutRR,unionalias);
   }
-  if (!(rightOp instanceof UnionOperator)) {
+  if (isSpark || !(rightOp instanceof UnionOperator)) {
     rightOp=genInputSelectForUnion(rightOp,rightmap,rightalias,unionoutRR,unionalias);
   }
   if (leftOp instanceof UnionOperator || (leftOp instanceof SelectOperator && leftOp.getParentOperators() != null && !leftOp.getParentOperators().isEmpty() && leftOp.getParentOperators().get(0) instanceof UnionOperator && ((SelectOperator)leftOp).isIdentitySelect())) {
