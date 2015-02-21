@@ -16,26 +16,37 @@
           String fileName=isFn1 ? fn1 : fn2;
           int fileIndex=isFn1 ? 1 : 2;
           int count=rdm.nextInt(offsetsToUse);
-          LinkedList<DiskRange> input=new LinkedList<DiskRange>();
-          int[] offsets=new int[count];
-          for (int j=0; j < count; ++j) {
-            int next=rdm.nextInt(offsetsToUse);
-            input.add(dr(next,next + 1));
-            offsets[j]=next;
-          }
           if (isGet) {
-            cache.getFileData(fileName,input,0);
+            DiskRangeListCreateHelper list=new DiskRangeListCreateHelper();
+            int[] offsets=new int[count];
+            for (int j=0; j < count; ++j) {
+              int next=rdm.nextInt(offsetsToUse);
+              list.addOrMerge(next,next + 1,true,false);
+              offsets[j]=next;
+            }
+            DiskRangeList iter=cache.getFileData(fileName,list.get(),0);
             int j=-1;
-            for (            DiskRange dr : input) {
+            while (iter != null) {
               ++j;
-              if (!(dr instanceof CacheChunk))               continue;
+              if (!(iter instanceof CacheChunk)) {
+                iter=iter.next;
+                continue;
+              }
               ++gets;
-              LlapCacheableBuffer result=(LlapCacheableBuffer)((CacheChunk)dr).buffer;
+              LlapCacheableBuffer result=(LlapCacheableBuffer)((CacheChunk)iter).buffer;
               assertEquals(makeFakeArenaIndex(fileIndex,offsets[j]),result.arenaIndex);
               cache.releaseBuffer(result);
+              iter=iter.next;
             }
           }
  else {
+            DiskRange[] ranges=new DiskRange[count];
+            int[] offsets=new int[count];
+            for (int j=0; j < count; ++j) {
+              int next=rdm.nextInt(offsetsToUse);
+              ranges[j]=dr(next,next + 1);
+              offsets[j]=next;
+            }
             LlapMemoryBuffer[] buffers=new LlapMemoryBuffer[count];
             for (int j=0; j < offsets.length; ++j) {
               LlapCacheableBuffer buf=LowLevelCacheImpl.allocateFake();
@@ -43,7 +54,7 @@
               buf.arenaIndex=makeFakeArenaIndex(fileIndex,offsets[j]);
               buffers[j]=buf;
             }
-            long[] mask=cache.putFileData(fileName,input.toArray(new DiskRange[count]),buffers,0);
+            long[] mask=cache.putFileData(fileName,ranges,buffers,0);
             puts+=buffers.length;
             long maskVal=0;
             if (mask != null) {
@@ -75,18 +86,15 @@
     public Integer call(){
       boolean isFirstFile=false;
       Random rdm=new Random(1234 + Thread.currentThread().getId());
-      LinkedList<DiskRange> input=new LinkedList<DiskRange>();
-      DiskRange allOffsets=new DiskRange(0,offsetsToUse + 1);
       int evictions=0;
       syncThreadStart(cdlIn,cdlOut);
       while (rdmsDone.get() < 3) {
-        input.clear();
-        input.add(allOffsets);
+        DiskRangeList head=new DiskRangeList(0,offsetsToUse + 1);
         isFirstFile=!isFirstFile;
         String fileName=isFirstFile ? fn1 : fn2;
-        cache.getFileData(fileName,input,0);
-        DiskRange[] results=input.toArray(new DiskRange[input.size()]);
-        int startIndex=rdm.nextInt(input.size()), index=startIndex;
+        head=cache.getFileData(fileName,head,0);
+        DiskRange[] results=head.listToArray();
+        int startIndex=rdm.nextInt(results.length), index=startIndex;
         LlapCacheableBuffer victim=null;
         do {
           DiskRange r=results[index];

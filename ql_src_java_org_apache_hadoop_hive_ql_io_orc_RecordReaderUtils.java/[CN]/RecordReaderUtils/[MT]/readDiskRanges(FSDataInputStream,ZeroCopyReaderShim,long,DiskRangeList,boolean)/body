@@ -1,0 +1,59 @@
+{
+  if (range == null)   return null;
+  DiskRangeList prev=range.prev;
+  if (prev == null) {
+    prev=new DiskRangeListMutateHelper(range);
+  }
+  while (range != null) {
+    if (range.hasData()) {
+      range=range.next;
+      continue;
+    }
+    int len=(int)(range.end - range.offset);
+    long off=range.offset;
+    file.seek(base + off);
+    if (zcr != null) {
+      boolean hasReplaced=false;
+      while (len > 0) {
+        ByteBuffer partial=zcr.readBuffer(len,false);
+        BufferChunk bc=new BufferChunk(partial,off);
+        if (!hasReplaced) {
+          range.replaceSelfWith(bc);
+          hasReplaced=true;
+        }
+ else {
+          range.insertAfter(bc);
+        }
+        range=bc;
+        int read=partial.remaining();
+        len-=read;
+        off+=read;
+      }
+    }
+ else     if (doForceDirect) {
+      ByteBuffer directBuf=ByteBuffer.allocateDirect(len);
+      try {
+        while (directBuf.remaining() > 0) {
+          int count=file.read(directBuf);
+          if (count < 0)           throw new EOFException();
+          directBuf.position(directBuf.position() + count);
+        }
+      }
+ catch (      UnsupportedOperationException ex) {
+        RecordReaderImpl.LOG.error("Stream does not support direct read; we will copy.");
+        byte[] buffer=new byte[len];
+        file.readFully(buffer,0,buffer.length);
+        directBuf.put(buffer);
+      }
+      directBuf.position(0);
+      range=range.replaceSelfWith(new BufferChunk(directBuf,range.offset));
+    }
+ else {
+      byte[] buffer=new byte[len];
+      file.readFully(buffer,0,buffer.length);
+      range=range.replaceSelfWith(new BufferChunk(ByteBuffer.wrap(buffer),range.offset));
+    }
+    range=range.next;
+  }
+  return prev.next;
+}

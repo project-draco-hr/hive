@@ -1,0 +1,78 @@
+{
+  ByteBuffer slice=null;
+  ByteBuffer compressed=current.chunk;
+  long cbStartOffset=current.offset;
+  int b0=compressed.get() & 0xff;
+  int b1=compressed.get() & 0xff;
+  int b2=compressed.get() & 0xff;
+  int chunkLength=(b2 << 15) | (b1 << 7) | (b0 >> 1);
+  if (chunkLength > bufferSize) {
+    throw new IllegalArgumentException("Buffer size too small. size = " + bufferSize + " needed = "+ chunkLength);
+  }
+  int consumedLength=chunkLength + OutStream.HEADER_SIZE;
+  long cbEndOffset=cbStartOffset + consumedLength;
+  boolean isUncompressed=((b0 & 0x01) == 1);
+  if (DebugUtils.isTraceOrcEnabled()) {
+    LOG.info("Found CB at " + cbStartOffset + ", chunk length "+ chunkLength+ ", total "+ consumedLength+ ", "+ (isUncompressed ? "not " : "")+ "compressed");
+  }
+  if (compressed.remaining() >= chunkLength) {
+    slice=compressed.slice();
+    slice.limit(chunkLength);
+    DiskRangeList next=addOneCompressionBlockByteBuffer(slice,isUncompressed,cbStartOffset,cbEndOffset,chunkLength,consumedLength,current,cache,toDecompress,cacheBuffers);
+    if (compressed.remaining() <= 0 && zcr != null) {
+      toRelease.add(compressed);
+    }
+    return next;
+  }
+  if (current.end < cbEndOffset && current.next == null) {
+    return null;
+  }
+  ByteBuffer copy=allocateBuffer(chunkLength,compressed.isDirect());
+  int remaining=chunkLength - compressed.remaining();
+  int originalPos=compressed.position();
+  copy.put(compressed);
+  if (DebugUtils.isTraceOrcEnabled()) {
+    LOG.info("Removing " + current + " from ranges");
+  }
+  DiskRangeList next=current.next;
+  current.removeSelf();
+  if (zcr != null) {
+    if (originalPos == 0) {
+      zcr.releaseBuffer(compressed);
+    }
+ else {
+      toRelease.add(compressed);
+    }
+  }
+  while (next != null) {
+    if (!(next instanceof BufferChunk)) {
+      throw new IOException("Trying to extend compressed block into uncompressed block");
+    }
+    compressed=next.getData();
+    if (compressed.remaining() >= remaining) {
+      slice=compressed.slice();
+      slice.limit(remaining);
+      copy.put(slice);
+      next=addOneCompressionBlockByteBuffer(copy,isUncompressed,cbStartOffset,cbEndOffset,remaining,remaining,(BufferChunk)next,cache,toDecompress,cacheBuffers);
+      if (DebugUtils.isTraceOrcEnabled()) {
+        LOG.info("Adjusting " + next + " to consume "+ remaining);
+      }
+      if (compressed.remaining() <= 0 && zcr != null) {
+        zcr.releaseBuffer(compressed);
+      }
+      return next;
+    }
+    remaining-=compressed.remaining();
+    copy.put(compressed);
+    if (zcr != null) {
+      zcr.releaseBuffer(compressed);
+    }
+    DiskRangeList tmp=next;
+    if (DebugUtils.isTraceOrcEnabled()) {
+      LOG.info("Removing " + tmp + " from ranges");
+    }
+    next=next.next;
+    tmp.removeSelf();
+  }
+  return null;
+}

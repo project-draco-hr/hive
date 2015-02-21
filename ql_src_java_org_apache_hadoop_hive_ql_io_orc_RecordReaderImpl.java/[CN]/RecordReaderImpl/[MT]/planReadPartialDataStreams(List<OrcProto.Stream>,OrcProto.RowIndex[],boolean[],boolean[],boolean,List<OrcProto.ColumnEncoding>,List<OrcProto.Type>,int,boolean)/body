@@ -1,0 +1,20 @@
+{
+  long offset=0;
+  boolean[] hasNull=RecordReaderUtils.findPresentStreamsByColumn(streamList,types);
+  DiskRangeListCreateHelper list=new DiskRangeListCreateHelper();
+  for (  OrcProto.Stream stream : streamList) {
+    long length=stream.getLength();
+    int column=stream.getColumn();
+    OrcProto.Stream.Kind streamKind=stream.getKind();
+    if (stream.hasKind() && (StreamName.getArea(streamKind) == StreamName.Area.DATA) && includedColumns[column]) {
+      if (includedRowGroups == null || RecordReaderUtils.isDictionary(streamKind,encodings.get(column))) {
+        RecordReaderUtils.addEntireStreamToRanges(offset,length,list,doMergeBuffers);
+      }
+ else {
+        RecordReaderUtils.addRgFilteredStreamToRanges(stream,includedRowGroups,isCompressed,indexes[column],encodings.get(column),types.get(column),compressionSize,hasNull[column],offset,length,list,doMergeBuffers);
+      }
+    }
+    offset+=length;
+  }
+  return list.extract();
+}
