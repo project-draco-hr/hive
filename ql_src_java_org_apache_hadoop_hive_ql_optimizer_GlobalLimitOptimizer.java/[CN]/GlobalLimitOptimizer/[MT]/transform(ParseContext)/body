@@ -9,23 +9,16 @@
     Integer tempGlobalLimit=checkQbpForGlobalLimit(ts);
     if (tempGlobalLimit != null && tempGlobalLimit != 0) {
       Table tab=ts.getConf().getTableMetadata();
+      Set<FilterOperator> filterOps=OperatorUtils.findOperators(ts,FilterOperator.class);
       if (!tab.isPartitioned()) {
-        Set<FilterOperator> filterOps=OperatorUtils.findOperators(ts,FilterOperator.class);
         if (filterOps.size() == 0) {
           globalLimitCtx.enableOpt(tempGlobalLimit);
         }
       }
  else {
-        if (PartitionPruner.onlyContainsPartnCols(tab,opToPartPruner.get(ts))) {
-          PrunedPartitionList partsList;
-          try {
-            String alias=(String)topOps.keySet().toArray()[0];
-            partsList=PartitionPruner.prune(ts,pctx,alias);
-          }
- catch (          HiveException e) {
-            LOG.error(org.apache.hadoop.util.StringUtils.stringifyException(e));
-            throw new SemanticException(e.getMessage(),e);
-          }
+        if (onlyContainsPartnCols(tab,filterOps)) {
+          String alias=(String)topOps.keySet().toArray()[0];
+          PrunedPartitionList partsList=pctx.getPrunedPartitions(alias,ts);
           if (!partsList.hasUnknownPartitions()) {
             globalLimitCtx.enableOpt(tempGlobalLimit);
           }
