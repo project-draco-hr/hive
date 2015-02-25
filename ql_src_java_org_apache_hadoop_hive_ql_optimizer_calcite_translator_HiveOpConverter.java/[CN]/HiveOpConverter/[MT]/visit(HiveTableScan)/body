@@ -1,0 +1,40 @@
+{
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Translating operator rel#" + scanRel.getId() + ":"+ scanRel.getRelTypeName()+ " with row type: ["+ scanRel.getRowType()+ "]");
+  }
+  RelOptHiveTable ht=(RelOptHiveTable)scanRel.getTable();
+  Map<Integer,VirtualColumn> newVColMap=new HashMap<Integer,VirtualColumn>();
+  String tableAlias=ht.getTableAlias();
+  List<VirtualColumn> virtualCols=new ArrayList<VirtualColumn>(ht.getVirtualCols());
+  TableScanDesc tsd=new TableScanDesc(tableAlias,virtualCols,ht.getHiveTableMD());
+  List<ColumnInfo> partColInfos=ht.getPartColumns();
+  List<String> partColNames=new ArrayList<String>();
+  for (  ColumnInfo ci : partColInfos) {
+    partColNames.add(ci.getInternalName());
+  }
+  tsd.setPartColumns(partColNames);
+  List<Integer> neededColumnIDs=new ArrayList<Integer>();
+  List<String> neededColumns=new ArrayList<String>();
+  Map<String,Integer> colNameToIndxMap=HiveCalciteUtil.getColNameIndxMap(ht.getHiveTableMD().getCols());
+  for (  RelDataTypeField rdtf : scanRel.getRowType().getFieldList()) {
+    neededColumnIDs.add(colNameToIndxMap.get(rdtf.getName()));
+    neededColumns.add(rdtf.getName());
+  }
+  tsd.setNeededColumnIDs(neededColumnIDs);
+  tsd.setNeededColumns(neededColumns);
+  TableScanOperator ts=null;
+  ArrayList<ColumnInfo> colInfos=new ArrayList<ColumnInfo>(ht.getNonPartColumns());
+  colInfos.addAll(ht.getPartColumns());
+  ColumnInfo ci;
+  for (  VirtualColumn vc : virtualCols) {
+    ci=new ColumnInfo(vc.getName(),vc.getTypeInfo(),tableAlias,true,vc.getIsHidden());
+    colInfos.add(ci);
+    newVColMap.put(colInfos.size(),vc);
+  }
+  ts=(TableScanOperator)OperatorFactory.get(tsd,new RowSchema(colInfos));
+  topOps.put(ht.getQBID(),ts);
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Generated " + ts + " with row schema: ["+ ts.getSchema()+ "]");
+  }
+  return new OpAttr(tableAlias,newVColMap,ts);
+}
