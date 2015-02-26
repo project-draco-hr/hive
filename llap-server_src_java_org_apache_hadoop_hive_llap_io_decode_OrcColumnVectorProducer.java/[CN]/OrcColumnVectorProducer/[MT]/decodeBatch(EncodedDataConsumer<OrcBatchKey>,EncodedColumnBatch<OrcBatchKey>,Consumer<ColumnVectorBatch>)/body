@@ -1,0 +1,43 @@
+{
+  OrcEncodedDataConsumer oedc=(OrcEncodedDataConsumer)edc;
+  String fileName=batch.batchKey.file;
+  int currentStripeIndex=batch.batchKey.stripeIx;
+  if (_previousStripeIndex == -1) {
+    _previousStripeIndex=currentStripeIndex;
+  }
+  boolean sameStripe=currentStripeIndex == _previousStripeIndex;
+  try {
+    OrcFileMetadata fileMetadata=_metadataCache.getFileMetadata(fileName);
+    OrcBatchKey stripeKey=batch.batchKey.clone();
+    stripeKey.rgIx=0;
+    OrcStripeMetadata stripeMetadata=_metadataCache.getStripeMetadata(stripeKey);
+    int rgIdx=batch.batchKey.rgIx;
+    OrcProto.RowIndexEntry rowIndex=stripeMetadata.getRowIndexes()[0].getEntry(rgIdx);
+    long nonNullRowCount=getRowCount(rowIndex);
+    int maxBatchesRG=(int)((nonNullRowCount / VectorizedRowBatch.DEFAULT_SIZE) + 1);
+    int batchSize=VectorizedRowBatch.DEFAULT_SIZE;
+    int numCols=batch.columnIxs.length;
+    if (oedc.getColumnReaders() == null || !sameStripe) {
+      RecordReaderImpl.TreeReader[] columnReaders=createTreeReaders(numCols,batch,fileMetadata,stripeMetadata);
+      oedc.setColumnReaders(columnReaders);
+    }
+ else {
+      repositionInStreams(oedc.getColumnReaders(),batch,sameStripe,numCols,fileMetadata,stripeMetadata);
+    }
+    _previousStripeIndex=currentStripeIndex;
+    for (int i=0; i < maxBatchesRG; i++) {
+      ColumnVectorBatch cvb=new ColumnVectorBatch(batch.columnIxs.length);
+      if (i == maxBatchesRG - 1) {
+        batchSize=(int)(nonNullRowCount % VectorizedRowBatch.DEFAULT_SIZE);
+        cvb.size=batchSize;
+      }
+      for (int idx=0; idx < batch.columnIxs.length; idx++) {
+        cvb.cols[idx]=(ColumnVector)oedc.getColumnReaders()[idx].nextVector(null,batchSize);
+      }
+      downstreamConsumer.consumeData(cvb);
+    }
+  }
+ catch (  IOException|CloneNotSupportedException e) {
+    downstreamConsumer.setError(e);
+  }
+}

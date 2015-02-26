@@ -1,0 +1,81 @@
+{
+  for (int i=0; i < numCols; i++) {
+    int columnIndex=batch.columnIxs[i];
+    int rowGroupIndex=batch.batchKey.rgIx;
+    EncodedColumnBatch.StreamBuffer[] streamBuffers=batch.columnData[i];
+    OrcProto.Type columnType=fileMetadata.getTypes().get(columnIndex);
+    OrcProto.RowIndex rowIndex=stripeMetadata.getRowIndexes()[columnIndex];
+    OrcProto.RowIndexEntry rowIndexEntry=rowIndex.getEntry(rowGroupIndex);
+    EncodedColumnBatch.StreamBuffer present=null;
+    EncodedColumnBatch.StreamBuffer data=null;
+    EncodedColumnBatch.StreamBuffer dictionary=null;
+    EncodedColumnBatch.StreamBuffer lengths=null;
+    EncodedColumnBatch.StreamBuffer secondary=null;
+    for (    EncodedColumnBatch.StreamBuffer streamBuffer : streamBuffers) {
+switch (streamBuffer.streamKind) {
+case 0:
+        present=streamBuffer;
+      break;
+case 1:
+    data=streamBuffer;
+  break;
+case 2:
+lengths=streamBuffer;
+break;
+case 3:
+dictionary=streamBuffer;
+break;
+case 5:
+secondary=streamBuffer;
+break;
+default :
+throw new IOException("Unexpected stream kind: " + streamBuffer.streamKind);
+}
+}
+switch (columnType.getKind()) {
+case BINARY:
+((BinaryStreamReader)columnReaders[i]).setBuffers(present,data,lengths);
+break;
+case BOOLEAN:
+((BooleanStreamReader)columnReaders[i]).setBuffers(present,data);
+break;
+case BYTE:
+((ByteStreamReader)columnReaders[i]).setBuffers(present,data);
+break;
+case SHORT:
+((ShortStreamReader)columnReaders[i]).setBuffers(present,data);
+break;
+case INT:
+((IntStreamReader)columnReaders[i]).setBuffers(present,data);
+break;
+case LONG:
+((LongStreamReader)columnReaders[i]).setBuffers(present,data);
+break;
+case FLOAT:
+((FloatStreamReader)columnReaders[i]).setBuffers(present,data);
+break;
+case DOUBLE:
+((DoubleStreamReader)columnReaders[i]).setBuffers(present,data);
+break;
+case CHAR:
+case VARCHAR:
+((CharacterStreamReader)columnReaders[i]).setBuffers(present,data,lengths,dictionary,sameStripe);
+break;
+case STRING:
+((StringStreamReader)columnReaders[i]).setBuffers(present,data,lengths,dictionary,sameStripe);
+break;
+case DECIMAL:
+((DecimalStreamReader)columnReaders[i]).setBuffers(present,data,secondary);
+break;
+case TIMESTAMP:
+((TimestampStreamReader)columnReaders[i]).setBuffers(present,data,secondary);
+break;
+case DATE:
+((DateStreamReader)columnReaders[i]).setBuffers(present,data);
+break;
+default :
+throw new UnsupportedOperationException("Data type not supported yet! " + columnType);
+}
+columnReaders[i].seek(StreamUtils.getPositionProvider(rowIndexEntry));
+}
+}
