@@ -3,13 +3,20 @@
   PTFOperator op=(PTFOperator)nd;
   PTFDesc conf=op.getConf();
   PartitionedTableFunctionDef funcDef=conf.getFuncDef();
-  if (!conf.forWindowing() && !Noop.class.isInstance(funcDef.getTFunction())) {
+  List<String> referencedColumns=funcDef.getReferencedColumns();
+  if (!conf.forWindowing() && !conf.forNoop() && referencedColumns == null) {
     return super.process(nd,stack,cppCtx,nodeOutputs);
   }
-  List<String> prunedCols=new ArrayList<String>(cppCtx.getPrunedColList(op.getChildOperators().get(0)));
-  if (funcDef instanceof WindowTableFunctionDef) {
+  List<String> prunedCols=cppCtx.getPrunedColList(op.getChildOperators().get(0));
+  if (conf.forWindowing()) {
     WindowTableFunctionDef def=(WindowTableFunctionDef)funcDef;
     prunedCols=Utilities.mergeUniqElems(getWindowFunctionColumns(def),prunedCols);
+  }
+ else   if (conf.forNoop()) {
+    prunedCols=new ArrayList(cppCtx.getPrunedColList(op.getChildOperators().get(0)));
+  }
+ else {
+    prunedCols=referencedColumns;
   }
   List<ColumnInfo> newRS=prunedColumnsList(prunedCols,op.getSchema(),funcDef);
   op.getSchema().setSignature(new ArrayList<ColumnInfo>(newRS));

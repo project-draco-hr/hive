@@ -7,7 +7,20 @@
     }
  catch (    SemanticException se) {
     }
-    parentQueryJoinCond=SubQueryUtils.buildOuterQryToSQJoinCond(getOuterQueryExpression(),alias,sqRR);
+    ASTNode parentExpr=parentQueryExpression;
+    if (!forHavingClause) {
+      Set<String> aliases=outerQueryRR.getRslvMap().keySet();
+      if (notInCheck != null) {
+        aliases.remove(notInCheck.getAlias());
+      }
+      String tableAlias=aliases.size() == 1 ? aliases.iterator().next() : null;
+      parentExpr=SubQueryUtils.setQualifiedColumnReferences(parentExpr,tableAlias);
+      if (parentExpr == null) {
+        subQueryAST.setOrigin(originalSQASTOrigin);
+        throw new SemanticException(ErrorMsg.UNSUPPORTED_SUBQUERY_EXPRESSION.getMsg(parentQueryExpression,"Correlating expression contains ambiguous column references."));
+      }
+    }
+    parentQueryJoinCond=SubQueryUtils.buildOuterQryToSQJoinCond(parentExpr,alias,sqRR);
     if (outerQueryCol != null) {
       rewriteCorrConjunctForHaving(parentQueryJoinCond,true,outerQueryAlias,outerQueryRR,outerQueryCol);
     }
