@@ -1,28 +1,28 @@
 {
   Context ctx=pCtx.getContext();
   GlobalLimitCtx globalLimitCtx=pCtx.getGlobalLimitCtx();
-  QB qb=pCtx.getQB();
   List<Task<MoveWork>> mvTask=new ArrayList<Task<MoveWork>>();
   List<LoadTableDesc> loadTableWork=pCtx.getLoadTableWork();
   List<LoadFileDesc> loadFileWork=pCtx.getLoadFileWork();
-  boolean isCStats=qb.isAnalyzeRewrite();
+  boolean isCStats=pCtx.getQueryProperties().isAnalyzeRewrite();
+  int outerQueryLimit=pCtx.getQueryProperties().getOuterQueryLimit();
   if (pCtx.getFetchTask() != null) {
     return;
   }
   optimizeOperatorPlan(pCtx,inputs,outputs);
-  if (pCtx.getQB().getIsQuery() && !isCStats) {
+  if (pCtx.getQueryProperties().isQuery() && !isCStats) {
     if ((!loadTableWork.isEmpty()) || (loadFileWork.size() != 1)) {
       throw new SemanticException(ErrorMsg.GENERIC_ERROR.getMsg());
     }
     LoadFileDesc loadFileDesc=loadFileWork.get(0);
     String cols=loadFileDesc.getColumns();
     String colTypes=loadFileDesc.getColumnTypes();
-    TableDesc resultTab=pCtx.getFetchTabledesc();
+    TableDesc resultTab=pCtx.getFetchTableDesc();
     if (resultTab == null) {
       String resFileFormat=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEQUERYRESULTFILEFORMAT);
       resultTab=PlanUtils.getDefaultQueryOutputTableDesc(cols,colTypes,resFileFormat);
     }
-    FetchWork fetch=new FetchWork(loadFileDesc.getSourcePath(),resultTab,qb.getParseInfo().getOuterQueryLimit());
+    FetchWork fetch=new FetchWork(loadFileDesc.getSourcePath(),resultTab,outerQueryLimit);
     fetch.setSource(pCtx.getFetchSource());
     fetch.setSink(pCtx.getFetchSink());
     pCtx.setFetchTask((FetchTask)TaskFactory.get(fetch,conf));
@@ -31,7 +31,7 @@
       LOG.info("For FetchTask, LIMIT " + globalLimitCtx.getGlobalLimit() + " > "+ fetchLimit+ ". Doesn't qualify limit optimiztion.");
       globalLimitCtx.disableOpt();
     }
-    if (qb.getParseInfo().getOuterQueryLimit() == 0) {
+    if (outerQueryLimit == 0) {
       LOG.info("Limit 0. No query execution needed.");
       return;
     }
@@ -55,14 +55,14 @@
     }
     boolean oneLoadFile=true;
     for (    LoadFileDesc lfd : loadFileWork) {
-      if (qb.isCTAS()) {
+      if (pCtx.getQueryProperties().isCTAS()) {
         assert(oneLoadFile);
         Path location;
-        String loc=qb.getTableDesc().getLocation();
+        String loc=pCtx.getCreateTable().getLocation();
         if (loc == null) {
           Path targetPath;
           try {
-            String[] names=Utilities.getDbTableName(qb.getTableDesc().getTableName());
+            String[] names=Utilities.getDbTableName(pCtx.getCreateTable().getTableName());
             if (!db.databaseExists(names[0])) {
               throw new SemanticException("ERROR: The database " + names[0] + " does not exist.");
             }
@@ -88,7 +88,7 @@ catch (          MetaException e) {
   }
   generateTaskTree(rootTasks,pCtx,mvTask,inputs,outputs);
   if (isCStats) {
-    genColumnStatsTask(qb,loadTableWork,loadFileWork,rootTasks);
+    genColumnStatsTask(pCtx.getAnalyzeRewrite(),loadTableWork,loadFileWork,rootTasks,outerQueryLimit);
   }
   for (  Task<? extends Serializable> rootTask : rootTasks) {
     GenMapRedUtils.setKeyAndValueDescForTaskTree(rootTask);
@@ -98,8 +98,8 @@ catch (          MetaException e) {
   }
   optimizeTaskPlan(rootTasks,pCtx,ctx);
   decideExecMode(rootTasks,ctx,globalLimitCtx);
-  if (qb.isCTAS()) {
-    CreateTableDesc crtTblDesc=qb.getTableDesc();
+  if (pCtx.getQueryProperties().isCTAS()) {
+    CreateTableDesc crtTblDesc=pCtx.getCreateTable();
     crtTblDesc.validate(conf);
     Iterator<WriteEntity> outIter=outputs.iterator();
     while (outIter.hasNext()) {
