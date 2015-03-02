@@ -1,28 +1,55 @@
 {
+  List<String> keyElements=new ArrayList<String>();
+  keyElements.add(dbName);
+  keyElements.add(tableName);
+  int firstStar=-1;
+  for (int i=0; i < partVals.size(); i++) {
+    if ("*".equals(partVals.get(i))) {
+      firstStar=i;
+      break;
+    }
+ else {
+      keyElements.add(partVals.get(i));
+    }
+  }
   byte[] keyPrefix;
-  if (partVals == null || partVals.size() == 0) {
-    keyPrefix=HBaseUtils.buildKeyWithTrailingSeparator(dbName,tableName);
-    return scanPartitions(keyPrefix,CATALOG_CF,CATALOG_COL,maxPartitions);
+  Table table=getTable(dbName,tableName);
+  if (table == null) {
+    throw new NoSuchObjectException("Unable to find table " + dbName + "."+ tableName);
   }
-  int firstNull=0;
-  for (; firstNull < partVals.size(); firstNull++) {
-    if (partVals.get(firstNull) == null)     break;
+  if (partVals.size() == table.getPartitionKeys().size()) {
+    keyPrefix=HBaseUtils.buildKey(keyElements.toArray(new String[keyElements.size()]));
   }
-  if (firstNull == partVals.size()) {
-    keyPrefix=buildPartitionKey(dbName,tableName,partVals);
-    return scanPartitions(keyPrefix,CATALOG_CF,CATALOG_COL,maxPartitions);
+ else {
+    keyPrefix=HBaseUtils.buildKeyWithTrailingSeparator(keyElements.toArray(new String[keyElements.size()]));
   }
-  keyPrefix=buildPartitionKey(dbName,tableName,partVals.subList(0,firstNull));
-  StringBuilder regex=new StringBuilder();
-  regex.append(dbName);
-  regex.append(':');
-  regex.append(tableName);
-  for (  String val : partVals) {
-    regex.append(HBaseUtils.KEY_SEPARATOR);
-    if (val == null)     regex.append("[^" + HBaseUtils.KEY_SEPARATOR + "]+");
- else     regex.append(val);
+  String regex=null;
+  if (!(partVals.size() == table.getPartitionKeys().size() && firstStar == -1)) {
+    StringBuilder buf=new StringBuilder(".*");
+    for (int i=Math.max(0,firstStar); i < table.getPartitionKeys().size() && i < partVals.size(); i++) {
+      buf.append(HBaseUtils.KEY_SEPARATOR);
+      if ("*".equals(partVals.get(i))) {
+        buf.append("[^");
+        buf.append(HBaseUtils.KEY_SEPARATOR);
+        buf.append("]+");
+      }
+ else {
+        buf.append(partVals.get(i));
+      }
+    }
+    if (partVals.size() < table.getPartitionKeys().size()) {
+      buf.append(HBaseUtils.KEY_SEPARATOR);
+      buf.append(".*");
+    }
+    regex=buf.toString();
   }
-  Filter filter=new RowFilter(CompareFilter.CompareOp.EQUAL,new RegexStringComparator(regex.toString()));
+  Filter filter=null;
+  if (regex != null) {
+    filter=new RowFilter(CompareFilter.CompareOp.EQUAL,new RegexStringComparator(regex));
+  }
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Scanning partitions with prefix <" + new String(keyPrefix) + "> and filter <"+ regex+ ">");
+  }
   List<Partition> parts=scanPartitionsWithFilter(keyPrefix,CATALOG_CF,CATALOG_COL,maxPartitions,filter);
   partCache.put(dbName,tableName,parts,false);
   return parts;
