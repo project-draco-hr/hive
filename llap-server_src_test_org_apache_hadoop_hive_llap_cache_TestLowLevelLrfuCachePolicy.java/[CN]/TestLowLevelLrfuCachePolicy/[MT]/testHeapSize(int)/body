@@ -5,6 +5,7 @@
   conf.setFloat(HiveConf.ConfVars.LLAP_LRFU_LAMBDA.varname,0.2f);
   EvictionTracker et=new EvictionTracker();
   LowLevelLrfuCachePolicy lrfu=new LowLevelLrfuCachePolicy(conf);
+  LowLevelCacheMemoryManager mm=new LowLevelCacheMemoryManager(conf,lrfu);
   lrfu.setEvictionListener(et);
   int toEvict=2;
   ArrayList<LlapCacheableBuffer> inserted=new ArrayList<LlapCacheableBuffer>(heapSize);
@@ -12,7 +13,7 @@
   Assume.assumeTrue(toEvict <= heapSize);
   for (int i=0; i < heapSize + toEvict; ++i) {
     LlapCacheableBuffer buffer=LowLevelCacheImpl.allocateFake();
-    assertTrue(cache(lrfu,et,buffer));
+    assertTrue(cache(mm,lrfu,et,buffer));
     LlapCacheableBuffer evictedBuf=getOneEvictedBuffer(et);
     if (i < toEvict) {
       evicted[i]=buffer;
@@ -34,7 +35,7 @@
   for (  LlapCacheableBuffer buf : inserted) {
     lock(lrfu,buf);
   }
-  assertFalse(lrfu.reserveMemory(1,false));
+  assertFalse(mm.reserveMemory(1,false));
   if (!et.evicted.isEmpty()) {
     assertTrue("Got " + et.evicted.get(0),et.evicted.isEmpty());
   }
@@ -47,5 +48,5 @@
       lrfu.notifyUnlock(buf);
     }
   }
-  verifyOrder(lrfu,et,inserted);
+  verifyOrder(mm,lrfu,et,inserted);
 }

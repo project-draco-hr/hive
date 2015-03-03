@@ -1,0 +1,35 @@
+{
+  int currentStripeIndex=batch.batchKey.stripeIx;
+  LlapIoImpl.LOG.error("TODO# got data " + currentStripeIndex);
+  boolean sameStripe=currentStripeIndex == previousStripeIndex;
+  try {
+    OrcStripeMetadata stripeMetadata=stripes[currentStripeIndex];
+    int rgIdx=batch.batchKey.rgIx;
+    OrcProto.RowIndexEntry rowIndex=stripeMetadata.getRowIndexes()[0].getEntry(rgIdx);
+    long nonNullRowCount=getRowCount(rowIndex);
+    int maxBatchesRG=(int)((nonNullRowCount / VectorizedRowBatch.DEFAULT_SIZE) + 1);
+    int batchSize=VectorizedRowBatch.DEFAULT_SIZE;
+    int numCols=batch.columnIxs.length;
+    if (columnReaders == null || !sameStripe) {
+      this.columnReaders=createTreeReaders(numCols,batch,fileMetadata,stripeMetadata);
+    }
+ else {
+      repositionInStreams(this.columnReaders,batch,sameStripe,numCols,fileMetadata,stripeMetadata);
+    }
+    previousStripeIndex=currentStripeIndex;
+    for (int i=0; i < maxBatchesRG; i++) {
+      ColumnVectorBatch cvb=new ColumnVectorBatch(batch.columnIxs.length);
+      if (i == maxBatchesRG - 1) {
+        batchSize=(int)(nonNullRowCount % VectorizedRowBatch.DEFAULT_SIZE);
+        cvb.size=batchSize;
+      }
+      for (int idx=0; idx < batch.columnIxs.length; idx++) {
+        cvb.cols[idx]=(ColumnVector)columnReaders[idx].nextVector(null,batchSize);
+      }
+      downstreamConsumer.consumeData(cvb);
+    }
+  }
+ catch (  IOException e) {
+    downstreamConsumer.setError(e);
+  }
+}
