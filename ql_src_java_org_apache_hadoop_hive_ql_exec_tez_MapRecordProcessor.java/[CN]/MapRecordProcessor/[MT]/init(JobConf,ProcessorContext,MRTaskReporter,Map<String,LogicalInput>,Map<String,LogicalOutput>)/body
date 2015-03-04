@@ -1,6 +1,33 @@
 {
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_INIT_OPERATORS);
   super.init(jconf,processorContext,mrReporter,inputs,outputs);
+  String queryId=HiveConf.getVar(jconf,HiveConf.ConfVars.HIVEQUERYID);
+  String key=queryId + processorContext.getTaskVertexName() + MAP_PLAN_KEY;
+  cacheKeys.add(key);
+  mapWork=(MapWork)cache.retrieve(key,new Callable<Object>(){
+    public Object call(){
+      return Utilities.getMapWork(jconf);
+    }
+  }
+);
+  Utilities.setMapWork(jconf,mapWork);
+  String prefixes=jconf.get(DagUtils.TEZ_MERGE_WORK_FILE_PREFIXES);
+  if (prefixes != null) {
+    mergeWorkList=new ArrayList<MapWork>();
+    for (    final String prefix : prefixes.split(",")) {
+      if (prefix == null || prefix.isEmpty()) {
+        continue;
+      }
+      key=queryId + processorContext.getTaskVertexName() + prefix;
+      cacheKeys.add(key);
+      mergeWorkList.add((MapWork)cache.retrieve(key,new Callable<Object>(){
+        public Object call(){
+          return Utilities.getMergeWork(jconf,prefix);
+        }
+      }
+));
+    }
+  }
   legacyMRInput=getMRInput(inputs);
   if (legacyMRInput != null) {
     Configuration updatedConf=legacyMRInput.getConfigUpdates();
