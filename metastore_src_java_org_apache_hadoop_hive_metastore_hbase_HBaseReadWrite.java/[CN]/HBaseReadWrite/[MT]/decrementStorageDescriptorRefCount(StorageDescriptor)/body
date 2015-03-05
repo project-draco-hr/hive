@@ -1,27 +1,20 @@
 {
-  byte[] serialized=HBaseUtils.serializeStorageDescriptor(sd);
-  byte[] key=hash(serialized);
-  for (int i=0; i < 10; i++) {
-    byte[] serializedRefCnt=read(SD_TABLE,key,CATALOG_CF,REF_COUNT_COL);
-    if (serializedRefCnt == null) {
-      return;
-    }
-    int refCnt=Integer.valueOf(new String(serializedRefCnt,HBaseUtils.ENCODING));
-    HTableInterface htab=getHTable(SD_TABLE);
-    if (refCnt-- < 1) {
-      Delete d=new Delete(key);
-      if (htab.checkAndDelete(key,CATALOG_CF,REF_COUNT_COL,serializedRefCnt,d)) {
-        sdCache.remove(new ByteArrayWrapper(key));
-        return;
-      }
-    }
- else {
-      Put p=new Put(key);
-      p.add(CATALOG_CF,REF_COUNT_COL,Integer.toString(refCnt).getBytes(HBaseUtils.ENCODING));
-      if (htab.checkAndPut(key,CATALOG_CF,REF_COUNT_COL,serializedRefCnt,p)) {
-        return;
-      }
-    }
+  byte[] key=HBaseUtils.hashStorageDescriptor(sd,md);
+  byte[] serializedRefCnt=read(SD_TABLE,key,CATALOG_CF,REF_COUNT_COL);
+  if (serializedRefCnt == null) {
+    return;
   }
-  throw new IOException("Too many unsuccessful attepts to decrement storage counter");
+  int refCnt=Integer.valueOf(new String(serializedRefCnt,HBaseUtils.ENCODING));
+  HTableInterface htab=conn.getHBaseTable(SD_TABLE);
+  if (--refCnt < 1) {
+    Delete d=new Delete(key);
+    htab.delete(d);
+    sdCache.remove(new ByteArrayWrapper(key));
+  }
+ else {
+    Put p=new Put(key);
+    p.add(CATALOG_CF,REF_COUNT_COL,Integer.toString(refCnt).getBytes(HBaseUtils.ENCODING));
+    htab.put(p);
+    htab.flushCommits();
+  }
 }

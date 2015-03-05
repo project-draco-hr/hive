@@ -1,53 +1,48 @@
 {
-  ByteArrayOutputStream baos=new ByteArrayOutputStream();
-  DataOutputStream dos=new DataOutputStream(baos);
-  dos.writeLong(stats.getStatsDesc().getLastAnalyzed());
-  HBaseUtils.writeStr(dos,obj.getColType());
+  HbaseMetastoreProto.ColumnStats.Builder builder=HbaseMetastoreProto.ColumnStats.newBuilder();
+  builder.setLastAnalyzed(stats.getStatsDesc().getLastAnalyzed());
+  if (obj.getColType() == null) {
+    throw new RuntimeException("Column type must be set");
+  }
+  builder.setColumnType(obj.getColType());
   ColumnStatisticsData colData=obj.getStatsData();
-  HBaseUtils.writeStr(dos,colData.getSetField().toString());
 switch (colData.getSetField()) {
 case BOOLEAN_STATS:
     BooleanColumnStatsData boolData=colData.getBooleanStats();
-  dos.writeLong(boolData.getNumTrues());
-dos.writeLong(boolData.getNumFalses());
-dos.writeLong(boolData.getNumNulls());
+  builder.setNumNulls(boolData.getNumNulls());
+builder.setBoolStats(HbaseMetastoreProto.ColumnStats.BooleanStats.newBuilder().setNumTrues(boolData.getNumTrues()).setNumFalses(boolData.getNumFalses()).build());
 break;
 case LONG_STATS:
 LongColumnStatsData longData=colData.getLongStats();
-dos.writeLong(longData.getLowValue());
-dos.writeLong(longData.getHighValue());
-dos.writeLong(longData.getNumNulls());
-dos.writeLong(longData.getNumDVs());
+builder.setNumNulls(longData.getNumNulls());
+builder.setNumDistinctValues(longData.getNumDVs());
+builder.setLongStats(HbaseMetastoreProto.ColumnStats.LongStats.newBuilder().setLowValue(longData.getLowValue()).setHighValue(longData.getHighValue()).build());
 break;
 case DOUBLE_STATS:
 DoubleColumnStatsData doubleData=colData.getDoubleStats();
-dos.writeDouble(doubleData.getLowValue());
-dos.writeDouble(doubleData.getHighValue());
-dos.writeLong(doubleData.getNumNulls());
-dos.writeLong(doubleData.getNumDVs());
+builder.setNumNulls(doubleData.getNumNulls());
+builder.setNumDistinctValues(doubleData.getNumDVs());
+builder.setDoubleStats(HbaseMetastoreProto.ColumnStats.DoubleStats.newBuilder().setLowValue(doubleData.getLowValue()).setHighValue(doubleData.getHighValue()).build());
 break;
 case STRING_STATS:
 StringColumnStatsData stringData=colData.getStringStats();
-dos.writeLong(stringData.getMaxColLen());
-dos.writeDouble(stringData.getAvgColLen());
-dos.writeLong(stringData.getNumNulls());
-dos.writeLong(stringData.getNumDVs());
+builder.setNumNulls(stringData.getNumNulls());
+builder.setNumDistinctValues(stringData.getNumDVs());
+builder.setStringStats(HbaseMetastoreProto.ColumnStats.StringStats.newBuilder().setMaxColLength(stringData.getMaxColLen()).setAvgColLength(stringData.getAvgColLen()).build());
 break;
 case BINARY_STATS:
 BinaryColumnStatsData binaryData=colData.getBinaryStats();
-dos.writeLong(binaryData.getMaxColLen());
-dos.writeDouble(binaryData.getAvgColLen());
-dos.writeLong(binaryData.getNumNulls());
+builder.setNumNulls(binaryData.getNumNulls());
+builder.setBinaryStats(HbaseMetastoreProto.ColumnStats.StringStats.newBuilder().setMaxColLength(binaryData.getMaxColLen()).setAvgColLength(binaryData.getAvgColLen()).build());
 break;
 case DECIMAL_STATS:
 DecimalColumnStatsData decimalData=colData.getDecimalStats();
-writeDecimal(dos,decimalData.getHighValue());
-writeDecimal(dos,decimalData.getLowValue());
-dos.writeLong(decimalData.getNumNulls());
-dos.writeLong(decimalData.getNumDVs());
+builder.setNumNulls(decimalData.getNumNulls());
+builder.setNumDistinctValues(decimalData.getNumDVs());
+builder.setDecimalStats(HbaseMetastoreProto.ColumnStats.DecimalStats.newBuilder().setLowValue(HbaseMetastoreProto.ColumnStats.DecimalStats.Decimal.newBuilder().setUnscaled(ByteString.copyFrom(decimalData.getLowValue().getUnscaled())).setScale(decimalData.getLowValue().getScale()).build()).setHighValue(HbaseMetastoreProto.ColumnStats.DecimalStats.Decimal.newBuilder().setUnscaled(ByteString.copyFrom(decimalData.getHighValue().getUnscaled())).setScale(decimalData.getHighValue().getScale()).build())).build();
 break;
 default :
 throw new RuntimeException("Woh, bad.  Unknown stats type!");
 }
-return baos.toByteArray();
+return builder.build().toByteArray();
 }

@@ -2,12 +2,23 @@
   conf=configuration;
   HBaseConfiguration.addHbaseResources(conf);
   try {
-    conn=HConnectionManager.createConnection(conf);
+    String connClass=HiveConf.getVar(conf,HiveConf.ConfVars.METASTORE_HBASE_CONNECTION_CLASS);
+    if (!TEST_CONN.equals(connClass)) {
+      Class c=Class.forName(connClass);
+      Object o=c.newInstance();
+      if (HBaseConnection.class.isAssignableFrom(o.getClass())) {
+        conn=(HBaseConnection)o;
+      }
+ else {
+        throw new IOException(connClass + " is not an instance of HBaseConnection.");
+      }
+      conn.setConf(conf);
+      conn.connect();
+    }
   }
- catch (  IOException e) {
+ catch (  Exception e) {
     throw new RuntimeException(e);
   }
-  tables=new HashMap<String,HTableInterface>();
   try {
     md=MessageDigest.getInstance("MD5");
   }
@@ -47,6 +58,6 @@
     partCache=new PartitionCache(totalObjectsToCache / 2,partHits,partMisses,partOverflows);
     statsCache=StatsCache.getInstance(conf);
   }
-  roleCache=new HashMap<String,GrantInfoList>();
+  roleCache=new HashMap<String,HbaseMetastoreProto.RoleGrantInfoList>();
   entireRoleTableInCache=false;
 }

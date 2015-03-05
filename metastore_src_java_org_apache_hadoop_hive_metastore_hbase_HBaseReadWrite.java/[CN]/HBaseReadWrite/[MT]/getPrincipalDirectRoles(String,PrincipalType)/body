@@ -1,9 +1,9 @@
 {
   buildRoleCache();
   Set<String> rolesFound=new HashSet<String>();
-  for (  Map.Entry<String,GrantInfoList> e : roleCache.entrySet()) {
-    for (    GrantInfoWritable giw : e.getValue().grantInfos) {
-      if (giw.principalType == type && giw.principalName.equals(name)) {
+  for (  Map.Entry<String,HbaseMetastoreProto.RoleGrantInfoList> e : roleCache.entrySet()) {
+    for (    HbaseMetastoreProto.RoleGrantInfo giw : e.getValue().getGrantInfoList()) {
+      if (HBaseUtils.convertPrincipalTypes(giw.getPrincipalType()) == type && giw.getPrincipalName().equals(name)) {
         rolesFound.add(e.getKey());
         break;
       }
@@ -11,7 +11,7 @@
   }
   List<Role> directRoles=new ArrayList<Role>(rolesFound.size());
   List<Get> gets=new ArrayList<Get>();
-  HTableInterface htab=getHTable(ROLE_TABLE);
+  HTableInterface htab=conn.getHBaseTable(ROLE_TABLE);
   for (  String roleFound : rolesFound) {
     byte[] key=HBaseUtils.buildKey(roleFound);
     Get g=new Get(key);
@@ -22,9 +22,7 @@
   for (int i=0; i < results.length; i++) {
     byte[] serialized=results[i].getValue(CATALOG_CF,CATALOG_COL);
     if (serialized != null) {
-      RoleWritable role=new RoleWritable();
-      HBaseUtils.deserialize(role,serialized);
-      directRoles.add(role.role);
+      directRoles.add(HBaseUtils.deserializeRole(results[i].getRow(),serialized));
     }
   }
   return directRoles;

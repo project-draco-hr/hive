@@ -1,25 +1,29 @@
 {
   buildRoleCache();
   List<Put> puts=new ArrayList<Put>();
-  for (  Map.Entry<String,GrantInfoList> e : roleCache.entrySet()) {
+  for (  Map.Entry<String,HbaseMetastoreProto.RoleGrantInfoList> e : roleCache.entrySet()) {
     boolean madeAChange=false;
-    for (int i=0; i < e.getValue().grantInfos.size(); i++) {
-      if (e.getValue().grantInfos.get(i).principalType == PrincipalType.ROLE && e.getValue().grantInfos.get(i).principalName.equals(roleName)) {
-        e.getValue().grantInfos.remove(i);
+    List<HbaseMetastoreProto.RoleGrantInfo> rgil=new ArrayList<HbaseMetastoreProto.RoleGrantInfo>();
+    rgil.addAll(e.getValue().getGrantInfoList());
+    for (int i=0; i < rgil.size(); i++) {
+      if (HBaseUtils.convertPrincipalTypes(rgil.get(i).getPrincipalType()) == PrincipalType.ROLE && rgil.get(i).getPrincipalName().equals(roleName)) {
+        rgil.remove(i);
         madeAChange=true;
         break;
       }
     }
     if (madeAChange) {
       Put put=new Put(HBaseUtils.buildKey(e.getKey()));
-      put.add(CATALOG_CF,ROLES_COL,HBaseUtils.serialize(e.getValue()));
+      HbaseMetastoreProto.RoleGrantInfoList proto=HbaseMetastoreProto.RoleGrantInfoList.newBuilder().addAllGrantInfo(rgil).build();
+      put.add(CATALOG_CF,ROLES_COL,proto.toByteArray());
       puts.add(put);
-      roleCache.put(e.getKey(),e.getValue());
+      roleCache.put(e.getKey(),proto);
     }
   }
   if (puts.size() > 0) {
-    HTableInterface htab=getHTable(ROLE_TABLE);
+    HTableInterface htab=conn.getHBaseTable(ROLE_TABLE);
     htab.put(puts);
+    htab.flushCommits();
   }
   PrincipalPrivilegeSet global=getGlobalPrivs();
   if (global != null && global.getRolePrivileges() != null && global.getRolePrivileges().remove(roleName) != null) {
@@ -30,14 +34,16 @@
   if (dbs == null)   dbs=new ArrayList<Database>();
   for (  Database db : dbs) {
     if (db.getPrivileges() != null && db.getPrivileges().getRolePrivileges() != null && db.getPrivileges().getRolePrivileges().remove(roleName) != null) {
-      Put put=new Put(HBaseUtils.buildKey(db.getName()));
-      put.add(CATALOG_CF,CATALOG_COL,HBaseUtils.serialize(new DatabaseWritable(db)));
+      byte[][] serialized=HBaseUtils.serializeDatabase(db);
+      Put put=new Put(serialized[0]);
+      put.add(CATALOG_CF,CATALOG_COL,serialized[1]);
       puts.add(put);
     }
   }
   if (puts.size() > 0) {
-    HTableInterface htab=getHTable(DB_TABLE);
+    HTableInterface htab=conn.getHBaseTable(DB_TABLE);
     htab.put(puts);
+    htab.flushCommits();
   }
   puts.clear();
   for (  Database db : dbs) {
@@ -45,16 +51,17 @@
     if (tables != null) {
       for (      Table table : tables) {
         if (table.getPrivileges() != null && table.getPrivileges().getRolePrivileges() != null && table.getPrivileges().getRolePrivileges().remove(roleName) != null) {
-          Put put=new Put(HBaseUtils.buildKey(table.getDbName(),table.getTableName()));
-          put.add(CATALOG_CF,CATALOG_COL,HBaseUtils.serialize(new TableWritable(table)));
+          byte[][] serialized=HBaseUtils.serializeTable(table,HBaseUtils.hashStorageDescriptor(table.getSd(),md));
+          Put put=new Put(serialized[0]);
+          put.add(CATALOG_CF,CATALOG_COL,serialized[1]);
           puts.add(put);
         }
       }
     }
   }
   if (puts.size() > 0) {
-    HTableInterface htab=getHTable(TABLE_TABLE);
+    HTableInterface htab=conn.getHBaseTable(TABLE_TABLE);
     htab.put(puts);
+    htab.flushCommits();
   }
-  flush();
 }

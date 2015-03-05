@@ -1,0 +1,26 @@
+{
+  if (oldParts.size() != newParts.size()) {
+    throw new RuntimeException("Number of old and new partitions must match.");
+  }
+  List<Put> puts=new ArrayList<Put>(newParts.size());
+  for (int i=0; i < newParts.size(); i++) {
+    byte[] hash;
+    byte[] oldHash=HBaseUtils.hashStorageDescriptor(oldParts.get(i).getSd(),md);
+    byte[] newHash=HBaseUtils.hashStorageDescriptor(newParts.get(i).getSd(),md);
+    if (Arrays.equals(oldHash,newHash)) {
+      hash=oldHash;
+    }
+ else {
+      decrementStorageDescriptorRefCount(oldParts.get(i).getSd());
+      hash=putStorageDescriptor(newParts.get(i).getSd());
+    }
+    byte[][] serialized=HBaseUtils.serializePartition(newParts.get(i),hash);
+    Put p=new Put(serialized[0]);
+    p.add(CATALOG_CF,CATALOG_COL,serialized[1]);
+    puts.add(p);
+    partCache.put(newParts.get(i).getDbName(),newParts.get(i).getTableName(),newParts.get(i));
+  }
+  HTableInterface htab=conn.getHBaseTable(PART_TABLE);
+  htab.put(puts);
+  htab.flushCommits();
+}
