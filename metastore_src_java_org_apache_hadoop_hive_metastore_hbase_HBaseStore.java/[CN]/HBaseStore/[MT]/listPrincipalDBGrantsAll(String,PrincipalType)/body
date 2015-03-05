@@ -1,3 +1,32 @@
 {
-  throw new UnsupportedOperationException();
+  List<HiveObjectPrivilege> privileges=new ArrayList<HiveObjectPrivilege>();
+  try {
+    List<Database> dbs=getHBase().scanDatabases(null);
+    for (    Database db : dbs) {
+      List<PrivilegeGrantInfo> grants;
+      PrincipalPrivilegeSet pps=db.getPrivileges();
+      if (pps == null)       continue;
+      Map<String,List<PrivilegeGrantInfo>> map;
+switch (principalType) {
+case USER:
+        map=pps.getUserPrivileges();
+      break;
+case ROLE:
+    map=pps.getRolePrivileges();
+  break;
+default :
+throw new RuntimeException("Unknown or unsupported principal type " + principalType.toString());
+}
+if (map == null) continue;
+grants=map.get(principalName);
+if (grants == null || grants.size() == 0) continue;
+for (PrivilegeGrantInfo pgi : grants) {
+privileges.add(new HiveObjectPrivilege(new HiveObjectRef(HiveObjectType.DATABASE,db.getName(),null,null,null),principalName,principalType,pgi));
+}
+}
+return privileges;
+}
+ catch (IOException e) {
+throw new RuntimeException(e);
+}
 }

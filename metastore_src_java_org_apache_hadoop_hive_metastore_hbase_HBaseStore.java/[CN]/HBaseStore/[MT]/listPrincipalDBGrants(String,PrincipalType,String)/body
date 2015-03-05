@@ -1,22 +1,27 @@
 {
   List<PrivilegeGrantInfo> grants;
+  List<HiveObjectPrivilege> privileges=new ArrayList<HiveObjectPrivilege>();
   try {
     Database db=getHBase().getDb(dbName);
+    if (db == null)     return privileges;
+    PrincipalPrivilegeSet pps=db.getPrivileges();
+    if (pps == null)     return privileges;
+    Map<String,List<PrivilegeGrantInfo>> map;
 switch (principalType) {
 case USER:
-      grants=db.getPrivileges().getUserPrivileges().get(principalName);
+      map=pps.getUserPrivileges();
     break;
 case ROLE:
-  grants=db.getPrivileges().getRolePrivileges().get(principalName);
+  map=pps.getRolePrivileges();
 break;
 default :
 throw new RuntimeException("Unknown or unsupported principal type " + principalType.toString());
 }
-if (grants == null || grants.size() == 0) return null;
-MDatabase mdb=new MDatabase(db.getName(),db.getLocationUri(),db.getDescription(),db.getParameters());
-List<MDBPrivilege> privileges=new ArrayList<MDBPrivilege>(grants.size());
+if (map == null) return privileges;
+grants=map.get(principalName);
+if (grants == null || grants.size() == 0) return privileges;
 for (PrivilegeGrantInfo pgi : grants) {
-privileges.add(new MDBPrivilege(principalName,principalType.toString(),mdb,pgi.getPrivilege(),pgi.getCreateTime(),pgi.getGrantor(),pgi.getGrantorType().toString(),pgi.isGrantOption()));
+privileges.add(new HiveObjectPrivilege(new HiveObjectRef(HiveObjectType.DATABASE,dbName,null,null,null),principalName,principalType,pgi));
 }
 return privileges;
 }
