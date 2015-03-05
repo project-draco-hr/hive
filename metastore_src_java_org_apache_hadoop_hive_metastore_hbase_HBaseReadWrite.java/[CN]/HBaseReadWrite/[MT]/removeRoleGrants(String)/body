@@ -1,0 +1,60 @@
+{
+  buildRoleCache();
+  List<Put> puts=new ArrayList<Put>();
+  for (  Map.Entry<String,GrantInfoList> e : roleCache.entrySet()) {
+    boolean madeAChange=false;
+    for (int i=0; i < e.getValue().grantInfos.size(); i++) {
+      if (e.getValue().grantInfos.get(i).principalType == PrincipalType.ROLE && e.getValue().grantInfos.get(i).principalName.equals(roleName)) {
+        e.getValue().grantInfos.remove(i);
+        madeAChange=true;
+        break;
+      }
+    }
+    if (madeAChange) {
+      Put put=new Put(HBaseUtils.buildKey(e.getKey()));
+      put.add(CATALOG_CF,ROLES_COL,HBaseUtils.serialize(e.getValue()));
+      puts.add(put);
+      roleCache.put(e.getKey(),e.getValue());
+    }
+  }
+  if (puts.size() > 0) {
+    HTableInterface htab=getHTable(ROLE_TABLE);
+    htab.put(puts);
+  }
+  PrincipalPrivilegeSet global=getGlobalPrivs();
+  if (global != null && global.getRolePrivileges() != null && global.getRolePrivileges().remove(roleName) != null) {
+    putGlobalPrivs(global);
+  }
+  puts.clear();
+  List<Database> dbs=scanDatabases(null);
+  if (dbs == null)   dbs=new ArrayList<Database>();
+  for (  Database db : dbs) {
+    if (db.getPrivileges() != null && db.getPrivileges().getRolePrivileges() != null && db.getPrivileges().getRolePrivileges().remove(roleName) != null) {
+      Put put=new Put(HBaseUtils.buildKey(db.getName()));
+      put.add(CATALOG_CF,CATALOG_COL,HBaseUtils.serialize(new DatabaseWritable(db)));
+      puts.add(put);
+    }
+  }
+  if (puts.size() > 0) {
+    HTableInterface htab=getHTable(DB_TABLE);
+    htab.put(puts);
+  }
+  puts.clear();
+  for (  Database db : dbs) {
+    List<Table> tables=scanTables(db.getName(),null);
+    if (tables != null) {
+      for (      Table table : tables) {
+        if (table.getPrivileges() != null && table.getPrivileges().getRolePrivileges() != null && table.getPrivileges().getRolePrivileges().remove(roleName) != null) {
+          Put put=new Put(HBaseUtils.buildKey(table.getDbName(),table.getTableName()));
+          put.add(CATALOG_CF,CATALOG_COL,HBaseUtils.serialize(new TableWritable(table)));
+          puts.add(put);
+        }
+      }
+    }
+  }
+  if (puts.size() > 0) {
+    HTableInterface htab=getHTable(TABLE_TABLE);
+    htab.put(puts);
+  }
+  flush();
+}

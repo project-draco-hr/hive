@@ -1,0 +1,36 @@
+{
+  buildRoleCache();
+  LOG.debug("Building role map for " + userName);
+  Set<String> rolesToAdd=new HashSet<String>();
+  Set<String> userSet=new HashSet<String>();
+  Set<String> rolesToCheckNext=new HashSet<String>();
+  userSet.add(userName);
+  for (  Map.Entry<String,GrantInfoList> e : roleCache.entrySet()) {
+    for (    GrantInfoWritable grantInfo : e.getValue().grantInfos) {
+      if (grantInfo.principalType == PrincipalType.USER && userName.equals(grantInfo.principalName)) {
+        rolesToAdd.add(e.getKey());
+        rolesToCheckNext.add(e.getKey());
+        LOG.debug("Adding " + e.getKey() + " to list of roles user is in directly");
+        break;
+      }
+    }
+  }
+  while (rolesToCheckNext.size() > 0) {
+    Set<String> tmpRolesToCheckNext=new HashSet<String>();
+    for (    String roleName : rolesToCheckNext) {
+      GrantInfoList grantInfos=roleCache.get(roleName);
+      if (grantInfos == null)       continue;
+      for (      GrantInfoWritable grantInfo : grantInfos.grantInfos) {
+        if (grantInfo.principalType == PrincipalType.ROLE && rolesToAdd.add(grantInfo.principalName)) {
+          tmpRolesToCheckNext.add(grantInfo.principalName);
+          LOG.debug("Adding " + grantInfo.principalName + " to list of roles user is in indirectly");
+        }
+      }
+    }
+    rolesToCheckNext=tmpRolesToCheckNext;
+  }
+  byte[] key=HBaseUtils.buildKey(userName);
+  byte[] serialized=HBaseUtils.serialize(new RoleList(new ArrayList<String>(rolesToAdd)));
+  store(USER_TO_ROLE_TABLE,key,CATALOG_CF,CATALOG_COL,serialized);
+  flush();
+}
