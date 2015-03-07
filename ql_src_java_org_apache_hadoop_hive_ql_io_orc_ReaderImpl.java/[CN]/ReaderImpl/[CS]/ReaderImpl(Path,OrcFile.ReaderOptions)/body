@@ -6,22 +6,38 @@
   this.fileSystem=fs;
   this.path=path;
   this.conf=options.getConfiguration();
-  FileMetaInfo footerMetaData;
-  if (options.getFileMetaInfo() != null) {
-    footerMetaData=options.getFileMetaInfo();
+  boolean magic=false;
+  FileMetadata fileMetadata=options.getFileMetadata();
+  if (fileMetadata != null) {
+    this.compressionKind=fileMetadata.getCompressionKind();
+    this.bufferSize=fileMetadata.getCompressionBufferSize();
+    this.codec=WriterImpl.createCodec(compressionKind);
+    this.metadataSize=fileMetadata.getMetadataSize();
+    this.versionList=fileMetadata.getVersionList();
+    this.writerVersion=WriterVersion.from(fileMetadata.getWriterVersionNum());
+    this.inspector=OrcStruct.createObjectInspector(0,fileMetadata.getTypes());
+    this.metadata=fileMetadata.getMetadata();
+    this.footer=fileMetadata.getFooter();
+    this.footerByteBuffer=null;
   }
  else {
-    footerMetaData=extractMetaInfoFromFooter(fs,path,options.getMaxLength());
+    FileMetaInfo footerMetaData;
+    if (options.getFileMetaInfo() != null) {
+      footerMetaData=options.getFileMetaInfo();
+    }
+ else {
+      footerMetaData=extractMetaInfoFromFooter(fs,path,options.getMaxLength());
+    }
+    MetaInfoObjExtractor rInfo=new MetaInfoObjExtractor(footerMetaData.compressionType,footerMetaData.bufferSize,footerMetaData.metadataSize,footerMetaData.footerBuffer);
+    this.footerByteBuffer=footerMetaData.footerBuffer;
+    this.compressionKind=rInfo.compressionKind;
+    this.codec=rInfo.codec;
+    this.bufferSize=rInfo.bufferSize;
+    this.metadataSize=rInfo.metadataSize;
+    this.metadata=rInfo.metadata;
+    this.footer=rInfo.footer;
+    this.inspector=rInfo.inspector;
+    this.versionList=footerMetaData.versionList;
+    this.writerVersion=footerMetaData.writerVersion;
   }
-  MetaInfoObjExtractor rInfo=new MetaInfoObjExtractor(footerMetaData.compressionType,footerMetaData.bufferSize,footerMetaData.metadataSize,footerMetaData.footerBuffer);
-  this.footerByteBuffer=footerMetaData.footerBuffer;
-  this.compressionKind=rInfo.compressionKind;
-  this.codec=rInfo.codec;
-  this.bufferSize=rInfo.bufferSize;
-  this.metadataSize=rInfo.metadataSize;
-  this.metadata=rInfo.metadata;
-  this.footer=rInfo.footer;
-  this.inspector=rInfo.inspector;
-  this.versionList=footerMetaData.versionList;
-  this.writerVersion=footerMetaData.writerVersion;
 }

@@ -9,8 +9,10 @@
   this.metrics=LlapDaemonCacheMetrics.create(displayName,sessionId);
   LOG.info("Started LlapDaemonCacheMetrics with displayName: " + displayName + " sessionId: "+ sessionId);
   Cache<OrcCacheKey> cache=useLowLevelCache ? null : new NoopCache<OrcCacheKey>();
-  LowLevelCacheImpl orcCache=createLowLevelCache(conf,useLowLevelCache,metrics);
-  OrcMetadataCache metadataCache=OrcMetadataCache.getInstance();
+  boolean useLrfu=HiveConf.getBoolVar(conf,HiveConf.ConfVars.LLAP_USE_LRFU);
+  LowLevelCachePolicy cachePolicy=useLrfu ? new LowLevelLrfuCachePolicy(conf) : new LowLevelFifoCachePolicy(conf);
+  OrcMetadataCache metadataCache=new OrcMetadataCache();
+  LowLevelCacheImpl orcCache=createLowLevelCache(conf,cachePolicy,metadataCache,metrics,useLowLevelCache);
   executor=MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(10));
   this.cvp=new OrcColumnVectorProducer(metadataCache,orcCache,cache,conf,metrics);
   if (LOGL.isInfoEnabled()) {
