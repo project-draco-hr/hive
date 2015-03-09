@@ -1,0 +1,32 @@
+{
+  super.registerRunningTaskAttempt(containerId,taskSpec,additionalResources,credentials,credentialsChanged);
+  SubmitWorkRequestProto requestProto=null;
+  try {
+    requestProto=constructSubmitWorkRequest(containerId,taskSpec);
+  }
+ catch (  IOException e) {
+    throw new RuntimeException("Failed to construct request",e);
+  }
+  ContainerInfo containerInfo=getContainerInfo(containerId);
+  String host;
+  int port;
+  if (containerInfo != null) {
+synchronized (containerInfo) {
+      host=containerInfo.host;
+      port=containerInfo.port;
+    }
+  }
+ else {
+    throw new RuntimeException("ContainerInfo not found for container: " + containerId + ", while trying to launch task: "+ taskSpec.getTaskAttemptID());
+  }
+  communicator.submitWork(requestProto,host,port,new TaskCommunicator.ExecuteRequestCallback<SubmitWorkResponseProto>(){
+    @Override public void setResponse(    SubmitWorkResponseProto response){
+      LOG.info("Successfully launched task: " + taskSpec.getTaskAttemptID());
+      getTaskCommunicatorContext().taskStartedRemotely(taskSpec.getTaskAttemptID(),containerId);
+    }
+    @Override public void indicateError(    Throwable t){
+      LOG.info("Failed to run task: " + taskSpec.getTaskAttemptID() + " on containerId: "+ containerId,t);
+    }
+  }
+);
+}
