@@ -1,0 +1,49 @@
+{
+  super(clusterName + "_" + MiniLlapCluster.class.getSimpleName());
+  Preconditions.checkArgument(numExecutorsPerService > 0);
+  Preconditions.checkArgument(execMemoryPerService > 0);
+  Preconditions.checkArgument(numLocalDirs > 0);
+  String clusterNameTrimmed=clusterName.replace("$","") + "_" + MiniLlapCluster.class.getSimpleName();
+  File targetWorkDir=new File("target",clusterNameTrimmed);
+  try {
+    FileContext.getLocalFSFileContext().delete(new Path(targetWorkDir.getAbsolutePath()),true);
+  }
+ catch (  Exception e) {
+    LOG.warn("Could not cleanup test workDir: " + targetWorkDir,e);
+    throw new RuntimeException("Could not cleanup test workDir: " + targetWorkDir,e);
+  }
+  if (Shell.WINDOWS) {
+    String targetPath=targetWorkDir.getAbsolutePath();
+    File link=new File(System.getProperty("java.io.tmpdir"),String.valueOf(System.currentTimeMillis()));
+    String linkPath=link.getAbsolutePath();
+    try {
+      FileContext.getLocalFSFileContext().delete(new Path(linkPath),true);
+    }
+ catch (    IOException e) {
+      throw new YarnRuntimeException("could not cleanup symlink: " + linkPath,e);
+    }
+    targetWorkDir.mkdirs();
+    Shell.ShellCommandExecutor shexec=new Shell.ShellCommandExecutor(Shell.getSymlinkCommand(targetPath,linkPath));
+    try {
+      shexec.execute();
+    }
+ catch (    IOException e) {
+      throw new YarnRuntimeException(String.format("failed to create symlink from %s to %s, shell output: %s",linkPath,targetPath,shexec.getOutput()),e);
+    }
+    this.testWorkDir=link;
+  }
+ else {
+    this.testWorkDir=targetWorkDir;
+  }
+  this.numExecutorsPerService=numExecutorsPerService;
+  this.execBytesPerService=execMemoryPerService;
+  this.llapIoEnabled=llapIoEnabled;
+  this.ioBytesPerService=ioBytesPerService;
+  localDirs=new String[numLocalDirs];
+  for (int i=0; i < numLocalDirs; i++) {
+    File f=new File(testWorkDir,"localDir");
+    f.mkdirs();
+    LOG.info("Created localDir: " + f.getAbsolutePath());
+    localDirs[i]=f.getAbsolutePath();
+  }
+}
