@@ -2,23 +2,33 @@
   unwrapContainer=new UnwrapRowContainer[conf.getTagLength()];
   super.initializeOp(hconf);
   int tagLen=conf.getTagLength();
-  tableKey="__HASH_MAP_" + this.getOperatorId() + "_container";
-  serdeKey="__HASH_MAP_" + this.getOperatorId() + "_serde";
+  cacheKey=HiveConf.getVar(hconf,HiveConf.ConfVars.HIVEQUERYID) + "__HASH_MAP_" + this.getOperatorId()+ "_container";
   cache=ObjectCacheFactory.getCache(hconf);
   loader=HashTableLoaderFactory.getLoader(hconf);
   hashMapRowGetters=null;
-  mapJoinTables=(MapJoinTableContainer[])cache.retrieve(tableKey);
-  mapJoinTableSerdes=(MapJoinTableContainerSerDe[])cache.retrieve(serdeKey);
-  hashTblInitedOnce=true;
-  if (isLogInfoEnabled) {
-    LOG.info("Try to retrieve from cache");
-  }
-  if (mapJoinTables == null || mapJoinTableSerdes == null) {
+  mapJoinTables=new MapJoinTableContainer[tagLen];
+  mapJoinTableSerdes=new MapJoinTableContainerSerDe[tagLen];
+  hashTblInitedOnce=false;
+  generateMapMetaData();
+  if (!conf.isBucketMapJoin()) {
     if (isLogInfoEnabled) {
-      LOG.info("Did not find tables in cache");
+      LOG.info("This is not bucket map join, so cache");
     }
-    mapJoinTables=new MapJoinTableContainer[tagLen];
-    mapJoinTableSerdes=new MapJoinTableContainerSerDe[tagLen];
-    hashTblInitedOnce=false;
+    Pair<MapJoinTableContainer[],MapJoinTableContainerSerDe[]> pair=(Pair<MapJoinTableContainer[],MapJoinTableContainerSerDe[]>)cache.retrieve(cacheKey,new Callable<Object>(){
+      public Object call() throws HiveException {
+        return loadHashTable();
+      }
+    }
+);
+    mapJoinTables=pair.getLeft();
+    mapJoinTableSerdes=pair.getRight();
+    hashTblInitedOnce=true;
+  }
+ else {
+    loadHashTable();
+  }
+  if (this.getExecContext() != null) {
+    this.getExecContext().setLastInputPath(null);
+    this.getExecContext().setCurrentInputPath(null);
   }
 }

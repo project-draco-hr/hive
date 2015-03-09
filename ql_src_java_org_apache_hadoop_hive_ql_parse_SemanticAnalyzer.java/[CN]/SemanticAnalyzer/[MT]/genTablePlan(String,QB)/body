@@ -52,9 +52,11 @@
     rwsch=opParseCtx.get(top).getRowResolver();
     top.setChildOperators(null);
   }
-  Operator<? extends OperatorDesc> tableOp=top;
+  Operator<? extends OperatorDesc> op=top;
   TableSample ts=qb.getParseInfo().getTabSample(alias);
   if (ts != null) {
+    TableScanOperator tableScanOp=(TableScanOperator)top;
+    tableScanOp.getConf().setTableSample(ts);
     int num=ts.getNumerator();
     int den=ts.getDenominator();
     ArrayList<ASTNode> sampleExprs=ts.getExprs();
@@ -86,12 +88,12 @@
     if ((sampleExprs == null || sampleExprs.size() == 0 || colsEqual) && (num == den || (den % numBuckets == 0 || numBuckets % den == 0))) {
       LOG.info("No need for sample filter");
       ExprNodeDesc samplePredicate=genSamplePredicate(ts,tabBucketCols,colsEqual,alias,rwsch,qb.getMetaData(),null);
-      tableOp=OperatorFactory.getAndMakeChild(new FilterDesc(samplePredicate,true,new SampleDesc(ts.getNumerator(),ts.getDenominator(),tabBucketCols,true)),new RowSchema(rwsch.getColumnInfos()),top);
+      op=OperatorFactory.getAndMakeChild(new FilterDesc(samplePredicate,true,new SampleDesc(ts.getNumerator(),ts.getDenominator(),tabBucketCols,true)),new RowSchema(rwsch.getColumnInfos()),top);
     }
  else {
       LOG.info("Need sample filter");
       ExprNodeDesc samplePredicate=genSamplePredicate(ts,tabBucketCols,colsEqual,alias,rwsch,qb.getMetaData(),null);
-      tableOp=OperatorFactory.getAndMakeChild(new FilterDesc(samplePredicate,true),new RowSchema(rwsch.getColumnInfos()),top);
+      op=OperatorFactory.getAndMakeChild(new FilterDesc(samplePredicate,true),new RowSchema(rwsch.getColumnInfos()),top);
     }
   }
  else {
@@ -113,7 +115,7 @@
           tsSample.setInputPruning(true);
           qb.getParseInfo().setTabSample(alias,tsSample);
           ExprNodeDesc samplePred=genSamplePredicate(tsSample,tab.getBucketCols(),true,alias,rwsch,qb.getMetaData(),null);
-          tableOp=OperatorFactory.getAndMakeChild(new FilterDesc(samplePred,true,new SampleDesc(tsSample.getNumerator(),tsSample.getDenominator(),tab.getBucketCols(),true)),new RowSchema(rwsch.getColumnInfos()),top);
+          op=OperatorFactory.getAndMakeChild(new FilterDesc(samplePred,true,new SampleDesc(tsSample.getNumerator(),tsSample.getDenominator(),tab.getBucketCols(),true)),new RowSchema(rwsch.getColumnInfos()),top);
           LOG.info("No need for sample filter");
         }
  else {
@@ -124,14 +126,14 @@
           LOG.info("Need sample filter");
           ExprNodeDesc randFunc=TypeCheckProcFactory.DefaultExprProcessor.getFuncExprNodeDesc("rand",new ExprNodeConstantDesc(Integer.valueOf(460476415)));
           ExprNodeDesc samplePred=genSamplePredicate(tsSample,null,false,alias,rwsch,qb.getMetaData(),randFunc);
-          tableOp=OperatorFactory.getAndMakeChild(new FilterDesc(samplePred,true),new RowSchema(rwsch.getColumnInfos()),top);
+          op=OperatorFactory.getAndMakeChild(new FilterDesc(samplePred,true),new RowSchema(rwsch.getColumnInfos()),top);
         }
       }
     }
   }
-  Operator output=putOpInsertMap(tableOp,rwsch);
+  Operator output=putOpInsertMap(op,rwsch);
   if (LOG.isDebugEnabled()) {
-    LOG.debug("Created Table Plan for " + alias + " "+ tableOp.toString());
+    LOG.debug("Created Table Plan for " + alias + " "+ op.toString());
   }
   return output;
 }
