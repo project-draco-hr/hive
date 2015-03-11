@@ -1,20 +1,30 @@
 {
-  dependencyGraph.clear();
-  sparkWorkMap.clear();
   SparkWork sparkWork=sparkTask.getWork();
-  generateLocalWork(sparkTask);
-  dependencyGraph.put(sparkWork,new ArrayList<SparkWork>());
-  Set<BaseWork> leaves=sparkWork.getLeaves();
-  for (  BaseWork leaf : leaves) {
-    moveWork(sparkWork,leaf,sparkWork);
-  }
-  for (  SparkWork newSparkWork : sparkWorkMap.values()) {
-    for (    BaseWork work : newSparkWork.getAllWorkUnsorted()) {
-      sparkWork.remove(work);
+  if (!visitedTasks.contains(sparkTask)) {
+    dependencyGraph.clear();
+    sparkWorkMap.clear();
+    generateLocalWork(sparkTask);
+    dependencyGraph.put(sparkWork,new ArrayList<SparkWork>());
+    Set<BaseWork> leaves=sparkWork.getLeaves();
+    for (    BaseWork leaf : leaves) {
+      moveWork(sparkWork,leaf,sparkWork);
+    }
+    for (    SparkWork newSparkWork : sparkWorkMap.values()) {
+      for (      BaseWork work : newSparkWork.getAllWorkUnsorted()) {
+        sparkWork.remove(work);
+      }
+    }
+    Map<SparkWork,SparkTask> createdTaskMap=new LinkedHashMap<SparkWork,SparkTask>();
+    for (    SparkWork work : dependencyGraph.keySet()) {
+      createSparkTask(sparkTask,work,createdTaskMap,conditionalTask);
     }
   }
-  Map<SparkWork,SparkTask> createdTaskMap=new LinkedHashMap<SparkWork,SparkTask>();
-  for (  SparkWork work : dependencyGraph.keySet()) {
-    createSparkTask(sparkTask,work,createdTaskMap,conditionalTask);
+ else   if (conditionalTask != null) {
+    if (sparkTask.getParentTasks() != null && sparkTask.getParentTasks().size() == 1 && sparkTask.getParentTasks().get(0) instanceof SparkTask) {
+      SparkTask parent=(SparkTask)sparkTask.getParentTasks().get(0);
+      if (containsOp(sparkWork,MapJoinOperator.class) && containsOp(parent.getWork(),SparkHashTableSinkOperator.class)) {
+        updateConditionalTask(conditionalTask,sparkTask,parent);
+      }
+    }
   }
 }
