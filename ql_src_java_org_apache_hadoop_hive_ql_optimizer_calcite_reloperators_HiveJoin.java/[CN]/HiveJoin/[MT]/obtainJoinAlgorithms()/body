@@ -1,0 +1,59 @@
+{
+  Set<JoinAlgorithm> possibleAlgorithms=new HashSet<JoinAlgorithm>();
+  RelNode smallInput;
+  if (this.mapJoinStreamingSide == MapJoinStreamingRelation.LEFT_RELATION) {
+    smallInput=this.getRight();
+  }
+ else   if (this.mapJoinStreamingSide == MapJoinStreamingRelation.RIGHT_RELATION) {
+    smallInput=this.getLeft();
+  }
+ else {
+    smallInput=null;
+  }
+  if (smallInput != null) {
+    JoinPredicateInfo joinPredInfo=HiveCalciteUtil.JoinPredicateInfo.constructJoinPredicateInfo(this);
+    List<ImmutableIntList> joinKeysInChildren=new ArrayList<ImmutableIntList>();
+    joinKeysInChildren.add(ImmutableIntList.copyOf(joinPredInfo.getProjsFromLeftPartOfJoinKeysInChildSchema()));
+    joinKeysInChildren.add(ImmutableIntList.copyOf(joinPredInfo.getProjsFromRightPartOfJoinKeysInChildSchema()));
+    Integer buckets=RelMetadataQuery.splitCount(smallInput);
+    boolean bucketFitsMemory=false;
+    boolean inputFitsMemory=false;
+    if (buckets != null) {
+      bucketFitsMemory=isFittingIntoMemory(this.maxMemory,smallInput,buckets);
+    }
+    inputFitsMemory=bucketFitsMemory ? isFittingIntoMemory(this.maxMemory,smallInput,1) : false;
+    boolean orderedBucketed=true;
+    boolean bucketed=true;
+    for (int i=0; i < this.getInputs().size(); i++) {
+      RelNode input=getInputs().get(i);
+      if (orderedBucketed) {
+        boolean orderFound=RelCollations.contains(RelMetadataQuery.collations(input),joinKeysInChildren.get(i));
+        if (!orderFound) {
+          orderedBucketed=false;
+        }
+      }
+      if (bucketFitsMemory && bucketed) {
+        RelDistribution distribution=RelMetadataQuery.distribution(input);
+        if (distribution.getType() != Type.HASH_DISTRIBUTED) {
+          orderedBucketed=false;
+          bucketed=false;
+        }
+        if (!(joinKeysInChildren.get(i).containsAll(distribution.getKeys()) && distribution.getKeys().containsAll(joinKeysInChildren.get(i)))) {
+          orderedBucketed=false;
+          bucketed=false;
+        }
+      }
+    }
+    if (orderedBucketed) {
+      possibleAlgorithms.add(JoinAlgorithm.SMB_JOIN);
+    }
+    if (bucketFitsMemory && bucketed) {
+      possibleAlgorithms.add(JoinAlgorithm.BUCKET_JOIN);
+    }
+    if (inputFitsMemory) {
+      possibleAlgorithms.add(JoinAlgorithm.MAP_JOIN);
+    }
+  }
+  possibleAlgorithms.add(JoinAlgorithm.COMMON_JOIN);
+  return possibleAlgorithms;
+}

@@ -1,0 +1,31 @@
+{
+  final Double leftRCount=RelMetadataQuery.getRowCount(getLeft());
+  final Double rightRCount=RelMetadataQuery.getRowCount(getRight());
+  if (leftRCount == null || rightRCount == null) {
+    return null;
+  }
+  final double rCount=leftRCount + rightRCount;
+  ImmutableList<Double> cardinalities=new ImmutableList.Builder<Double>().add(leftRCount).add(rightRCount).build();
+  ImmutableBitSet.Builder streamingBuilder=new ImmutableBitSet.Builder();
+switch (mapJoinStreamingSide) {
+case LEFT_RELATION:
+    streamingBuilder.set(0);
+  break;
+case RIGHT_RELATION:
+streamingBuilder.set(1);
+break;
+default :
+return null;
+}
+ImmutableBitSet streaming=streamingBuilder.build();
+final double cpuCost=HiveCostUtil.computeSMBMapJoinCPUCost(cardinalities);
+final Double leftRAverageSize=RelMetadataQuery.getAverageRowSize(getLeft());
+final Double rightRAverageSize=RelMetadataQuery.getAverageRowSize(getRight());
+if (leftRAverageSize == null || rightRAverageSize == null) {
+return null;
+}
+ImmutableList<Pair<Double,Double>> relationInfos=new ImmutableList.Builder<Pair<Double,Double>>().add(new Pair<Double,Double>(leftRCount,leftRAverageSize)).add(new Pair<Double,Double>(rightRCount,rightRAverageSize)).build();
+final int parallelism=RelMetadataQuery.splitCount(this) == null ? 1 : RelMetadataQuery.splitCount(this);
+final double ioCost=HiveCostUtil.computeSMBMapJoinIOCost(relationInfos,streaming,parallelism);
+return HiveCost.FACTORY.makeCost(rCount,cpuCost,ioCost);
+}

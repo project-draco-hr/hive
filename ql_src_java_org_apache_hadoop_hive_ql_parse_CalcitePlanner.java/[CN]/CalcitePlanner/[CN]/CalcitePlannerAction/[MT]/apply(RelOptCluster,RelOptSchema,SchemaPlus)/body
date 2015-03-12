@@ -2,7 +2,8 @@
   RelNode calciteGenPlan=null;
   RelNode calcitePreCboPlan=null;
   RelNode calciteOptimizedPlan=null;
-  RelOptPlanner planner=HiveVolcanoPlanner.createPlanner();
+  HiveConfigContext confContext=new HiveConfigContext(conf);
+  RelOptPlanner planner=HiveVolcanoPlanner.createPlanner(confContext);
   final RelOptQuery query=new RelOptQuery(planner);
   final RexBuilder rexBuilder=cluster.getRexBuilder();
   cluster=query.createCluster(rexBuilder.getTypeFactory(),rexBuilder);
@@ -16,9 +17,10 @@
     semanticException=e;
     throw new RuntimeException(e);
   }
-  calcitePreCboPlan=applyPreJoinOrderingTransforms(calciteGenPlan,HiveDefaultRelMetadataProvider.INSTANCE);
+  HiveDefaultRelMetadataProvider mdProvider=new HiveDefaultRelMetadataProvider(conf);
+  calcitePreCboPlan=applyPreJoinOrderingTransforms(calciteGenPlan,mdProvider.getMetadataProvider());
   List<RelMetadataProvider> list=Lists.newArrayList();
-  list.add(HiveDefaultRelMetadataProvider.INSTANCE);
+  list.add(mdProvider.getMetadataProvider());
   RelTraitSet desiredTraits=cluster.traitSetOf(HiveRelNode.CONVENTION,RelCollations.EMPTY);
   HepProgram hepPgm=null;
   HepProgramBuilder hepPgmBldr=new HepProgramBuilder().addMatchOrder(HepMatchOrder.BOTTOM_UP).addRuleInstance(new JoinToMultiJoinRule(HiveJoin.class));
