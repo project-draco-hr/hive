@@ -1,0 +1,45 @@
+{
+  startFunction("get_schema_with_environment_context",": db=" + db + "tbl="+ tableName);
+  boolean success=false;
+  Exception ex=null;
+  try {
+    String[] names=tableName.split("\\.");
+    String base_table_name=names[0];
+    Table tbl;
+    try {
+      tbl=get_table_core(db,base_table_name);
+    }
+ catch (    NoSuchObjectException e) {
+      throw new UnknownTableException(e.getMessage());
+    }
+    List<FieldSchema> fieldSchemas=get_fields_with_environment_context(db,base_table_name,envContext);
+    if (tbl == null || fieldSchemas == null) {
+      throw new UnknownTableException(tableName + " doesn't exist");
+    }
+    if (tbl.getPartitionKeys() != null) {
+      fieldSchemas.addAll(tbl.getPartitionKeys());
+    }
+    success=true;
+    return fieldSchemas;
+  }
+ catch (  Exception e) {
+    ex=e;
+    if (e instanceof UnknownDBException) {
+      throw (UnknownDBException)e;
+    }
+ else     if (e instanceof UnknownTableException) {
+      throw (UnknownTableException)e;
+    }
+ else     if (e instanceof MetaException) {
+      throw (MetaException)e;
+    }
+ else {
+      MetaException me=new MetaException(e.toString());
+      me.initCause(e);
+      throw me;
+    }
+  }
+ finally {
+    endFunction("get_schema_with_environment_context",success,ex,tableName);
+  }
+}
