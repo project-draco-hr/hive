@@ -1,25 +1,26 @@
 {
-  yc.start();
+  registry.start();
   if (serviceHosts.size() > 0) {
     return;
   }
-  LOG.info("Evaluating host usage criteria for service nodes");
+  LOG.info("Reading YARN registry for service records");
   try {
-    List<NodeReport> nodes=yc.getNodeReports(NodeState.RUNNING);
-    for (    NodeReport nd : nodes) {
-      Resource used=nd.getUsed();
-      LOG.info("Examining node: " + nd);
-      if (nd.getNodeState() == NodeState.RUNNING && used.getMemory() >= memoryPerInstance) {
-        serviceHosts.add(nd.getNodeId().getHost());
-        serviceHostSet.add(nd.getNodeId().getHost());
+    Map<String,ServiceRecord> workers=registry.getWorkers();
+    for (    ServiceRecord srv : workers.values()) {
+      Endpoint rpc=srv.getInternalEndpoint("llap");
+      if (rpc != null) {
+        LOG.info("Examining endpoint: " + rpc);
+        final String host=RegistryTypeUtils.getAddressField(rpc.addresses.get(0),AddressTypes.ADDRESS_HOSTNAME_FIELD);
+        serviceHosts.add(host);
+        serviceHostSet.add(host);
+      }
+ else {
+        LOG.info("The SRV record was " + srv);
       }
     }
     LOG.info("Re-inited with configuration: " + "memoryPerInstance=" + memoryPerInstance + ", vcoresPerInstance="+ coresPerInstance+ ", executorsPerInstance="+ executorsPerInstance+ ", resourcePerInstanceInferred="+ resourcePerExecutor+ ", hosts="+ serviceHosts.toString());
   }
- catch (  IOException e) {
-    e.printStackTrace();
-  }
-catch (  YarnException e) {
-    e.printStackTrace();
+ catch (  IOException ioe) {
+    throw new TezUncheckedException(ioe);
   }
 }
