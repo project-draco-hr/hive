@@ -1,0 +1,99 @@
+{
+  if (fields == null)   return directSize;
+  int referencedSize=0;
+  for (  FieldAndType e : fields) {
+    Object fieldObj;
+    try {
+      fieldObj=e.field.get(obj);
+    }
+ catch (    IllegalAccessException ex) {
+      throw new AssertionError("IAE: " + ex.getMessage());
+    }
+    if (fieldObj == null)     continue;
+    if (!uniqueObjects.add(fieldObj))     continue;
+switch (e.type) {
+case COLLECTION:
+{
+        Collection<?> c=(Collection<?>)fieldObj;
+        ObjectEstimator collEstimator=parent.get(fieldObj.getClass());
+        if (collEstimator == null) {
+          if (DebugUtils.isTraceEnabled()) {
+            LlapIoImpl.LOG.info("Approximate estimation for collection " + fieldObj.getClass().getName() + " from "+ e.field);
+          }
+          referencedSize+=memoryModel.object();
+          referencedSize+=estimateCollectionElements(parent,c,e.field,uniqueObjects);
+          referencedSize+=memoryModel.array() + c.size() * memoryModel.ref();
+        }
+ else         if (collEstimator instanceof CollectionEstimator) {
+          referencedSize+=memoryModel.object();
+          referencedSize+=estimateCollectionElements(parent,c,e.field,uniqueObjects);
+          referencedSize+=((CollectionEstimator)collEstimator).estimateOverhead(c.size());
+        }
+ else {
+          if (DebugUtils.isTraceEnabled()) {
+            LlapIoImpl.LOG.info("Verbose estimation for collection " + fieldObj.getClass().getName() + " from "+ e.field);
+          }
+          referencedSize+=collEstimator.estimate(c,parent,uniqueObjects);
+        }
+        break;
+      }
+case MAP:
+{
+      Map<?,?> m=(Map<?,?>)fieldObj;
+      ObjectEstimator collEstimator=parent.get(fieldObj.getClass());
+      if (collEstimator == null) {
+        if (DebugUtils.isTraceEnabled()) {
+          LlapIoImpl.LOG.info("Approximate estimation for map " + fieldObj.getClass().getName() + " from "+ e.field);
+        }
+        referencedSize+=memoryModel.object();
+        referencedSize+=estimateMapElements(parent,m,e.field,uniqueObjects);
+        referencedSize+=memoryModel.array() + m.size() * (memoryModel.ref() * 2 + memoryModel.object());
+      }
+ else       if (collEstimator instanceof CollectionEstimator) {
+        referencedSize+=memoryModel.object();
+        referencedSize+=estimateMapElements(parent,m,e.field,uniqueObjects);
+        referencedSize+=((CollectionEstimator)collEstimator).estimateOverhead(m.size());
+      }
+ else {
+        if (DebugUtils.isTraceEnabled()) {
+          LlapIoImpl.LOG.info("Verbose estimation for map " + fieldObj.getClass().getName() + " from "+ e.field);
+        }
+        referencedSize+=collEstimator.estimate(m,parent,uniqueObjects);
+      }
+      break;
+    }
+case OBJECT_ARRAY:
+{
+    int len=Array.getLength(fieldObj);
+    referencedSize+=JavaDataModel.alignUp(memoryModel.array() + len * memoryModel.ref(),memoryModel.memoryAlign());
+    if (len == 0)     continue;
+    referencedSize+=estimateArrayElements(parent,e,fieldObj,len,uniqueObjects);
+    break;
+  }
+case PRIMITIVE_ARRAY:
+{
+  int arraySize=memoryModel.array();
+  int len=Array.getLength(fieldObj);
+  if (len != 0) {
+    int elementSize=getPrimitiveSize(e.field.getType().getComponentType());
+    arraySize+=elementSize * len;
+    arraySize=JavaDataModel.alignUp(arraySize,memoryModel.memoryAlign());
+  }
+  referencedSize+=arraySize;
+  break;
+}
+case OTHER:
+{
+ObjectEstimator fieldEstimator=parent.get(fieldObj.getClass());
+if (fieldEstimator == null) {
+  throw new AssertionError("Don't know how to measure " + fieldObj.getClass().getName() + " from "+ e.field);
+}
+referencedSize+=fieldEstimator.estimate(fieldObj,parent,uniqueObjects);
+break;
+}
+default :
+throw new AssertionError("Unknown type " + e.type);
+}
+}
+return directSize + referencedSize;
+}
