@@ -1,0 +1,44 @@
+{
+  String dbName=oldTable.getDbName();
+  String tableName=oldTable.getTableName();
+  String newDbName=HiveStringUtils.normalizeIdentifier(newTable.getDbName());
+  String newTableName=HiveStringUtils.normalizeIdentifier(newTable.getTableName());
+  try {
+    if (!dbName.equals(newDbName) || !tableName.equals(newTableName)) {
+      msdb.deleteTableColumnStatistics(dbName,tableName,null);
+    }
+ else {
+      List<FieldSchema> oldCols=oldTable.getSd().getCols();
+      List<FieldSchema> newCols=newTable.getSd().getCols();
+      if (!MetaStoreUtils.areSameColumns(oldCols,newCols)) {
+        List<String> oldColNames=new ArrayList<String>(oldCols.size());
+        for (        FieldSchema oldCol : oldCols) {
+          oldColNames.add(oldCol.getName());
+        }
+        ColumnStatistics cs=msdb.getTableColumnStatistics(dbName,tableName,oldColNames);
+        if (cs == null) {
+          return;
+        }
+        List<ColumnStatisticsObj> statsObjs=cs.getStatsObj();
+        for (        ColumnStatisticsObj statsObj : statsObjs) {
+          boolean found=false;
+          for (          FieldSchema newCol : newCols) {
+            if (statsObj.getColName().equalsIgnoreCase(newCol.getName()) && statsObj.getColType().equals(newCol.getType())) {
+              found=true;
+              break;
+            }
+          }
+          if (!found) {
+            msdb.deleteTableColumnStatistics(dbName,tableName,statsObj.getColName());
+          }
+        }
+      }
+    }
+  }
+ catch (  NoSuchObjectException nsoe) {
+    LOG.debug("Could not find db entry." + nsoe);
+  }
+catch (  InvalidInputException e) {
+    throw new InvalidObjectException("Invalid inputs to update table column stats: " + e);
+  }
+}

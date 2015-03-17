@@ -17,6 +17,7 @@
       if (MetaStoreUtils.requireCalStats(hiveConf,oldPart,new_part,tbl)) {
         MetaStoreUtils.updatePartitionStatsFast(new_part,wh,false,true);
       }
+      updatePartColumnStats(msdb,dbname,name,new_part.getValues(),new_part);
       msdb.alterPartition(dbname,name,new_part.getValues(),new_part);
     }
  catch (    InvalidObjectException e) {
@@ -50,6 +51,15 @@ catch (    NoSuchObjectException e) {
     }
     if (tbl.getTableType().equals(TableType.EXTERNAL_TABLE.toString())) {
       new_part.getSd().setLocation(oldPart.getSd().getLocation());
+      String oldPartName=Warehouse.makePartName(tbl.getPartitionKeys(),oldPart.getValues());
+      try {
+        msdb.deletePartitionColumnStatistics(dbname,name,oldPartName,oldPart.getValues(),null);
+      }
+ catch (      NoSuchObjectException nsoe) {
+      }
+catch (      InvalidInputException iie) {
+        throw new InvalidOperationException("Unable to update partition stats in table rename." + iie);
+      }
       msdb.alterPartition(dbname,name,part_vals,new_part);
     }
  else {
@@ -86,6 +96,15 @@ catch (    NoSuchObjectException e) {
         new_part.getSd().setLocation(newPartLoc);
         if (MetaStoreUtils.requireCalStats(hiveConf,oldPart,new_part,tbl)) {
           MetaStoreUtils.updatePartitionStatsFast(new_part,wh,false,true);
+        }
+        String oldPartName=Warehouse.makePartName(tbl.getPartitionKeys(),oldPart.getValues());
+        try {
+          msdb.deletePartitionColumnStatistics(dbname,name,oldPartName,oldPart.getValues(),null);
+        }
+ catch (        NoSuchObjectException nsoe) {
+        }
+catch (        InvalidInputException iie) {
+          throw new InvalidOperationException("Unable to update partition stats in table rename." + iie);
         }
         msdb.alterPartition(dbname,name,part_vals,new_part);
       }
