@@ -1,6 +1,6 @@
 {
   super.registerRunningTaskAttempt(containerId,taskSpec,additionalResources,credentials,credentialsChanged,priority);
-  SubmitWorkRequestProto requestProto=null;
+  SubmitWorkRequestProto requestProto;
   try {
     requestProto=constructSubmitWorkRequest(containerId,taskSpec);
   }
@@ -19,13 +19,35 @@ synchronized (containerInfo) {
  else {
     throw new RuntimeException("ContainerInfo not found for container: " + containerId + ", while trying to launch task: "+ taskSpec.getTaskAttemptID());
   }
+  getTaskCommunicatorContext().taskStartedRemotely(taskSpec.getTaskAttemptID(),containerId);
   communicator.submitWork(requestProto,host,port,new TaskCommunicator.ExecuteRequestCallback<SubmitWorkResponseProto>(){
     @Override public void setResponse(    SubmitWorkResponseProto response){
       LOG.info("Successfully launched task: " + taskSpec.getTaskAttemptID());
-      getTaskCommunicatorContext().taskStartedRemotely(taskSpec.getTaskAttemptID(),containerId);
     }
     @Override public void indicateError(    Throwable t){
       LOG.info("Failed to run task: " + taskSpec.getTaskAttemptID() + " on containerId: "+ containerId,t);
+      if (t instanceof ServiceException) {
+        ServiceException se=(ServiceException)t;
+        t=se.getCause();
+      }
+      if (t instanceof RemoteException) {
+        RemoteException re=(RemoteException)t;
+        String message=re.toString();
+        if (message.contains(RejectedExecutionException.class.getName())) {
+          getTaskCommunicatorContext().taskKilled(taskSpec.getTaskAttemptID(),TaskAttemptEndReason.SERVICE_BUSY,"Service Busy");
+        }
+ else {
+          getTaskCommunicatorContext().taskFailed(taskSpec.getTaskAttemptID(),TaskAttemptEndReason.OTHER,t.toString());
+        }
+      }
+ else {
+        if (t instanceof IOException) {
+          getTaskCommunicatorContext().taskKilled(taskSpec.getTaskAttemptID(),TaskAttemptEndReason.COMMUNICATION_ERROR,"Communication Error");
+        }
+ else {
+          getTaskCommunicatorContext().taskFailed(taskSpec.getTaskAttemptID(),TaskAttemptEndReason.OTHER,t.getMessage());
+        }
+      }
     }
   }
 );

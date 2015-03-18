@@ -1,28 +1,38 @@
 {
-  String host=null;
-  if (requestedHosts != null && requestedHosts.length > 0) {
-    Arrays.sort(requestedHosts);
-    host=requestedHosts[0];
-    if (serviceHostSet.contains(host)) {
-      LOG.info("Selected host: " + host + " from requested hosts: "+ Arrays.toString(requestedHosts));
+  readLock.lock();
+  try {
+    if (activeHosts.size() == 0) {
+      return null;
     }
+    String host=null;
+    if (requestedHosts != null && requestedHosts.length > 0) {
+      Arrays.sort(requestedHosts);
+      host=requestedHosts[0];
+      if (activeHosts.get(host) != null) {
+        LOG.info("Selected host: " + host + " from requested hosts: "+ Arrays.toString(requestedHosts));
+      }
  else {
-      LOG.info("Preferred host: " + host + " not present. Attempting to select another one");
-      host=null;
-      for (      String h : requestedHosts) {
-        if (serviceHostSet.contains(h)) {
-          host=h;
-          break;
+        LOG.info("Preferred host: " + host + " not present. Attempting to select another one");
+        host=null;
+        for (        String h : requestedHosts) {
+          if (activeHosts.get(h) != null) {
+            host=h;
+            break;
+          }
+        }
+        if (host == null) {
+          host=activeHostList[random.nextInt(activeHostList.length)];
+          LOG.info("Requested hosts: " + Arrays.toString(requestedHosts) + " not present. Randomizing the host");
         }
       }
-      if (host == null) {
-        LOG.info("Requested hosts: " + Arrays.toString(requestedHosts) + " not present. Randomizing the host");
-      }
     }
+ else {
+      host=activeHostList[random.nextInt(activeHostList.length)];
+      LOG.info("Selected random host: " + host + " since the request contained no host information");
+    }
+    return host;
   }
-  if (host == null) {
-    host=serviceHosts.get(random.nextInt(serviceHosts.size()));
-    LOG.info("Selected random host: " + host + " since the request contained no host information");
+  finally {
+    readLock.unlock();
   }
-  return host;
 }

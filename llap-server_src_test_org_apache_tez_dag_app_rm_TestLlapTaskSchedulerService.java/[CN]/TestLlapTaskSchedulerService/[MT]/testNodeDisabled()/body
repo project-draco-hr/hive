@@ -1,0 +1,34 @@
+{
+  TestTaskSchedulerServiceWrapper tsWrapper=new TestTaskSchedulerServiceWrapper(10000l);
+  try {
+    Priority priority1=Priority.newInstance(1);
+    String[] hosts1=new String[]{HOST1};
+    Object task1=new Object();
+    Object clientCookie1=new Object();
+    tsWrapper.allocateTask(task1,hosts1,priority1,clientCookie1);
+    verify(tsWrapper.mockAppCallback).taskAllocated(eq(task1),eq(clientCookie1),any(Container.class));
+    assertEquals(1,tsWrapper.ts.dagStats.numLocalAllocations);
+    assertEquals(0,tsWrapper.ts.dagStats.numAllocationsNoLocalityRequest);
+    tsWrapper.resetAppCallback();
+    tsWrapper.clock.setTime(10000l);
+    tsWrapper.rejectExecution(task1);
+    assertEquals(1,tsWrapper.ts.dagStats.numRejectedTasks);
+    assertEquals(2,tsWrapper.ts.activeHosts.size());
+    assertEquals(2,tsWrapper.ts.activeHostList.length);
+    LlapTaskSchedulerService.NodeInfo disabledNodeInfo=tsWrapper.ts.disabledNodes.peek();
+    assertNotNull(disabledNodeInfo);
+    assertEquals(HOST1,disabledNodeInfo.hostname);
+    assertEquals((10000l),disabledNodeInfo.getDelay(TimeUnit.NANOSECONDS));
+    assertEquals((10000l + 10000l),disabledNodeInfo.expireTimeMillis);
+    Object task2=new Object();
+    Object clientCookie2=new Object();
+    tsWrapper.allocateTask(task2,hosts1,priority1,clientCookie2);
+    verify(tsWrapper.mockAppCallback).taskAllocated(eq(task2),eq(clientCookie2),any(Container.class));
+    assertEquals(1,tsWrapper.ts.dagStats.numLocalAllocations);
+    assertEquals(0,tsWrapper.ts.dagStats.numAllocationsNoLocalityRequest);
+    assertEquals(1,tsWrapper.ts.dagStats.numNonLocalAllocations);
+  }
+  finally {
+    tsWrapper.shutdown();
+  }
+}

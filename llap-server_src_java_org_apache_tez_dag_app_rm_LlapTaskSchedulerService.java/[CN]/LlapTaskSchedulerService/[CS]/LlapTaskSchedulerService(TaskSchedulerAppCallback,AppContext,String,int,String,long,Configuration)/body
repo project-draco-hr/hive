@@ -2,33 +2,38 @@
   super(LlapTaskSchedulerService.class.getName());
   this.appCallbackExecutor=createAppCallbackExecutorService();
   this.appClientDelegate=createAppCallbackDelegate(appClient);
-  this.appContext=appContext;
-  this.serviceHosts=new LinkedList<String>();
-  this.serviceHostSet=new HashSet<>();
+  this.clock=appContext.getClock();
   this.containerFactory=new ContainerFactory(appContext,customAppIdIdentifier);
   this.memoryPerInstance=conf.getInt(LlapDaemonConfiguration.LLAP_DAEMON_MEMORY_PER_INSTANCE_MB,LlapDaemonConfiguration.LLAP_DAEMON_MEMORY_PER_INSTANCE_MB_DEFAULT);
   this.coresPerInstance=conf.getInt(LlapDaemonConfiguration.LLAP_DAEMON_VCPUS_PER_INSTANCE,LlapDaemonConfiguration.LLAP_DAEMON_VCPUS_PER_INSTANCE_DEFAULT);
   this.executorsPerInstance=conf.getInt(LlapDaemonConfiguration.LLAP_DAEMON_NUM_EXECUTORS,LlapDaemonConfiguration.LLAP_DAEMON_NUM_EXECUTORS_DEFAULT);
-  this.clientHostname=clientHostname;
-  this.clientPort=clientPort;
-  this.trackingUrl=trackingUrl;
+  this.nodeReEnableTimeout=conf.getLong(LlapDaemonConfiguration.LLAP_DAEMON_TASK_SCHEDULER_NODE_REENABLE_TIMEOUT_MILLIS,LlapDaemonConfiguration.LLAP_DAEMON_TASK_SCHEDULER_NODE_REENABLE_TIMEOUT_MILLIS_DEFAULT);
   int memoryPerExecutor=(int)(memoryPerInstance / (float)executorsPerInstance);
   int coresPerExecutor=(int)(coresPerInstance / (float)executorsPerInstance);
   this.resourcePerExecutor=Resource.newInstance(memoryPerExecutor,coresPerExecutor);
   String instanceId=conf.getTrimmed(LlapDaemonConfiguration.LLAP_DAEMON_SERVICE_HOSTS);
-  if (instanceId == null || false == instanceId.startsWith("@")) {
+  Preconditions.checkNotNull(instanceId,LlapDaemonConfiguration.LLAP_DAEMON_SERVICE_HOSTS + " must be defined");
+  if (!instanceId.startsWith("@")) {
+    initFromRegistry=false;
     String[] hosts=conf.getTrimmedStrings(LlapDaemonConfiguration.LLAP_DAEMON_SERVICE_HOSTS);
-    if (hosts == null || hosts.length == 0) {
-      hosts=new String[]{"localhost"};
-      serviceHosts.add("localhost");
-      serviceHostSet.add("localhost");
+    Preconditions.checkState(hosts != null && hosts.length != 0,LlapDaemonConfiguration.LLAP_DAEMON_SERVICE_HOSTS + "must be defined");
+    for (    String host : hosts) {
+      NodeInfo nodeInfo=new NodeInfo(host,BACKOFF_FACTOR,clock);
+      activeHosts.put(host,nodeInfo);
+      allHosts.put(host,nodeInfo);
     }
-  }
-  this.containerPort=conf.getInt(LlapDaemonConfiguration.LLAP_DAEMON_RPC_PORT,LlapDaemonConfiguration.LLAP_DAEMON_RPC_PORT_DEFAULT);
-  if (serviceHosts.size() > 0) {
-    LOG.info("Running with configuration: " + "memoryPerInstance=" + memoryPerInstance + ", vcoresPerInstance="+ coresPerInstance+ ", executorsPerInstance="+ executorsPerInstance+ ", resourcePerInstanceInferred="+ resourcePerExecutor+ ", hosts="+ serviceHosts.toString()+ ", rpcPort="+ containerPort);
+    activeHostList=activeHosts.keySet().toArray(new String[activeHosts.size()]);
   }
  else {
-    LOG.info("Running with configuration: " + "memoryPerInstance=" + memoryPerInstance + ", vcoresPerInstance="+ coresPerInstance+ ", executorsPerInstance="+ executorsPerInstance+ ", resourcePerInstanceInferred="+ resourcePerExecutor+ ", hosts=<pending>"+ ", rpcPort=<pending>");
+    initFromRegistry=true;
+  }
+  this.containerPort=conf.getInt(LlapDaemonConfiguration.LLAP_DAEMON_RPC_PORT,LlapDaemonConfiguration.LLAP_DAEMON_RPC_PORT_DEFAULT);
+  ExecutorService executorService=Executors.newFixedThreadPool(1,new ThreadFactoryBuilder().setDaemon(true).setNameFormat("LlapScheduler").build());
+  executor=MoreExecutors.listeningDecorator(executorService);
+  if (activeHosts.size() > 0) {
+    LOG.info("Running with configuration: " + "memoryPerInstance=" + memoryPerInstance + ", vCoresPerInstance="+ coresPerInstance+ ", executorsPerInstance="+ executorsPerInstance+ ", resourcePerInstanceInferred="+ resourcePerExecutor+ ", hosts="+ allHosts.keySet()+ ", rpcPort="+ containerPort+ ", nodeReEnableTimeout="+ nodeReEnableTimeout+ ", nodeReEnableBackOffFactor="+ BACKOFF_FACTOR);
+  }
+ else {
+    LOG.info("Running with configuration: " + "memoryPerInstance=" + memoryPerInstance + ", vCoresPerInstance="+ coresPerInstance+ ", executorsPerInstance="+ executorsPerInstance+ ", resourcePerInstanceInferred="+ resourcePerExecutor+ ", hosts=<pending>"+ ", rpcPort=<pending>"+ ", nodeReEnableTimeout="+ nodeReEnableTimeout+ ", nodeReEnableBackOffFactor="+ BACKOFF_FACTOR);
   }
 }
