@@ -1,0 +1,61 @@
+{
+  T value=null;
+  ReentrantLock objectLock=null;
+  lock.lock();
+  try {
+    value=(T)registry.getIfPresent(key);
+    if (value != null) {
+      if (isLogInfoEnabled) {
+        LOG.info("Found " + key + " in cache");
+      }
+      return value;
+    }
+    if (locks.containsKey(key)) {
+      objectLock=locks.get(key);
+    }
+ else {
+      objectLock=new ReentrantLock();
+      locks.put(key,objectLock);
+    }
+  }
+  finally {
+    lock.unlock();
+  }
+  objectLock.lock();
+  try {
+    lock.lock();
+    try {
+      value=(T)registry.getIfPresent(key);
+      if (value != null) {
+        if (isLogInfoEnabled) {
+          LOG.info("Found " + key + " in cache");
+        }
+        return value;
+      }
+    }
+  finally {
+      lock.unlock();
+    }
+    try {
+      value=fn.call();
+    }
+ catch (    Exception e) {
+      throw new HiveException(e);
+    }
+    lock.lock();
+    try {
+      if (isLogInfoEnabled) {
+        LOG.info("Caching new object for key: " + key);
+      }
+      registry.put(key,value);
+      locks.remove(key);
+    }
+  finally {
+      lock.unlock();
+    }
+  }
+  finally {
+    objectLock.unlock();
+  }
+  return value;
+}

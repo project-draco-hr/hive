@@ -1,6 +1,9 @@
 {
   unwrapContainer=new UnwrapRowContainer[conf.getTagLength()];
-  super.initializeOp(hconf);
+  Collection<Future<?>> result=super.initializeOp(hconf);
+  if (result == null) {
+    result=new HashSet<Future<?>>();
+  }
   int tagLen=conf.getTagLength();
   cacheKey=HiveConf.getVar(hconf,HiveConf.ConfVars.HIVEQUERYID) + "__HASH_MAP_" + this.getOperatorId()+ "_container";
   cache=ObjectCacheFactory.getCache(hconf);
@@ -10,25 +13,23 @@
   mapJoinTableSerdes=new MapJoinTableContainerSerDe[tagLen];
   hashTblInitedOnce=false;
   generateMapMetaData();
+  final ExecMapperContext mapContext=getExecContext();
+  final MapredContext mrContext=MapredContext.get();
   if (!conf.isBucketMapJoin()) {
     if (isLogInfoEnabled) {
       LOG.info("This is not bucket map join, so cache");
     }
-    Pair<MapJoinTableContainer[],MapJoinTableContainerSerDe[]> pair=(Pair<MapJoinTableContainer[],MapJoinTableContainerSerDe[]>)cache.retrieve(cacheKey,new Callable<Object>(){
-      public Object call() throws HiveException {
-        return loadHashTable();
+    Future<Pair<MapJoinTableContainer[],MapJoinTableContainerSerDe[]>> future=cache.retrieveAsync(cacheKey,new Callable<Pair<MapJoinTableContainer[],MapJoinTableContainerSerDe[]>>(){
+      @Override public Pair<MapJoinTableContainer[],MapJoinTableContainerSerDe[]> call() throws HiveException {
+        return loadHashTable(mapContext,mrContext);
       }
     }
 );
-    mapJoinTables=pair.getLeft();
-    mapJoinTableSerdes=pair.getRight();
+    result.add(future);
+  }
+ else   if (mapContext == null || mapContext.getLocalWork() == null || mapContext.getLocalWork().getInputFileChangeSensitive() == false) {
+    loadHashTable(mapContext,mrContext);
     hashTblInitedOnce=true;
   }
- else {
-    loadHashTable();
-  }
-  if (this.getExecContext() != null) {
-    this.getExecContext().setLastInputPath(null);
-    this.getExecContext().setCurrentInputPath(null);
-  }
+  return result;
 }

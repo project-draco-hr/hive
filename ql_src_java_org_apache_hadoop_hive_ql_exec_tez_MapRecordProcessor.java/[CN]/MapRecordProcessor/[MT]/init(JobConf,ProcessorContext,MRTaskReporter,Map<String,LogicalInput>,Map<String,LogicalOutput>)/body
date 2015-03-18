@@ -5,7 +5,7 @@
   String key=queryId + processorContext.getTaskVertexName() + MAP_PLAN_KEY;
   cacheKeys.add(key);
   mapWork=(MapWork)cache.retrieve(key,new Callable<Object>(){
-    public Object call(){
+    @Override public Object call(){
       return Utilities.getMapWork(jconf);
     }
   }
@@ -21,13 +21,16 @@
       key=queryId + processorContext.getTaskVertexName() + prefix;
       cacheKeys.add(key);
       mergeWorkList.add((MapWork)cache.retrieve(key,new Callable<Object>(){
-        public Object call(){
+        @Override public Object call(){
           return Utilities.getMergeWork(jconf,prefix);
         }
       }
 ));
     }
   }
+  MapredContext.init(true,new JobConf(jconf));
+  ((TezContext)MapredContext.get()).setInputs(inputs);
+  ((TezContext)MapredContext.get()).setTezProcessorContext(processorContext);
   legacyMRInput=getMRInput(inputs);
   if (legacyMRInput != null) {
     Configuration updatedConf=legacyMRInput.getConfigUpdates();
@@ -51,6 +54,7 @@
       mapOp=new MapOperator();
     }
     mapOp.clearConnectedOperators();
+    mapOp.setExecContext(execContext);
     if (mergeWorkList != null) {
       MapOperator mergeMapOp=null;
       for (      MapWork mergeMapWork : mergeWorkList) {
@@ -65,10 +69,11 @@
           mergeMapOp.setConf(mergeMapWork);
           l4j.info("Input name is " + mergeMapWork.getName());
           jconf.set(Utilities.INPUT_NAME,mergeMapWork.getName());
+          mergeMapOp.initialize(jconf,null);
           mergeMapOp.setChildren(jconf);
           DummyStoreOperator dummyOp=getJoinParentOp(mergeMapOp);
           mapOp.setConnectedOperators(mergeMapWork.getTag(),dummyOp);
-          mergeMapOp.setExecContext(new ExecMapperContext(jconf));
+          mergeMapOp.passExecContext(new ExecMapperContext(jconf));
           mergeMapOp.initializeLocalWork(jconf);
         }
       }
@@ -76,19 +81,17 @@
     mapOp.setConf(mapWork);
     l4j.info("Main input name is " + mapWork.getName());
     jconf.set(Utilities.INPUT_NAME,mapWork.getName());
+    mapOp.initialize(jconf,null);
     mapOp.setChildren(jconf);
+    mapOp.passExecContext(execContext);
     l4j.info(mapOp.dump(0));
-    MapredContext.init(true,new JobConf(jconf));
-    ((TezContext)MapredContext.get()).setInputs(inputs);
-    ((TezContext)MapredContext.get()).setTezProcessorContext(processorContext);
-    mapOp.setExecContext(execContext);
     mapOp.initializeLocalWork(jconf);
     initializeMapRecordSources();
-    mapOp.initialize(jconf,null);
+    mapOp.initializeMapOperator(jconf);
     if ((mergeMapOpList != null) && mergeMapOpList.isEmpty() == false) {
       for (      MapOperator mergeMapOp : mergeMapOpList) {
         jconf.set(Utilities.INPUT_NAME,mergeMapOp.getConf().getName());
-        mergeMapOp.initialize(jconf,null);
+        mergeMapOp.initializeMapOperator(jconf);
       }
     }
     List<HashTableDummyOperator> dummyOps=mapWork.getDummyOps();

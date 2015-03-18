@@ -1,16 +1,21 @@
 {
-  TezContext tezContext=(TezContext)MapredContext.get();
   Map<Integer,String> parentToInput=desc.getParentToInput();
   Map<Integer,Long> parentKeyCounts=desc.getParentKeyCounts();
   boolean useOptimizedTables=HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVEMAPJOINUSEOPTIMIZEDTABLE);
   boolean isFirstKey=true;
-  TezCacheAccess tezCacheAccess=TezCacheAccess.createInstance(hconf);
   for (int pos=0; pos < mapJoinTables.length; pos++) {
     if (pos == desc.getPosBigTable()) {
       continue;
     }
     String inputName=parentToInput.get(pos);
     LogicalInput input=tezContext.getInput(inputName);
+    try {
+      input.start();
+      tezContext.getTezProcessorContext().waitForAnyInputReady(Collections.<Input>singletonList(input));
+    }
+ catch (    Exception e) {
+      throw new HiveException(e);
+    }
     try {
       KeyValueReader kvReader=(KeyValueReader)input.getReader();
       MapJoinObjectSerDeContext keyCtx=mapJoinTableSerdes[pos].getKeyContext(), valCtx=mapJoinTableSerdes[pos].getValueContext();
@@ -43,11 +48,6 @@ catch (    SerDeException e) {
     }
 catch (    Exception e) {
       throw new HiveException(e);
-    }
-    LOG.info("Is this a bucket map join: " + desc.isBucketMapJoin());
-    if (!desc.isBucketMapJoin()) {
-      tezCacheAccess.registerCachedInput(inputName);
-      LOG.info("Setting Input: " + inputName + " as cached");
     }
   }
 }
