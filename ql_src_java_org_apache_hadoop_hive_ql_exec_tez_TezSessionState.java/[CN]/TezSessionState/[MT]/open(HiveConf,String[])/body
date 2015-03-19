@@ -2,6 +2,7 @@
   this.conf=conf;
   this.queueName=conf.get("tez.queue.name");
   this.doAsEnabled=conf.getBoolVar(HiveConf.ConfVars.HIVE_SERVER2_ENABLE_DOAS);
+  final boolean llapMode="llap".equals(HiveConf.getVar(conf,HiveConf.ConfVars.HIVE_EXECUTION_MODE));
   UserGroupInformation ugi=Utils.getUGI();
   user=ugi.getShortUserName();
   LOG.info("User of session id " + sessionId + " is "+ user);
@@ -19,7 +20,7 @@
   for (  LocalResource lr : localizedResources) {
     commonLocalResources.put(utils.getBaseName(lr),lr);
   }
-  if ("llap".equals(HiveConf.getVar(conf,HiveConf.ConfVars.HIVE_EXECUTION_MODE))) {
+  if (llapMode) {
     conf.addResource("llap-daemon-site.xml");
     try {
       final File daemonJar=new File(Utilities.jarFinderGetJar(Class.forName("org.apache.hadoop.hive.llap.io.api.impl.LlapInputFormat")));
@@ -42,9 +43,16 @@
   MRHelpers.updateEnvBasedOnMRAMEnv(conf,amEnv);
   TezConfiguration tezConfig=new TezConfiguration(conf);
   tezConfig.set(TezConfiguration.TEZ_AM_STAGING_DIR,tezScratchDir.toUri().toString());
-  tezConfig.setStrings(TezConfiguration.TEZ_AM_TASK_SCHEDULERS,DEFAULT_SERVICE,LOCAL_SERVICE,LLAP_SERVICE_SCHEDULER);
-  tezConfig.setStrings(TezConfiguration.TEZ_AM_CONTAINER_LAUNCHERS,DEFAULT_SERVICE,LOCAL_SERVICE,LLAP_SERVICE_LAUNCHER);
-  tezConfig.setStrings(TezConfiguration.TEZ_AM_TASK_COMMUNICATORS,DEFAULT_SERVICE,LOCAL_SERVICE,LLAP_SERVICE_TASK_COMMUNICATOR);
+  if (llapMode) {
+    tezConfig.setStrings(TezConfiguration.TEZ_AM_TASK_SCHEDULERS,DEFAULT_SERVICE,LOCAL_SERVICE,LLAP_SERVICE_SCHEDULER);
+    tezConfig.setStrings(TezConfiguration.TEZ_AM_CONTAINER_LAUNCHERS,DEFAULT_SERVICE,LOCAL_SERVICE,LLAP_SERVICE_LAUNCHER);
+    tezConfig.setStrings(TezConfiguration.TEZ_AM_TASK_COMMUNICATORS,DEFAULT_SERVICE,LOCAL_SERVICE,LLAP_SERVICE_TASK_COMMUNICATOR);
+  }
+ else {
+    tezConfig.setStrings(TezConfiguration.TEZ_AM_TASK_SCHEDULERS,DEFAULT_SERVICE,LOCAL_SERVICE);
+    tezConfig.setStrings(TezConfiguration.TEZ_AM_CONTAINER_LAUNCHERS,DEFAULT_SERVICE,LOCAL_SERVICE);
+    tezConfig.setStrings(TezConfiguration.TEZ_AM_TASK_COMMUNICATORS,DEFAULT_SERVICE,LOCAL_SERVICE);
+  }
   if (HiveConf.getBoolVar(conf,ConfVars.HIVE_PREWARM_ENABLED)) {
     int n=HiveConf.getIntVar(conf,ConfVars.HIVE_PREWARM_NUM_CONTAINERS);
     n=Math.max(tezConfig.getInt(TezConfiguration.TEZ_AM_SESSION_MIN_HELD_CONTAINERS,TezConfiguration.TEZ_AM_SESSION_MIN_HELD_CONTAINERS_DEFAULT),n);
