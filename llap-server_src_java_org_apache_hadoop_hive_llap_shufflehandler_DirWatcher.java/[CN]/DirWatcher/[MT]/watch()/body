@@ -1,0 +1,82 @@
+{
+  while (!shutdown.get()) {
+    WatchKey watchKey;
+    try {
+      watchKey=watchService.take();
+    }
+ catch (    InterruptedException e) {
+      if (shutdown.get()) {
+        LOG.info("Shutting down watcher");
+        break;
+      }
+ else {
+        LOG.error("Watcher interrupted before being shutdown");
+        throw new RuntimeException("Watcher interrupted before being shutdown",e);
+      }
+    }
+    Path watchedPath=(Path)watchKey.watchable();
+    WatchedPathInfo parentWatchedPathInfo=watchedPaths.get(watchedPath);
+    boolean cancelledWatch=false;
+    for (    WatchEvent<?> rawEvent : watchKey.pollEvents()) {
+      if (rawEvent.kind().equals(OVERFLOW)) {
+        continue;
+      }
+      WatchEvent<Path> event=(WatchEvent<Path>)rawEvent;
+      WatchedPathInfo watchedPathInfo;
+      Path resolvedPath;
+switch (parentWatchedPathInfo.type) {
+case BASE:
+        if (event.context().getFileName().toString().equals(OUTPUT)) {
+          resolvedPath=watchedPath.resolve(event.context());
+          watchedPathInfo=new WatchedPathInfo(parentWatchedPathInfo,Type.OUTPUT,null);
+          registerDir(resolvedPath,watchedPathInfo);
+          try (DirectoryStream<Path> dirStream=Files.newDirectoryStream(resolvedPath)){
+            for (            Path path : dirStream) {
+              if (path.toFile().isDirectory()) {
+                watchedPathInfo=new WatchedPathInfo(parentWatchedPathInfo,Type.FINAL,path.getFileName().toString());
+                registerDir(path,watchedPathInfo);
+                scanForFinalFiles(watchedPathInfo,path);
+              }
+ else {
+                LOG.warn("Ignoring unexpected file: " + path);
+              }
+            }
+          }
+ catch (          IOException e) {
+            LOG.warn("Unable to list files under: " + resolvedPath);
+          }
+          cancelledWatch=true;
+          watchKey.cancel();
+        }
+ else {
+          LOG.warn("DEBUG: Found unexpected directory: " + event.context() + " under "+ watchedPath);
+        }
+      break;
+case OUTPUT:
+    resolvedPath=watchedPath.resolve(event.context());
+  watchedPathInfo=new WatchedPathInfo(parentWatchedPathInfo,Type.FINAL,event.context().getFileName().toString());
+registerDir(resolvedPath,watchedPathInfo);
+scanForFinalFiles(watchedPathInfo,resolvedPath);
+break;
+case FINAL:
+resolvedPath=watchedPath.resolve(event.context());
+if (event.context().getFileName().toString().equals(ShuffleHandler.DATA_FILE_NAME)) {
+registerFoundAttempt(parentWatchedPathInfo.pathIdentifier,null,resolvedPath);
+}
+ else if (event.context().getFileName().toString().equals(ShuffleHandler.INDEX_FILE_NAME)) {
+registerFoundAttempt(parentWatchedPathInfo.pathIdentifier,resolvedPath,null);
+}
+ else {
+LOG.warn("Ignoring unexpected file: " + watchedPath.resolve(event.context()));
+}
+break;
+}
+}
+if (!cancelledWatch) {
+boolean valid=watchKey.reset();
+if (!valid) {
+LOG.warn("DEBUG: WatchKey: " + watchKey.watchable() + " no longer valid");
+}
+}
+}
+}

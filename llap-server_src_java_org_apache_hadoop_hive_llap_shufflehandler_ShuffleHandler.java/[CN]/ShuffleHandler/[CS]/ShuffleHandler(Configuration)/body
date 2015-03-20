@@ -7,6 +7,7 @@
   if (maxShuffleThreads == 0) {
     maxShuffleThreads=2 * Runtime.getRuntime().availableProcessors();
   }
+  localDirs=conf.getTrimmedStrings(SHUFFLE_HANDLER_LOCAL_DIRS);
   shuffleBufferSize=conf.getInt(SHUFFLE_BUFFER_SIZE,DEFAULT_SHUFFLE_BUFFER_SIZE);
   shuffleTransferToAllowed=conf.getBoolean(SHUFFLE_TRANSFERTO_ALLOWED,(Shell.WINDOWS) ? WINDOWS_DEFAULT_SHUFFLE_TRANSFERTO_ALLOWED : DEFAULT_SHUFFLE_TRANSFERTO_ALLOWED);
   ThreadFactory bossFactory=new ThreadFactoryBuilder().setNameFormat("ShuffleHandler Netty Boss #%d").build();
@@ -16,6 +17,22 @@
   connectionKeepAliveEnabled=conf.getBoolean(SHUFFLE_CONNECTION_KEEP_ALIVE_ENABLED,DEFAULT_SHUFFLE_CONNECTION_KEEP_ALIVE_ENABLED);
   connectionKeepAliveTimeOut=Math.max(1,conf.getInt(SHUFFLE_CONNECTION_KEEP_ALIVE_TIME_OUT,DEFAULT_SHUFFLE_CONNECTION_KEEP_ALIVE_TIME_OUT));
   mapOutputMetaInfoCacheSize=Math.max(1,conf.getInt(SHUFFLE_MAPOUTPUT_META_INFO_CACHE_SIZE,DEFAULT_SHUFFLE_MAPOUTPUT_META_INFO_CACHE_SIZE));
-  userRsrc=new ConcurrentHashMap<String,String>();
+  userRsrc=new ConcurrentHashMap<>();
   secretManager=new JobTokenSecretManager();
+  shuffle=new Shuffle(conf);
+  if (conf.getBoolean(SHUFFLE_DIR_WATCHER_ENABLED,SHUFFLE_DIR_WATCHER_ENABLED_DEFAULT)) {
+    LOG.info("Attempting to start dirWatcher");
+    DirWatcher localDirWatcher=null;
+    try {
+      localDirWatcher=new DirWatcher(this);
+    }
+ catch (    IOException e) {
+      LOG.warn("Unable to start DirWatcher. Active scans disabled");
+    }
+    dirWatcher=localDirWatcher;
+  }
+ else {
+    LOG.info("DirWatcher disabled by config");
+    dirWatcher=null;
+  }
 }
