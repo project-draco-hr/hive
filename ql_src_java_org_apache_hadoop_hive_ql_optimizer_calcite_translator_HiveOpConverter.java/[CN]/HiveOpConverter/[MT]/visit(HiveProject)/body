@@ -3,7 +3,18 @@
   if (LOG.isDebugEnabled()) {
     LOG.debug("Translating operator rel#" + projectRel.getId() + ":"+ projectRel.getRelTypeName()+ " with row type: ["+ projectRel.getRowType()+ "]");
   }
-  List<ExprNodeDesc> exprCols=convertToExprNodes(projectRel.getChildExps(),projectRel.getInput(),inputOpAf.tabAlias);
+  WindowingSpec windowingSpec=new WindowingSpec();
+  List<ExprNodeDesc> exprCols=new ArrayList<ExprNodeDesc>();
+  for (int pos=0; pos < projectRel.getChildExps().size(); pos++) {
+    ExprNodeConverter converter=new ExprNodeConverter(inputOpAf.tabAlias,projectRel.getRowType().getFieldNames().get(pos),projectRel.getInput().getRowType(),projectRel.getRowType(),false);
+    exprCols.add((ExprNodeDesc)projectRel.getChildExps().get(pos).accept(converter));
+    if (converter.getWindowFunctionSpec() != null) {
+      windowingSpec.addWindowFunction(converter.getWindowFunctionSpec());
+    }
+  }
+  if (windowingSpec.getWindowExpressions() != null && !windowingSpec.getWindowExpressions().isEmpty()) {
+    inputOpAf=genPTF(inputOpAf,windowingSpec);
+  }
   List<String> exprNames=new ArrayList<String>(projectRel.getRowType().getFieldNames());
   SelectDesc sd=new SelectDesc(exprCols,exprNames);
   Pair<ArrayList<ColumnInfo>,Map<Integer,VirtualColumn>> colInfoVColPair=createColInfos(projectRel.getChildExps(),exprCols,exprNames,inputOpAf);

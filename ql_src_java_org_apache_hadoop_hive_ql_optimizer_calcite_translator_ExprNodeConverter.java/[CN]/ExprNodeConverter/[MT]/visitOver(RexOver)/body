@@ -1,0 +1,25 @@
+{
+  if (!deep) {
+    return null;
+  }
+  final RexWindow window=over.getWindow();
+  final WindowSpec windowSpec=new WindowSpec();
+  final PartitioningSpec partitioningSpec=getPSpec(window);
+  windowSpec.setPartitioning(partitioningSpec);
+  final WindowFrameSpec windowFrameSpec=getWindowRange(window);
+  windowSpec.setWindowFrame(windowFrameSpec);
+  wfs=new WindowFunctionSpec();
+  wfs.setWindowSpec(windowSpec);
+  final Schema schema=new Schema(tabAlias,inputRowType.getFieldList());
+  final ASTNode wUDAFAst=new ASTConverter.RexVisitor(schema).visitOver(over);
+  wfs.setExpression(wUDAFAst);
+  ASTNode nameNode=(ASTNode)wUDAFAst.getChild(0);
+  wfs.setName(nameNode.getText());
+  for (int i=1; i < wUDAFAst.getChildCount() - 1; i++) {
+    ASTNode child=(ASTNode)wUDAFAst.getChild(i);
+    wfs.addArg(child);
+  }
+  wfs.setAlias(columnAlias);
+  RelDataTypeField f=outputRowType.getField(columnAlias,false,false);
+  return new ExprNodeColumnDesc(TypeConverter.convert(f.getType()),columnAlias,tabAlias,partitioningExpr);
+}
