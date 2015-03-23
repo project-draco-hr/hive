@@ -1,0 +1,46 @@
+{
+  if (range == null)   return null;
+  DiskRangeList prev=range.prev;
+  if (prev == null) {
+    prev=new DiskRangeListMutateHelper(range);
+  }
+  while (range != null) {
+    if (range.hasData()) {
+      range=range.next;
+      continue;
+    }
+    int len=(int)(range.getEnd() - range.getOffset());
+    long off=range.getOffset();
+    file.seek(base + off);
+    if (zcr != null) {
+      boolean hasReplaced=false;
+      while (len > 0) {
+        ByteBuffer partial=zcr.readBuffer(len,false);
+        BufferChunk bc=new BufferChunk(partial,off);
+        if (!hasReplaced) {
+          range.replaceSelfWith(bc);
+          hasReplaced=true;
+        }
+ else {
+          range.insertAfter(bc);
+        }
+        range=bc;
+        int read=partial.remaining();
+        len-=read;
+        off+=read;
+      }
+    }
+ else     if (doForceDirect) {
+      ByteBuffer directBuf=ByteBuffer.allocateDirect(len);
+      readDirect(file,len,directBuf,true);
+      range=range.replaceSelfWith(new BufferChunk(directBuf,range.getOffset()));
+    }
+ else {
+      byte[] buffer=new byte[len];
+      file.readFully(buffer,0,buffer.length);
+      range=range.replaceSelfWith(new BufferChunk(ByteBuffer.wrap(buffer),range.getOffset()));
+    }
+    range=range.next;
+  }
+  return prev.next;
+}

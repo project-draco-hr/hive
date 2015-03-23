@@ -1,20 +1,24 @@
 {
-  for (int i=0; i < bytes.length; ++i) {
-    if (desired == 0 && bytes[i].remaining() == 0) {
-      if (LOG.isWarnEnabled()) {
-        LOG.warn("Attempting seek into empty stream (" + name + ") Skipping stream.");
-      }
+  if (desired == 0 && bytes.isEmpty()) {
+    logEmptySeek(name);
+    return;
+  }
+  int i=0;
+  for (  DiskRange curRange : bytes) {
+    if (desired == 0 && curRange.getData().remaining() == 0) {
+      logEmptySeek(name);
       return;
     }
-    if (offsets[i] <= desired && desired - offsets[i] < bytes[i].remaining()) {
+    if (curRange.getOffset() <= desired && (desired - curRange.getOffset()) < curRange.getLength()) {
       currentOffset=desired;
       currentRange=i;
-      this.range=bytes[i].duplicate();
+      this.range=curRange.getData().duplicate();
       int pos=range.position();
-      pos+=(int)(desired - offsets[i]);
+      pos+=(int)(desired - curRange.getOffset());
       this.range.position(pos);
       return;
     }
+    ++i;
   }
   throw new IllegalArgumentException("Seek in " + name + " to "+ desired+ " is outside of the data");
 }

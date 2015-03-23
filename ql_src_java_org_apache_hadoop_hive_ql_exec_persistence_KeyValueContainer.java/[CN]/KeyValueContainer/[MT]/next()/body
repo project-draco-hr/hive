@@ -1,0 +1,52 @@
+{
+  Preconditions.checkState(hasNext());
+  if (!readBufferUsed) {
+    try {
+      if (input == null && output != null) {
+        output.close();
+        output=null;
+        FileInputStream fis=null;
+        try {
+          fis=new FileInputStream(tmpFile);
+          input=new Input(fis);
+        }
+  finally {
+          if (input == null && fis != null) {
+            fis.close();
+          }
+        }
+      }
+      if (input != null) {
+        if (rowsOnDisk >= IN_MEMORY_NUM_ROWS) {
+          rowsInReadBuffer=IN_MEMORY_NUM_ROWS;
+        }
+ else {
+          rowsInReadBuffer=rowsOnDisk;
+        }
+        for (int i=0; i < rowsInReadBuffer; i++) {
+          ObjectPair<HiveKey,BytesWritable> pair=readBuffer[i];
+          pair.setFirst(readHiveKey(input));
+          pair.setSecond(readValue(input));
+        }
+        if (input.eof()) {
+          input.close();
+          input=null;
+        }
+        readBufferUsed=true;
+        readCursor=0;
+        rowsOnDisk-=rowsInReadBuffer;
+      }
+    }
+ catch (    Exception e) {
+      clear();
+      throw new RuntimeException("Failed to load key/value pairs from disk",e);
+    }
+  }
+  ObjectPair<HiveKey,BytesWritable> row=readBuffer[readCursor];
+  if (++readCursor >= rowsInReadBuffer) {
+    readBufferUsed=false;
+    rowsInReadBuffer=0;
+    readCursor=0;
+  }
+  return row;
+}
