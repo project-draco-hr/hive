@@ -8,8 +8,7 @@
  else {
       result=(TimestampWritable)previous;
     }
-    Timestamp ts=new Timestamp(0);
-    long millis=(data.next() + WriterImpl.BASE_TIMESTAMP) * WriterImpl.MILLIS_PER_SECOND;
+    long millis=(data.next() + base_timestamp) * WriterImpl.MILLIS_PER_SECOND;
     int newNanos=parseNanos(nanos.next());
     if (millis >= 0) {
       millis+=newNanos / 1000000;
@@ -17,7 +16,17 @@
  else {
       millis-=newNanos / 1000000;
     }
-    ts.setTime(millis);
+    long offset=0;
+    if (!hasSameTZRules) {
+      offset=writerTimeZone.getOffset(millis) - readerTimeZone.getOffset(millis);
+    }
+    long adjustedMillis=millis + offset;
+    Timestamp ts=new Timestamp(adjustedMillis);
+    if (!hasSameTZRules && (readerTimeZone.getOffset(millis) != readerTimeZone.getOffset(adjustedMillis))) {
+      long newOffset=writerTimeZone.getOffset(millis) - readerTimeZone.getOffset(adjustedMillis);
+      adjustedMillis=millis + newOffset;
+      ts.setTime(adjustedMillis);
+    }
     ts.setNanos(newNanos);
     result.set(ts);
   }
