@@ -1,0 +1,91 @@
+{
+  GBInfo gbInfo=new GBInfo();
+  gbInfo.outputColNames.addAll(aggRel.getRowType().getFieldNames());
+  RelNode aggInputRel=aggRel.getInput();
+  ExprNodeConverter exprConv=new ExprNodeConverter(inputOpAf.tabAlias,aggInputRel.getRowType(),false,aggRel.getCluster().getTypeFactory());
+  ExprNodeDesc tmpExprNodeDesc;
+  for (  int i : aggRel.getGroupSet()) {
+    RexInputRef iRef=new RexInputRef(i,(RelDataType)aggInputRel.getRowType().getFieldList().get(i).getType());
+    tmpExprNodeDesc=iRef.accept(exprConv);
+    gbInfo.gbKeys.add(tmpExprNodeDesc);
+    gbInfo.gbKeyColNamesInInput.add(aggInputRel.getRowType().getFieldNames().get(i));
+    gbInfo.gbKeyTypes.add(tmpExprNodeDesc.getTypeInfo());
+  }
+  if (aggRel.indicator) {
+    ImmutableList<ImmutableBitSet> lstGrpSet=aggRel.getGroupSets();
+    int bitmap=0;
+    for (    ImmutableBitSet grpSet : lstGrpSet) {
+      bitmap=0;
+      for (      Integer bitIdx : grpSet.asList()) {
+        bitmap=SemanticAnalyzer.setBit(bitmap,bitIdx);
+      }
+      gbInfo.grpSets.add(bitmap);
+    }
+    Collections.sort(gbInfo.grpSets);
+    gbInfo.grpSetRqrAdditionalMRJob=gbInfo.grpSets.size() > hc.getIntVar(HiveConf.ConfVars.HIVE_NEW_JOB_GROUPING_SET_CARDINALITY);
+    if (!aggRel.getAggCallList().isEmpty() && (aggRel.getAggCallList().get(aggRel.getAggCallList().size() - 1).getAggregation() == HiveGroupingID.INSTANCE)) {
+      gbInfo.grpIdFunctionNeeded=true;
+    }
+  }
+  Set<Integer> distinctRefs=new HashSet<Integer>();
+  Map<Integer,Integer> distParamInRefsToOutputPos=new HashMap<Integer,Integer>();
+  for (  AggregateCall aggCall : aggRel.getAggCallList()) {
+    if ((aggCall.getAggregation() == HiveGroupingID.INSTANCE) || !aggCall.isDistinct()) {
+      continue;
+    }
+    List<Integer> argLst=new ArrayList<Integer>(aggCall.getArgList());
+    List<String> argNames=HiveCalciteUtil.getFieldNames(argLst,aggInputRel);
+    ExprNodeDesc distinctExpr;
+    for (int i=0; i < argLst.size(); i++) {
+      if (!distinctRefs.contains(argLst.get(i))) {
+        distinctRefs.add(argLst.get(i));
+        distParamInRefsToOutputPos.put(argLst.get(i),gbInfo.distExprNodes.size());
+        distinctExpr=HiveCalciteUtil.getExprNode(argLst.get(i),aggInputRel,exprConv);
+        gbInfo.distExprNodes.add(distinctExpr);
+        gbInfo.distExprNames.add(argNames.get(i));
+        gbInfo.distExprTypes.add(distinctExpr.getTypeInfo());
+      }
+    }
+  }
+  Set<Integer> deDupedNonDistIrefsSet=new HashSet<Integer>();
+  for (  AggregateCall aggCall : aggRel.getAggCallList()) {
+    if (aggCall.getAggregation() == HiveGroupingID.INSTANCE) {
+      continue;
+    }
+    UDAFAttrs udafAttrs=new UDAFAttrs();
+    udafAttrs.udafParams.addAll(HiveCalciteUtil.getExprNodes(aggCall.getArgList(),aggInputRel,inputOpAf.tabAlias));
+    udafAttrs.udafName=aggCall.getAggregation().getName();
+    udafAttrs.isDistinctUDAF=aggCall.isDistinct();
+    List<Integer> argLst=new ArrayList<Integer>(aggCall.getArgList());
+    List<Integer> distColIndicesOfUDAF=new ArrayList<Integer>();
+    List<Integer> distUDAFParamsIndxInDistExprs=new ArrayList<Integer>();
+    for (int i=0; i < argLst.size(); i++) {
+      if (udafAttrs.isDistinctUDAF) {
+        distColIndicesOfUDAF.add(distParamInRefsToOutputPos.get(argLst.get(i)));
+        distUDAFParamsIndxInDistExprs.add(distParamInRefsToOutputPos.get(argLst.get(i)));
+      }
+ else {
+        if (!distParamInRefsToOutputPos.containsKey(argLst.get(i)) && !deDupedNonDistIrefsSet.contains(argLst.get(i))) {
+          deDupedNonDistIrefsSet.add(i);
+          gbInfo.deDupedNonDistIrefs.add(udafAttrs.udafParams.get(i));
+        }
+      }
+    }
+    if (udafAttrs.isDistinctUDAF) {
+      gbInfo.containsDistinctAggr=true;
+      udafAttrs.udafParamsIndxInGBInfoDistExprs=distUDAFParamsIndxInDistExprs;
+      gbInfo.distColIndices.add(distColIndicesOfUDAF);
+    }
+    try {
+      udafAttrs.udafEvaluator=SemanticAnalyzer.getGenericUDAFEvaluator(udafAttrs.udafName,new ArrayList<ExprNodeDesc>(udafAttrs.udafParams),new ASTNode(),udafAttrs.isDistinctUDAF,false);
+    }
+ catch (    SemanticException e) {
+      throw new RuntimeException(e);
+    }
+    gbInfo.udafAttrs.add(udafAttrs);
+  }
+  gbInfo.groupByMemoryUsage=HiveConf.getFloatVar(hc,HiveConf.ConfVars.HIVEMAPAGGRHASHMEMORY);
+  gbInfo.memoryThreshold=HiveConf.getFloatVar(hc,HiveConf.ConfVars.HIVEMAPAGGRMEMORYTHRESHOLD);
+  gbInfo.gbPhysicalPipelineMode=getAggOPMode(hc,gbInfo);
+  return gbInfo;
+}

@@ -1,0 +1,50 @@
+{
+  ArrayList<String> outputColNames=new ArrayList<String>();
+  ArrayList<ColumnInfo> colInfoLst=new ArrayList<ColumnInfo>();
+  Map<String,ExprNodeDesc> colExprMap=new HashMap<String,ExprNodeDesc>();
+  Set<String> gbKeyColsAsNamesFrmIn=new HashSet<String>();
+  String colOutputName=null;
+  ArrayList<ExprNodeDesc> gbKeys=new ArrayList<ExprNodeDesc>();
+  for (int i=0; i < gbAttrs.gbKeys.size(); i++) {
+    gbKeys.add(gbAttrs.gbKeys.get(i));
+    colOutputName=SemanticAnalyzer.getColumnInternalName(i);
+    colInfoLst.add(new ColumnInfo(colOutputName,gbAttrs.gbKeyTypes.get(i),"",false));
+    outputColNames.add(colOutputName);
+    gbKeyColsAsNamesFrmIn.add(gbAttrs.gbKeyColNamesInInput.get(i));
+    colExprMap.put(colOutputName,gbKeys.get(i));
+  }
+  int groupingSetsPosition=-1;
+  boolean inclGrpID=inclGrpSetInMapSide(gbAttrs);
+  if (inclGrpID) {
+    groupingSetsPosition=gbKeys.size();
+    addGrpSetCol(true,null,false,gbKeys,outputColNames,colInfoLst,colExprMap);
+  }
+  for (int i=0; i < gbAttrs.distExprNodes.size(); i++) {
+    if (!gbKeyColsAsNamesFrmIn.contains(gbAttrs.distExprNames.get(i))) {
+      gbKeys.add(gbAttrs.distExprNodes.get(i));
+      colOutputName=SemanticAnalyzer.getColumnInternalName(gbKeys.size() - 1);
+      colInfoLst.add(new ColumnInfo(colOutputName,gbAttrs.distExprTypes.get(i),"",false));
+      outputColNames.add(colOutputName);
+      gbKeyColsAsNamesFrmIn.add(gbAttrs.distExprNames.get(i));
+      colExprMap.put(colOutputName,gbKeys.get(gbKeys.size() - 1));
+    }
+  }
+  ArrayList<AggregationDesc> aggregations=new ArrayList<AggregationDesc>();
+  for (  UDAFAttrs udafAttr : gbAttrs.udafAttrs) {
+    Mode amode=SemanticAnalyzer.groupByDescModeToUDAFMode(GroupByDesc.Mode.HASH,udafAttr.isDistinctUDAF);
+    aggregations.add(new AggregationDesc(udafAttr.udafName.toLowerCase(),udafAttr.udafEvaluator,udafAttr.udafParams,udafAttr.isDistinctUDAF,amode));
+    GenericUDAFInfo udafInfo;
+    try {
+      udafInfo=SemanticAnalyzer.getGenericUDAFInfo(udafAttr.udafEvaluator,amode,udafAttr.udafParams);
+    }
+ catch (    SemanticException e) {
+      throw new RuntimeException(e);
+    }
+    colOutputName=SemanticAnalyzer.getColumnInternalName(gbKeys.size() + aggregations.size() - 1);
+    colInfoLst.add(new ColumnInfo(colOutputName,udafInfo.returnType,"",false));
+    outputColNames.add(colOutputName);
+  }
+  @SuppressWarnings("rawtypes") Operator gbOp=OperatorFactory.getAndMakeChild(new GroupByDesc(GroupByDesc.Mode.HASH,outputColNames,gbKeys,aggregations,false,gbAttrs.groupByMemoryUsage,gbAttrs.memoryThreshold,gbAttrs.grpSets,inclGrpID,groupingSetsPosition,gbAttrs.containsDistinctAggr),new RowSchema(colInfoLst),inputOpAf.inputs.get(0));
+  gbOp.setColumnExprMap(colExprMap);
+  return new OpAttr("",new HashMap<Integer,VirtualColumn>(),gbOp);
+}
