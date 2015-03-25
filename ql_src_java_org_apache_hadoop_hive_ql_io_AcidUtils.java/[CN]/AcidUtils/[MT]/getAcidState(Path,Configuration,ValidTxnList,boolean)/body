@@ -1,0 +1,68 @@
+{
+  FileSystem fs=directory.getFileSystem(conf);
+  final List<ParsedDelta> deltas=new ArrayList<ParsedDelta>();
+  List<ParsedDelta> working=new ArrayList<ParsedDelta>();
+  List<FileStatus> originalDirectories=new ArrayList<FileStatus>();
+  final List<FileStatus> obsolete=new ArrayList<FileStatus>();
+  List<HdfsFileStatusWithId> childrenWithId=null;
+  if (useFileIds) {
+    try {
+      childrenWithId=SHIMS.listLocatedHdfsStatus(fs,directory,hiddenFileFilter);
+    }
+ catch (    Throwable t) {
+      LOG.error("Failed to get files with ID; using regular API",t);
+      useFileIds=false;
+    }
+  }
+  TxnBase bestBase=new TxnBase();
+  final List<HdfsFileStatusWithId> original=new ArrayList<>();
+  if (childrenWithId != null) {
+    for (    HdfsFileStatusWithId child : childrenWithId) {
+      getChildState(child.getFileStatus(),child,txnList,working,originalDirectories,original,obsolete,bestBase);
+    }
+  }
+ else {
+    List<FileStatus> children=SHIMS.listLocatedStatus(fs,directory,hiddenFileFilter);
+    for (    FileStatus child : children) {
+      getChildState(child,null,txnList,working,originalDirectories,original,obsolete,bestBase);
+    }
+  }
+  if (bestBase.status != null) {
+    original.clear();
+  }
+ else {
+    for (    FileStatus origDir : originalDirectories) {
+      findOriginals(fs,origDir,original,useFileIds);
+    }
+  }
+  Collections.sort(working);
+  long current=bestBase.txn;
+  for (  ParsedDelta next : working) {
+    if (next.maxTransaction > current) {
+      if (txnList.isTxnRangeValid(current + 1,next.maxTransaction) != ValidTxnList.RangeResponse.NONE) {
+        deltas.add(next);
+        current=next.maxTransaction;
+      }
+    }
+ else {
+      obsolete.add(next.path);
+    }
+  }
+  final Path base=bestBase.status == null ? null : bestBase.status.getPath();
+  LOG.debug("in directory " + directory.toUri().toString() + " base = "+ base+ " deltas = "+ deltas.size());
+  return new Directory(){
+    @Override public Path getBaseDirectory(){
+      return base;
+    }
+    @Override public List<HdfsFileStatusWithId> getOriginalFiles(){
+      return original;
+    }
+    @Override public List<ParsedDelta> getCurrentDirectories(){
+      return deltas;
+    }
+    @Override public List<FileStatus> getObsolete(){
+      return obsolete;
+    }
+  }
+;
+}
