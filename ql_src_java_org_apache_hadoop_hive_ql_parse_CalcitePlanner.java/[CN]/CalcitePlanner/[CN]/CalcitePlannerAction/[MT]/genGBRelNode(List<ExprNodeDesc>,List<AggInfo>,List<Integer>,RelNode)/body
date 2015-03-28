@@ -1,6 +1,7 @@
 {
   ImmutableMap<String,Integer> posMap=this.relToHiveColNameCalcitePosMap.get(srcRel);
   RexNodeConverter converter=new RexNodeConverter(this.cluster,srcRel.getRowType(),posMap,0,false);
+  final boolean hasGroupSets=groupSets != null && !groupSets.isEmpty();
   final List<RexNode> gbChildProjLst=Lists.newArrayList();
   final HashMap<String,Integer> rexNodeToPosMap=new HashMap<String,Integer>();
   final List<Integer> groupSetPositions=Lists.newArrayList();
@@ -14,16 +15,8 @@
     gbIndx++;
   }
   final ImmutableBitSet groupSet=ImmutableBitSet.of(groupSetPositions);
-  List<AggregateCall> aggregateCalls=Lists.newArrayList();
-  for (  AggInfo agg : aggInfoLst) {
-    aggregateCalls.add(convertGBAgg(agg,srcRel,gbChildProjLst,converter,rexNodeToPosMap,gbChildProjLst.size()));
-  }
-  if (gbChildProjLst.isEmpty()) {
-    gbChildProjLst.add(this.cluster.getRexBuilder().makeInputRef(srcRel,0));
-  }
-  RelNode gbInputRel=HiveProject.create(srcRel,gbChildProjLst,null);
   List<ImmutableBitSet> transformedGroupSets=null;
-  if (groupSets != null && !groupSets.isEmpty()) {
+  if (hasGroupSets) {
     Set<ImmutableBitSet> setTransformedGroupSets=new HashSet<ImmutableBitSet>(groupSets.size());
     for (    int val : groupSets) {
       setTransformedGroupSets.add(convert(val));
@@ -31,6 +24,18 @@
     transformedGroupSets=new ArrayList<ImmutableBitSet>(setTransformedGroupSets);
     Collections.sort(transformedGroupSets,ImmutableBitSet.COMPARATOR);
   }
+  List<AggregateCall> aggregateCalls=Lists.newArrayList();
+  for (  AggInfo agg : aggInfoLst) {
+    aggregateCalls.add(convertGBAgg(agg,srcRel,gbChildProjLst,converter,rexNodeToPosMap,gbChildProjLst.size()));
+  }
+  if (hasGroupSets) {
+    AggregateCall aggCall=new AggregateCall(HiveGroupingID.INSTANCE,false,new ImmutableList.Builder<Integer>().build(),this.cluster.getTypeFactory().createSqlType(SqlTypeName.INTEGER),HiveGroupingID.INSTANCE.getName());
+    aggregateCalls.add(aggCall);
+  }
+  if (gbChildProjLst.isEmpty()) {
+    gbChildProjLst.add(this.cluster.getRexBuilder().makeInputRef(srcRel,0));
+  }
+  RelNode gbInputRel=HiveProject.create(srcRel,gbChildProjLst,null);
   HiveRelNode aggregateRel=null;
   try {
     aggregateRel=new HiveAggregate(cluster,cluster.traitSetOf(HiveRelNode.CONVENTION),gbInputRel,(transformedGroupSets != null ? true : false),groupSet,transformedGroupSets,aggregateCalls);

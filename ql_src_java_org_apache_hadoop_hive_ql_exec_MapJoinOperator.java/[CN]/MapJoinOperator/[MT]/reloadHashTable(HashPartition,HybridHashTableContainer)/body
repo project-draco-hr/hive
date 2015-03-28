@@ -1,0 +1,25 @@
+{
+  BytesBytesMultiHashMap restoredHashMap=partition.getHashMapFromDisk();
+  int rowCount=restoredHashMap.getNumValues();
+  LOG.info("Hybrid Grace Hash Join: Deserializing spilled hash partition...");
+  LOG.info("Hybrid Grace Hash Join: Number of rows restored from hashmap: " + rowCount);
+  KeyValueContainer kvContainer=partition.getSidefileKVContainer();
+  rowCount+=kvContainer.size();
+  LOG.info("Hybrid Grace Hash Join: Number of rows restored from KeyValueContainer: " + kvContainer.size());
+  if (rowCount * hybridHtContainer.getTableRowSize() >= hybridHtContainer.getMemoryThreshold() / 2) {
+    throw new RuntimeException("Hybrid Grace Hash Join: Hash table cannot be reloaded since it" + " will be greater than memory limit. Recursive spilling is currently not supported");
+  }
+  KeyValueHelper writeHelper=hybridHtContainer.getWriteHelper();
+  while (kvContainer.hasNext()) {
+    ObjectPair<HiveKey,BytesWritable> pair=kvContainer.next();
+    Writable key=pair.getFirst();
+    Writable val=pair.getSecond();
+    writeHelper.setKeyValue(key,val);
+    restoredHashMap.put(writeHelper,-1);
+  }
+  hybridHtContainer.setTotalInMemRowCount(hybridHtContainer.getTotalInMemRowCount() + restoredHashMap.getNumValues() + kvContainer.size());
+  kvContainer.clear();
+  currentSmallTable=new MapJoinBytesTableContainer(restoredHashMap);
+  currentSmallTable.setInternalValueOi(hybridHtContainer.getInternalValueOi());
+  currentSmallTable.setSortableSortOrders(hybridHtContainer.getSortableSortOrders());
+}

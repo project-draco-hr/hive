@@ -1,0 +1,25 @@
+{
+  HashPartition partition=hashPartitions[partitionId];
+  int inMemRowCount=partition.hashMap.getNumValues();
+  long inMemSize=partition.hashMap.memorySize();
+  Path path=Files.createTempFile("partition-" + partitionId + "-",null);
+  OutputStream outputStream=Files.newOutputStream(path);
+  com.esotericsoftware.kryo.io.Output output=new com.esotericsoftware.kryo.io.Output(outputStream);
+  Kryo kryo=Utilities.runtimeSerializationKryo.get();
+  kryo.writeObject(output,partition.hashMap);
+  output.close();
+  outputStream.close();
+  partition.hashMapLocalPath=path;
+  partition.hashMapOnDisk=true;
+  long size=0;
+  for (int i=0; i < hashPartitions.length; i++) {
+    if (!isOnDisk(i)) {
+      size+=hashPartitions[i].hashMap.memorySize();
+    }
+  }
+  LOG.info("Spilling hash partition " + partitionId + " (Rows: "+ inMemRowCount+ ", Mem size: "+ inMemSize+ "): "+ path);
+  LOG.info("Memory usage before spilling: " + size);
+  LOG.info("Memory usage after spilling: " + (size - inMemSize));
+  totalInMemRowCount-=inMemRowCount;
+  partition.hashMap.clear();
+}

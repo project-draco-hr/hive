@@ -42,7 +42,13 @@
  else       if (qbp.getDestGroupingSets().contains(detsClauseName)) {
         groupingSets=getGroupingSets(grpByAstExprs,qbp,detsClauseName);
       }
-      groupingColsSize=groupingColsSize * 2;
+      final int limit=groupingColsSize * 2;
+      while (groupingColsSize < limit) {
+        String field=getColumnInternalName(groupingColsSize);
+        outputColumnNames.add(field);
+        groupByOutputRowResolver.put(null,field,new ColumnInfo(field,TypeInfoFactory.booleanTypeInfo,null,false));
+        groupingColsSize++;
+      }
     }
     ArrayList<AggInfo> aggregations=new ArrayList<AggInfo>();
     if (hasAggregationTrees) {
@@ -68,33 +74,14 @@
         groupByOutputRowResolver.putExpression(value,new ColumnInfo(field,aInfo.m_returnType,"",false));
       }
     }
+    if (groupingSets != null && !groupingSets.isEmpty()) {
+      String field=getColumnInternalName(groupingColsSize + aggregations.size());
+      outputColumnNames.add(field);
+      groupByOutputRowResolver.put(null,VirtualColumn.GROUPINGID.getName(),new ColumnInfo(field,TypeInfoFactory.intTypeInfo,null,true));
+    }
     gbRel=genGBRelNode(gbExprNDescLst,aggregations,groupingSets,srcRel);
     relToHiveColNameCalcitePosMap.put(gbRel,buildHiveToCalciteColumnMap(groupByOutputRowResolver,gbRel));
     this.relToHiveRR.put(gbRel,groupByOutputRowResolver);
-    if (groupingSets != null && !groupingSets.isEmpty()) {
-      RowResolver selectOutputRowResolver=new RowResolver();
-      selectOutputRowResolver.setIsExprResolver(true);
-      RowResolver.add(selectOutputRowResolver,groupByOutputRowResolver);
-      outputColumnNames=new ArrayList<String>(outputColumnNames);
-      List<RelDataTypeField> gbOutput=gbRel.getRowType().getFieldList();
-      List<RexNode> calciteColLst=new ArrayList<RexNode>();
-      for (      RelDataTypeField gbOut : gbOutput) {
-        if (gbOut.getIndex() < gbExprNDescLst.size() || gbOut.getIndex() >= gbExprNDescLst.size() * 2) {
-          calciteColLst.add(new RexInputRef(gbOut.getIndex(),gbOut.getType()));
-        }
-      }
-      String field=getColumnInternalName(groupingColsSize + aggregations.size());
-      outputColumnNames.add(field);
-      selectOutputRowResolver.put(null,VirtualColumn.GROUPINGID.getName(),new ColumnInfo(field,TypeInfoFactory.stringTypeInfo,null,true));
-      List<RexNode> identifierCols=new ArrayList<RexNode>();
-      for (int i=gbExprNDescLst.size(); i < gbExprNDescLst.size() * 2; i++) {
-        identifierCols.add(new RexInputRef(i,gbOutput.get(i).getType()));
-      }
-      final RexBuilder rexBuilder=cluster.getRexBuilder();
-      RexNode groupingID=rexBuilder.makeCall(HiveGroupingID.GROUPING__ID,identifierCols);
-      calciteColLst.add(groupingID);
-      gbRel=this.genSelectRelNode(calciteColLst,selectOutputRowResolver,gbRel);
-    }
   }
   return gbRel;
 }
