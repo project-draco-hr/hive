@@ -5,7 +5,7 @@
   String queryId=HiveConf.getVar(jconf,HiveConf.ConfVars.HIVEQUERYID);
   cacheKey=queryId + REDUCE_PLAN_KEY;
   redWork=(ReduceWork)cache.retrieve(cacheKey,new Callable<Object>(){
-    public Object call(){
+    @Override public Object call(){
       return Utilities.getReduceWork(jconf);
     }
   }
@@ -20,7 +20,10 @@
   for (int tag=0; tag < redWork.getTagToValueDesc().size(); tag++) {
     TableDesc keyTableDesc=redWork.getKeyDesc();
     TableDesc valueTableDesc=redWork.getTagToValueDesc().get(tag);
-    KeyValuesReader reader=(KeyValuesReader)inputs.get(redWork.getTagToInput().get(tag)).getReader();
+    Input input=inputs.get(redWork.getTagToInput().get(tag));
+    input.start();
+    processorContext.waitForAnyInputReady(Collections.singleton(input));
+    KeyValuesReader reader=(KeyValuesReader)input.getReader();
     sources[tag]=new ReduceRecordSource();
     sources[tag].init(jconf,reducer,redWork.getVectorMode(),keyTableDesc,valueTableDesc,reader,tag == position,(byte)tag,redWork.getAllScratchColumnVectorTypeMaps());
     ois[tag]=sources[tag].getObjectInspector();

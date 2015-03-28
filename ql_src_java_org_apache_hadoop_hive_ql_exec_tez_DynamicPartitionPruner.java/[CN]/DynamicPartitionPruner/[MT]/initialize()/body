@@ -1,0 +1,32 @@
+{
+  this.clear();
+  Map<String,SourceInfo> columnMap=new HashMap<String,SourceInfo>();
+  Set<String> sources=work.getEventSourceTableDescMap().keySet();
+  sourcesWaitingForEvents.addAll(sources);
+  for (  String s : sources) {
+    numExpectedEventsPerSource.put(s,new MutableInt(0));
+    numEventsSeenPerSource.put(s,new MutableInt(0));
+    List<TableDesc> tables=work.getEventSourceTableDescMap().get(s);
+    List<String> columnNames=work.getEventSourceColumnNameMap().get(s);
+    List<ExprNodeDesc> partKeyExprs=work.getEventSourcePartKeyExprMap().get(s);
+    Iterator<String> cit=columnNames.iterator();
+    Iterator<ExprNodeDesc> pit=partKeyExprs.iterator();
+    for (    TableDesc t : tables) {
+      numExpectedEventsPerSource.get(s).decrement();
+      ++sourceInfoCount;
+      String columnName=cit.next();
+      ExprNodeDesc partKeyExpr=pit.next();
+      SourceInfo si=createSourceInfo(t,partKeyExpr,columnName,jobConf);
+      if (!sourceInfoMap.containsKey(s)) {
+        sourceInfoMap.put(s,new ArrayList<SourceInfo>());
+      }
+      List<SourceInfo> sis=sourceInfoMap.get(s);
+      sis.add(si);
+      if (columnMap.containsKey(columnName)) {
+        si.values=columnMap.get(columnName).values;
+        si.skipPruning=columnMap.get(columnName).skipPruning;
+      }
+      columnMap.put(columnName,si);
+    }
+  }
+}

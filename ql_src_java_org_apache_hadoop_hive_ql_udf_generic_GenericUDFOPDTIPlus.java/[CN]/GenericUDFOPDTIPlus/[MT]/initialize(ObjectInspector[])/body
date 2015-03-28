@@ -1,0 +1,72 @@
+{
+  if (arguments.length != 2) {
+    throw new UDFArgumentException(opName + " requires two arguments.");
+  }
+  PrimitiveObjectInspector resultOI=null;
+  for (int i=0; i < 2; i++) {
+    Category category=arguments[i].getCategory();
+    if (category != Category.PRIMITIVE) {
+      throw new UDFArgumentTypeException(i,"The " + GenericUDFUtils.getOrdinal(i + 1) + " argument of "+ opName+ "  is expected to a "+ Category.PRIMITIVE.toString().toLowerCase()+ " type, but "+ category.toString().toLowerCase()+ " is found");
+    }
+  }
+  inputOIs=new PrimitiveObjectInspector[]{(PrimitiveObjectInspector)arguments[0],(PrimitiveObjectInspector)arguments[1]};
+  PrimitiveObjectInspector leftOI=inputOIs[0];
+  PrimitiveObjectInspector rightOI=inputOIs[1];
+  if (checkArgs(PrimitiveCategory.INTERVAL_YEAR_MONTH,PrimitiveCategory.INTERVAL_YEAR_MONTH)) {
+    plusOpType=OperationType.INTERVALYM_PLUS_INTERVALYM;
+    intervalArg1Idx=0;
+    intervalArg2Idx=1;
+    resultOI=PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(TypeInfoFactory.intervalYearMonthTypeInfo);
+  }
+ else   if (checkArgs(PrimitiveCategory.DATE,PrimitiveCategory.INTERVAL_YEAR_MONTH)) {
+    plusOpType=OperationType.INTERVALYM_PLUS_DATE;
+    dtArgIdx=0;
+    intervalArg1Idx=1;
+    resultOI=PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(TypeInfoFactory.dateTypeInfo);
+  }
+ else   if (checkArgs(PrimitiveCategory.INTERVAL_YEAR_MONTH,PrimitiveCategory.DATE)) {
+    plusOpType=OperationType.INTERVALYM_PLUS_DATE;
+    intervalArg1Idx=0;
+    dtArgIdx=1;
+    resultOI=PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(TypeInfoFactory.dateTypeInfo);
+  }
+ else   if (checkArgs(PrimitiveCategory.TIMESTAMP,PrimitiveCategory.INTERVAL_YEAR_MONTH)) {
+    plusOpType=OperationType.INTERVALYM_PLUS_TIMESTAMP;
+    dtArgIdx=0;
+    intervalArg1Idx=1;
+    resultOI=PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(TypeInfoFactory.timestampTypeInfo);
+  }
+ else   if (checkArgs(PrimitiveCategory.INTERVAL_YEAR_MONTH,PrimitiveCategory.TIMESTAMP)) {
+    plusOpType=OperationType.INTERVALYM_PLUS_TIMESTAMP;
+    intervalArg1Idx=0;
+    dtArgIdx=1;
+    resultOI=PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(TypeInfoFactory.timestampTypeInfo);
+  }
+ else   if (checkArgs(PrimitiveCategory.INTERVAL_DAY_TIME,PrimitiveCategory.INTERVAL_DAY_TIME)) {
+    plusOpType=OperationType.INTERVALDT_PLUS_INTERVALDT;
+    intervalArg1Idx=0;
+    intervalArg2Idx=1;
+    resultOI=PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(TypeInfoFactory.intervalDayTimeTypeInfo);
+  }
+ else   if (checkArgs(PrimitiveCategory.INTERVAL_DAY_TIME,PrimitiveCategory.DATE) || checkArgs(PrimitiveCategory.INTERVAL_DAY_TIME,PrimitiveCategory.TIMESTAMP)) {
+    plusOpType=OperationType.INTERVALDT_PLUS_TIMESTAMP;
+    intervalArg1Idx=0;
+    dtArgIdx=1;
+    resultOI=PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(TypeInfoFactory.timestampTypeInfo);
+    dtConverter=ObjectInspectorConverters.getConverter(leftOI,resultOI);
+  }
+ else   if (checkArgs(PrimitiveCategory.DATE,PrimitiveCategory.INTERVAL_DAY_TIME) || checkArgs(PrimitiveCategory.TIMESTAMP,PrimitiveCategory.INTERVAL_DAY_TIME)) {
+    plusOpType=OperationType.INTERVALDT_PLUS_TIMESTAMP;
+    intervalArg1Idx=1;
+    dtArgIdx=0;
+    resultOI=PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(TypeInfoFactory.timestampTypeInfo);
+    dtConverter=ObjectInspectorConverters.getConverter(leftOI,resultOI);
+  }
+ else {
+    List<TypeInfo> argTypeInfos=new ArrayList<TypeInfo>(2);
+    argTypeInfos.add(leftOI.getTypeInfo());
+    argTypeInfos.add(rightOI.getTypeInfo());
+    throw new NoMatchingMethodException(this.getClass(),argTypeInfos,null);
+  }
+  return resultOI;
+}

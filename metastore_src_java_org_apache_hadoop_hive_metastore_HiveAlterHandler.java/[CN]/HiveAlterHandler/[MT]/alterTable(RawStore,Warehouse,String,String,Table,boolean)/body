@@ -39,7 +39,10 @@
       if (MetaStoreUtils.isCascadeNeededInAlterTable(oldt,newt)) {
         List<Partition> parts=msdb.getPartitions(dbname,name,-1);
         for (        Partition part : parts) {
+          List<FieldSchema> oldCols=part.getSd().getCols();
           part.getSd().setCols(newt.getSd().getCols());
+          String oldPartName=Warehouse.makePartName(oldt.getPartitionKeys(),part.getValues());
+          updatePartColumnStatsForAlterColumns(msdb,part,oldPartName,part.getValues(),oldCols,part);
           msdb.alterPartition(dbname,name,part.getValues(),part);
         }
       }
@@ -86,6 +89,13 @@
           Path newPartLocPath=new Path(oldUri.getScheme(),oldUri.getAuthority(),newPath);
           altps.add(ObjectPair.create(part,part.getSd().getLocation()));
           part.getSd().setLocation(newPartLocPath.toString());
+          String oldPartName=Warehouse.makePartName(oldt.getPartitionKeys(),part.getValues());
+          try {
+            msdb.deletePartitionColumnStatistics(dbname,name,oldPartName,part.getValues(),null);
+          }
+ catch (          InvalidInputException iie) {
+            throw new InvalidOperationException("Unable to update partition stats in table rename." + iie);
+          }
           msdb.alterPartition(dbname,name,part.getValues(),part);
         }
       }
@@ -94,6 +104,7 @@
       Database db=msdb.getDatabase(newt.getDbName());
       MetaStoreUtils.updateUnpartitionedTableStatsFast(db,newt,wh,false,true);
     }
+    updateTableColumnStatsForAlterTable(msdb,oldt,newt);
     msdb.alterTable(dbname,name,newt);
     success=msdb.commitTransaction();
   }

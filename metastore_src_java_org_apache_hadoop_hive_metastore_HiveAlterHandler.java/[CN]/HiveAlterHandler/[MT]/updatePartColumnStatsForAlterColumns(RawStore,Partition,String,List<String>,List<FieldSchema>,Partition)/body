@@ -1,0 +1,35 @@
+{
+  String dbName=oldPartition.getDbName();
+  String tableName=oldPartition.getTableName();
+  try {
+    List<String> oldPartNames=Lists.newArrayList(oldPartName);
+    List<String> oldColNames=new ArrayList<String>(oldCols.size());
+    for (    FieldSchema oldCol : oldCols) {
+      oldColNames.add(oldCol.getName());
+    }
+    List<FieldSchema> newCols=newPart.getSd().getCols();
+    List<ColumnStatistics> partsColStats=msdb.getPartitionColumnStatistics(dbName,tableName,oldPartNames,oldColNames);
+    assert(partsColStats.size() <= 1);
+    for (    ColumnStatistics partColStats : partsColStats) {
+      List<ColumnStatisticsObj> statsObjs=partColStats.getStatsObj();
+      for (      ColumnStatisticsObj statsObj : statsObjs) {
+        boolean found=false;
+        for (        FieldSchema newCol : newCols) {
+          if (statsObj.getColName().equals(newCol.getName()) && statsObj.getColType().equals(newCol.getType())) {
+            found=true;
+            break;
+          }
+        }
+        if (!found) {
+          msdb.deletePartitionColumnStatistics(dbName,tableName,oldPartName,partVals,statsObj.getColName());
+        }
+      }
+    }
+  }
+ catch (  NoSuchObjectException nsoe) {
+    LOG.debug("Could not find db entry." + nsoe);
+  }
+catch (  InvalidInputException iie) {
+    throw new InvalidObjectException("Invalid input to update partition column stats in alter table change columns" + iie);
+  }
+}
