@@ -1,0 +1,35 @@
+{
+  List<TaskLocationHint> locationHints=Lists.newArrayListWithCapacity(splits.length);
+  for (  InputSplit split : splits) {
+    String rack=(split instanceof TezGroupedSplit) ? ((TezGroupedSplit)split).getRack() : null;
+    if (rack == null) {
+      String[] locations=split.getLocations();
+      if (locations != null && locations.length > 0) {
+        if (consistentLocations && locations.length > 1 && split instanceof FileSplit) {
+          Arrays.sort(locations);
+          FileSplit fileSplit=(FileSplit)split;
+          Path path=fileSplit.getPath();
+          long startLocation=fileSplit.getStart();
+          int hashCode=Objects.hash(path,startLocation);
+          int startIndex=hashCode % locations.length;
+          LinkedHashSet<String> locationSet=new LinkedHashSet<>(locations.length);
+          for (int i=0; i < locations.length; i++) {
+            int index=(startIndex + i) % locations.length;
+            locationSet.add(locations[index]);
+          }
+          locationHints.add(TaskLocationHint.createTaskLocationHint(locationSet,null));
+        }
+ else {
+          locationHints.add(TaskLocationHint.createTaskLocationHint(new LinkedHashSet<String>(Arrays.asList(split.getLocations())),null));
+        }
+      }
+ else {
+        locationHints.add(TaskLocationHint.createTaskLocationHint(null,null));
+      }
+    }
+ else {
+      locationHints.add(TaskLocationHint.createTaskLocationHint(null,Collections.singleton(rack)));
+    }
+  }
+  return locationHints;
+}
