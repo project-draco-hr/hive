@@ -1,0 +1,35 @@
+{
+  TProtocolVersion protocol=TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V2;
+  String username="";
+  String password="";
+  HiveConf serverhiveConf=new HiveConf();
+  String ipAddress=null;
+  HiveSessionImpl session=new HiveSessionImpl(protocol,username,password,serverhiveConf,ipAddress){
+    @Override protected synchronized void acquire(    boolean userAccess){
+    }
+    @Override protected synchronized void release(    boolean userAccess){
+    }
+  }
+;
+  OperationManager operationManager=Mockito.mock(OperationManager.class);
+  session.setOperationManager(operationManager);
+  ExecuteStatementOperation operation=Mockito.mock(ExecuteStatementOperation.class);
+  OperationHandle opHandle=Mockito.mock(OperationHandle.class);
+  Mockito.when(operation.getHandle()).thenReturn(opHandle);
+  Map<String,String> confOverlay=new HashMap<String,String>();
+  String hql="drop table if exists table_not_exists";
+  Mockito.when(operationManager.newExecuteStatementOperation(session,hql,confOverlay,true)).thenReturn(operation);
+  try {
+    session.executeStatementAsync(hql,confOverlay);
+    Mockito.verify(operationManager,Mockito.times(0)).closeOperation(opHandle);
+    Mockito.doThrow(new HiveSQLException("Fail for clean up test")).when(operation).run();
+    session.executeStatementAsync(hql,confOverlay);
+    Assert.fail("HiveSqlException expected.");
+  }
+ catch (  HiveSQLException e) {
+    if (!"Fail for clean up test".equals(e.getMessage())) {
+      Assert.fail("unexpected exception:" + e.getMessage());
+    }
+    Mockito.verify(operationManager,Mockito.times(1)).closeOperation(opHandle);
+  }
+}
