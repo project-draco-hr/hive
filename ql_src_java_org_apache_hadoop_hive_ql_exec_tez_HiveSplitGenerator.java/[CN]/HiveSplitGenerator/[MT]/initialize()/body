@@ -1,29 +1,34 @@
 {
-  boolean sendSerializedEvents=conf.getBoolean("mapreduce.tez.input.initializer.serialize.event.payload",true);
-  pruner.prune();
-  InputSplitInfoMem inputSplitInfo=null;
-  boolean generateConsistentSplits=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_TEZ_GENERATE_CONSISTENT_SPLITS);
-  LOG.info("GenerateConsistentSplitsInHive=" + generateConsistentSplits);
-  String realInputFormatName=conf.get("mapred.input.format.class");
-  boolean groupingEnabled=userPayloadProto.getGroupingEnabled();
-  if (groupingEnabled) {
-    InputFormat<?,?> inputFormat=(InputFormat<?,?>)ReflectionUtils.newInstance(JavaUtils.loadClass(realInputFormatName),jobConf);
-    int totalResource=getContext().getTotalAvailableResource().getMemory();
-    int taskResource=getContext().getVertexTaskResource().getMemory();
-    int availableSlots=totalResource / taskResource;
-    float waves=conf.getFloat(TezMapReduceSplitsGrouper.TEZ_GROUPING_SPLIT_WAVES,TezMapReduceSplitsGrouper.TEZ_GROUPING_SPLIT_WAVES_DEFAULT);
-    InputSplit[] splits=inputFormat.getSplits(jobConf,(int)(availableSlots * waves));
-    Arrays.sort(splits,new InputSplitComparator());
-    LOG.info("Number of input splits: " + splits.length + ". "+ availableSlots+ " available slots, "+ waves+ " waves. Input format is: "+ realInputFormatName);
-    Multimap<Integer,InputSplit> groupedSplits=splitGrouper.generateGroupedSplits(jobConf,conf,splits,waves,availableSlots);
-    InputSplit[] flatSplits=groupedSplits.values().toArray(new InputSplit[0]);
-    LOG.info("Number of grouped splits: " + flatSplits.length);
-    List<TaskLocationHint> locationHints=splitGrouper.createTaskLocationHints(flatSplits,generateConsistentSplits);
-    Utilities.clearWork(jobConf);
-    inputSplitInfo=new InputSplitInfoMem(flatSplits,locationHints,flatSplits.length,null,jobConf);
-  }
+  Utilities.setMapWork(jobConf,work);
+  try {
+    boolean sendSerializedEvents=conf.getBoolean("mapreduce.tez.input.initializer.serialize.event.payload",true);
+    pruner.prune();
+    InputSplitInfoMem inputSplitInfo=null;
+    boolean generateConsistentSplits=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_TEZ_GENERATE_CONSISTENT_SPLITS);
+    LOG.info("GenerateConsistentSplitsInHive=" + generateConsistentSplits);
+    String realInputFormatName=conf.get("mapred.input.format.class");
+    boolean groupingEnabled=userPayloadProto.getGroupingEnabled();
+    if (groupingEnabled) {
+      InputFormat<?,?> inputFormat=(InputFormat<?,?>)ReflectionUtils.newInstance(JavaUtils.loadClass(realInputFormatName),jobConf);
+      int totalResource=getContext().getTotalAvailableResource().getMemory();
+      int taskResource=getContext().getVertexTaskResource().getMemory();
+      int availableSlots=totalResource / taskResource;
+      float waves=conf.getFloat(TezMapReduceSplitsGrouper.TEZ_GROUPING_SPLIT_WAVES,TezMapReduceSplitsGrouper.TEZ_GROUPING_SPLIT_WAVES_DEFAULT);
+      InputSplit[] splits=inputFormat.getSplits(jobConf,(int)(availableSlots * waves));
+      Arrays.sort(splits,new InputSplitComparator());
+      LOG.info("Number of input splits: " + splits.length + ". "+ availableSlots+ " available slots, "+ waves+ " waves. Input format is: "+ realInputFormatName);
+      Multimap<Integer,InputSplit> groupedSplits=splitGrouper.generateGroupedSplits(jobConf,conf,splits,waves,availableSlots);
+      InputSplit[] flatSplits=groupedSplits.values().toArray(new InputSplit[0]);
+      LOG.info("Number of grouped splits: " + flatSplits.length);
+      List<TaskLocationHint> locationHints=splitGrouper.createTaskLocationHints(flatSplits,generateConsistentSplits);
+      inputSplitInfo=new InputSplitInfoMem(flatSplits,locationHints,flatSplits.length,null,jobConf);
+    }
  else {
-    throw new RuntimeException("HiveInputFormat does not support non-grouped splits, InputFormatName is: " + realInputFormatName);
+      throw new RuntimeException("HiveInputFormat does not support non-grouped splits, InputFormatName is: " + realInputFormatName);
+    }
+    return createEventList(sendSerializedEvents,inputSplitInfo);
   }
-  return createEventList(sendSerializedEvents,inputSplitInfo);
+  finally {
+    Utilities.clearWork(jobConf);
+  }
 }
