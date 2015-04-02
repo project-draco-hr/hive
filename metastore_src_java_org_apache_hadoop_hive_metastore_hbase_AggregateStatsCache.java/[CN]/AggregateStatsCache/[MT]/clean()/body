@@ -1,0 +1,52 @@
+{
+synchronized (this) {
+    if (isCleaning) {
+      return;
+    }
+    isCleaning=true;
+  }
+  Thread cleaner=new Thread(){
+    @Override public void run(){
+      Iterator<Map.Entry<Key,AggrColStatsList>> mapIterator=cacheStore.entrySet().iterator();
+      while (mapIterator.hasNext()) {
+        Map.Entry<Key,AggrColStatsList> pair=(Map.Entry<Key,AggrColStatsList>)mapIterator.next();
+        AggrColStatsCached node;
+        AggrColStatsList candidateList=(AggrColStatsList)pair.getValue();
+        List<AggrColStatsCached> nodes=candidateList.nodes;
+        if (nodes.size() == 0) {
+          mapIterator.remove();
+          continue;
+        }
+        boolean isLocked=false;
+        try {
+          isLocked=candidateList.writeLock.tryLock(maxWriterWaitTime,TimeUnit.MILLISECONDS);
+          if (isLocked) {
+            for (Iterator<AggrColStatsCached> listIterator=nodes.iterator(); listIterator.hasNext(); ) {
+              node=listIterator.next();
+              if (isExpired(node)) {
+                listIterator.remove();
+                --currentNodes;
+              }
+            }
+          }
+        }
+ catch (        InterruptedException e) {
+          LOG.debug(e);
+        }
+ finally {
+          if (isLocked) {
+            candidateList.writeLock.unlock();
+          }
+        }
+        Thread.yield();
+      }
+      while (currentNodes / maxCacheNodes > cleanUntil) {
+        evictOneNode();
+      }
+    }
+  }
+;
+  cleaner.setPriority(Thread.MIN_PRIORITY);
+  cleaner.setDaemon(true);
+  cleaner.start();
+}

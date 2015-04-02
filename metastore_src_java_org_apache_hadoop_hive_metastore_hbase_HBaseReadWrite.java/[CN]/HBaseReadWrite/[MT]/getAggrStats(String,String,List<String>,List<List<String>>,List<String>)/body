@@ -1,0 +1,28 @@
+{
+  List<ColumnStatisticsObj> colStatsList=new ArrayList<ColumnStatisticsObj>();
+  AggrColStatsCached colStatsAggrCached;
+  ColumnStatisticsObj colStatsAggr;
+  int maxPartitionsPerCacheNode=aggrStatsCache.getMaxPartsPerCacheNode();
+  float falsePositiveProbability=aggrStatsCache.getFalsePositiveProbability();
+  int partitionsRequested=partNames.size();
+  int partitionsFound=partitionsRequested;
+  for (  String colName : colNames) {
+    if (partitionsRequested > maxPartitionsPerCacheNode) {
+      colStatsAggr=getAggrStatsFromDB(dbName,tblName,colName,partNames,partVals,null);
+      colStatsList.add(colStatsAggr);
+    }
+ else {
+      colStatsAggrCached=aggrStatsCache.get(dbName,tblName,colName,partNames);
+      if (colStatsAggrCached != null) {
+        colStatsList.add(colStatsAggrCached.getColStats());
+      }
+ else {
+        BloomFilter bloomFilter=new BloomFilter(maxPartitionsPerCacheNode,falsePositiveProbability);
+        colStatsAggr=getAggrStatsFromDB(dbName,tblName,colName,partNames,partVals,bloomFilter);
+        colStatsList.add(colStatsAggr);
+        aggrStatsCache.add(dbName,tblName,colName,partitionsFound,colStatsAggr,bloomFilter);
+      }
+    }
+  }
+  return new AggrStats(colStatsList,partitionsFound);
+}

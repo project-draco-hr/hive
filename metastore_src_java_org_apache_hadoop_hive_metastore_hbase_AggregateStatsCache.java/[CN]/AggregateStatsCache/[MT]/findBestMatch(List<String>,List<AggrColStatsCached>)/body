@@ -1,0 +1,42 @@
+{
+  MatchStats matchStats;
+  Map<AggrColStatsCached,MatchStats> candidateMatchStats=new HashMap<AggrColStatsCached,MatchStats>();
+  AggrColStatsCached bestMatch=null;
+  int bestMatchHits=0;
+  int numPartsRequested=partNames.size();
+  for (  AggrColStatsCached candidate : candidates) {
+    if ((float)Math.abs((candidate.getNumPartsCached() - numPartsRequested) / numPartsRequested) > maxVariance) {
+      candidateMatchStats.put(candidate,new MatchStats(0,0,true));
+    }
+    if (isExpired(candidate)) {
+      candidateMatchStats.put(candidate,new MatchStats(0,0,true));
+    }
+    candidateMatchStats.put(candidate,new MatchStats(0,0,false));
+  }
+  int maxMisses=(int)maxVariance * numPartsRequested;
+  for (  String partName : partNames) {
+    for (    AggrColStatsCached candidate : candidates) {
+      matchStats=candidateMatchStats.get(candidate);
+      if (matchStats.shouldSkip) {
+        continue;
+      }
+      if (candidate.getBloomFilter().contains(partName.getBytes())) {
+        ++matchStats.hits;
+      }
+ else {
+        ++matchStats.misses;
+      }
+      if (matchStats.misses > maxMisses) {
+        matchStats.shouldSkip=true;
+        continue;
+      }
+      if (matchStats.hits > bestMatchHits) {
+        bestMatch=candidate;
+      }
+    }
+  }
+  if (bestMatch != null) {
+    bestMatch.updateLastAccessTime();
+  }
+  return bestMatch;
+}
