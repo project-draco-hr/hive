@@ -1,41 +1,27 @@
 {
-  try {
-    Reader orcReader;
-    if (fileInfo != null) {
-      stripes=fileInfo.stripeInfos;
-      fileMetaInfo=fileInfo.fileMetaInfo;
-      stripeStats=fileInfo.stripeStats;
-      types=fileInfo.types;
-      writerVersion=fileInfo.writerVersion;
-      if (fileMetaInfo == null && context.footerInSplits) {
-        orcReader=OrcFile.createReader(file.getPath(),OrcFile.readerOptions(context.conf).filesystem(fs));
-        fileInfo.fileMetaInfo=((ReaderImpl)orcReader).getFileMetaInfo();
-        fileInfo.stripeStats=orcReader.getStripeStatistics();
-        fileInfo.types=orcReader.getTypes();
-        fileInfo.writerVersion=orcReader.getWriterVersion();
-      }
-    }
- else {
-      orcReader=OrcFile.createReader(file.getPath(),OrcFile.readerOptions(context.conf).filesystem(fs));
-      stripes=orcReader.getStripes();
-      stripeStats=orcReader.getStripeStatistics();
-      types=orcReader.getTypes();
-      writerVersion=orcReader.getWriterVersion();
-      fileMetaInfo=context.footerInSplits ? ((ReaderImpl)orcReader).getFileMetaInfo() : null;
-      if (context.cacheStripeDetails) {
-        Context.footerCache.put(file.getPath(),new FileInfo(file.getModificationTime(),file.getLen(),stripes,stripeStats,types,fileMetaInfo,writerVersion));
-      }
+  Reader orcReader=OrcFile.createReader(fileWithId.getFileStatus().getPath(),OrcFile.readerOptions(context.conf).filesystem(fs));
+  List<String> projCols=Arrays.asList(ColumnProjectionUtils.getReadColumnNames(context.conf));
+  projColsUncompressedSize=orcReader.getRawDataSizeOfColumns(projCols);
+  if (fileInfo != null) {
+    stripes=fileInfo.stripeInfos;
+    stripeStats=fileInfo.stripeStats;
+    fileMetaInfo=fileInfo.fileMetaInfo;
+    types=fileInfo.types;
+    writerVersion=fileInfo.writerVersion;
+    if (fileMetaInfo == null && context.footerInSplits) {
+      fileInfo.fileMetaInfo=((ReaderImpl)orcReader).getFileMetaInfo();
+      fileInfo.types=orcReader.getTypes();
+      fileInfo.writerVersion=orcReader.getWriterVersion();
     }
   }
- catch (  Throwable th) {
-    if (!(th instanceof IOException)) {
-      LOG.error("Unexpected Exception",th);
-    }
-synchronized (context.errors) {
-      context.errors.add(th);
-    }
-    if (!(th instanceof IOException)) {
-      context.notifyOnNonIOException(th);
+ else {
+    stripes=orcReader.getStripes();
+    types=orcReader.getTypes();
+    writerVersion=orcReader.getWriterVersion();
+    stripeStats=orcReader.getStripeStatistics();
+    fileMetaInfo=context.footerInSplits ? ((ReaderImpl)orcReader).getFileMetaInfo() : null;
+    if (context.cacheStripeDetails) {
+      Context.footerCache.put(fileWithId.getFileStatus().getPath(),new FileInfo(fileWithId.getFileStatus().getModificationTime(),fileWithId.getFileStatus().getLen(),stripes,stripeStats,types,fileMetaInfo,writerVersion));
     }
   }
 }
