@@ -25,6 +25,7 @@
     return cc;
   }
   if (current.getEnd() < cbEndOffset && !current.hasContiguousNext()) {
+    addIncompleteCompressionBuffer(cbStartOffset,current,0);
     return null;
   }
   ByteBuffer copy=allocateBuffer(chunkLength,compressed.isDirect());
@@ -32,7 +33,7 @@
   int originalPos=compressed.position();
   copy.put(compressed);
   if (DebugUtils.isTraceOrcEnabled()) {
-    LOG.info("Removing " + current + " from ranges");
+    LOG.info("Removing partial CB " + current + " from ranges after copying its contents");
   }
   DiskRangeList next=current.next;
   current.removeSelf();
@@ -44,11 +45,13 @@
       toRelease.add(compressed);
     }
   }
-  while (next != null) {
+  int extraChunkCount=0;
+  while (true) {
     if (!(next instanceof BufferChunk)) {
-      throw new IOException("Trying to extend compressed block into uncompressed block");
+      throw new IOException("Trying to extend compressed block into uncompressed block " + next);
     }
     compressed=next.getData();
+    ++extraChunkCount;
     if (compressed.remaining() >= remaining) {
       slice=compressed.slice();
       slice.limit(remaining);
@@ -65,11 +68,16 @@
       zcr.releaseBuffer(compressed);
     }
     DiskRangeList tmp=next;
-    if (DebugUtils.isTraceOrcEnabled()) {
-      LOG.info("Removing " + tmp + " from ranges");
-    }
     next=next.hasContiguousNext() ? next.next : null;
-    tmp.removeSelf();
+    if (next != null) {
+      if (DebugUtils.isTraceOrcEnabled()) {
+        LOG.info("Removing partial CB " + tmp + " from ranges after copying its contents");
+      }
+      tmp.removeSelf();
+    }
+ else {
+      addIncompleteCompressionBuffer(cbStartOffset,tmp,extraChunkCount);
+      return null;
+    }
   }
-  return null;
 }
