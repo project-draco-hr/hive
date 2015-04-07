@@ -1,24 +1,45 @@
 {
   Context context=new Context(conf);
+  List<OrcSplit> splits=Lists.newArrayList();
+  List<Future<?>> pathFutures=Lists.newArrayList();
+  List<Future<?>> splitFutures=Lists.newArrayList();
   for (  Path dir : getInputPaths(conf)) {
     FileSystem fs=dir.getFileSystem(conf);
-    context.schedule(new FileGenerator(context,fs,dir));
+    FileGenerator fileGenerator=new FileGenerator(context,fs,dir);
+    pathFutures.add(context.threadPool.submit(fileGenerator));
   }
-  context.waitForTasks();
-  if (!context.errors.isEmpty()) {
-    List<IOException> errors=new ArrayList<IOException>(context.errors.size());
-    for (    Throwable th : context.errors) {
-      if (th instanceof IOException) {
-        errors.add((IOException)th);
+  try {
+    for (    Future<?> pathFuture : pathFutures) {
+      SplitStrategy splitStrategy=(SplitStrategy)pathFuture.get();
+      if (isDebugEnabled) {
+        LOG.debug(splitStrategy);
+      }
+      if (splitStrategy instanceof ETLSplitStrategy) {
+        List<SplitInfo> splitInfos=splitStrategy.getSplits();
+        for (        SplitInfo splitInfo : splitInfos) {
+          splitFutures.add(context.threadPool.submit(new SplitGenerator(splitInfo)));
+        }
       }
  else {
-        throw new RuntimeException("serious problem",th);
+        splits.addAll(splitStrategy.getSplits());
       }
     }
-    throw new InvalidInputException(errors);
+    for (    Future<?> splitFuture : splitFutures) {
+      splits.addAll((Collection<? extends OrcSplit>)splitFuture.get());
+    }
+  }
+ catch (  Exception e) {
+    cancelFutures(pathFutures);
+    cancelFutures(splitFutures);
+    throw new RuntimeException("serious problem",e);
   }
   if (context.cacheStripeDetails) {
     LOG.info("FooterCacheHitRatio: " + context.cacheHitCounter.get() + "/"+ context.numFilesCounter.get());
   }
-  return context.splits;
+  if (isDebugEnabled) {
+    for (    OrcSplit split : splits) {
+      LOG.debug(split + " projected_columns_uncompressed_size: " + split.getProjectedColumnsUncompressedSize());
+    }
+  }
+  return splits;
 }
