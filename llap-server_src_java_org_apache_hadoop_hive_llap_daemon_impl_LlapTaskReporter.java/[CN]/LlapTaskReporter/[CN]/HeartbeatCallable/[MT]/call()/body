@@ -1,0 +1,28 @@
+{
+  while (!task.isTaskDone() && !task.hadFatalError()) {
+    ResponseWrapper response=heartbeat(null);
+    if (response.shouldDie) {
+      LOG.info("Asked to die via task heartbeat");
+      return false;
+    }
+ else {
+      if (response.numEvents < maxEventsToGet) {
+        lock.lock();
+        try {
+          boolean interrupted=condition.await(pollInterval,TimeUnit.MILLISECONDS);
+          if (!interrupted) {
+            nonOobHeartbeatCounter.incrementAndGet();
+          }
+        }
+  finally {
+          lock.unlock();
+        }
+      }
+    }
+  }
+  int pendingEventCount=eventsToSend.size();
+  if (pendingEventCount > 0) {
+    LOG.warn("Exiting TaskReporter thread with pending queue size=" + pendingEventCount);
+  }
+  return true;
+}

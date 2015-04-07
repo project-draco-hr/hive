@@ -1,0 +1,50 @@
+{
+  if (eventsArg != null) {
+    eventsToSend.addAll(eventsArg);
+  }
+  TezEvent updateEvent=null;
+  List<TezEvent> events=new ArrayList<TezEvent>();
+  eventsToSend.drainTo(events);
+  if (!task.isTaskDone() && !task.hadFatalError()) {
+    TezCounters counters=null;
+    if ((nonOobHeartbeatCounter.get() - prevCounterSendHeartbeatNum) * pollInterval >= sendCounterInterval) {
+      counters=task.getCounters();
+      prevCounterSendHeartbeatNum=nonOobHeartbeatCounter.get();
+    }
+    updateEvent=new TezEvent(new TaskStatusUpdateEvent(counters,task.getProgress()),updateEventMetadata);
+    events.add(updateEvent);
+  }
+  long requestId=requestCounter.incrementAndGet();
+  TezHeartbeatRequest request=new TezHeartbeatRequest(requestId,events,containerIdStr,task.getTaskAttemptID(),task.getEventCounter(),maxEventsToGet);
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Sending heartbeat to AM, request=" + request);
+  }
+  maybeLogCounters();
+  TezHeartbeatResponse response=umbilical.heartbeat(request);
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Received heartbeat response from AM, response=" + response);
+  }
+  if (response.shouldDie()) {
+    LOG.info("Received should die response from AM");
+    return new ResponseWrapper(true,1);
+  }
+  if (response.getLastRequestId() != requestId) {
+    throw new TezException("AM and Task out of sync" + ", responseReqId=" + response.getLastRequestId() + ", expectedReqId="+ requestId);
+  }
+  int numEventsReceived=0;
+  if (task.isTaskDone() || task.hadFatalError()) {
+    if (response.getEvents() != null && !response.getEvents().isEmpty()) {
+      LOG.warn("Current task already complete, Ignoring all event in" + " heartbeat response, eventCount=" + response.getEvents().size());
+    }
+  }
+ else {
+    if (response.getEvents() != null && !response.getEvents().isEmpty()) {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Routing events from heartbeat response to task" + ", currentTaskAttemptId=" + task.getTaskAttemptID() + ", eventCount="+ response.getEvents().size());
+      }
+      numEventsReceived=response.getEvents().size();
+      task.handleEvents(response.getEvents());
+    }
+  }
+  return new ResponseWrapper(false,numEventsReceived);
+}

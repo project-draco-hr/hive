@@ -1,0 +1,25 @@
+{
+  while (!isShutdown.get() && !Thread.currentThread().isInterrupted()) {
+    try {
+      AMNodeInfo amNodeInfo=pendingHeartbeatQueeu.take();
+      if (amNodeInfo.getTaskCount() == 0) {
+synchronized (knownAppMasters) {
+          knownAppMasters.remove(amNodeInfo.amNodeId);
+        }
+        amNodeInfo.stopUmbilical();
+      }
+ else {
+        executor.submit(new AMHeartbeatCallable(amNodeInfo));
+      }
+    }
+ catch (    InterruptedException e) {
+      if (isShutdown.get()) {
+        LOG.info("QueueLookup thread interrupted after shutdown");
+      }
+ else {
+        LOG.warn("Received unexpected interrupt while waiting on heartbeat queue");
+      }
+    }
+  }
+  return null;
+}
