@@ -1,0 +1,35 @@
+{
+  dbName=HiveStringUtils.normalizeIdentifier(dbName);
+  tableName=HiveStringUtils.normalizeIdentifier(tableName);
+  String newDbName=HiveStringUtils.normalizeIdentifier(newPart.getDbName());
+  String newTableName=HiveStringUtils.normalizeIdentifier(newPart.getTableName());
+  Table oldTable=msdb.getTable(dbName,tableName);
+  if (oldTable == null) {
+    return;
+  }
+  try {
+    String oldPartName=Warehouse.makePartName(oldTable.getPartitionKeys(),partVals);
+    String newPartName=Warehouse.makePartName(oldTable.getPartitionKeys(),newPart.getValues());
+    if (!dbName.equals(newDbName) || !tableName.equals(newTableName) || !oldPartName.equals(newPartName)) {
+      msdb.deletePartitionColumnStatistics(dbName,tableName,oldPartName,partVals,null);
+    }
+ else {
+      Partition oldPartition=msdb.getPartition(dbName,tableName,partVals);
+      if (oldPartition == null) {
+        return;
+      }
+      if (oldPartition.getSd() != null && newPart.getSd() != null) {
+        List<FieldSchema> oldCols=oldPartition.getSd().getCols();
+        if (!MetaStoreUtils.areSameColumns(oldCols,newPart.getSd().getCols())) {
+          updatePartColumnStatsForAlterColumns(msdb,oldPartition,oldPartName,partVals,oldCols,newPart);
+        }
+      }
+    }
+  }
+ catch (  NoSuchObjectException nsoe) {
+    LOG.debug("Could not find db entry." + nsoe);
+  }
+catch (  InvalidInputException iie) {
+    throw new InvalidObjectException("Invalid input to update partition column stats." + iie);
+  }
+}

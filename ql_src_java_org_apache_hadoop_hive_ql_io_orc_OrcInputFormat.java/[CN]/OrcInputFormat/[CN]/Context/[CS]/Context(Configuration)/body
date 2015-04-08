@@ -2,18 +2,28 @@
   this.conf=conf;
   minSize=conf.getLong(MIN_SPLIT_SIZE,DEFAULT_MIN_SPLIT_SIZE);
   maxSize=conf.getLong(MAX_SPLIT_SIZE,DEFAULT_MAX_SPLIT_SIZE);
+  String ss=conf.get(ConfVars.HIVE_ORC_SPLIT_STRATEGY.varname);
+  if (ss == null || ss.equals(SplitStrategyKind.HYBRID.name())) {
+    splitStrategyKind=SplitStrategyKind.HYBRID;
+  }
+ else {
+    LOG.info("Enforcing " + ss + " ORC split strategy");
+    splitStrategyKind=SplitStrategyKind.valueOf(ss);
+  }
   footerInSplits=HiveConf.getBoolVar(conf,ConfVars.HIVE_ORC_INCLUDE_FILE_FOOTER_IN_SPLITS);
   numBuckets=Math.max(conf.getInt(hive_metastoreConstants.BUCKET_COUNT,0),0);
   LOG.debug("Number of buckets specified by conf file is " + numBuckets);
   int cacheStripeDetailsSize=HiveConf.getIntVar(conf,ConfVars.HIVE_ORC_CACHE_STRIPE_DETAILS_SIZE);
   int numThreads=HiveConf.getIntVar(conf,ConfVars.HIVE_ORC_COMPUTE_SPLITS_NUM_THREADS);
   cacheStripeDetails=(cacheStripeDetailsSize > 0);
-  threadPool=Executors.newFixedThreadPool(numThreads,new ThreadFactoryBuilder().setDaemon(true).setNameFormat("ORC_GET_SPLITS #%d").build());
 synchronized (Context.class) {
+    if (threadPool == null) {
+      threadPool=Executors.newFixedThreadPool(numThreads,new ThreadFactoryBuilder().setDaemon(true).setNameFormat("ORC_GET_SPLITS #%d").build());
+    }
     if (footerCache == null && cacheStripeDetails) {
       footerCache=CacheBuilder.newBuilder().concurrencyLevel(numThreads).initialCapacity(cacheStripeDetailsSize).softValues().build();
     }
   }
   String value=conf.get(ValidTxnList.VALID_TXNS_KEY,Long.MAX_VALUE + ":");
-  transactionList=new ValidTxnListImpl(value);
+  transactionList=new ValidReadTxnList(value);
 }

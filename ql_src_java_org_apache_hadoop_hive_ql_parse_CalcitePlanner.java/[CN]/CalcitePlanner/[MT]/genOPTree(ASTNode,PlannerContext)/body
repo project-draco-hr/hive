@@ -30,15 +30,30 @@
         disableJoinMerge=false;
         sinkOp=genPlan(getQB());
         LOG.info("CBO Succeeded; optimized logical plan.");
+        this.ctx.setCboInfo("Plan optimized by CBO.");
         LOG.debug(newAST.dump());
       }
  catch (      Exception e) {
         boolean isMissingStats=noColsMissingStats.get() > 0;
         if (isMissingStats) {
           LOG.error("CBO failed due to missing column stats (see previous errors), skipping CBO");
+          this.ctx.setCboInfo("Plan not optimized by CBO due to missing statistics. Please check log for more details.");
         }
  else {
           LOG.error("CBO failed, skipping CBO. ",e);
+          if (e instanceof CalciteSemanticException) {
+            CalciteSemanticException calciteSemanticException=(CalciteSemanticException)e;
+            UnsupportedFeature unsupportedFeature=calciteSemanticException.getUnsupportedFeature();
+            if (unsupportedFeature != null) {
+              this.ctx.setCboInfo("Plan not optimized by CBO due to missing feature [" + unsupportedFeature + "].");
+            }
+ else {
+              this.ctx.setCboInfo("Plan not optimized by CBO.");
+            }
+          }
+ else {
+            this.ctx.setCboInfo("Plan not optimized by CBO.");
+          }
         }
         if (!conf.getBoolVar(ConfVars.HIVE_IN_TEST) || isMissingStats || e instanceof CalciteSemanticException) {
           reAnalyzeAST=true;
@@ -65,6 +80,7 @@
       }
     }
  else {
+      this.ctx.setCboInfo("Plan not optimized by CBO.");
       skipCalcitePlan=true;
     }
   }

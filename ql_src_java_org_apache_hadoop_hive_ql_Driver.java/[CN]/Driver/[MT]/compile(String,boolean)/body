@@ -12,6 +12,7 @@
   saveSession(queryState);
   String queryId=QueryPlan.makeQueryId();
   conf.setVar(HiveConf.ConfVars.HIVEQUERYID,queryId);
+  SessionState.get().setupQueryCurrentTimestamp();
   try {
     command=new VariableSubstitution().substitute(conf,command);
     ctx=new Context(conf);
@@ -51,13 +52,8 @@
     LOG.info("Semantic Analysis Completed");
     sem.validate();
     perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.ANALYZE);
-    plan=new QueryPlan(command,sem,perfLogger.getStartTime(PerfLogger.DRIVER_RUN),queryId,SessionState.get().getCommandType());
-    String queryStr=plan.getQueryStr();
-    List<Redactor> queryRedactors=getHooks(ConfVars.QUERYREDACTORHOOKS,Redactor.class);
-    for (    Redactor redactor : queryRedactors) {
-      redactor.setConf(conf);
-      queryStr=redactor.redactQuery(queryStr);
-    }
+    String queryStr=HookUtils.redactLogString(conf,command);
+    plan=new QueryPlan(queryStr,sem,perfLogger.getStartTime(PerfLogger.DRIVER_RUN),queryId,SessionState.get().getCommandType());
     conf.setVar(HiveConf.ConfVars.HIVEQUERYSTRING,queryStr);
     conf.set("mapreduce.workflow.id","hive_" + queryId);
     conf.set("mapreduce.workflow.name",queryStr);
@@ -107,6 +103,7 @@
   }
  finally {
     perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.COMPILE);
+    dumpMetaCallTimingWithoutEx("compilation");
     restoreSession(queryState);
   }
 }

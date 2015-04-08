@@ -1,30 +1,42 @@
 {
-  if (jsonString == null || jsonString == "" || pathString == null || pathString == "") {
+  if (jsonString == null || jsonString.isEmpty() || pathString == null || pathString.isEmpty() || pathString.charAt(0) != '$') {
     return null;
+  }
+  int pathExprStart=1;
+  boolean isRootArray=false;
+  if (pathString.length() > 1) {
+    if (pathString.charAt(1) == '[') {
+      pathExprStart=0;
+      isRootArray=true;
+    }
+ else     if (pathString.charAt(1) == '.') {
+      isRootArray=pathString.length() > 2 && pathString.charAt(2) == '[';
+    }
+ else {
+      return null;
+    }
   }
   String[] pathExpr=pathExprCache.get(pathString);
   if (pathExpr == null) {
     pathExpr=pathString.split("\\.",-1);
     pathExprCache.put(pathString,pathExpr);
   }
-  if (!pathExpr[0].equalsIgnoreCase("$")) {
-    return null;
-  }
   Object extractObject=extractObjectCache.get(jsonString);
   if (extractObject == null) {
+    JavaType javaType=isRootArray ? LIST_TYPE : MAP_TYPE;
     try {
-      extractObject=MAPPER.readValue(jsonString,MAP_TYPE);
+      extractObject=MAPPER.readValue(jsonString,javaType);
     }
  catch (    Exception e) {
       return null;
     }
     extractObjectCache.put(jsonString,extractObject);
   }
-  for (int i=1; i < pathExpr.length; i++) {
+  for (int i=pathExprStart; i < pathExpr.length; i++) {
     if (extractObject == null) {
       return null;
     }
-    extractObject=extract(extractObject,pathExpr[i]);
+    extractObject=extract(extractObject,pathExpr[i],i == pathExprStart && isRootArray);
   }
   if (extractObject instanceof Map || extractObject instanceof List) {
     try {

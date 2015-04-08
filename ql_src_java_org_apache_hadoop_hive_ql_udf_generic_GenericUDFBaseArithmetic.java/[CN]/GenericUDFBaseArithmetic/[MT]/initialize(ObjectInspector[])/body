@@ -1,0 +1,33 @@
+{
+  if (arguments.length != 2) {
+    throw new UDFArgumentException(getClass().getSimpleName() + " requires two arguments.");
+  }
+  if (confLookupNeeded) {
+    CompatLevel compatLevel=HiveCompat.getCompatLevel(SessionState.get().getConf());
+    ansiSqlArithmetic=compatLevel.ordinal() > CompatLevel.HIVE_0_12.ordinal();
+    confLookupNeeded=false;
+  }
+  boolean isDateTimeOp=false;
+  for (int idx=0; idx < 2; ++idx) {
+switch (((PrimitiveObjectInspector)arguments[idx]).getPrimitiveCategory()) {
+case DATE:
+case TIMESTAMP:
+case INTERVAL_YEAR_MONTH:
+case INTERVAL_DAY_TIME:
+      isDateTimeOp=true;
+    break;
+default :
+  break;
+}
+}
+if (isDateTimeOp) {
+arithmeticOperation=instantiateDTIUDF();
+}
+ else {
+GenericUDFBaseNumeric numericUDF=instantiateNumericUDF();
+numericUDF.setAnsiSqlArithmetic(ansiSqlArithmetic);
+numericUDF.setConfLookupNeeded(confLookupNeeded);
+arithmeticOperation=numericUDF;
+}
+return arithmeticOperation.initialize(arguments);
+}

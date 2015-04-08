@@ -1,22 +1,27 @@
 {
-  TableDesc keyTableDesc=conf.getKeyTblDesc();
-  SerDe keySerializer=(SerDe)ReflectionUtils.newInstance(keyTableDesc.getDeserializerClass(),null);
-  SerDeUtils.initializeSerDe(keySerializer,null,keyTableDesc.getProperties(),null);
-  MapJoinObjectSerDeContext keyContext=new MapJoinObjectSerDeContext(keySerializer,false);
-  for (int pos=0; pos < order.length; pos++) {
-    if (pos == posBigTable) {
-      continue;
-    }
-    TableDesc valueTableDesc;
-    if (conf.getNoOuterJoin()) {
-      valueTableDesc=conf.getValueTblDescs().get(pos);
-    }
+  try {
+    TableDesc keyTableDesc=conf.getKeyTblDesc();
+    SerDe keySerializer=(SerDe)ReflectionUtils.newInstance(keyTableDesc.getDeserializerClass(),null);
+    SerDeUtils.initializeSerDe(keySerializer,null,keyTableDesc.getProperties(),null);
+    MapJoinObjectSerDeContext keyContext=new MapJoinObjectSerDeContext(keySerializer,false);
+    for (int pos=0; pos < order.length; pos++) {
+      if (pos == posBigTable) {
+        continue;
+      }
+      TableDesc valueTableDesc;
+      if (conf.getNoOuterJoin()) {
+        valueTableDesc=conf.getValueTblDescs().get(pos);
+      }
  else {
-      valueTableDesc=conf.getValueFilteredTblDescs().get(pos);
+        valueTableDesc=conf.getValueFilteredTblDescs().get(pos);
+      }
+      SerDe valueSerDe=(SerDe)ReflectionUtils.newInstance(valueTableDesc.getDeserializerClass(),null);
+      SerDeUtils.initializeSerDe(valueSerDe,null,valueTableDesc.getProperties(),null);
+      MapJoinObjectSerDeContext valueContext=new MapJoinObjectSerDeContext(valueSerDe,hasFilter(pos));
+      mapJoinTableSerdes[pos]=new MapJoinTableContainerSerDe(keyContext,valueContext);
     }
-    SerDe valueSerDe=(SerDe)ReflectionUtils.newInstance(valueTableDesc.getDeserializerClass(),null);
-    SerDeUtils.initializeSerDe(valueSerDe,null,valueTableDesc.getProperties(),null);
-    MapJoinObjectSerDeContext valueContext=new MapJoinObjectSerDeContext(valueSerDe,hasFilter(pos));
-    mapJoinTableSerdes[pos]=new MapJoinTableContainerSerDe(keyContext,valueContext);
+  }
+ catch (  SerDeException e) {
+    throw new HiveException(e);
   }
 }

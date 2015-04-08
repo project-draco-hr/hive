@@ -1,0 +1,62 @@
+{
+  startFunction("get_fields_with_environment_context",": db=" + db + "tbl="+ tableName);
+  String[] names=tableName.split("\\.");
+  String base_table_name=names[0];
+  Table tbl;
+  List<FieldSchema> ret=null;
+  Exception ex=null;
+  ClassLoader orgHiveLoader=null;
+  Configuration curConf=hiveConf;
+  try {
+    try {
+      tbl=get_table_core(db,base_table_name);
+    }
+ catch (    NoSuchObjectException e) {
+      throw new UnknownTableException(e.getMessage());
+    }
+    if (null == tbl.getSd().getSerdeInfo().getSerializationLib() || hiveConf.getStringCollection(ConfVars.SERDESUSINGMETASTOREFORSCHEMA.varname).contains(tbl.getSd().getSerdeInfo().getSerializationLib())) {
+      ret=tbl.getSd().getCols();
+    }
+ else {
+      try {
+        if (envContext != null) {
+          String addedJars=envContext.getProperties().get("hive.added.jars.path");
+          if (org.apache.commons.lang.StringUtils.isNotBlank(addedJars)) {
+            curConf=getConf();
+            orgHiveLoader=curConf.getClassLoader();
+            ClassLoader loader=MetaStoreUtils.addToClassPath(orgHiveLoader,org.apache.commons.lang.StringUtils.split(addedJars,","));
+            curConf.setClassLoader(loader);
+          }
+        }
+        Deserializer s=MetaStoreUtils.getDeserializer(curConf,tbl,false);
+        ret=MetaStoreUtils.getFieldsFromDeserializer(tableName,s);
+      }
+ catch (      SerDeException e) {
+        StringUtils.stringifyException(e);
+        throw new MetaException(e.getMessage());
+      }
+    }
+  }
+ catch (  Exception e) {
+    ex=e;
+    if (e instanceof UnknownDBException) {
+      throw (UnknownDBException)e;
+    }
+ else     if (e instanceof UnknownTableException) {
+      throw (UnknownTableException)e;
+    }
+ else     if (e instanceof MetaException) {
+      throw (MetaException)e;
+    }
+ else {
+      throw newMetaException(e);
+    }
+  }
+ finally {
+    if (orgHiveLoader != null) {
+      curConf.setClassLoader(orgHiveLoader);
+    }
+    endFunction("get_fields_with_environment_context",ret != null,ex,tableName);
+  }
+  return ret;
+}

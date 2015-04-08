@@ -1,22 +1,14 @@
 {
   Integer sparkJobId=jobHandle.getSparkJobIds().size() == 1 ? jobHandle.getSparkJobIds().get(0) : null;
   if (sparkJobId == null) {
-    long duration=TimeUnit.MILLISECONDS.convert(System.nanoTime() - startTime,TimeUnit.NANOSECONDS);
-    if (duration <= WAIT_SUBMISSION_TIMEOUT) {
-      return null;
-    }
- else {
-      LOG.info("Job hasn't been submitted after " + duration / 1000 + "s. Aborting it.");
-      jobHandle.cancel(false);
-      return getDefaultJobInfo(sparkJobId,JobExecutionStatus.FAILED);
-    }
+    return null;
   }
-  JobHandle<SparkJobInfo> getJobInfo=sparkClient.submit(new GetJobInfoJob(jobHandle.getClientJobId(),sparkJobId));
+  Future<SparkJobInfo> getJobInfo=sparkClient.run(new GetJobInfoJob(jobHandle.getClientJobId(),sparkJobId));
   try {
     return getJobInfo.get(sparkClientTimeoutInSeconds,TimeUnit.SECONDS);
   }
- catch (  Throwable t) {
-    LOG.warn("Error getting job info",t);
-    return null;
+ catch (  Exception e) {
+    LOG.warn("Failed to get job info.",e);
+    throw new HiveException(e);
   }
 }

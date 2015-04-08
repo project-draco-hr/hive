@@ -1,0 +1,30 @@
+{
+  Set<Class<? extends Operator<?>>> searchedClasses=new ImmutableSet.Builder<Class<? extends Operator<?>>>().add(ReduceSinkOperator.class).add(GroupByOperator.class).add(FilterOperator.class).add(LimitOperator.class).build();
+  Multimap<Class<? extends Operator<?>>,Operator<?>> ops=OperatorUtils.classifyOperators(ts,searchedClasses);
+  for (  Operator<?> op : ops.get(ReduceSinkOperator.class)) {
+    ReduceSinkDesc reduceSinkConf=((ReduceSinkOperator)op).getConf();
+    if (reduceSinkConf.isOrdering() || reduceSinkConf.isPartitioning()) {
+      return null;
+    }
+  }
+  for (  Operator<?> op : ops.get(GroupByOperator.class)) {
+    GroupByDesc groupByConf=((GroupByOperator)op).getConf();
+    if (groupByConf.isAggregate() || groupByConf.isDistinct()) {
+      return null;
+    }
+  }
+  for (  Operator<?> op : ops.get(FilterOperator.class)) {
+    FilterDesc filterConf=((FilterOperator)op).getConf();
+    if (filterConf.getIsSamplingPred()) {
+      return null;
+    }
+  }
+  Collection<Operator<?>> limitOps=ops.get(LimitOperator.class);
+  if (limitOps.size() == 1) {
+    return ((LimitOperator)limitOps.iterator().next()).getConf().getLimit();
+  }
+ else   if (limitOps.size() == 0) {
+    return 0;
+  }
+  return null;
+}

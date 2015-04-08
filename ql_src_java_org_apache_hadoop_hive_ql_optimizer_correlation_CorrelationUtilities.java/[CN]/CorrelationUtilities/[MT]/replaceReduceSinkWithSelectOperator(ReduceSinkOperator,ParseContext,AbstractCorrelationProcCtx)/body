@@ -1,6 +1,17 @@
 {
-  SelectOperator select=replaceOperatorWithSelect(childRS,context,procCtx);
-  select.getConf().setOutputColumnNames(childRS.getConf().getOutputValueColumnNames());
-  select.getConf().setColList(childRS.getConf().getValueCols());
-  return select;
+  RowSchema inputRS=childRS.getSchema();
+  SelectDesc select=new SelectDesc(childRS.getConf().getValueCols(),childRS.getConf().getOutputValueColumnNames());
+  Operator<?> parent=getSingleParent(childRS);
+  parent.getChildOperators().clear();
+  SelectOperator sel=(SelectOperator)OperatorFactory.getAndMakeChild(select,new RowSchema(inputRS.getSignature()),parent);
+  sel.setColumnExprMap(childRS.getColumnExprMap());
+  sel.setChildOperators(childRS.getChildOperators());
+  for (  Operator<? extends Serializable> ch : childRS.getChildOperators()) {
+    ch.replaceParent(childRS,sel);
+  }
+  removeChildSelIfApplicable(getSingleChild(childRS),sel,context,procCtx);
+  childRS.setChildOperators(null);
+  childRS.setParentOperators(null);
+  procCtx.addRemovedOperator(childRS);
+  return sel;
 }

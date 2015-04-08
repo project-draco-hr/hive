@@ -2,18 +2,25 @@
   ColumnPrunerProcCtx cppCtx=(ColumnPrunerProcCtx)ctx;
   PTFOperator op=(PTFOperator)nd;
   PTFDesc conf=op.getConf();
-  if (!conf.forWindowing()) {
+  PartitionedTableFunctionDef funcDef=conf.getFuncDef();
+  List<String> referencedColumns=funcDef.getReferencedColumns();
+  if (!conf.forWindowing() && !conf.forNoop() && referencedColumns == null) {
     return super.process(nd,stack,cppCtx,nodeOutputs);
   }
-  WindowTableFunctionDef def=(WindowTableFunctionDef)conf.getFuncDef();
-  ArrayList<ColumnInfo> sig=new ArrayList<ColumnInfo>();
   List<String> prunedCols=cppCtx.getPrunedColList(op.getChildOperators().get(0));
-  prunedCols=new ArrayList<String>(prunedCols);
-  prunedColumnsList(prunedCols,def);
-  RowResolver oldRR=cppCtx.getOpToParseCtxMap().get(op).getRowResolver();
-  RowResolver newRR=buildPrunedRR(prunedCols,oldRR,sig);
-  cppCtx.getPrunedColLists().put(op,prunedInputList(prunedCols,def));
-  cppCtx.getOpToParseCtxMap().get(op).setRowResolver(newRR);
-  op.getSchema().setSignature(sig);
+  if (conf.forWindowing()) {
+    WindowTableFunctionDef def=(WindowTableFunctionDef)funcDef;
+    prunedCols=Utilities.mergeUniqElems(getWindowFunctionColumns(def),prunedCols);
+  }
+ else   if (conf.forNoop()) {
+    prunedCols=new ArrayList(cppCtx.getPrunedColList(op.getChildOperators().get(0)));
+  }
+ else {
+    prunedCols=referencedColumns;
+  }
+  List<ColumnInfo> newRS=prunedColumnsList(prunedCols,op.getSchema(),funcDef);
+  op.getSchema().setSignature(new ArrayList<ColumnInfo>(newRS));
+  ShapeDetails outputShape=funcDef.getStartOfChain().getInput().getOutputShape();
+  cppCtx.getPrunedColLists().put(op,outputShape.getColumnNames());
   return null;
 }

@@ -1,0 +1,28 @@
+{
+  if (min == null) {
+    if (predicate.getOperator() == PredicateLeaf.Operator.IS_NULL) {
+      return TruthValue.YES;
+    }
+ else {
+      return TruthValue.NULL;
+    }
+  }
+  TruthValue result;
+  try {
+    Object baseObj=predicate.getLiteral(PredicateLeaf.FileFormat.ORC);
+    Object minValue=getConvertedStatsObj(min,baseObj);
+    Object maxValue=getConvertedStatsObj(max,baseObj);
+    Object predObj=getBaseObjectForComparison(baseObj,minValue);
+    result=evaluatePredicateMinMax(predicate,predObj,minValue,maxValue,hasNull);
+    if (bloomFilter != null && result != TruthValue.NO_NULL && result != TruthValue.NO) {
+      result=evaluatePredicateBloomFilter(predicate,predObj,bloomFilter,hasNull);
+    }
+  }
+ catch (  Exception e) {
+    if (LOG.isWarnEnabled()) {
+      LOG.warn("Exception when evaluating predicate. Skipping ORC PPD." + " Exception: " + ExceptionUtils.getStackTrace(e));
+    }
+    result=hasNull ? TruthValue.YES_NO_NULL : TruthValue.YES_NO;
+  }
+  return result;
+}

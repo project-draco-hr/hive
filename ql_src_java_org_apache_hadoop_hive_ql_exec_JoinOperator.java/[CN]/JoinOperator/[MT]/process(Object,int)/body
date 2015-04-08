@@ -1,0 +1,40 @@
+{
+  try {
+    reportProgress();
+    lastAlias=alias;
+    alias=(byte)tag;
+    if (!alias.equals(lastAlias)) {
+      nextSz=joinEmitInterval;
+    }
+    List<Object> nr=getFilteredValue(alias,row);
+    if (handleSkewJoin) {
+      skewJoinKeyContext.handleSkew(tag);
+    }
+    long sz=storage[alias].rowCount();
+    StructObjectInspector soi=(StructObjectInspector)inputObjInspectors[tag];
+    StructField sf=soi.getStructFieldRef(Utilities.ReduceField.KEY.toString());
+    List keyObject=(List)soi.getStructFieldData(row,sf);
+    if (alias == numAliases - 1 && !(handleSkewJoin && skewJoinKeyContext.currBigKeyTag >= 0) && !hasLeftSemiJoin) {
+      if (sz == joinEmitInterval && !hasFilter(alias)) {
+        checkAndGenObject();
+        storage[alias].clearRows();
+      }
+    }
+ else {
+      if (isLogInfoEnabled && (sz == nextSz)) {
+        LOG.info("table " + alias + " has "+ sz+ " rows for join key "+ keyObject);
+        nextSz=getNextSize(nextSz);
+      }
+    }
+    StructObjectInspector inspector=(StructObjectInspector)sf.getFieldObjectInspector();
+    if (SerDeUtils.hasAnyNullObject(keyObject,inspector,nullsafes)) {
+      endGroup();
+      startGroup();
+    }
+    storage[alias].addRow(nr);
+  }
+ catch (  Exception e) {
+    e.printStackTrace();
+    throw new HiveException(e);
+  }
+}

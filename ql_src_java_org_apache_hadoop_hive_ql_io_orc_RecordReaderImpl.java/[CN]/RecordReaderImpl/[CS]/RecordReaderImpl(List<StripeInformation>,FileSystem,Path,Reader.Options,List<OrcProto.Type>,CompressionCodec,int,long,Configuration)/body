@@ -1,18 +1,19 @@
 {
+  this.path=path;
   this.file=fileSystem.open(path);
   this.codec=codec;
   this.types=types;
   this.bufferSize=bufferSize;
   this.included=options.getInclude();
   this.conf=conf;
-  this.sarg=options.getSearchArgument();
-  if (sarg != null) {
-    sargLeaves=sarg.getLeaves();
-    filterColumns=mapSargColumns(sargLeaves,options.getColumnNames(),0);
+  this.rowIndexStride=strideRate;
+  this.metadata=new MetadataReader(file,codec,bufferSize,types.size());
+  SearchArgument sarg=options.getSearchArgument();
+  if (sarg != null && strideRate != 0) {
+    sargApp=new SargApplier(sarg,options.getColumnNames(),strideRate,types,included.length);
   }
  else {
-    sargLeaves=null;
-    filterColumns=null;
+    sargApp=null;
   }
   long rows=0;
   long skippedRows=0;
@@ -29,16 +30,12 @@
     }
   }
   final boolean zeroCopy=(conf != null) && (HiveConf.getBoolVar(conf,HIVE_ORC_ZEROCOPY));
-  if (zeroCopy && (codec == null || ((codec instanceof DirectDecompressionCodec) && ((DirectDecompressionCodec)codec).isAvailable()))) {
-    this.zcr=ShimLoader.getHadoopShims().getZeroCopyReader(file,pool);
-  }
- else {
-    this.zcr=null;
-  }
+  zcr=zeroCopy ? RecordReaderUtils.createZeroCopyShim(file,codec,pool) : null;
   firstRow=skippedRows;
   totalRowCount=rows;
-  reader=createTreeReader(path,0,types,included,conf);
+  boolean skipCorrupt=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_ORC_SKIP_CORRUPT_DATA);
+  reader=TreeReaderFactory.createTreeReader(0,types,included,skipCorrupt);
   indexes=new OrcProto.RowIndex[types.size()];
-  rowIndexStride=strideRate;
-  advanceToNextRow(0L);
+  bloomFilterIndices=new OrcProto.BloomFilterIndex[types.size()];
+  advanceToNextRow(reader,0L,true);
 }

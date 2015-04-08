@@ -1,18 +1,33 @@
 {
-  TestLogger logger=new TestLogger(System.err,TestLogger.LEVEL.TRACE);
+  CommandLine cmd=null;
+  try {
+    cmd=parseCommandLine(args);
+  }
+ catch (  ParseException e) {
+    System.out.println("Error parsing command arguments: " + e.getMessage());
+    System.exit(1);
+  }
+  if (cmd == null) {
+    System.exit(0);
+  }
+  Map<String,Object> jsonValues=parseJsonFile(cmd.getOptionValue(OPT_FILE_LONG));
   Map<String,String> context=Maps.newHashMap();
-  context.put("jiraUrl","https://issues.apache.org/jira");
-  context.put("jiraUser","hiveqa");
-  context.put("jiraPassword","password goes here");
-  context.put("branch","trunk");
-  context.put("repository","repo");
-  context.put("repositoryName","repoName");
-  context.put("antArgs","-Dsome=thing");
-  context.put("logsURL","http://ec2-174-129-184-35.compute-1.amazonaws.com/logs");
+  context.put(FIELD_JIRA_URL,(String)jsonValues.get(FIELD_JIRA_URL));
+  context.put(FIELD_JIRA_USER,cmd.getOptionValue(OPT_USER_LONG));
+  context.put(FIELD_JIRA_PASS,cmd.getOptionValue(OPT_PASS_LONG));
+  context.put(FIELD_LOGS_URL,(String)jsonValues.get(FIELD_LOGS_URL));
+  context.put(FIELD_REPO,(String)jsonValues.get(FIELD_REPO));
+  context.put(FIELD_REPO_NAME,(String)jsonValues.get(FIELD_REPO_NAME));
+  context.put(FIELD_REPO_TYPE,(String)jsonValues.get(FIELD_REPO_TYPE));
+  context.put(FIELD_REPO_BRANCH,(String)jsonValues.get(FIELD_REPO_BRANCH));
+  context.put(FIELD_JENKINS_URL,(String)jsonValues.get(FIELD_JENKINS_URL));
+  TestLogger logger=new TestLogger(System.err,TestLogger.LEVEL.TRACE);
   TestConfiguration configuration=new TestConfiguration(new Context(context),logger);
-  configuration.setJiraName("HIVE-4892");
-  JIRAService service=new JIRAService(logger,configuration,"test-123");
-  List<String> messages=Lists.newArrayList("msg1","msg2");
-  SortedSet<String> failedTests=Sets.newTreeSet(Collections.singleton("failed"));
-  service.postComment(false,5,failedTests,messages);
+  configuration.setJiraName((String)jsonValues.get(FIELD_JIRA_NAME));
+  configuration.setPatch((String)jsonValues.get(FIELD_PATCH_URL));
+  JIRAService service=new JIRAService(logger,configuration,(String)jsonValues.get(FIELD_BUILD_TAG));
+  List<String> messages=(List)jsonValues.get(FIELD_MESSAGES);
+  SortedSet<String> failedTests=(SortedSet)jsonValues.get(FIELD_FAILED_TESTS);
+  boolean error=(Integer)jsonValues.get(FIELD_BUILD_STATUS) == 0 ? false : true;
+  service.postComment(error,(Integer)jsonValues.get(FIELD_NUM_TESTS_EXECUTED),failedTests,messages);
 }

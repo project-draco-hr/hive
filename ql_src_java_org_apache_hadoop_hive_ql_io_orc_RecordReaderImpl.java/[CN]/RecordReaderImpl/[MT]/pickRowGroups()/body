@@ -1,35 +1,7 @@
 {
-  if (sarg == null || rowIndexStride == 0) {
+  if (sargApp == null) {
     return null;
   }
-  readRowIndex(currentStripe);
-  long rowsInStripe=stripes.get(currentStripe).getNumberOfRows();
-  int groupsInStripe=(int)((rowsInStripe + rowIndexStride - 1) / rowIndexStride);
-  boolean[] result=new boolean[groupsInStripe];
-  TruthValue[] leafValues=new TruthValue[sargLeaves.size()];
-  for (int rowGroup=0; rowGroup < result.length; ++rowGroup) {
-    for (int pred=0; pred < leafValues.length; ++pred) {
-      if (filterColumns[pred] != -1) {
-        OrcProto.ColumnStatistics stats=indexes[filterColumns[pred]].getEntry(rowGroup).getStatistics();
-        leafValues[pred]=evaluatePredicate(stats,sargLeaves.get(pred));
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("Stats = " + stats);
-          LOG.debug("Setting " + sargLeaves.get(pred) + " to "+ leafValues[pred]);
-        }
-      }
- else {
-        leafValues[pred]=TruthValue.YES_NO_NULL;
-      }
-    }
-    result[rowGroup]=sarg.evaluate(leafValues).isNeeded();
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Row group " + (rowIndexStride * rowGroup) + " to "+ (rowIndexStride * (rowGroup + 1) - 1)+ " is "+ (result[rowGroup] ? "" : "not ")+ "included.");
-    }
-  }
-  for (  boolean b : result) {
-    if (!b) {
-      return result;
-    }
-  }
-  return null;
+  readRowIndex(currentStripe,included,sargApp.sargColumns);
+  return sargApp.pickRowGroups(stripes.get(currentStripe),indexes);
 }

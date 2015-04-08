@@ -1,7 +1,34 @@
 {
-  Set<String> resources=resource_map.get(t);
-  if (resources != null && !resources.isEmpty()) {
-    t.postHook(resources,value);
-    resources.removeAll(value);
+  Set<String> resources=resourceMaps.getResourceSet(t);
+  if (resources == null || resources.isEmpty()) {
+    return;
   }
+  Map<String,Set<String>> resourcePathMap=resourceMaps.getResourcePathMap(t);
+  Map<String,Set<String>> reverseResourcePathMap=resourceMaps.getReverseResourcePathMap(t);
+  List<String> deleteList=new LinkedList<String>();
+  for (  String value : values) {
+    String key=value;
+    try {
+      if (getURLType(value).equals("ivy")) {
+        key=new URI(value).getAuthority();
+      }
+    }
+ catch (    URISyntaxException e) {
+      throw new RuntimeException("Invalid uri string " + value + ", "+ e.getMessage());
+    }
+    Set<String> resourcePaths=resourcePathMap.get(key);
+    if (resourcePaths == null) {
+      return;
+    }
+    for (    String resourceValue : resourcePaths) {
+      reverseResourcePathMap.get(resourceValue).remove(key);
+      if (reverseResourcePathMap.get(resourceValue).isEmpty()) {
+        deleteList.add(resourceValue);
+        reverseResourcePathMap.remove(resourceValue);
+      }
+    }
+    resourcePathMap.remove(key);
+  }
+  t.postHook(resources,deleteList);
+  resources.removeAll(deleteList);
 }

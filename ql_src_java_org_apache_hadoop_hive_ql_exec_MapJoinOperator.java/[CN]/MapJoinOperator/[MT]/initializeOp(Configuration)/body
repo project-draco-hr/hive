@@ -1,20 +1,37 @@
 {
+  this.hconf=hconf;
   unwrapContainer=new UnwrapRowContainer[conf.getTagLength()];
-  super.initializeOp(hconf);
+  Collection<Future<?>> result=super.initializeOp(hconf);
+  if (result == null) {
+    result=new HashSet<Future<?>>();
+  }
   int tagLen=conf.getTagLength();
-  tableKey="__HASH_MAP_" + this.getOperatorId() + "_container";
-  serdeKey="__HASH_MAP_" + this.getOperatorId() + "_serde";
+  cacheKey=HiveConf.getVar(hconf,HiveConf.ConfVars.HIVEQUERYID) + "__HASH_MAP_" + this.getOperatorId()+ "_container";
   cache=ObjectCacheFactory.getCache(hconf);
   loader=HashTableLoaderFactory.getLoader(hconf);
   hashMapRowGetters=null;
-  mapJoinTables=(MapJoinTableContainer[])cache.retrieve(tableKey);
-  mapJoinTableSerdes=(MapJoinTableContainerSerDe[])cache.retrieve(serdeKey);
-  hashTblInitedOnce=true;
-  LOG.info("Try to retrieve from cache");
-  if (mapJoinTables == null || mapJoinTableSerdes == null) {
-    LOG.info("Did not find tables in cache");
-    mapJoinTables=new MapJoinTableContainer[tagLen];
-    mapJoinTableSerdes=new MapJoinTableContainerSerDe[tagLen];
-    hashTblInitedOnce=false;
+  mapJoinTables=new MapJoinTableContainer[tagLen];
+  mapJoinTableSerdes=new MapJoinTableContainerSerDe[tagLen];
+  hashTblInitedOnce=false;
+  useHybridGraceHashJoin=HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVEUSEHYBRIDGRACEHASHJOIN);
+  generateMapMetaData();
+  final ExecMapperContext mapContext=getExecContext();
+  final MapredContext mrContext=MapredContext.get();
+  if (!conf.isBucketMapJoin() && !useHybridGraceHashJoin) {
+    if (isLogInfoEnabled) {
+      LOG.info("This is not bucket map join, so cache");
+    }
+    Future<Pair<MapJoinTableContainer[],MapJoinTableContainerSerDe[]>> future=cache.retrieveAsync(cacheKey,new Callable<Pair<MapJoinTableContainer[],MapJoinTableContainerSerDe[]>>(){
+      @Override public Pair<MapJoinTableContainer[],MapJoinTableContainerSerDe[]> call() throws HiveException {
+        return loadHashTable(mapContext,mrContext);
+      }
+    }
+);
+    result.add(future);
   }
+ else   if (mapContext == null || mapContext.getLocalWork() == null || mapContext.getLocalWork().getInputFileChangeSensitive() == false) {
+    loadHashTable(mapContext,mrContext);
+    hashTblInitedOnce=true;
+  }
+  return result;
 }

@@ -19,13 +19,13 @@
     String hint=ctx.getTokenRewriteStream().toString(selExprList.getChild(0).getTokenStartIndex(),selExprList.getChild(0).getTokenStopIndex());
     String msg=String.format("Hint specified for %s." + " Currently we don't support hints in CBO, turn off cbo to use hints.",hint);
     LOG.debug(msg);
-    throw new CalciteSemanticException(msg);
+    throw new CalciteSemanticException(msg,UnsupportedFeature.Hint);
   }
   boolean isInTransform=(selExprList.getChild(posn).getChild(0).getType() == HiveParser.TOK_TRANSFORM);
   if (isInTransform) {
     String msg=String.format("SELECT TRANSFORM is currently not supported in CBO," + " turn off cbo to use TRANSFORM.");
     LOG.debug(msg);
-    throw new CalciteSemanticException(msg);
+    throw new CalciteSemanticException(msg,UnsupportedFeature.Select_transform);
   }
   ASTNode expr=(ASTNode)selExprList.getChild(posn).getChild(0);
   int exprType=expr.getType();
@@ -35,7 +35,7 @@
     if (fi != null && fi.getGenericUDTF() != null) {
       String msg=String.format("UDTF " + funcName + " is currently not supported in CBO,"+ " turn off cbo to use UDTF "+ funcName);
       LOG.debug(msg);
-      throw new CalciteSemanticException(msg);
+      throw new CalciteSemanticException(msg,UnsupportedFeature.UDTF);
     }
   }
   ASTNode exprList=selExprList;
@@ -64,7 +64,7 @@
       pos=genColListRegex(SemanticAnalyzer.unescapeIdentifier(expr.getChild(1).getText()),SemanticAnalyzer.unescapeIdentifier(expr.getChild(0).getChild(0).getText().toLowerCase()),expr,col_list,excludedColumns,inputRR,starRR,pos,out_rwsch,tabAliasesForAllProjs,true);
     }
  else     if (expr.toStringTree().contains("TOK_FUNCTIONDI") && !(srcRel instanceof HiveAggregate)) {
-      throw new CalciteSemanticException("Distinct without an aggreggation.");
+      throw new CalciteSemanticException("Distinct without an aggreggation.",UnsupportedFeature.Distinct_without_an_aggreggation);
     }
  else {
       TypeCheckCtx tcCtx=new TypeCheckCtx(inputRR);
@@ -78,7 +78,7 @@
       ColumnInfo colInfo=new ColumnInfo(SemanticAnalyzer.getColumnInternalName(pos),exp.getWritableObjectInspector(),tabAlias,false);
       colInfo.setSkewedCol((exp instanceof ExprNodeColumnDesc) ? ((ExprNodeColumnDesc)exp).isSkewedCol() : false);
       if (!out_rwsch.putWithCheck(tabAlias,colAlias,null,colInfo)) {
-        throw new CalciteSemanticException("Cannot add column to RR: " + tabAlias + "."+ colAlias+ " => "+ colInfo+ " due to duplication, see previous warnings");
+        throw new CalciteSemanticException("Cannot add column to RR: " + tabAlias + "."+ colAlias+ " => "+ colInfo+ " due to duplication, see previous warnings",UnsupportedFeature.Duplicates_in_RR);
       }
       if (exp instanceof ExprNodeColumnDesc) {
         ExprNodeColumnDesc colExp=(ExprNodeColumnDesc)exp;

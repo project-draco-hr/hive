@@ -4,29 +4,21 @@
   GlobalLimitCtx globalLimitCtx=pctx.getGlobalLimitCtx();
   Map<TableScanOperator,ExprNodeDesc> opToPartPruner=pctx.getOpToPartPruner();
   Map<String,SplitSample> nameToSplitSample=pctx.getNameToSplitSample();
-  QB qb=pctx.getQB();
-  QBParseInfo qbParseInfo=qb.getParseInfo();
   if (ctx.getTryCount() == 0 && topOps.size() == 1 && !globalLimitCtx.ifHasTransformOrUDTF() && nameToSplitSample.isEmpty()) {
-    Integer tempGlobalLimit=checkQbpForGlobalLimit(qb);
+    TableScanOperator ts=(TableScanOperator)topOps.values().toArray()[0];
+    Integer tempGlobalLimit=checkQbpForGlobalLimit(ts);
     if (tempGlobalLimit != null && tempGlobalLimit != 0) {
-      TableScanOperator ts=(TableScanOperator)topOps.values().toArray()[0];
       Table tab=ts.getConf().getTableMetadata();
+      Set<FilterOperator> filterOps=OperatorUtils.findOperators(ts,FilterOperator.class);
       if (!tab.isPartitioned()) {
-        if (qbParseInfo.getDestToWhereExpr().isEmpty()) {
+        if (filterOps.size() == 0) {
           globalLimitCtx.enableOpt(tempGlobalLimit);
         }
       }
  else {
-        if (PartitionPruner.onlyContainsPartnCols(tab,opToPartPruner.get(ts))) {
-          PrunedPartitionList partsList;
-          try {
-            String alias=(String)topOps.keySet().toArray()[0];
-            partsList=PartitionPruner.prune(ts,pctx,alias);
-          }
- catch (          HiveException e) {
-            LOG.error(org.apache.hadoop.util.StringUtils.stringifyException(e));
-            throw new SemanticException(e.getMessage(),e);
-          }
+        if (onlyContainsPartnCols(tab,filterOps)) {
+          String alias=(String)topOps.keySet().toArray()[0];
+          PrunedPartitionList partsList=pctx.getPrunedPartitions(alias,ts);
           if (!partsList.hasUnknownPartitions()) {
             globalLimitCtx.enableOpt(tempGlobalLimit);
           }

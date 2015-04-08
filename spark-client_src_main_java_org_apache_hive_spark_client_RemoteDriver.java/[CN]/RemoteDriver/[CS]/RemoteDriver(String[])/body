@@ -1,5 +1,6 @@
 {
   this.activeJobs=Maps.newConcurrentMap();
+  this.jcLock=new Object();
   this.shutdownLock=new Object();
   SparkConf conf=new SparkConf();
   String serverAddress=null;
@@ -11,6 +12,9 @@
     }
  else     if (key.equals("--remote-port")) {
       serverPort=Integer.parseInt(getArg(args,idx));
+    }
+ else     if (key.equals("--client-id")) {
+      conf.set(SparkClientFactory.CONF_CLIENT_ID,getArg(args,idx));
     }
  else     if (key.equals("--secret")) {
       conf.set(SparkClientFactory.CONF_KEY_SECRET,getArg(args,idx));
@@ -28,13 +32,16 @@
   Map<String,String> mapConf=Maps.newHashMap();
   for (  Tuple2<String,String> e : conf.getAll()) {
     mapConf.put(e._1(),e._2());
+    LOG.debug("Remote Driver configured with: " + e._1() + "="+ e._2());
   }
+  String clientId=mapConf.get(SparkClientFactory.CONF_CLIENT_ID);
+  Preconditions.checkArgument(clientId != null,"No client ID provided.");
   String secret=mapConf.get(SparkClientFactory.CONF_KEY_SECRET);
   Preconditions.checkArgument(secret != null,"No secret provided.");
   int threadCount=new RpcConfiguration(mapConf).getRpcThreadCount();
   this.egroup=new NioEventLoopGroup(threadCount,new ThreadFactoryBuilder().setNameFormat("Driver-RPC-Handler-%d").setDaemon(true).build());
   this.protocol=new DriverProtocol();
-  this.clientRpc=Rpc.createClient(mapConf,egroup,serverAddress,serverPort,secret,protocol).get();
+  this.clientRpc=Rpc.createClient(mapConf,egroup,serverAddress,serverPort,clientId,secret,protocol).get();
   this.running=true;
   this.clientRpc.addListener(new Rpc.Listener(){
     @Override public void rpcClosed(    Rpc rpc){
@@ -46,14 +53,20 @@
   try {
     JavaSparkContext sc=new JavaSparkContext(conf);
     sc.sc().addSparkListener(new ClientListener());
-    jc=new JobContextImpl(sc);
+synchronized (jcLock) {
+      jc=new JobContextImpl(sc);
+      jcLock.notifyAll();
+    }
   }
  catch (  Exception e) {
     LOG.error("Failed to start SparkContext.",e);
     shutdown(e);
+synchronized (jcLock) {
+      jcLock.notifyAll();
+    }
     throw e;
   }
-synchronized (jobQueue) {
+synchronized (jcLock) {
     for (Iterator<JobWrapper<?>> it=jobQueue.iterator(); it.hasNext(); ) {
       it.next().submit();
     }

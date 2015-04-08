@@ -1,0 +1,51 @@
+{
+  firstRow=false;
+  ObjectInspector rowInspector=inputObjInspectors[tag];
+  if (hashAggr) {
+    numRowsInput++;
+    if (numRowsInput == numRowsCompareHashAggr) {
+      numRowsCompareHashAggr+=groupbyMapAggrInterval;
+      if (numRowsHashTbl > numRowsInput * minReductionHashAggr) {
+        LOG.warn("Disable Hash Aggr: #hash table = " + numRowsHashTbl + " #total = "+ numRowsInput+ " reduction = "+ 1.0 * (numRowsHashTbl / numRowsInput) + " minReduction = " + minReductionHashAggr);
+        flushHashTable(true);
+        hashAggr=false;
+      }
+ else {
+        if (isLogTraceEnabled) {
+          LOG.trace("Hash Aggr Enabled: #hash table = " + numRowsHashTbl + " #total = "+ numRowsInput+ " reduction = "+ 1.0 * (numRowsHashTbl / numRowsInput) + " minReduction = " + minReductionHashAggr);
+        }
+      }
+    }
+  }
+  try {
+    countAfterReport++;
+    newKeys.getNewKey(row,rowInspector);
+    if (groupingSetsPresent) {
+      Object[] newKeysArray=newKeys.getKeyArray();
+      Object[] cloneNewKeysArray=new Object[newKeysArray.length];
+      for (int keyPos=0; keyPos < groupingSetsPosition; keyPos++) {
+        cloneNewKeysArray[keyPos]=newKeysArray[keyPos];
+      }
+      for (int groupingSetPos=0; groupingSetPos < groupingSets.size(); groupingSetPos++) {
+        for (int keyPos=0; keyPos < groupingSetsPosition; keyPos++) {
+          newKeysArray[keyPos]=null;
+        }
+        FastBitSet bitset=groupingSetsBitSet[groupingSetPos];
+        for (int keyPos=bitset.nextSetBit(0); keyPos >= 0; keyPos=bitset.nextSetBit(keyPos + 1)) {
+          newKeysArray[keyPos]=cloneNewKeysArray[keyPos];
+        }
+        newKeysArray[groupingSetsPosition]=newKeysGroupingSets[groupingSetPos];
+        processKey(row,rowInspector);
+      }
+    }
+ else {
+      processKey(row,rowInspector);
+    }
+  }
+ catch (  HiveException e) {
+    throw e;
+  }
+catch (  Exception e) {
+    throw new HiveException(e);
+  }
+}
