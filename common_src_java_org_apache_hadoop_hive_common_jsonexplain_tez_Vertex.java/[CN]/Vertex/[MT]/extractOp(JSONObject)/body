@@ -1,0 +1,56 @@
+{
+  String[] names=JSONObject.getNames(operator);
+  if (names.length != 1) {
+    throw new Exception("Expect only one operator in " + operator.toString());
+  }
+ else {
+    String opName=names[0];
+    JSONObject attrObj=(JSONObject)operator.get(opName);
+    List<Attr> attrs=new ArrayList<>();
+    List<Op> children=new ArrayList<>();
+    String id=null;
+    String outputVertexName=null;
+    for (    String attrName : JSONObject.getNames(attrObj)) {
+      if (attrName.equals("children")) {
+        Object childrenObj=attrObj.get(attrName);
+        if (childrenObj instanceof JSONObject) {
+          if (((JSONObject)childrenObj).length() != 0) {
+            children.add(extractOp((JSONObject)childrenObj));
+          }
+        }
+ else         if (childrenObj instanceof JSONArray) {
+          if (((JSONArray)childrenObj).length() != 0) {
+            JSONArray array=((JSONArray)childrenObj);
+            for (int index=0; index < array.length(); index++) {
+              children.add(extractOp(array.getJSONObject(index)));
+            }
+          }
+        }
+ else {
+          throw new Exception("Unsupported operator " + this.name + "'s children operator is neither a jsonobject nor a jsonarray");
+        }
+      }
+ else {
+        if (attrName.equals("OperatorId:")) {
+          id=attrObj.get(attrName).toString();
+        }
+ else         if (attrName.equals("outputname:")) {
+          outputVertexName=attrObj.get(attrName).toString();
+        }
+ else {
+          attrs.add(new Attr(attrName,attrObj.get(attrName).toString()));
+        }
+      }
+    }
+    Op op=new Op(opName,id,outputVertexName,children,attrs,operator,this);
+    if (!children.isEmpty()) {
+      for (      Op child : children) {
+        child.parent=op;
+      }
+    }
+ else {
+      this.rootOps.add(op);
+    }
+    return op;
+  }
+}

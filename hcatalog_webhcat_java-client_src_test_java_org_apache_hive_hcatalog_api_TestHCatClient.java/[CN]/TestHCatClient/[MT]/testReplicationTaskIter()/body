@@ -1,0 +1,93 @@
+{
+  HCatClient sourceMetastore=HCatClient.create(new Configuration(hcatConf));
+  List<HCatNotificationEvent> notifs=sourceMetastore.getNextNotification(0,0,new IMetaStoreClient.NotificationFilter(){
+    @Override public boolean accept(    NotificationEvent event){
+      return true;
+    }
+  }
+);
+  for (  HCatNotificationEvent n : notifs) {
+    LOG.info("notif from dblistener:" + n.getEventId() + ":"+ n.getEventTime()+ ",t:"+ n.getEventType()+ ",o:"+ n.getDbName()+ "."+ n.getTableName());
+  }
+  Iterator<ReplicationTask> taskIter=sourceMetastore.getReplicationTasks(0,0,"mydb",null);
+  while (taskIter.hasNext()) {
+    ReplicationTask task=taskIter.next();
+    HCatNotificationEvent n=task.getEvent();
+    LOG.info("notif from tasks:" + n.getEventId() + ":"+ n.getEventTime()+ ",t:"+ n.getEventType()+ ",o:"+ n.getDbName()+ "."+ n.getTableName()+ ",s:"+ n.getEventScope());
+    LOG.info("task :" + task.getClass().getName());
+    if (task.needsStagingDirs()) {
+      StagingDirectoryProvider provider=new StagingDirectoryProvider(){
+        @Override public String getStagingDirectory(        String key){
+          LOG.info("getStagingDirectory(" + key + ") called!");
+          return "/tmp/" + key.replaceAll(" ","_");
+        }
+      }
+;
+      task.withSrcStagingDirProvider(provider).withDstStagingDirProvider(provider);
+    }
+    if (task.isActionable()) {
+      LOG.info("task was actionable!");
+      Function<Command,String> commandDebugPrinter=new Function<Command,String>(){
+        @Override public String apply(        @Nullable Command cmd){
+          StringBuilder sb=new StringBuilder();
+          String serializedCmd=null;
+          try {
+            serializedCmd=ReplicationUtils.serializeCommand(cmd);
+          }
+ catch (          IOException e) {
+            e.printStackTrace();
+            throw new RuntimeException(e);
+          }
+          sb.append("SERIALIZED:" + serializedCmd + "\n");
+          Command command=null;
+          try {
+            command=ReplicationUtils.deserializeCommand(serializedCmd);
+          }
+ catch (          IOException e) {
+            e.printStackTrace();
+            throw new RuntimeException(e);
+          }
+          sb.append("CMD:[" + command.getClass().getName() + "]\n");
+          sb.append("EVENTID:[" + command.getEventId() + "]\n");
+          for (          String s : command.get()) {
+            sb.append("CMD:" + s);
+            sb.append("\n");
+          }
+          sb.append("Retriable:" + command.isRetriable() + "\n");
+          sb.append("Undoable:" + command.isUndoable() + "\n");
+          if (command.isUndoable()) {
+            for (            String s : command.getUndo()) {
+              sb.append("UNDO:" + s);
+              sb.append("\n");
+            }
+          }
+          List<String> locns=command.cleanupLocationsPerRetry();
+          sb.append("cleanupLocationsPerRetry entries :" + locns.size());
+          for (          String s : locns) {
+            sb.append("RETRY_CLEANUP:" + s);
+            sb.append("\n");
+          }
+          locns=command.cleanupLocationsAfterEvent();
+          sb.append("cleanupLocationsAfterEvent entries :" + locns.size());
+          for (          String s : locns) {
+            sb.append("AFTER_EVENT_CLEANUP:" + s);
+            sb.append("\n");
+          }
+          return sb.toString();
+        }
+      }
+;
+      LOG.info("On src:");
+      for (      String s : Iterables.transform(task.getSrcWhCommands(),commandDebugPrinter)) {
+        LOG.info(s);
+      }
+      LOG.info("On dest:");
+      for (      String s : Iterables.transform(task.getDstWhCommands(),commandDebugPrinter)) {
+        LOG.info(s);
+      }
+    }
+ else {
+      LOG.info("task was not actionable.");
+    }
+  }
+}
