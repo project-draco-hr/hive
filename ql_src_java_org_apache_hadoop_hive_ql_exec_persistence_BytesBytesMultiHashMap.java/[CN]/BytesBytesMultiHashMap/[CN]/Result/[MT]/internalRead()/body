@@ -1,0 +1,40 @@
+{
+  if (!hasList) {
+    if (readIndex > 0) {
+      return null;
+    }
+    hashMap.writeBuffers.setReadPoint(firstOffset,readPos);
+    int valueLength=(int)hashMap.writeBuffers.readVLong(readPos);
+    byteSegmentRef.reset(firstOffset - valueLength,valueLength);
+    hashMap.writeBuffers.populateValue(byteSegmentRef);
+    readIndex++;
+    return byteSegmentRef;
+  }
+  if (readIndex == 0) {
+    long relativeOffset=hashMap.writeBuffers.readNByteLong(firstOffset,5,readPos);
+    hashMap.writeBuffers.setReadPoint(firstOffset + relativeOffset,readPos);
+    int valueLength=(int)hashMap.writeBuffers.readVLong(readPos);
+    byteSegmentRef.reset(firstOffset - valueLength,valueLength);
+    hashMap.writeBuffers.populateValue(byteSegmentRef);
+    readIndex++;
+    return byteSegmentRef;
+  }
+  if (readIndex == 1) {
+    nextTailOffset=hashMap.writeBuffers.readNByteLong(offsetAfterListRecordKeyLen,5,readPos);
+    if (nextTailOffset <= 0) {
+      throw new Error("Expecting a second value");
+    }
+  }
+ else   if (nextTailOffset <= 0) {
+    return null;
+  }
+  hashMap.writeBuffers.setReadPoint(nextTailOffset,readPos);
+  int valueLength=(int)hashMap.writeBuffers.readVLong(readPos);
+  long delta=hashMap.writeBuffers.readVLong(readPos);
+  long newTailOffset=delta == 0 ? 0 : (nextTailOffset - delta);
+  byteSegmentRef.reset(nextTailOffset - valueLength,valueLength);
+  hashMap.writeBuffers.populateValue(byteSegmentRef);
+  nextTailOffset=newTailOffset;
+  readIndex++;
+  return byteSegmentRef;
+}
