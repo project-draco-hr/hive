@@ -1,0 +1,62 @@
+{
+  final int TASK_COUNT=takerCount + giverCount, GIVECOUNT=15000, TAKECOUNT=15000;
+  ExecutorService executor=Executors.newFixedThreadPool(TASK_COUNT);
+  final CountDownLatch cdlIn=new CountDownLatch(TASK_COUNT), cdlOut=new CountDownLatch(1);
+  final FixedSizedObjectPool<Object> pool=new FixedSizedObjectPool<>(size,new OneObjHelper(),true);
+  HashSet<Object> allGiven=new HashSet<>();
+  for (int i=0; i < (size >> 1); ++i) {
+    Object o=new Object();
+    allGiven.add(o);
+    assertTrue(pool.offer(o));
+  }
+  @SuppressWarnings("unchecked") FutureTask<Object>[] tasks=new FutureTask[TASK_COUNT];
+  TakeRunnable[] takers=new TakeRunnable[takerCount];
+  OfferRunnable[] givers=new OfferRunnable[giverCount];
+  int ti=0;
+  for (int i=0; i < takerCount; ++i, ++ti) {
+    takers[i]=new TakeRunnable(pool,cdlIn,cdlOut,TAKECOUNT);
+    tasks[ti]=new FutureTask<Object>(takers[i],null);
+    executor.execute(tasks[ti]);
+  }
+  for (int i=0; i < giverCount; ++i, ++ti) {
+    givers[i]=new OfferRunnable(pool,cdlIn,cdlOut,GIVECOUNT);
+    tasks[ti]=new FutureTask<Object>(givers[i],null);
+    executor.execute(tasks[ti]);
+  }
+  long time=0;
+  try {
+    cdlIn.await();
+    time=System.nanoTime();
+    cdlOut.countDown();
+    for (int i=0; i < TASK_COUNT; ++i) {
+      tasks[i].get();
+    }
+    time=(System.nanoTime() - time);
+  }
+ catch (  Throwable t) {
+    throw new RuntimeException(t);
+  }
+  int given=allGiven.size(), takenOld=0;
+  for (  OfferRunnable g : givers) {
+    for (    Object o : g.objects) {
+      assertTrue(allGiven.add(o));
+      ++given;
+    }
+  }
+  for (  TakeRunnable t : takers) {
+    for (    Object o : t.objects) {
+      assertTrue(allGiven.remove(o));
+      ++takenOld;
+    }
+  }
+  LOG.info("MTT test - size " + size + ", takers/givers "+ takerCount+ "/"+ giverCount+ "; offered "+ (given - (size >> 1))+ " (attempted "+ (GIVECOUNT * giverCount)+ "); reused "+ takenOld+ ", allocated "+ ((TAKECOUNT * takerCount) - takenOld)+ " (took "+ time / 1000000L + "ms including thread sync)");
+  while (pool.take() != OneObjHelper.THE_OBJECT)   ;
+  for (int i=0; i < size; ++i) {
+    assertTrue(pool.offer(new Object()));
+  }
+  assertFalse(pool.offer(new Object()));
+  for (int i=0; i < size; ++i) {
+    assertTrue(OneObjHelper.THE_OBJECT != pool.take());
+  }
+  assertTrue(OneObjHelper.THE_OBJECT == pool.take());
+}

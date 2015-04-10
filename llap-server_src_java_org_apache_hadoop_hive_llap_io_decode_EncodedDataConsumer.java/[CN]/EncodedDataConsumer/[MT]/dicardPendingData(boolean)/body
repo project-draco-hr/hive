@@ -1,24 +1,16 @@
 {
-  List<EncodedColumnBatch<BatchKey>> batches=new ArrayList<EncodedColumnBatch<BatchKey>>(pendingData.size());
+  List<BatchType> batches=new ArrayList<BatchType>(pendingData.size());
 synchronized (pendingData) {
     if (isStopped) {
       this.isStopped=true;
     }
-    batches.addAll(pendingData.values());
+    for (    BatchType ecb : pendingData.values()) {
+      ++ecb.version;
+      batches.add(ecb);
+    }
     pendingData.clear();
   }
-  List<EncodedColumnBatch.StreamBuffer> dataToDiscard=new ArrayList<StreamBuffer>(batches.size() * colCount * 2);
-  for (  EncodedColumnBatch<BatchKey> batch : batches) {
-synchronized (batch) {
-      for (      EncodedColumnBatch.StreamBuffer[] bb : batch.columnData) {
-        for (        EncodedColumnBatch.StreamBuffer b : bb) {
-          dataToDiscard.add(b);
-        }
-      }
-      batch.columnData=null;
-    }
-  }
-  for (  EncodedColumnBatch.StreamBuffer data : dataToDiscard) {
-    upstreamFeedback.returnData(data);
+  for (  BatchType batch : batches) {
+    upstreamFeedback.returnData(batch);
   }
 }
