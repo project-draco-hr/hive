@@ -2,9 +2,20 @@
   RelNode gbRel=null;
   QBParseInfo qbp=getQBParseInfo(qb);
   String detsClauseName=qbp.getClauseNames().iterator().next();
+  ASTNode selExprList=qb.getParseInfo().getSelForClause(detsClauseName);
+  if (selExprList.getToken().getType() == HiveParser.TOK_SELECTDI && selExprList.getChildCount() == 1 && selExprList.getChild(0).getChildCount() == 1) {
+    ASTNode node=(ASTNode)selExprList.getChild(0).getChild(0);
+    if (node.getToken().getType() == HiveParser.TOK_ALLCOLREF) {
+      srcRel=genSelectLogicalPlan(qb,srcRel,srcRel);
+      RowResolver rr=this.relToHiveRR.get(srcRel);
+      qbp.setSelExprForClause(detsClauseName,SemanticAnalyzer.genSelectDIAST(rr));
+    }
+  }
   List<ASTNode> grpByAstExprs=SemanticAnalyzer.getGroupByForClause(qbp,detsClauseName);
   HashMap<String,ASTNode> aggregationTrees=qbp.getAggregationExprsForClause(detsClauseName);
-  boolean cubeRollupGrpSetPresent=(!qbp.getDestRollups().isEmpty() || !qbp.getDestGroupingSets().isEmpty() || !qbp.getDestCubes().isEmpty());
+  boolean hasGrpByAstExprs=(grpByAstExprs != null && !grpByAstExprs.isEmpty()) ? true : false;
+  boolean hasAggregationTrees=(aggregationTrees != null && !aggregationTrees.isEmpty()) ? true : false;
+  final boolean cubeRollupGrpSetPresent=(!qbp.getDestRollups().isEmpty() || !qbp.getDestGroupingSets().isEmpty() || !qbp.getDestCubes().isEmpty());
   if (conf.getBoolVar(HiveConf.ConfVars.HIVEGROUPBYSKEW) && qbp.getDistinctFuncExprsForClause(detsClauseName).size() > 1) {
     throw new SemanticException(ErrorMsg.UNSUPPORTED_MULTIPLE_DISTINCTS.getMsg());
   }
@@ -20,17 +31,6 @@
       }
     }
   }
-  ASTNode selExprList=qb.getParseInfo().getSelForClause(detsClauseName);
-  if (selExprList.getToken().getType() == HiveParser.TOK_SELECTDI && selExprList.getChildCount() == 1 && selExprList.getChild(0).getChildCount() == 1) {
-    ASTNode node=(ASTNode)selExprList.getChild(0).getChild(0);
-    if (node.getToken().getType() == HiveParser.TOK_ALLCOLREF) {
-      srcRel=genSelectLogicalPlan(qb,srcRel,srcRel);
-      RowResolver rr=this.relToHiveRR.get(srcRel);
-      qbp.setSelExprForClause(detsClauseName,SemanticAnalyzer.genSelectDIAST(rr));
-    }
-  }
-  boolean hasGrpByAstExprs=(grpByAstExprs != null && !grpByAstExprs.isEmpty()) ? true : false;
-  boolean hasAggregationTrees=(aggregationTrees != null && !aggregationTrees.isEmpty()) ? true : false;
   if (hasGrpByAstExprs || hasAggregationTrees) {
     ArrayList<ExprNodeDesc> gbExprNDescLst=new ArrayList<ExprNodeDesc>();
     ArrayList<String> outputColumnNames=new ArrayList<String>();
