@@ -1,0 +1,54 @@
+{
+  Map<Integer,String> emptyScratchMap=new HashMap<Integer,String>();
+  RandomRowObjectSource source=new RandomRowObjectSource();
+  source.init(r);
+  VectorizedRowBatchCtx batchContext=new VectorizedRowBatchCtx();
+  batchContext.init(emptyScratchMap,source.rowStructObjectInspector());
+  VectorizedRowBatch batch=batchContext.createVectorizedRowBatch();
+  int fieldCount=source.typeNames().size();
+  DeserializeRead deserializeRead;
+  SerializeWrite serializeWrite;
+switch (serializationType) {
+case BINARY_SORTABLE:
+    deserializeRead=new BinarySortableDeserializeRead(source.primitiveTypeInfos());
+  serializeWrite=new BinarySortableSerializeWrite(fieldCount);
+break;
+case LAZY_BINARY:
+deserializeRead=new LazyBinaryDeserializeRead(source.primitiveTypeInfos());
+serializeWrite=new LazyBinarySerializeWrite(fieldCount);
+break;
+case LAZY_SIMPLE:
+{
+StructObjectInspector rowObjectInspector=source.rowStructObjectInspector();
+LazySerDeParameters lazySerDeParams=getSerDeParams(rowObjectInspector);
+byte separator=(byte)'\t';
+deserializeRead=new LazySimpleDeserializeRead(source.primitiveTypeInfos(),separator,lazySerDeParams);
+serializeWrite=new LazySimpleSerializeWrite(fieldCount,separator,lazySerDeParams);
+}
+break;
+default :
+throw new Error("Unknown serialization type " + serializationType);
+}
+VectorDeserializeRow vectorDeserializeRow=new VectorDeserializeRow(deserializeRead);
+vectorDeserializeRow.init();
+VectorExtractRowSameBatch vectorExtractRow=new VectorExtractRowSameBatch();
+vectorExtractRow.init(source.typeNames());
+vectorExtractRow.setOneBatch(batch);
+Object[][] randomRows=source.randomRows(100000);
+int firstRandomRowIndex=0;
+for (int i=0; i < randomRows.length; i++) {
+Object[] row=randomRows[i];
+Output output=serializeRow(row,source,serializeWrite);
+vectorDeserializeRow.setBytes(output.getData(),0,output.getLength());
+vectorDeserializeRow.deserializeByValue(batch,batch.size);
+batch.size++;
+if (batch.size == batch.DEFAULT_SIZE) {
+examineBatch(batch,vectorExtractRow,randomRows,firstRandomRowIndex);
+firstRandomRowIndex=i + 1;
+batch.reset();
+}
+}
+if (batch.size > 0) {
+examineBatch(batch,vectorExtractRow,randomRows,firstRandomRowIndex);
+}
+}
