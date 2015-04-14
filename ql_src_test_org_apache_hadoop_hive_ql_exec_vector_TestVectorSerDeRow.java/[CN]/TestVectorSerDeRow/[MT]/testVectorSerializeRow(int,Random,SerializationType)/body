@@ -1,0 +1,52 @@
+{
+  Map<Integer,String> emptyScratchMap=new HashMap<Integer,String>();
+  RandomRowObjectSource source=new RandomRowObjectSource();
+  source.init(r);
+  VectorizedRowBatchCtx batchContext=new VectorizedRowBatchCtx();
+  batchContext.init(emptyScratchMap,source.rowStructObjectInspector());
+  VectorizedRowBatch batch=batchContext.createVectorizedRowBatch();
+  VectorAssignRowSameBatch vectorAssignRow=new VectorAssignRowSameBatch();
+  vectorAssignRow.init(source.typeNames());
+  vectorAssignRow.setOneBatch(batch);
+  int fieldCount=source.typeNames().size();
+  DeserializeRead deserializeRead;
+  SerializeWrite serializeWrite;
+switch (serializationType) {
+case BINARY_SORTABLE:
+    deserializeRead=new BinarySortableDeserializeRead(source.primitiveTypeInfos());
+  serializeWrite=new BinarySortableSerializeWrite(fieldCount);
+break;
+case LAZY_BINARY:
+deserializeRead=new LazyBinaryDeserializeRead(source.primitiveTypeInfos());
+serializeWrite=new LazyBinarySerializeWrite(fieldCount);
+break;
+case LAZY_SIMPLE:
+{
+StructObjectInspector rowObjectInspector=source.rowStructObjectInspector();
+LazySerDeParameters lazySerDeParams=getSerDeParams(rowObjectInspector);
+byte separator=(byte)'\t';
+deserializeRead=new LazySimpleDeserializeRead(source.primitiveTypeInfos(),separator,lazySerDeParams);
+serializeWrite=new LazySimpleSerializeWrite(fieldCount,separator,lazySerDeParams);
+}
+break;
+default :
+throw new Error("Unknown serialization type " + serializationType);
+}
+VectorSerializeRow vectorSerializeRow=new VectorSerializeRow(serializeWrite);
+vectorSerializeRow.init(source.typeNames());
+Object[][] randomRows=source.randomRows(100000);
+int firstRandomRowIndex=0;
+for (int i=0; i < randomRows.length; i++) {
+Object[] row=randomRows[i];
+vectorAssignRow.assignRow(batch.size,row);
+batch.size++;
+if (batch.size == batch.DEFAULT_SIZE) {
+serializeBatch(batch,vectorSerializeRow,deserializeRead,source,randomRows,firstRandomRowIndex);
+firstRandomRowIndex=i + 1;
+batch.reset();
+}
+}
+if (batch.size > 0) {
+serializeBatch(batch,vectorSerializeRow,deserializeRead,source,randomRows,firstRandomRowIndex);
+}
+}

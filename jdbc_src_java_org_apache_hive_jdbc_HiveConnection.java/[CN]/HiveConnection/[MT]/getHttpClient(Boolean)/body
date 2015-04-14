@@ -1,12 +1,35 @@
 {
-  DefaultHttpClient httpClient=new DefaultHttpClient();
+  boolean isCookieEnabled=sessConfMap.get(JdbcConnectionParams.COOKIE_AUTH) == null || (!JdbcConnectionParams.COOKIE_AUTH_FALSE.equalsIgnoreCase(sessConfMap.get(JdbcConnectionParams.COOKIE_AUTH)));
+  String cookieName=sessConfMap.get(JdbcConnectionParams.COOKIE_NAME) == null ? JdbcConnectionParams.DEFAULT_COOKIE_NAMES_HS2 : sessConfMap.get(JdbcConnectionParams.COOKIE_NAME);
+  CookieStore cookieStore=isCookieEnabled ? new BasicCookieStore() : null;
+  HttpClientBuilder httpClientBuilder;
   HttpRequestInterceptor requestInterceptor;
   if (isKerberosAuthMode()) {
-    requestInterceptor=new HttpKerberosRequestInterceptor(sessConfMap.get(JdbcConnectionParams.AUTH_PRINCIPAL),host,getServerHttpUrl(useSsl),assumeSubject);
+    requestInterceptor=new HttpKerberosRequestInterceptor(sessConfMap.get(JdbcConnectionParams.AUTH_PRINCIPAL),host,getServerHttpUrl(useSsl),assumeSubject,cookieStore,cookieName);
   }
  else {
-    requestInterceptor=new HttpBasicAuthInterceptor(getUserName(),getPassword());
+    requestInterceptor=new HttpBasicAuthInterceptor(getUserName(),getPassword(),cookieStore,cookieName);
   }
+  if (isCookieEnabled) {
+    httpClientBuilder=HttpClients.custom().setServiceUnavailableRetryStrategy(new ServiceUnavailableRetryStrategy(){
+      @Override public boolean retryRequest(      final HttpResponse response,      final int executionCount,      final HttpContext context){
+        int statusCode=response.getStatusLine().getStatusCode();
+        boolean ret=statusCode == 401 && executionCount <= 1;
+        if (ret) {
+          context.setAttribute(Utils.HIVE_SERVER2_RETRY_KEY,Utils.HIVE_SERVER2_RETRY_TRUE);
+        }
+        return ret;
+      }
+      @Override public long getRetryInterval(){
+        return 0;
+      }
+    }
+);
+  }
+ else {
+    httpClientBuilder=HttpClientBuilder.create();
+  }
+  httpClientBuilder.addInterceptorFirst(requestInterceptor);
   if (useSsl) {
     String sslTrustStorePath=sessConfMap.get(JdbcConnectionParams.SSL_TRUST_STORE);
     String sslTrustStorePassword=sessConfMap.get(JdbcConnectionParams.SSL_TRUST_STORE_PASSWORD);
@@ -22,14 +45,13 @@
         socketFactory=new SSLSocketFactory(sslTrustStore);
       }
       socketFactory.setHostnameVerifier(SSLSocketFactory.ALLOW_ALL_HOSTNAME_VERIFIER);
-      Scheme sslScheme=new Scheme("https",443,socketFactory);
-      httpClient.getConnectionManager().getSchemeRegistry().register(sslScheme);
+      final Registry<ConnectionSocketFactory> registry=RegistryBuilder.<ConnectionSocketFactory>create().register("https",socketFactory).build();
+      httpClientBuilder.setConnectionManager(new BasicHttpClientConnectionManager(registry));
     }
  catch (    Exception e) {
       String msg="Could not create an https connection to " + jdbcUriString + ". "+ e.getMessage();
       throw new SQLException(msg," 08S01",e);
     }
   }
-  httpClient.addRequestInterceptor(requestInterceptor);
-  return httpClient;
+  return httpClientBuilder.build();
 }
