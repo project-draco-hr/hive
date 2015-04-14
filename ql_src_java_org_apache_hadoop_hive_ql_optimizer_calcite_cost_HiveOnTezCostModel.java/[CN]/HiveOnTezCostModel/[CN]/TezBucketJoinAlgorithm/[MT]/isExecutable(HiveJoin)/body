@@ -1,0 +1,29 @@
+{
+  final Double maxMemory=join.getCluster().getPlanner().getContext().unwrap(HiveAlgorithmsConf.class).getMaxMemory();
+  RelNode smallInput=join.getStreamingInput();
+  if (smallInput == null) {
+    return false;
+  }
+  JoinPredicateInfo joinPredInfo=join.getJoinPredicateInfo();
+  List<ImmutableIntList> joinKeysInChildren=new ArrayList<ImmutableIntList>();
+  joinKeysInChildren.add(ImmutableIntList.copyOf(joinPredInfo.getProjsFromLeftPartOfJoinKeysInChildSchema()));
+  joinKeysInChildren.add(ImmutableIntList.copyOf(joinPredInfo.getProjsFromRightPartOfJoinKeysInChildSchema()));
+  Integer buckets=RelMetadataQuery.splitCount(smallInput);
+  if (buckets == null) {
+    return false;
+  }
+  if (!HiveAlgorithmsUtil.isFittingIntoMemory(maxMemory,smallInput,buckets)) {
+    return false;
+  }
+  for (int i=0; i < join.getInputs().size(); i++) {
+    RelNode input=join.getInputs().get(i);
+    RelDistribution distribution=RelMetadataQuery.distribution(input);
+    if (distribution.getType() != Type.HASH_DISTRIBUTED) {
+      return false;
+    }
+    if (!distribution.getKeys().containsAll(joinKeysInChildren.get(i))) {
+      return false;
+    }
+  }
+  return true;
+}
