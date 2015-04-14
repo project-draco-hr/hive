@@ -1,0 +1,52 @@
+{
+  String[] requestedHosts=request.requestedHosts;
+  readLock.lock();
+  try {
+    if (getAvailableResources().getMemory() <= 0) {
+      refreshInstances();
+    }
+    if (getTotalResources().getMemory() <= 0) {
+      return null;
+    }
+    if (requestedHosts != null) {
+      for (      String host : requestedHosts) {
+        Set<ServiceInstance> instances=activeInstances.getByHost(host);
+        if (!instances.isEmpty()) {
+          for (          ServiceInstance inst : instances) {
+            if (inst.isAlive() && instanceToNodeMap.containsKey(inst)) {
+              LOG.info("Assigning " + inst + " when looking for "+ host);
+              return inst;
+            }
+          }
+        }
+      }
+    }
+    ServiceInstance[] all=instanceToNodeMap.keySet().toArray(new ServiceInstance[0]);
+    if (all.length > 0) {
+      int n=random.nextInt(all.length);
+      for (int i=0; i < all.length; i++) {
+        ServiceInstance inst=all[(i + n) % all.length];
+        if (inst.isAlive()) {
+          LOG.info("Assigning " + inst + " when looking for any host");
+          return inst;
+        }
+      }
+    }
+  }
+  finally {
+    readLock.unlock();
+  }
+  writeLock.lock();
+  try {
+    for (    ServiceInstance inst : activeInstances.getAll().values()) {
+      if (inst.isAlive() && instanceBlackList.contains(inst) == false && instanceToNodeMap.containsKey(inst) == false) {
+        addNode(inst,new NodeInfo(inst,BACKOFF_FACTOR,clock));
+        disableInstance(inst,true);
+      }
+    }
+  }
+  finally {
+    writeLock.unlock();
+  }
+  return null;
+}

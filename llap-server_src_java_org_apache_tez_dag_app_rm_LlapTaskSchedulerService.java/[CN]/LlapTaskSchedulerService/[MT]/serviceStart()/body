@@ -2,28 +2,10 @@
   writeLock.lock();
   try {
     pendingTaskSchedulerFuture=executor.submit(pendingTaskSchedulerCallable);
-    if (initFromRegistry) {
-      registry.start();
-      if (activeHosts.size() > 0) {
-        return;
-      }
-      LOG.info("Reading YARN registry for service records");
-      Map<String,ServiceRecord> workers=registry.getWorkers();
-      for (      ServiceRecord srv : workers.values()) {
-        Endpoint rpc=srv.getInternalEndpoint("llap");
-        if (rpc != null) {
-          LOG.info("Examining endpoint: " + rpc);
-          final String host=RegistryTypeUtils.getAddressField(rpc.addresses.get(0),AddressTypes.ADDRESS_HOSTNAME_FIELD);
-          NodeInfo nodeInfo=new NodeInfo(host,BACKOFF_FACTOR,clock);
-          activeHosts.put(host,nodeInfo);
-          allHosts.put(host,nodeInfo);
-        }
- else {
-          LOG.info("The SRV record was " + srv);
-        }
-      }
-      activeHostList=activeHosts.keySet().toArray(new String[activeHosts.size()]);
-      LOG.info("Re-inited with configuration: " + "memoryPerInstance=" + memoryPerInstance + ", vCoresPerInstance="+ coresPerInstance+ ", executorsPerInstance="+ executorsPerInstance+ ", resourcePerInstanceInferred="+ resourcePerExecutor+ ", hosts="+ allHosts.keySet());
+    registry.start();
+    activeInstances=registry.getInstances();
+    for (    ServiceInstance inst : activeInstances.getAll().values()) {
+      addNode(inst,new NodeInfo(inst,BACKOFF_FACTOR,clock));
     }
   }
   finally {
