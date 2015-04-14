@@ -1,0 +1,277 @@
+{
+  if (++fieldIndex >= fieldCount) {
+    if (!readBeyondConfiguredFieldsWarned) {
+      LOG.info("Reading beyond configured fields! Configured " + fieldCount + " fields but "+ " reading more (NULLs returned).  Ignoring similar problems.");
+      readBeyondConfiguredFieldsWarned=true;
+    }
+    return true;
+  }
+  if (offset > end) {
+    if (!readBeyondBufferRangeWarned) {
+      int length=end - start;
+      LOG.info("Reading beyond buffer range! Buffer range " + start + " for length "+ length+ " but reading more (NULLs returned)."+ "  Ignoring similar problems.");
+      readBeyondBufferRangeWarned=true;
+    }
+    return true;
+  }
+  fieldStart=offset;
+  while (true) {
+    if (offset >= end) {
+      fieldLength=offset - fieldStart;
+      break;
+    }
+    if (bytes[offset] == separator) {
+      fieldLength=(offset++ - fieldStart);
+      break;
+    }
+    if (isEscaped && bytes[offset] == escapeChar && offset + 1 < end) {
+      offset+=2;
+    }
+ else {
+      offset++;
+    }
+  }
+  char[] charField=new char[fieldLength];
+  for (int c=0; c < charField.length; c++) {
+    charField[c]=(char)(bytes[fieldStart + c] & 0xFF);
+  }
+  if (nullSequenceBytes != null) {
+    if (fieldLength == nullSequenceBytes.length) {
+      int i=0;
+      while (true) {
+        if (bytes[fieldStart + i] != nullSequenceBytes[i]) {
+          break;
+        }
+        i++;
+        if (i >= fieldLength) {
+          return true;
+        }
+      }
+    }
+  }
+switch (primitiveTypeInfos[fieldIndex].getPrimitiveCategory()) {
+case BOOLEAN:
+{
+      int i=fieldStart;
+      if (fieldLength == 4) {
+        if ((bytes[i] == 'T' || bytes[i] == 't') && (bytes[i + 1] == 'R' || bytes[i + 1] == 'r') && (bytes[i + 2] == 'U' || bytes[i + 1] == 'u')&& (bytes[i + 3] == 'E' || bytes[i + 3] == 'e')) {
+          saveBool=true;
+        }
+ else {
+          return true;
+        }
+      }
+ else       if (fieldLength == 5) {
+        if ((bytes[i] == 'F' || bytes[i] == 'f') && (bytes[i + 1] == 'A' || bytes[i + 1] == 'a') && (bytes[i + 2] == 'L' || bytes[i + 2] == 'l')&& (bytes[i + 3] == 'S' || bytes[i + 3] == 's')&& (bytes[i + 4] == 'E' || bytes[i + 4] == 'e')) {
+          saveBool=false;
+        }
+ else {
+          return true;
+        }
+      }
+ else       if (isExtendedBooleanLiteral && fieldLength == 1) {
+        byte b=bytes[fieldStart];
+        if (b == '1' || b == 't' || b == 'T') {
+          saveBool=true;
+        }
+ else         if (b == '0' || b == 'f' || b == 'F') {
+          saveBool=false;
+        }
+ else {
+          return true;
+        }
+      }
+ else {
+        return true;
+      }
+    }
+  break;
+case BYTE:
+try {
+  saveByte=LazyByte.parseByte(bytes,fieldStart,fieldLength,10);
+}
+ catch (NumberFormatException e) {
+  logExceptionMessage(bytes,fieldStart,fieldLength,"TINYINT");
+  return true;
+}
+break;
+case SHORT:
+try {
+saveShort=LazyShort.parseShort(bytes,fieldStart,fieldLength,10);
+}
+ catch (NumberFormatException e) {
+logExceptionMessage(bytes,fieldStart,fieldLength,"SMALLINT");
+return true;
+}
+break;
+case INT:
+try {
+saveInt=LazyInteger.parseInt(bytes,fieldStart,fieldLength,10);
+}
+ catch (NumberFormatException e) {
+logExceptionMessage(bytes,fieldStart,fieldLength,"INT");
+return true;
+}
+break;
+case LONG:
+try {
+saveLong=LazyLong.parseLong(bytes,fieldStart,fieldLength,10);
+}
+ catch (NumberFormatException e) {
+logExceptionMessage(bytes,fieldStart,fieldLength,"BIGINT");
+return true;
+}
+break;
+case FLOAT:
+{
+String byteData=null;
+try {
+byteData=Text.decode(bytes,fieldStart,fieldLength);
+saveFloat=Float.parseFloat(byteData);
+}
+ catch (NumberFormatException e) {
+LOG.debug("Data not in the Float data type range so converted to null. Given data is :" + byteData,e);
+return true;
+}
+catch (CharacterCodingException e) {
+LOG.debug("Data not in the Float data type range so converted to null.",e);
+return true;
+}
+}
+break;
+case DOUBLE:
+{
+String byteData=null;
+try {
+byteData=Text.decode(bytes,fieldStart,fieldLength);
+saveDouble=Double.parseDouble(byteData);
+}
+ catch (NumberFormatException e) {
+LOG.debug("Data not in the Double data type range so converted to null. Given data is :" + byteData,e);
+return true;
+}
+catch (CharacterCodingException e) {
+LOG.debug("Data not in the Double data type range so converted to null.",e);
+return true;
+}
+}
+break;
+case STRING:
+case CHAR:
+case VARCHAR:
+if (isEscaped) {
+LazyUtils.copyAndEscapeStringDataToText(bytes,fieldStart,fieldLength,escapeChar,tempText);
+saveBytes=tempText.getBytes();
+saveBytesStart=0;
+saveBytesLength=tempText.getLength();
+}
+ else {
+saveBytes=bytes;
+saveBytesStart=fieldStart;
+saveBytesLength=fieldLength;
+}
+break;
+case BINARY:
+{
+byte[] recv=new byte[fieldLength];
+System.arraycopy(bytes,fieldStart,recv,0,fieldLength);
+byte[] decoded=LazyBinary.decodeIfNeeded(recv);
+decoded=decoded.length > 0 ? decoded : recv;
+saveBytes=decoded;
+saveBytesStart=0;
+saveBytesLength=decoded.length;
+}
+break;
+case DATE:
+{
+String s=null;
+try {
+s=Text.decode(bytes,fieldStart,fieldLength);
+saveDate=Date.valueOf(s);
+}
+ catch (Exception e) {
+logExceptionMessage(bytes,fieldStart,fieldLength,"DATE");
+return true;
+}
+}
+break;
+case TIMESTAMP:
+{
+String s=null;
+try {
+s=new String(bytes,fieldStart,fieldLength,"US-ASCII");
+}
+ catch (UnsupportedEncodingException e) {
+LOG.error(e);
+s="";
+}
+if (s.compareTo("NULL") == 0) {
+logExceptionMessage(bytes,fieldStart,fieldLength,"TIMESTAMP");
+return true;
+}
+ else {
+try {
+if (timestampParser == null) {
+timestampParser=new TimestampParser();
+}
+saveTimestamp=timestampParser.parseTimestamp(s);
+}
+ catch (IllegalArgumentException e) {
+logExceptionMessage(bytes,fieldStart,fieldLength,"TIMESTAMP");
+return true;
+}
+}
+}
+break;
+case INTERVAL_YEAR_MONTH:
+{
+String s=null;
+try {
+s=Text.decode(bytes,fieldStart,fieldLength);
+saveIntervalYearMonth=HiveIntervalYearMonth.valueOf(s);
+}
+ catch (Exception e) {
+logExceptionMessage(bytes,fieldStart,fieldLength,"INTERVAL_YEAR_MONTH");
+return true;
+}
+}
+break;
+case INTERVAL_DAY_TIME:
+{
+String s=null;
+try {
+s=Text.decode(bytes,fieldStart,fieldLength);
+saveIntervalDayTime=HiveIntervalDayTime.valueOf(s);
+}
+ catch (Exception e) {
+logExceptionMessage(bytes,fieldStart,fieldLength,"INTERVAL_DAY_TIME");
+return true;
+}
+}
+break;
+case DECIMAL:
+{
+String byteData=null;
+try {
+byteData=Text.decode(bytes,fieldStart,fieldLength);
+}
+ catch (CharacterCodingException e) {
+LOG.debug("Data not in the HiveDecimal data type range so converted to null.",e);
+return true;
+}
+saveDecimal=HiveDecimal.create(byteData);
+saveDecimalTypeInfo=(DecimalTypeInfo)primitiveTypeInfos[fieldIndex];
+int precision=saveDecimalTypeInfo.getPrecision();
+int scale=saveDecimalTypeInfo.getScale();
+saveDecimal=HiveDecimalUtils.enforcePrecisionScale(saveDecimal,precision,scale);
+if (saveDecimal == null) {
+LOG.debug("Data not in the HiveDecimal data type range so converted to null. Given data is :" + byteData);
+return true;
+}
+}
+break;
+default :
+throw new Error("Unexpected primitive category " + primitiveTypeInfos[fieldIndex].getPrimitiveCategory());
+}
+return false;
+}

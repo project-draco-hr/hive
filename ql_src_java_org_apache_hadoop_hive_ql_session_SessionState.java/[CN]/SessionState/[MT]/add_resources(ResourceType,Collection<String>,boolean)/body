@@ -1,17 +1,51 @@
 {
-  Set<String> resourceMap=getResourceMap(t);
+  Set<String> resourceSet=resourceMaps.getResourceSet(t);
+  Map<String,Set<String>> resourcePathMap=resourceMaps.getResourcePathMap(t);
+  Map<String,Set<String>> reverseResourcePathMap=resourceMaps.getReverseResourcePathMap(t);
   List<String> localized=new ArrayList<String>();
   try {
     for (    String value : values) {
-      localized.add(downloadResource(value,convertToUnix));
+      String key;
+      List<URI> downloadedURLs=resolveAndDownload(t,value,convertToUnix);
+      if (getURLType(value).equals("ivy")) {
+        key=new URI(value).getAuthority();
+      }
+ else {
+        key=downloadedURLs.get(0).toString();
+      }
+      Set<String> downloadedValues=new HashSet<String>();
+      for (      URI uri : downloadedURLs) {
+        String resourceValue=uri.toString();
+        downloadedValues.add(resourceValue);
+        localized.add(resourceValue);
+        if (reverseResourcePathMap.containsKey(resourceValue)) {
+          if (!reverseResourcePathMap.get(resourceValue).contains(key)) {
+            reverseResourcePathMap.get(resourceValue).add(key);
+          }
+        }
+ else {
+          Set<String> addSet=new HashSet<String>();
+          addSet.add(key);
+          reverseResourcePathMap.put(resourceValue,addSet);
+        }
+      }
+      resourcePathMap.put(key,downloadedValues);
     }
-    t.preHook(resourceMap,localized);
+    t.preHook(resourceSet,localized);
   }
  catch (  RuntimeException e) {
     getConsole().printError(e.getMessage(),"\n" + org.apache.hadoop.util.StringUtils.stringifyException(e));
     throw e;
   }
+catch (  URISyntaxException e) {
+    getConsole().printError(e.getMessage());
+    throw new RuntimeException(e);
+  }
+catch (  IOException e) {
+    getConsole().printError(e.getMessage());
+    throw new RuntimeException(e);
+  }
   getConsole().printInfo("Added resources: " + values);
-  resourceMap.addAll(localized);
+  resourceSet.addAll(localized);
   return localized;
 }

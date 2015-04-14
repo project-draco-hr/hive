@@ -1,0 +1,88 @@
+{
+  LazyBinarySerializeWrite lazyBinarySerializeWrite=new LazyBinarySerializeWrite(MyTestPrimitiveClass.primitiveCount);
+  BytesWritable serializeWriteBytes[]=new BytesWritable[myTestPrimitiveClasses.length];
+  for (int i=0; i < myTestPrimitiveClasses.length; i++) {
+    MyTestPrimitiveClass t=myTestPrimitiveClasses[i];
+    Output output=new Output();
+    lazyBinarySerializeWrite.set(output);
+    for (int index=0; index < MyTestPrimitiveClass.primitiveCount; index++) {
+      Object object=t.getPrimitiveObject(index);
+      PrimitiveCategory primitiveCategory=t.getPrimitiveCategory(index);
+      VerifyFast.serializeWrite(lazyBinarySerializeWrite,primitiveCategory,object);
+    }
+    BytesWritable bytesWritable=new BytesWritable();
+    bytesWritable.set(output.getData(),0,output.getLength());
+    serializeWriteBytes[i]=bytesWritable;
+  }
+  for (int i=0; i < myTestPrimitiveClasses.length; i++) {
+    MyTestPrimitiveClass t=myTestPrimitiveClasses[i];
+    PrimitiveTypeInfo[] primitiveTypeInfos=primitiveTypeInfosArray[i];
+    LazyBinaryDeserializeRead lazyBinaryDeserializeRead=new LazyBinaryDeserializeRead(primitiveTypeInfos);
+    BytesWritable bytesWritable=serializeWriteBytes[i];
+    lazyBinaryDeserializeRead.set(bytesWritable.getBytes(),0,bytesWritable.getLength());
+    for (int index=0; index < MyTestPrimitiveClass.primitiveCount; index++) {
+      Object object=t.getPrimitiveObject(index);
+      PrimitiveCategory primitiveCategory=t.getPrimitiveCategory(index);
+      VerifyFast.verifyDeserializeRead(lazyBinaryDeserializeRead,primitiveTypeInfos[index],object);
+    }
+    lazyBinaryDeserializeRead.extraFieldsCheck();
+    TestCase.assertTrue(!lazyBinaryDeserializeRead.readBeyondConfiguredFieldsWarned());
+    TestCase.assertTrue(!lazyBinaryDeserializeRead.readBeyondBufferRangeWarned());
+    TestCase.assertTrue(!lazyBinaryDeserializeRead.bufferRangeHasExtraDataWarned());
+  }
+  for (int i=0; i < myTestPrimitiveClasses.length; i++) {
+    BytesWritable bytesWritable=serializeWriteBytes[i];
+    LazyBinaryStruct lazyBinaryStruct=(LazyBinaryStruct)serdes[i].deserialize(bytesWritable);
+    MyTestPrimitiveClass t=myTestPrimitiveClasses[i];
+    PrimitiveTypeInfo[] primitiveTypeInfos=primitiveTypeInfosArray[i];
+    for (int index=0; index < MyTestPrimitiveClass.primitiveCount; index++) {
+      PrimitiveTypeInfo primitiveTypeInfo=primitiveTypeInfos[index];
+      Object expected=t.getPrimitiveWritableObject(index,primitiveTypeInfo);
+      Object object=lazyBinaryStruct.getField(index);
+      if (expected == null || object == null) {
+        if (expected != null || object != null) {
+          fail("SerDe deserialized NULL column mismatch");
+        }
+      }
+ else {
+        if (!object.equals(expected)) {
+          fail("SerDe deserialized value does not match");
+        }
+      }
+    }
+  }
+  BytesWritable serdeBytes[]=new BytesWritable[myTestPrimitiveClasses.length];
+  Object[] row=new Object[MyTestPrimitiveClass.primitiveCount];
+  for (int i=0; i < myTestPrimitiveClasses.length; i++) {
+    MyTestPrimitiveClass t=myTestPrimitiveClasses[i];
+    PrimitiveTypeInfo[] primitiveTypeInfos=primitiveTypeInfosArray[i];
+    for (int index=0; index < MyTestPrimitiveClass.primitiveCount; index++) {
+      Object object=t.getPrimitiveWritableObject(index,primitiveTypeInfos[index]);
+      row[index]=object;
+    }
+    BytesWritable serialized=(BytesWritable)serdes[i].serialize(row,rowOIs[i]);
+    BytesWritable bytesWritable=new BytesWritable();
+    bytesWritable.set(serialized);
+    byte[] bytes1=Arrays.copyOfRange(bytesWritable.getBytes(),0,bytesWritable.getLength());
+    byte[] bytes2=Arrays.copyOfRange(serializeWriteBytes[i].getBytes(),0,serializeWriteBytes[i].getLength());
+    if (!Arrays.equals(bytes1,bytes2)) {
+      fail("SerializeWrite and SerDe serialization does not match");
+    }
+    serdeBytes[i]=bytesWritable;
+  }
+  for (int i=0; i < myTestPrimitiveClasses.length; i++) {
+    MyTestPrimitiveClass t=myTestPrimitiveClasses[i];
+    PrimitiveTypeInfo[] primitiveTypeInfos=primitiveTypeInfosArray[i];
+    LazyBinaryDeserializeRead lazyBinaryDeserializeRead=new LazyBinaryDeserializeRead(primitiveTypeInfos);
+    BytesWritable bytesWritable=serdeBytes[i];
+    lazyBinaryDeserializeRead.set(bytesWritable.getBytes(),0,bytesWritable.getLength());
+    for (int index=0; index < MyTestPrimitiveClass.primitiveCount; index++) {
+      Object object=t.getPrimitiveObject(index);
+      VerifyFast.verifyDeserializeRead(lazyBinaryDeserializeRead,primitiveTypeInfos[index],object);
+    }
+    lazyBinaryDeserializeRead.extraFieldsCheck();
+    TestCase.assertTrue(!lazyBinaryDeserializeRead.readBeyondConfiguredFieldsWarned());
+    TestCase.assertTrue(!lazyBinaryDeserializeRead.readBeyondBufferRangeWarned());
+    TestCase.assertTrue(!lazyBinaryDeserializeRead.bufferRangeHasExtraDataWarned());
+  }
+}

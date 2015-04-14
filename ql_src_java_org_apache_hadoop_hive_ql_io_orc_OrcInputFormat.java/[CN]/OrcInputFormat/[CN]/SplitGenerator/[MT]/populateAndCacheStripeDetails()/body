@@ -1,41 +1,28 @@
 {
-  try {
-    Reader orcReader;
-    if (fileInfo != null) {
-      stripes=fileInfo.stripeInfos;
-      fileMetaInfo=fileInfo.fileMetaInfo;
-      metadata=fileInfo.metadata;
-      types=fileInfo.types;
-      writerVersion=fileInfo.writerVersion;
-      if (fileMetaInfo == null && context.footerInSplits) {
-        orcReader=OrcFile.createReader(file.getPath(),OrcFile.readerOptions(context.conf).filesystem(fs));
-        fileInfo.fileMetaInfo=((ReaderImpl)orcReader).getFileMetaInfo();
-        fileInfo.metadata=orcReader.getMetadata();
-        fileInfo.types=orcReader.getTypes();
-        fileInfo.writerVersion=orcReader.getWriterVersion();
-      }
-    }
- else {
-      orcReader=OrcFile.createReader(file.getPath(),OrcFile.readerOptions(context.conf).filesystem(fs));
-      stripes=orcReader.getStripes();
-      metadata=orcReader.getMetadata();
-      types=orcReader.getTypes();
-      writerVersion=orcReader.getWriterVersion();
-      fileMetaInfo=context.footerInSplits ? ((ReaderImpl)orcReader).getFileMetaInfo() : null;
-      if (context.cacheStripeDetails) {
-        Context.footerCache.put(file.getPath(),new FileInfo(file.getModificationTime(),file.getLen(),stripes,metadata,types,fileMetaInfo,writerVersion));
-      }
+  Reader orcReader=OrcFile.createReader(file.getPath(),OrcFile.readerOptions(context.conf).filesystem(fs));
+  List<String> projCols=ColumnProjectionUtils.getReadColumnNames(context.conf);
+  projColsUncompressedSize=orcReader.getRawDataSizeOfColumns(projCols);
+  if (fileInfo != null) {
+    stripes=fileInfo.stripeInfos;
+    fileMetaInfo=fileInfo.fileMetaInfo;
+    metadata=fileInfo.metadata;
+    types=fileInfo.types;
+    writerVersion=fileInfo.writerVersion;
+    if (fileMetaInfo == null && context.footerInSplits) {
+      fileInfo.fileMetaInfo=((ReaderImpl)orcReader).getFileMetaInfo();
+      fileInfo.metadata=orcReader.getMetadata();
+      fileInfo.types=orcReader.getTypes();
+      fileInfo.writerVersion=orcReader.getWriterVersion();
     }
   }
- catch (  Throwable th) {
-    if (!(th instanceof IOException)) {
-      LOG.error("Unexpected Exception",th);
-    }
-synchronized (context.errors) {
-      context.errors.add(th);
-    }
-    if (!(th instanceof IOException)) {
-      context.notifyOnNonIOException(th);
+ else {
+    stripes=orcReader.getStripes();
+    metadata=orcReader.getMetadata();
+    types=orcReader.getTypes();
+    writerVersion=orcReader.getWriterVersion();
+    fileMetaInfo=context.footerInSplits ? ((ReaderImpl)orcReader).getFileMetaInfo() : null;
+    if (context.cacheStripeDetails) {
+      Context.footerCache.put(file.getPath(),new FileInfo(file.getModificationTime(),file.getLen(),stripes,metadata,types,fileMetaInfo,writerVersion));
     }
   }
 }
