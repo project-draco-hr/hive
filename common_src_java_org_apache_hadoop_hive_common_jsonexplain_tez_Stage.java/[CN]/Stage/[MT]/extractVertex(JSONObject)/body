@@ -1,0 +1,82 @@
+{
+  if (object.has("Tez")) {
+    this.tezStageDependency=new LinkedHashMap<>();
+    JSONObject tez=(JSONObject)object.get("Tez");
+    JSONObject vertices=tez.getJSONObject("Vertices:");
+    if (tez.has("Edges:")) {
+      JSONObject edges=tez.getJSONObject("Edges:");
+      for (      String to : JSONObject.getNames(edges)) {
+        vertexs.put(to,new Vertex(to,vertices.getJSONObject(to)));
+      }
+      for (      String to : JSONObject.getNames(edges)) {
+        Object o=edges.get(to);
+        Vertex v=vertexs.get(to);
+        if (o instanceof JSONObject) {
+          JSONObject obj=(JSONObject)o;
+          String parent=obj.getString("parent");
+          Vertex parentVertex=vertexs.get(parent);
+          if (parentVertex == null) {
+            parentVertex=new Vertex(parent,vertices.getJSONObject(parent));
+            vertexs.put(parent,parentVertex);
+          }
+          String type=obj.getString("type");
+          if (!"CONTAINS".equals(type)) {
+            v.addDependency(new Connection(type,parentVertex));
+            parentVertex.children.add(v);
+          }
+ else {
+            parentVertex.addDependency(new Connection(type,v));
+            v.children.add(parentVertex);
+          }
+          this.tezStageDependency.put(v,Arrays.asList(new Connection(type,parentVertex)));
+        }
+ else {
+          JSONArray from=(JSONArray)o;
+          List<Connection> list=new ArrayList<>();
+          for (int index=0; index < from.length(); index++) {
+            JSONObject obj=from.getJSONObject(index);
+            String parent=obj.getString("parent");
+            Vertex parentVertex=vertexs.get(parent);
+            if (parentVertex == null) {
+              parentVertex=new Vertex(parent,vertices.getJSONObject(parent));
+              vertexs.put(parent,parentVertex);
+            }
+            String type=obj.getString("type");
+            if (!"CONTAINS".equals(type)) {
+              v.addDependency(new Connection(type,parentVertex));
+              parentVertex.children.add(v);
+            }
+ else {
+              parentVertex.addDependency(new Connection(type,v));
+              v.children.add(parentVertex);
+            }
+            list.add(new Connection(type,parentVertex));
+          }
+          this.tezStageDependency.put(v,list);
+        }
+      }
+    }
+ else {
+      for (      String vertexName : JSONObject.getNames(vertices)) {
+        vertexs.put(vertexName,new Vertex(vertexName,vertices.getJSONObject(vertexName)));
+      }
+    }
+    for (    Vertex v : vertexs.values()) {
+      if (!v.union) {
+        v.extractOpTree();
+        v.checkMultiReduceOperator();
+      }
+    }
+  }
+ else {
+    String[] names=JSONObject.getNames(object);
+    for (    String name : names) {
+      if (name.contains("Operator")) {
+        this.op=extractOp(name,object.getJSONObject(name));
+      }
+ else {
+        attrs.add(new Attr(name,object.get(name).toString()));
+      }
+    }
+  }
+}
