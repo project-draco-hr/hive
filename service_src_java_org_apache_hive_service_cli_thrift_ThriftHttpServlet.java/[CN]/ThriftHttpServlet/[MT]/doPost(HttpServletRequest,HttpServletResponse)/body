@@ -1,22 +1,43 @@
 {
-  String clientUserName;
+  String clientUserName=null;
   String clientIpAddress;
+  boolean requireNewCookie=false;
   try {
-    if (isKerberosAuthMode(authType)) {
-      clientUserName=doKerberosAuth(request);
-      String doAsQueryParam=getDoAsQueryParam(request.getQueryString());
-      if (doAsQueryParam != null) {
-        SessionManager.setProxyUserName(doAsQueryParam);
+    if (isCookieAuthEnabled) {
+      clientUserName=validateCookie(request);
+      requireNewCookie=(clientUserName == null);
+      if (requireNewCookie) {
+        LOG.info("Could not validate cookie sent, will try to generate a new cookie");
       }
     }
+    if (clientUserName == null) {
+      if (isKerberosAuthMode(authType)) {
+        clientUserName=doKerberosAuth(request);
+        String doAsQueryParam=getDoAsQueryParam(request.getQueryString());
+        if (doAsQueryParam != null) {
+          SessionManager.setProxyUserName(doAsQueryParam);
+        }
+      }
  else {
-      clientUserName=doPasswdAuth(request,authType);
+        clientUserName=doPasswdAuth(request,authType);
+      }
     }
     LOG.debug("Client username: " + clientUserName);
     SessionManager.setUserName(clientUserName);
     clientIpAddress=request.getRemoteAddr();
     LOG.debug("Client IP Address: " + clientIpAddress);
     SessionManager.setIpAddress(clientIpAddress);
+    if (requireNewCookie && !authType.equalsIgnoreCase(HiveAuthFactory.AuthTypes.NOSASL.toString())) {
+      String cookieToken=HttpAuthUtils.createCookieToken(clientUserName);
+      Cookie hs2Cookie=createCookie(signer.signCookie(cookieToken));
+      if (isHttpOnlyCookie) {
+        response.setHeader("SET-COOKIE",getHttpOnlyCookieHeader(hs2Cookie));
+      }
+ else {
+        response.addCookie(hs2Cookie);
+      }
+      LOG.info("Cookie added for clientUserName " + clientUserName);
+    }
     super.doPost(request,response);
   }
  catch (  HttpAuthenticationException e) {
