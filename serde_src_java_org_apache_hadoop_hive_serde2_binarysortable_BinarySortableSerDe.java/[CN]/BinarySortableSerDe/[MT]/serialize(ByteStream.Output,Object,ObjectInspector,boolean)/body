@@ -30,8 +30,7 @@ case SHORT:
 {
     ShortObjectInspector spoi=(ShortObjectInspector)poi;
     short v=spoi.get(o);
-    writeByte(buffer,(byte)((v >> 8) ^ 0x80),invert);
-    writeByte(buffer,(byte)v,invert);
+    serializeShort(buffer,v,invert);
     return;
   }
 case INT:
@@ -51,37 +50,13 @@ return;
 case FLOAT:
 {
 FloatObjectInspector foi=(FloatObjectInspector)poi;
-int v=Float.floatToIntBits(foi.get(o));
-if ((v & (1 << 31)) != 0) {
-v=~v;
-}
- else {
-v=v ^ (1 << 31);
-}
-writeByte(buffer,(byte)(v >> 24),invert);
-writeByte(buffer,(byte)(v >> 16),invert);
-writeByte(buffer,(byte)(v >> 8),invert);
-writeByte(buffer,(byte)v,invert);
+serializeFloat(buffer,foi.get(o),invert);
 return;
 }
 case DOUBLE:
 {
 DoubleObjectInspector doi=(DoubleObjectInspector)poi;
-long v=Double.doubleToLongBits(doi.get(o));
-if ((v & (1L << 63)) != 0) {
-v=~v;
-}
- else {
-v=v ^ (1L << 63);
-}
-writeByte(buffer,(byte)(v >> 56),invert);
-writeByte(buffer,(byte)(v >> 48),invert);
-writeByte(buffer,(byte)(v >> 40),invert);
-writeByte(buffer,(byte)(v >> 32),invert);
-writeByte(buffer,(byte)(v >> 24),invert);
-writeByte(buffer,(byte)(v >> 16),invert);
-writeByte(buffer,(byte)(v >> 8),invert);
-writeByte(buffer,(byte)v,invert);
+serializeDouble(buffer,doi.get(o),invert);
 return;
 }
 case STRING:
@@ -127,46 +102,28 @@ case TIMESTAMP:
 {
 TimestampObjectInspector toi=(TimestampObjectInspector)poi;
 TimestampWritable t=toi.getPrimitiveWritableObject(o);
-byte[] data=t.getBinarySortable();
-for (int i=0; i < data.length; i++) {
-writeByte(buffer,data[i],invert);
-}
+serializeTimestampWritable(buffer,t,invert);
 return;
 }
 case INTERVAL_YEAR_MONTH:
 {
 HiveIntervalYearMonthObjectInspector ioi=(HiveIntervalYearMonthObjectInspector)poi;
 HiveIntervalYearMonth intervalYearMonth=ioi.getPrimitiveJavaObject(o);
-int totalMonths=intervalYearMonth.getTotalMonths();
-serializeInt(buffer,totalMonths,invert);
+serializeHiveIntervalYearMonth(buffer,intervalYearMonth,invert);
 return;
 }
 case INTERVAL_DAY_TIME:
 {
 HiveIntervalDayTimeObjectInspector ioi=(HiveIntervalDayTimeObjectInspector)poi;
 HiveIntervalDayTime intervalDayTime=ioi.getPrimitiveJavaObject(o);
-long totalSecs=intervalDayTime.getTotalSeconds();
-int nanos=intervalDayTime.getNanos();
-serializeLong(buffer,totalSecs,invert);
-serializeInt(buffer,nanos,invert);
+serializeHiveIntervalDayTime(buffer,intervalDayTime,invert);
 return;
 }
 case DECIMAL:
 {
 HiveDecimalObjectInspector boi=(HiveDecimalObjectInspector)poi;
 HiveDecimal dec=boi.getPrimitiveJavaObject(o);
-int sign=dec.compareTo(HiveDecimal.ZERO);
-dec=dec.abs();
-int factor=dec.precision() - dec.scale();
-factor=sign == 1 ? factor : -factor;
-dec.scaleByPowerOfTen(Math.abs(dec.scale()));
-String digits=dec.unscaledValue().toString();
-writeByte(buffer,(byte)(sign + 1),invert);
-writeByte(buffer,(byte)((factor >> 24) ^ 0x80),invert);
-writeByte(buffer,(byte)(factor >> 16),invert);
-writeByte(buffer,(byte)(factor >> 8),invert);
-writeByte(buffer,(byte)factor,invert);
-serializeBytes(buffer,digits.getBytes(decimalCharSet),digits.length(),sign == -1 ? !invert : invert);
+serializeHiveDecimal(buffer,dec,invert);
 return;
 }
 default :
