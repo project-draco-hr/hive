@@ -1,0 +1,15 @@
+{
+  this.waitLock=new Object();
+  this.waitQueue=new BoundedPriorityBlockingQueue<>(new WaitQueueComparator(),waitQueueSize);
+  this.threadPoolExecutor=new ThreadPoolExecutor(numExecutors,numExecutors,1,TimeUnit.MINUTES,new SynchronousQueue<Runnable>(),new ThreadFactoryBuilder().setNameFormat(TASK_EXECUTOR_THREAD_NAME_FORMAT).build());
+  this.executorService=MoreExecutors.listeningDecorator(threadPoolExecutor);
+  this.idToTaskMap=new ConcurrentHashMap<>();
+  this.preemptionMap=new ConcurrentHashMap<>();
+  this.preemptionQueue=new PriorityBlockingQueue<>(numExecutors,new PreemptionQueueComparator());
+  this.enablePreemption=enablePreemption;
+  this.numSlotsAvailable=new AtomicInteger(numExecutors);
+  ExecutorService wes=Executors.newFixedThreadPool(1,new ThreadFactoryBuilder().setNameFormat(WAIT_QUEUE_SCHEDULER_THREAD_NAME_FORMAT).build());
+  this.waitQueueExecutorService=MoreExecutors.listeningDecorator(wes);
+  ListenableFuture<?> future=waitQueueExecutorService.submit(new WaitQueueWorker());
+  Futures.addCallback(future,new WaitQueueWorkerCallback());
+}
