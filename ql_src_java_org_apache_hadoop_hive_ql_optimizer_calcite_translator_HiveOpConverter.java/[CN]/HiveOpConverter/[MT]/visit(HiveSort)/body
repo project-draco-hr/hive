@@ -1,0 +1,50 @@
+{
+  OpAttr inputOpAf=dispatch(sortRel.getInput());
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Translating operator rel#" + sortRel.getId() + ":"+ sortRel.getRelTypeName()+ " with row type: ["+ sortRel.getRowType()+ "]");
+    if (sortRel.getCollation() == RelCollations.EMPTY) {
+      LOG.debug("Operator rel#" + sortRel.getId() + ":"+ sortRel.getRelTypeName()+ " consists of limit");
+    }
+ else     if (sortRel.fetch == null) {
+      LOG.debug("Operator rel#" + sortRel.getId() + ":"+ sortRel.getRelTypeName()+ " consists of sort");
+    }
+ else {
+      LOG.debug("Operator rel#" + sortRel.getId() + ":"+ sortRel.getRelTypeName()+ " consists of sort+limit");
+    }
+  }
+  Operator<?> inputOp=inputOpAf.inputs.get(0);
+  Operator<?> resultOp=inputOpAf.inputs.get(0);
+  if (sortRel.getCollation() != RelCollations.EMPTY) {
+    if (strictMode && sortRel.fetch == null) {
+      throw new SemanticException(ErrorMsg.NO_LIMIT_WITH_ORDERBY.getMsg());
+    }
+    List<ExprNodeDesc> sortCols=new ArrayList<ExprNodeDesc>();
+    StringBuilder order=new StringBuilder();
+    for (    RelCollation collation : sortRel.getCollationList()) {
+      for (      RelFieldCollation sortInfo : collation.getFieldCollations()) {
+        int sortColumnPos=sortInfo.getFieldIndex();
+        ColumnInfo columnInfo=new ColumnInfo(inputOp.getSchema().getSignature().get(sortColumnPos));
+        ExprNodeColumnDesc sortColumn=new ExprNodeColumnDesc(columnInfo.getType(),columnInfo.getInternalName(),columnInfo.getTabAlias(),columnInfo.getIsVirtualCol());
+        sortCols.add(sortColumn);
+        if (sortInfo.getDirection() == RelFieldCollation.Direction.DESCENDING) {
+          order.append("-");
+        }
+ else {
+          order.append("+");
+        }
+      }
+    }
+    int numReducers=1;
+    resultOp=genReduceSinkAndBacktrackSelect(resultOp,sortCols.toArray(new ExprNodeDesc[sortCols.size()]),0,new ArrayList<ExprNodeDesc>(),order.toString(),numReducers,Operation.NOT_ACID,strictMode);
+  }
+  if (sortRel.fetch != null) {
+    int limit=RexLiteral.intValue(sortRel.fetch);
+    LimitDesc limitDesc=new LimitDesc(limit);
+    ArrayList<ColumnInfo> cinfoLst=createColInfos(inputOp);
+    resultOp=OperatorFactory.getAndMakeChild(limitDesc,new RowSchema(cinfoLst),resultOp);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Generated " + resultOp + " with row schema: ["+ resultOp.getSchema()+ "]");
+    }
+  }
+  return inputOpAf.clone(resultOp);
+}

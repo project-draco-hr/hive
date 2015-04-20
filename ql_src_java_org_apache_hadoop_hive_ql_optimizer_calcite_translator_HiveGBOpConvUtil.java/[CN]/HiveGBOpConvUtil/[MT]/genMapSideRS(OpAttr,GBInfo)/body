@@ -1,0 +1,34 @@
+{
+  Map<String,ExprNodeDesc> colExprMap=new HashMap<String,ExprNodeDesc>();
+  List<String> outputKeyColumnNames=new ArrayList<String>();
+  List<String> outputValueColumnNames=new ArrayList<String>();
+  ArrayList<ColumnInfo> colInfoLst=new ArrayList<ColumnInfo>();
+  int distColStartIndx=gbInfo.gbKeys.size() + (gbInfo.grpSets.size() > 0 ? 1 : 0);
+  String outputColName;
+  ArrayList<ExprNodeDesc> reduceKeys=getReduceKeysForRS(inputOpAf.inputs.get(0),0,gbInfo.gbKeys.size() - 1,outputKeyColumnNames,false,colInfoLst,colExprMap,false,false);
+  int keyLength=reduceKeys.size();
+  if (gbInfo.containsDistinctAggr) {
+    String udafName=SemanticAnalyzer.getColumnInternalName(reduceKeys.size());
+    outputKeyColumnNames.add(udafName);
+    for (int i=0; i < gbInfo.distExprNodes.size(); i++) {
+      reduceKeys.add(gbInfo.distExprNodes.get(i));
+      outputColName=SemanticAnalyzer.getColumnInternalName(i);
+      String field=Utilities.ReduceField.KEY.toString() + "." + udafName+ ":"+ i+ "."+ outputColName;
+      ColumnInfo colInfo=new ColumnInfo(field,gbInfo.distExprNodes.get(i).getTypeInfo(),null,false);
+      colInfoLst.add(colInfo);
+      colExprMap.put(field,gbInfo.distExprNodes.get(i));
+    }
+  }
+  ArrayList<ExprNodeDesc> reduceValues=new ArrayList<ExprNodeDesc>();
+  for (int i=0; i < gbInfo.deDupedNonDistIrefs.size(); i++) {
+    reduceValues.add(gbInfo.deDupedNonDistIrefs.get(i));
+    outputColName=SemanticAnalyzer.getColumnInternalName(reduceValues.size() - 1);
+    outputValueColumnNames.add(outputColName);
+    String field=Utilities.ReduceField.VALUE.toString() + "." + outputColName;
+    colInfoLst.add(new ColumnInfo(field,reduceValues.get(reduceValues.size() - 1).getTypeInfo(),null,false));
+    colExprMap.put(field,reduceValues.get(reduceValues.size() - 1));
+  }
+  ReduceSinkOperator rsOp=(ReduceSinkOperator)OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(reduceKeys,keyLength,reduceValues,getDistColIndices(gbInfo,distColStartIndx),outputKeyColumnNames,outputValueColumnNames,true,-1,getNumPartFieldsForMapSideRS(gbInfo),getParallelismForMapSideRS(gbInfo),AcidUtils.Operation.NOT_ACID),new RowSchema(colInfoLst),inputOpAf.inputs.get(0));
+  rsOp.setColumnExprMap(colExprMap);
+  return new OpAttr("",new HashMap<Integer,VirtualColumn>(),rsOp);
+}

@@ -1,0 +1,53 @@
+{
+  JoinType joinType=extractJoinType(hiveJoin);
+  JoinCondDesc[] joinCondns=new JoinCondDesc[1];
+  joinCondns[0]=new JoinCondDesc(new JoinCond(0,1,joinType));
+  ArrayList<ColumnInfo> outputColumns=new ArrayList<ColumnInfo>();
+  ArrayList<String> outputColumnNames=new ArrayList<String>(hiveJoin.getRowType().getFieldNames());
+  Operator<?>[] childOps=new Operator[children.size()];
+  Map<String,Byte> reversedExprs=new HashMap<String,Byte>();
+  HashMap<Byte,List<ExprNodeDesc>> exprMap=new HashMap<Byte,List<ExprNodeDesc>>();
+  Map<String,ExprNodeDesc> colExprMap=new HashMap<String,ExprNodeDesc>();
+  HashMap<Integer,Set<String>> posToAliasMap=new HashMap<Integer,Set<String>>();
+  int outputPos=0;
+  for (int pos=0; pos < children.size(); pos++) {
+    ReduceSinkOperator inputRS=(ReduceSinkOperator)children.get(pos);
+    if (inputRS.getNumParent() != 1) {
+      throw new SemanticException("RS should have single parent");
+    }
+    Operator<?> parent=inputRS.getParentOperators().get(0);
+    ReduceSinkDesc rsDesc=inputRS.getConf();
+    int[] index=inputRS.getValueIndex();
+    Byte tag=(byte)rsDesc.getTag();
+    if (joinType == JoinType.LEFTSEMI && pos != 0) {
+      exprMap.put(tag,new ArrayList<ExprNodeDesc>());
+      childOps[pos]=inputRS;
+      continue;
+    }
+    List<String> keyColNames=rsDesc.getOutputKeyColumnNames();
+    List<String> valColNames=rsDesc.getOutputValueColumnNames();
+    posToAliasMap.put(pos,new HashSet<String>(inputRS.getSchema().getTableNames()));
+    Map<String,ExprNodeDesc> descriptors=buildBacktrackFromReduceSink(outputPos,outputColumnNames,keyColNames,valColNames,index,parent);
+    List<ColumnInfo> parentColumns=parent.getSchema().getSignature();
+    for (int i=0; i < index.length; i++) {
+      ColumnInfo info=new ColumnInfo(parentColumns.get(i));
+      info.setInternalName(outputColumnNames.get(outputPos));
+      outputColumns.add(info);
+      reversedExprs.put(outputColumnNames.get(outputPos),tag);
+      outputPos++;
+    }
+    exprMap.put(tag,new ArrayList<ExprNodeDesc>(descriptors.values()));
+    colExprMap.putAll(descriptors);
+    childOps[pos]=inputRS;
+  }
+  boolean noOuterJoin=joinType != JoinType.FULLOUTER && joinType != JoinType.LEFTOUTER && joinType != JoinType.RIGHTOUTER;
+  JoinDesc desc=new JoinDesc(exprMap,outputColumnNames,noOuterJoin,joinCondns,joinKeys);
+  desc.setReversedExprs(reversedExprs);
+  JoinOperator joinOp=(JoinOperator)OperatorFactory.getAndMakeChild(desc,new RowSchema(outputColumns),childOps);
+  joinOp.setColumnExprMap(colExprMap);
+  joinOp.setPosToAliasMap(posToAliasMap);
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Generated " + joinOp + " with row schema: ["+ joinOp.getSchema()+ "]");
+  }
+  return joinOp;
+}

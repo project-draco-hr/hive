@@ -1,0 +1,69 @@
+{
+  ArrayList<String> outputColNames=new ArrayList<String>();
+  ArrayList<ColumnInfo> colInfoLst=new ArrayList<ColumnInfo>();
+  Map<String,ExprNodeDesc> colExprMap=new HashMap<String,ExprNodeDesc>();
+  String colOutputName=null;
+  ReduceSinkOperator rs=(ReduceSinkOperator)inputOpAf.inputs.get(0);
+  List<ColumnInfo> rsColInfoLst=rs.getSchema().getSignature();
+  ColumnInfo ci;
+  boolean useOriginalGBNames=(gbInfo.gbPhysicalPipelineMode == HIVEGBPHYSICALMODE.NO_MAP_SIDE_GB_NO_SKEW);
+  ArrayList<ExprNodeDesc> gbKeys=ExprNodeDescUtils.genExprNodeDesc(rs,0,gbInfo.gbKeys.size() - 1,true,false);
+  for (int i=0; i < gbInfo.gbKeys.size(); i++) {
+    ci=rsColInfoLst.get(i);
+    if (useOriginalGBNames) {
+      colOutputName=gbInfo.outputColNames.get(i);
+    }
+ else {
+      colOutputName=SemanticAnalyzer.getColumnInternalName(i);
+    }
+    outputColNames.add(colOutputName);
+    colInfoLst.add(new ColumnInfo(colOutputName,ci.getType(),null,false));
+    colExprMap.put(colOutputName,gbKeys.get(i));
+  }
+  String lastReduceKeyColName=null;
+  if (!rs.getConf().getOutputKeyColumnNames().isEmpty()) {
+    lastReduceKeyColName=rs.getConf().getOutputKeyColumnNames().get(rs.getConf().getOutputKeyColumnNames().size() - 1);
+  }
+  int numDistinctUDFs=0;
+  int distinctStartPosInReduceKeys=gbKeys.size();
+  List<ExprNodeDesc> reduceValues=rs.getConf().getValueCols();
+  ArrayList<AggregationDesc> aggregations=new ArrayList<AggregationDesc>();
+  int udafColStartPosInOriginalGB=gbInfo.gbKeys.size();
+  for (int i=0; i < gbInfo.udafAttrs.size(); i++) {
+    UDAFAttrs udafAttr=gbInfo.udafAttrs.get(i);
+    ArrayList<ExprNodeDesc> aggParameters=new ArrayList<ExprNodeDesc>();
+    ColumnInfo rsUDAFParamColInfo;
+    ExprNodeDesc udafParam;
+    ExprNodeDesc constantPropDistinctUDAFParam;
+    for (int j=0; j < udafAttr.udafParams.size(); j++) {
+      rsUDAFParamColInfo=rsColInfoLst.get(distinctStartPosInReduceKeys + j);
+      String rsUDAFParamName=rsUDAFParamColInfo.getInternalName();
+      if (udafAttr.isDistinctUDAF && lastReduceKeyColName != null) {
+        rsUDAFParamName=Utilities.ReduceField.KEY.name() + "." + lastReduceKeyColName+ ":"+ numDistinctUDFs+ "."+ SemanticAnalyzer.getColumnInternalName(j);
+      }
+      udafParam=new ExprNodeColumnDesc(rsUDAFParamColInfo.getType(),rsUDAFParamName,rsUDAFParamColInfo.getTabAlias(),rsUDAFParamColInfo.getIsVirtualCol());
+      constantPropDistinctUDAFParam=SemanticAnalyzer.isConstantParameterInAggregationParameters(rsUDAFParamColInfo.getInternalName(),reduceValues);
+      if (constantPropDistinctUDAFParam != null) {
+        udafParam=constantPropDistinctUDAFParam;
+      }
+      aggParameters.add(udafParam);
+    }
+    if (udafAttr.isDistinctUDAF) {
+      numDistinctUDFs++;
+    }
+    Mode udafMode=SemanticAnalyzer.groupByDescModeToUDAFMode(gbMode,udafAttr.isDistinctUDAF);
+    GenericUDAFInfo udaf=SemanticAnalyzer.getGenericUDAFInfo(udafAttr.udafEvaluator,udafMode,aggParameters);
+    aggregations.add(new AggregationDesc(udafAttr.udafName.toLowerCase(),udaf.genericUDAFEvaluator,udaf.convertedParameters,udafAttr.isDistinctUDAF,udafMode));
+    if (useOriginalGBNames) {
+      colOutputName=gbInfo.outputColNames.get(udafColStartPosInOriginalGB + i);
+    }
+ else {
+      colOutputName=SemanticAnalyzer.getColumnInternalName(gbKeys.size() + aggregations.size() - 1);
+    }
+    colInfoLst.add(new ColumnInfo(colOutputName,udaf.returnType,"",false));
+    outputColNames.add(colOutputName);
+  }
+  Operator rsGB1=OperatorFactory.getAndMakeChild(new GroupByDesc(gbMode,outputColNames,gbKeys,aggregations,false,gbInfo.groupByMemoryUsage,gbInfo.memoryThreshold,null,false,-1,numDistinctUDFs > 0),new RowSchema(colInfoLst),rs);
+  rsGB1.setColumnExprMap(colExprMap);
+  return new OpAttr("",new HashMap<Integer,VirtualColumn>(),rsGB1);
+}

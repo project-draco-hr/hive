@@ -1,0 +1,27 @@
+{
+  Join join=call.rel(0);
+  if (call.rel(1) instanceof Exchange && call.rel(2) instanceof Exchange) {
+    return;
+  }
+  JoinPredicateInfo joinPredInfo=HiveCalciteUtil.JoinPredicateInfo.constructJoinPredicateInfo(join);
+  List<Integer> joinLeftKeyPositions=new ArrayList<Integer>();
+  List<Integer> joinRightKeyPositions=new ArrayList<Integer>();
+  ImmutableList.Builder<RelFieldCollation> leftCollationListBuilder=new ImmutableList.Builder<RelFieldCollation>();
+  ImmutableList.Builder<RelFieldCollation> rightCollationListBuilder=new ImmutableList.Builder<RelFieldCollation>();
+  for (int i=0; i < joinPredInfo.getEquiJoinPredicateElements().size(); i++) {
+    JoinLeafPredicateInfo joinLeafPredInfo=joinPredInfo.getEquiJoinPredicateElements().get(i);
+    joinLeftKeyPositions.addAll(joinLeafPredInfo.getProjsFromLeftPartOfJoinKeysInChildSchema());
+    for (    int leftPos : joinLeafPredInfo.getProjsFromLeftPartOfJoinKeysInChildSchema()) {
+      leftCollationListBuilder.add(new RelFieldCollation(leftPos));
+    }
+    joinRightKeyPositions.addAll(joinLeafPredInfo.getProjsFromRightPartOfJoinKeysInChildSchema());
+    for (    int rightPos : joinLeafPredInfo.getProjsFromRightPartOfJoinKeysInChildSchema()) {
+      rightCollationListBuilder.add(new RelFieldCollation(rightPos));
+    }
+  }
+  HiveSortExchange left=HiveSortExchange.create(join.getLeft(),new HiveRelDistribution(RelDistribution.Type.HASH_DISTRIBUTED,joinLeftKeyPositions),new HiveRelCollation(leftCollationListBuilder.build()));
+  HiveSortExchange right=HiveSortExchange.create(join.getRight(),new HiveRelDistribution(RelDistribution.Type.HASH_DISTRIBUTED,joinRightKeyPositions),new HiveRelCollation(rightCollationListBuilder.build()));
+  Join newJoin=join.copy(join.getTraitSet(),join.getCondition(),left,right,join.getJoinType(),join.isSemiJoinDone());
+  call.getPlanner().onCopy(join,newJoin);
+  call.transformTo(newJoin);
+}
