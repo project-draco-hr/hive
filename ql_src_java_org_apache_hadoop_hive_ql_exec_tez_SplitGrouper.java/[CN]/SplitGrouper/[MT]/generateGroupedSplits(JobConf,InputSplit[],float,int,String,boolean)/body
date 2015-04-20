@@ -1,0 +1,28 @@
+{
+  MapWork work=populateMapWork(jobConf,inputName);
+  Multimap<Integer,InputSplit> bucketSplitMultiMap=ArrayListMultimap.<Integer,InputSplit>create();
+  Map<Integer,SplitSizeEstimator> splitSizeEstimatorMap=new HashMap<>();
+  int i=0;
+  InputSplit prevSplit=null;
+  Class<? extends InputFormat> inputFormatClass=null;
+  for (  InputSplit s : splits) {
+    if (schemaEvolved(s,prevSplit,groupAcrossFiles,work)) {
+      ++i;
+      prevSplit=s;
+      inputFormatClass=getInputFormatClassFromSplit(s,work);
+      InputFormat inputFormat=HiveInputFormat.getInputFormatFromCache(inputFormatClass,jobConf);
+      if (inputFormat instanceof SplitSizeEstimator) {
+        LOG.info(inputFormat.getClass().getSimpleName() + " implements SplitSizeEstimator");
+        splitSizeEstimatorMap.put(i,(SplitSizeEstimator)inputFormat);
+      }
+ else {
+        LOG.info(inputFormat.getClass().getSimpleName() + " does not implement SplitSizeEstimator");
+        splitSizeEstimatorMap.put(i,null);
+      }
+    }
+    bucketSplitMultiMap.put(i,s);
+  }
+  LOG.info("# Src groups for split generation: " + (i + 1));
+  Multimap<Integer,InputSplit> groupedSplits=this.group(jobConf,bucketSplitMultiMap,availableSlots,waves,splitSizeEstimatorMap);
+  return groupedSplits;
+}
