@@ -3,32 +3,38 @@
   readLock.lock();
   try {
     if (getAvailableResources().getMemory() <= 0) {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Refreshing instances since total memory is 0");
+      }
       refreshInstances();
     }
     if (getTotalResources().getMemory() <= 0) {
       return null;
     }
     if (requestedHosts != null) {
+      int prefHostCount=-1;
       for (      String host : requestedHosts) {
+        prefHostCount++;
         Set<ServiceInstance> instances=activeInstances.getByHost(host);
         if (!instances.isEmpty()) {
           for (          ServiceInstance inst : instances) {
-            if (inst.isAlive() && instanceToNodeMap.containsKey(inst)) {
-              LOG.info("Assigning " + inst + " when looking for "+ host);
+            NodeInfo nodeInfo=instanceToNodeMap.get(inst);
+            if (inst.isAlive() && nodeInfo != null && !nodeInfo.isDisabled()) {
+              LOG.info("Assigning " + inst + " when looking for "+ host+ ". FirstRequestedHost="+ (prefHostCount == 0));
               return inst;
             }
           }
         }
       }
     }
-    ServiceInstance[] all=instanceToNodeMap.keySet().toArray(new ServiceInstance[0]);
+    Entry<ServiceInstance,NodeInfo>[] all=instanceToNodeMap.entrySet().toArray(new Entry[instanceToNodeMap.size()]);
     if (all.length > 0) {
       int n=random.nextInt(all.length);
       for (int i=0; i < all.length; i++) {
-        ServiceInstance inst=all[(i + n) % all.length];
-        if (inst.isAlive()) {
-          LOG.info("Assigning " + inst + " when looking for any host");
-          return inst;
+        Entry<ServiceInstance,NodeInfo> inst=all[(i + n) % all.length];
+        if (inst.getKey().isAlive() && !inst.getValue().isDisabled()) {
+          LOG.info("Assigning " + inst + " when looking for any host, from #hosts="+ all.length);
+          return inst.getKey();
         }
       }
     }
@@ -39,7 +45,8 @@
   writeLock.lock();
   try {
     for (    ServiceInstance inst : activeInstances.getAll().values()) {
-      if (inst.isAlive() && instanceBlackList.contains(inst) == false && instanceToNodeMap.containsKey(inst) == false) {
+      if (inst.isAlive() && instanceToNodeMap.containsKey(inst) == false) {
+        LOG.info("Found a new node: " + inst + ". Adding to node list and disabling to trigger scheduling");
         addNode(inst,new NodeInfo(inst,BACKOFF_FACTOR,clock));
         disableInstance(inst,true);
       }

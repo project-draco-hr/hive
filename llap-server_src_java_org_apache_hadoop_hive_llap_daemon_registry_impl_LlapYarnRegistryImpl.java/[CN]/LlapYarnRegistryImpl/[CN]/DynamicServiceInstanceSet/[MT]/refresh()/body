@@ -2,38 +2,42 @@
   Map<String,ServiceInstance> freshInstances=new HashMap<String,ServiceInstance>();
   String path=getPath();
   Map<String,ServiceRecord> records=RegistryUtils.listServiceRecords(client,RegistryPathUtils.parentOf(path));
-  Set<String> latestKeys=new HashSet<String>();
-  LOG.info("Starting to refresh ServiceInstanceSet " + System.identityHashCode(this));
-  for (  ServiceRecord rec : records.values()) {
-    ServiceInstance instance=new DynamicServiceInstance(rec);
-    if (instance != null) {
-      if (instances != null && instances.containsKey(instance.getWorkerIdentity()) == false) {
-        freshInstances.put(instance.getWorkerIdentity(),instance);
-        if (LOG.isInfoEnabled()) {
-          LOG.info("Adding new worker " + instance.getWorkerIdentity() + " which mapped to "+ instance);
+synchronized (this) {
+    Set<String> latestKeys=new HashSet<String>();
+    LOG.info("Starting to refresh ServiceInstanceSet " + System.identityHashCode(this));
+    for (    ServiceRecord rec : records.values()) {
+      ServiceInstance instance=new DynamicServiceInstance(rec);
+      if (instance != null) {
+        if (instances != null && instances.containsKey(instance.getWorkerIdentity()) == false) {
+          freshInstances.put(instance.getWorkerIdentity(),instance);
+          if (LOG.isInfoEnabled()) {
+            LOG.info("Adding new worker " + instance.getWorkerIdentity() + " which mapped to "+ instance);
+          }
         }
-      }
- else       if (LOG.isDebugEnabled()) {
-        LOG.debug("Retaining running worker " + instance.getWorkerIdentity() + " which mapped to "+ instance);
-      }
-    }
-    latestKeys.add(instance.getWorkerIdentity());
-  }
-  if (instances != null) {
-    Set<String> oldKeys=new HashSet(instances.keySet());
-    if (oldKeys.removeAll(latestKeys)) {
-      for (      String k : oldKeys) {
-        final DynamicServiceInstance dead=(DynamicServiceInstance)instances.get(k);
-        dead.kill();
-        if (LOG.isInfoEnabled()) {
-          LOG.info("Deleting dead worker " + k + " which mapped to "+ dead);
-        }
-      }
-    }
-    this.instances.keySet().removeAll(oldKeys);
-    this.instances.putAll(freshInstances);
-  }
  else {
-    this.instances=freshInstances;
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Retaining running worker " + instance.getWorkerIdentity() + " which mapped to "+ instance);
+          }
+        }
+      }
+      latestKeys.add(instance.getWorkerIdentity());
+    }
+    if (instances != null) {
+      Set<String> oldKeys=new HashSet(instances.keySet());
+      if (oldKeys.removeAll(latestKeys)) {
+        for (        String k : oldKeys) {
+          final DynamicServiceInstance dead=(DynamicServiceInstance)instances.get(k);
+          dead.kill();
+          if (LOG.isInfoEnabled()) {
+            LOG.info("Deleting dead worker " + k + " which mapped to "+ dead);
+          }
+        }
+      }
+      this.instances.keySet().removeAll(oldKeys);
+      this.instances.putAll(freshInstances);
+    }
+ else {
+      this.instances.putAll(freshInstances);
+    }
   }
 }
