@@ -9,20 +9,20 @@
     LOG.debug("Translating operator rel#" + joinRel.getId() + ":"+ joinRel.getRelTypeName()+ " with row type: ["+ joinRel.getRowType()+ "]");
   }
   JoinPredicateInfo joinPredInfo=JoinPredicateInfo.constructJoinPredicateInfo(joinRel);
-  ExprNodeDesc[][] joinKeys=extractJoinKeys(joinPredInfo,joinRel.getInputs());
+  ExprNodeDesc[][] joinKeys=extractJoinKeys(joinPredInfo,joinRel.getInputs(),inputs);
   for (int tag=0; tag < children.size(); tag++) {
     ReduceSinkOperator reduceSinkOp=(ReduceSinkOperator)children.get(tag);
     reduceSinkOp.getConf().setTag(tag);
   }
   JoinOperator joinOp=genJoin(joinRel,joinPredInfo,children,joinKeys);
-  Map<Integer,VirtualColumn> vcolMap=new HashMap<Integer,VirtualColumn>();
-  vcolMap.putAll(inputs[0].vcolMap);
+  Set<Integer> newVcolsInCalcite=new HashSet<Integer>();
+  newVcolsInCalcite.addAll(inputs[0].vcolsInCalcite);
   if (extractJoinType(joinRel) != JoinType.LEFTSEMI) {
     int shift=inputs[0].inputs.get(0).getSchema().getSignature().size();
     for (int i=1; i < inputs.length; i++) {
-      vcolMap.putAll(HiveCalciteUtil.shiftVColsMap(inputs[i].vcolMap,shift));
+      newVcolsInCalcite.addAll(HiveCalciteUtil.shiftVColsSet(inputs[i].vcolsInCalcite,shift));
       shift+=inputs[i].inputs.get(0).getSchema().getSignature().size();
     }
   }
-  return new OpAttr(null,vcolMap,joinOp);
+  return new OpAttr(null,newVcolsInCalcite,joinOp);
 }

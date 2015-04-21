@@ -4,12 +4,12 @@
   }
   RelOptHiveTable ht=(RelOptHiveTable)scanRel.getTable();
   ArrayList<ColumnInfo> colInfos=new ArrayList<ColumnInfo>();
-  List<VirtualColumn> virtualCols=new ArrayList<VirtualColumn>(ht.getVirtualCols());
-  Map<Integer,VirtualColumn> hiveScanVColMap=new HashMap<Integer,VirtualColumn>();
-  List<String> partColNames=new ArrayList<String>();
+  List<VirtualColumn> virtualCols=new ArrayList<VirtualColumn>();
   List<Integer> neededColumnIDs=new ArrayList<Integer>();
-  List<String> neededColumns=new ArrayList<String>();
-  Map<Integer,VirtualColumn> posToVColMap=HiveCalciteUtil.getVColsMap(virtualCols,ht.getNoOfNonVirtualCols());
+  List<String> neededColumnNames=new ArrayList<String>();
+  Set<Integer> vcolsInCalcite=new HashSet<Integer>();
+  List<String> partColNames=new ArrayList<String>();
+  Map<Integer,VirtualColumn> VColsMap=HiveCalciteUtil.getVColsMap(ht.getVirtualCols(),ht.getNoOfNonVirtualCols());
   Map<Integer,ColumnInfo> posToPartColInfo=ht.getPartColInfoMap();
   Map<Integer,ColumnInfo> posToNonPartColInfo=ht.getNonPartColInfoMap();
   List<Integer> neededColIndxsFrmReloptHT=scanRel.getNeededColIndxsFrmReloptHT();
@@ -22,31 +22,32 @@
   for (int i=0; i < neededColIndxsFrmReloptHT.size(); i++) {
     colName=scanColNames.get(i);
     posInRHT=neededColIndxsFrmReloptHT.get(i);
-    if (posToVColMap.containsKey(posInRHT)) {
-      vc=posToVColMap.get(posInRHT);
+    if (VColsMap.containsKey(posInRHT)) {
+      vc=VColsMap.get(posInRHT);
       virtualCols.add(vc);
       colInfo=new ColumnInfo(vc.getName(),vc.getTypeInfo(),tableAlias,true,vc.getIsHidden());
-      hiveScanVColMap.put(i,vc);
+      vcolsInCalcite.add(posInRHT);
     }
  else     if (posToPartColInfo.containsKey(posInRHT)) {
       partColNames.add(colName);
       colInfo=posToPartColInfo.get(posInRHT);
+      vcolsInCalcite.add(posInRHT);
     }
  else {
       colInfo=posToNonPartColInfo.get(posInRHT);
     }
     neededColumnIDs.add(posInRHT);
-    neededColumns.add(colName);
+    neededColumnNames.add(colName);
     colInfos.add(colInfo);
   }
   TableScanDesc tsd=new TableScanDesc(tableAlias,virtualCols,ht.getHiveTableMD());
   tsd.setPartColumns(partColNames);
   tsd.setNeededColumnIDs(neededColumnIDs);
-  tsd.setNeededColumns(neededColumns);
+  tsd.setNeededColumns(neededColumnNames);
   TableScanOperator ts=(TableScanOperator)OperatorFactory.get(tsd,new RowSchema(colInfos));
   topOps.put(scanRel.getConcatQbIDAlias(),ts);
   if (LOG.isDebugEnabled()) {
     LOG.debug("Generated " + ts + " with row schema: ["+ ts.getSchema()+ "]");
   }
-  return new OpAttr(tableAlias,hiveScanVColMap,ts);
+  return new OpAttr(tableAlias,vcolsInCalcite,ts);
 }
