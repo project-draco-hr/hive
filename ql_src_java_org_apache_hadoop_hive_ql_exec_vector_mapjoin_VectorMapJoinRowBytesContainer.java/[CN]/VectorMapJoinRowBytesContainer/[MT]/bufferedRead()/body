@@ -1,0 +1,78 @@
+{
+  readNextIndex=0;
+  readNextCount=0;
+  if (readOffset < readLength) {
+    int unprocessLength=readLength - readOffset;
+    System.arraycopy(readBuffer,readOffset,readBuffer,0,unprocessLength);
+    int maxReadLength=readBuffer.length - unprocessLength;
+    int partialReadLength=fileInputStream.read(readBuffer,unprocessLength,maxReadLength);
+    if (partialReadLength == -1) {
+      partialReadLength=0;
+    }
+    totalReadLength+=partialReadLength;
+    readLength=unprocessLength + partialReadLength;
+    readOffset=0;
+  }
+ else {
+    readOffset=0;
+    readLength=fileInputStream.read(readBuffer,0,readBuffer.length);
+    if (readLength == -1) {
+      readLength=0;
+    }
+    totalReadLength+=readLength;
+  }
+  if (readLength == 0) {
+    return;
+  }
+  if (readLength < 0) {
+    throw new IOException("Negative read length");
+  }
+  if (readLength < 4) {
+    throw new IOException("Expecting 4 byte length");
+  }
+  while (true) {
+    int saveReadOffset=readOffset;
+    int rowLength=readInt();
+    if (rowLength < 0) {
+      throw new IOException("Negative row length");
+    }
+    int remainingLength=readLength - readOffset;
+    if (remainingLength < rowLength) {
+      if (readNextCount > 0) {
+        readOffset=saveReadOffset;
+        break;
+      }
+      if (largeRowBuffer == null || largeRowBuffer.length < rowLength) {
+        int newLargeBufferLength=Math.max(Integer.highestOneBit(rowLength) << 1,INPUT_SIZE);
+        largeRowBuffer=new byte[newLargeBufferLength];
+      }
+      System.arraycopy(readBuffer,readOffset,largeRowBuffer,0,remainingLength);
+      int expectedPartialLength=rowLength - remainingLength;
+      int partialReadLength=fileInputStream.read(largeRowBuffer,remainingLength,expectedPartialLength);
+      if (partialReadLength == -1) {
+        throw new IOException("Unexpected EOF (total write length " + totalWriteLength + ", total read length "+ totalReadLength+ ", read length "+ expectedPartialLength+ ")");
+      }
+      if (expectedPartialLength != partialReadLength) {
+        throw new IOException("Unable to read a complete row of length " + rowLength + " (total write length "+ totalWriteLength+ ", total read length "+ totalReadLength+ ", read length "+ expectedPartialLength+ ", actual length "+ partialReadLength+ ")");
+      }
+      totalReadLength+=partialReadLength;
+      readNextBytes[readNextCount]=largeRowBuffer;
+      readNextOffsets[readNextCount]=0;
+      readNextLengths[readNextCount]=rowLength;
+      readOffset=readLength;
+      readNextCount++;
+      break;
+    }
+    readNextBytes[readNextCount]=readBuffer;
+    readNextOffsets[readNextCount]=readOffset;
+    readNextLengths[readNextCount]=rowLength;
+    readOffset+=rowLength;
+    readNextCount++;
+    if (readNextCount >= readNextBytes.length) {
+      break;
+    }
+    if (readLength - readOffset < 4) {
+      break;
+    }
+  }
+}

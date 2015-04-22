@@ -1,0 +1,38 @@
+{
+  Map<Integer,String> parentToInput=desc.getParentToInput();
+  Map<Integer,Long> parentKeyCounts=desc.getParentKeyCounts();
+  for (int pos=0; pos < mapJoinTables.length; pos++) {
+    if (pos == desc.getPosBigTable()) {
+      continue;
+    }
+    String inputName=parentToInput.get(pos);
+    LogicalInput input=tezContext.getInput(inputName);
+    try {
+      input.start();
+      tezContext.getTezProcessorContext().waitForAnyInputReady(Collections.<Input>singletonList(input));
+    }
+ catch (    Exception e) {
+      throw new HiveException(e);
+    }
+    try {
+      KeyValueReader kvReader=(KeyValueReader)input.getReader();
+      Long keyCountObj=parentKeyCounts.get(pos);
+      long keyCount=(keyCountObj == null) ? -1 : keyCountObj.longValue();
+      VectorMapJoinFastTableContainer vectorMapJoinFastTableContainer=new VectorMapJoinFastTableContainer(desc,hconf,keyCount,memUsage);
+      while (kvReader.next()) {
+        vectorMapJoinFastTableContainer.putRow(null,(BytesWritable)kvReader.getCurrentKey(),null,(BytesWritable)kvReader.getCurrentValue());
+      }
+      vectorMapJoinFastTableContainer.seal();
+      mapJoinTables[pos]=(MapJoinTableContainer)vectorMapJoinFastTableContainer;
+    }
+ catch (    IOException e) {
+      throw new HiveException(e);
+    }
+catch (    SerDeException e) {
+      throw new HiveException(e);
+    }
+catch (    Exception e) {
+      throw new HiveException(e);
+    }
+  }
+}

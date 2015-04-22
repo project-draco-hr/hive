@@ -1,0 +1,54 @@
+{
+  if (overflowBatch.size > 0) {
+    forwardOverflow();
+  }
+  ByteSegmentRef byteSegmentRef=hashMapResult.first();
+  while (true) {
+    while (byteSegmentRef != null) {
+      if (smallTableVectorDeserializeRow != null) {
+        byte[] bytes=byteSegmentRef.getBytes();
+        int offset=(int)byteSegmentRef.getOffset();
+        int length=byteSegmentRef.getLength();
+        smallTableVectorDeserializeRow.setBytes(bytes,offset,length);
+        smallTableVectorDeserializeRow.deserializeByValue(overflowBatch,overflowBatch.DEFAULT_SIZE);
+      }
+      overflowBatch.size++;
+      if (overflowBatch.size == overflowBatch.DEFAULT_SIZE) {
+        break;
+      }
+      byteSegmentRef=hashMapResult.next();
+    }
+    for (int i=0; i < duplicateCount; i++) {
+      int batchIndex=allMatchs[allMatchesIndex + i];
+      if (bigTableRetainedVectorCopy != null) {
+        bigTableRetainedVectorCopy.copyByReference(batch,batchIndex,overflowBatch,0);
+        for (        int column : bigTableRetainedMapping.getOutputColumns()) {
+          overflowBatch.cols[column].isRepeating=true;
+        }
+      }
+      if (bigTableVectorCopyOuterKeys != null) {
+        bigTableVectorCopyOuterKeys.copyByReference(batch,batchIndex,overflowBatch,0);
+        for (        int column : bigTableOuterKeyMapping.getOutputColumns()) {
+          overflowBatch.cols[column].isRepeating=true;
+        }
+      }
+      forwardOverflowNoReset();
+      for (      int column : bigTableRetainedMapping.getOutputColumns()) {
+        ColumnVector colVector=overflowBatch.cols[column];
+        colVector.reset();
+      }
+      if (bigTableVectorCopyOuterKeys != null) {
+        for (        int column : bigTableOuterKeyMapping.getOutputColumns()) {
+          ColumnVector colVector=overflowBatch.cols[column];
+          colVector.reset();
+        }
+      }
+    }
+    if (hashMapResult.isEof()) {
+      break;
+    }
+    byteSegmentRef=hashMapResult.next();
+    overflowBatch.reset();
+  }
+  overflowBatch.reset();
+}
