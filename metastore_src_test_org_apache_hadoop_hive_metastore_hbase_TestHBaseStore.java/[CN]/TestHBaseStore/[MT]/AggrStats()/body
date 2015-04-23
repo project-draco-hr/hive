@@ -1,0 +1,37 @@
+{
+  int numParts=3;
+  ColumnStatistics stats;
+  ColumnStatisticsDesc desc;
+  ColumnStatisticsObj obj;
+  List<String> partNames=new ArrayList<String>();
+  List<String> colNames=new ArrayList<String>();
+  colNames.add(BOOLEAN_COL);
+  for (int i=0; i < numParts; i++) {
+    stats=new ColumnStatistics();
+    desc=getMockPartColStatsDesc(0,i);
+    stats.setStatsDesc(desc);
+    partNames.add(desc.getPartName());
+    obj=booleanColStatsObjs.get(i);
+    stats.addToStatsObj(obj);
+    List<String> parVals=new ArrayList<String>();
+    parVals.add(PART_VALS.get(i));
+    store.updatePartitionColumnStatistics(stats,parVals);
+  }
+  AggrStats aggrStatsFromDB=store.get_aggr_stats_for(DB,TBL,partNames,colNames);
+  Assert.assertEquals(1,aggrStatsFromDB.getColStatsSize());
+  ColumnStatisticsObj objFromDB=aggrStatsFromDB.getColStats().get(0);
+  Assert.assertNotNull(objFromDB);
+  long numTrues=0, numFalses=0, numNulls=0;
+  BooleanColumnStatsData boolData;
+  ;
+  for (int i=0; i < numParts; i++) {
+    boolData=booleanColStatsObjs.get(i).getStatsData().getBooleanStats();
+    numTrues=numTrues + boolData.getNumTrues();
+    numFalses=numFalses + boolData.getNumFalses();
+    numNulls=numNulls + boolData.getNumNulls();
+  }
+  BooleanColumnStatsData boolDataFromDB=objFromDB.getStatsData().getBooleanStats();
+  Assert.assertEquals(numTrues,boolDataFromDB.getNumTrues());
+  Assert.assertEquals(numFalses,boolDataFromDB.getNumFalses());
+  Assert.assertEquals(numNulls,boolDataFromDB.getNumNulls());
+}
