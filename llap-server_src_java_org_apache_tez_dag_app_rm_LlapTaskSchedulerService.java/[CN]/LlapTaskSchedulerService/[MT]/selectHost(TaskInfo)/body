@@ -19,9 +19,9 @@
         if (!instances.isEmpty()) {
           for (          ServiceInstance inst : instances) {
             NodeInfo nodeInfo=instanceToNodeMap.get(inst);
-            if (inst.isAlive() && nodeInfo != null && !nodeInfo.isDisabled()) {
-              LOG.info("Assigning " + inst + " when looking for "+ host+ ". FirstRequestedHost="+ (prefHostCount == 0));
-              return inst;
+            if (nodeInfo != null && nodeInfo.canAcceptTask()) {
+              LOG.info("Assigning " + inst + " when looking for "+ host+ "."+ " FirstRequestedHost="+ (prefHostCount == 0));
+              return new NodeServiceInstancePair(inst,nodeInfo);
             }
           }
         }
@@ -32,28 +32,15 @@
       int n=random.nextInt(all.length);
       for (int i=0; i < all.length; i++) {
         Entry<ServiceInstance,NodeInfo> inst=all[(i + n) % all.length];
-        if (inst.getKey().isAlive() && !inst.getValue().isDisabled()) {
+        if (inst.getValue().canAcceptTask()) {
           LOG.info("Assigning " + inst + " when looking for any host, from #hosts="+ all.length);
-          return inst.getKey();
+          return new NodeServiceInstancePair(inst.getKey(),inst.getValue());
         }
       }
     }
+    return null;
   }
   finally {
     readLock.unlock();
   }
-  writeLock.lock();
-  try {
-    for (    ServiceInstance inst : activeInstances.getAll().values()) {
-      if (inst.isAlive() && instanceToNodeMap.containsKey(inst) == false) {
-        LOG.info("Found a new node: " + inst + ". Adding to node list and disabling to trigger scheduling");
-        addNode(inst,new NodeInfo(inst,BACKOFF_FACTOR,clock));
-        disableInstance(inst,true);
-      }
-    }
-  }
-  finally {
-    writeLock.unlock();
-  }
-  return null;
 }

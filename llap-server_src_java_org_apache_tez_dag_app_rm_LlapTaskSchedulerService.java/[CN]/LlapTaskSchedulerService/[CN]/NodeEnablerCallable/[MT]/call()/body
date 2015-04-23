@@ -1,0 +1,36 @@
+{
+  lastRefreshTime=System.currentTimeMillis();
+  while (!isShutdown.get() && !Thread.currentThread().isInterrupted()) {
+    try {
+      while (true) {
+        NodeInfo nodeInfo=disabledNodesQueue.poll(nextPollInterval,TimeUnit.MILLISECONDS);
+        if (nodeInfo != null) {
+          long currentTime=System.currentTimeMillis();
+          reenableDisabledNode(nodeInfo);
+          trySchedulingPendingTasks();
+          nextPollInterval-=(currentTime - lastRefreshTime);
+        }
+        if (nextPollInterval < 0 || nodeInfo == null) {
+          nextPollInterval=REFRESH_INTERVAL;
+          lastRefreshTime=System.currentTimeMillis();
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Refreshing instances based on poll interval");
+          }
+          refreshInstances();
+          scanForNodeChanges();
+        }
+      }
+    }
+ catch (    InterruptedException e) {
+      if (isShutdown.get()) {
+        LOG.info("NodeEnabler thread interrupted after shutdown");
+        break;
+      }
+ else {
+        LOG.warn("NodeEnabler thread interrupted without being shutdown");
+        throw new RuntimeException("NodeEnabler thread interrupted without being shutdown",e);
+      }
+    }
+  }
+  return null;
+}

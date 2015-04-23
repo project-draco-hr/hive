@@ -7,13 +7,16 @@
   this.memoryPerInstance=conf.getInt(LlapConfiguration.LLAP_DAEMON_MEMORY_PER_INSTANCE_MB,LlapConfiguration.LLAP_DAEMON_MEMORY_PER_INSTANCE_MB_DEFAULT);
   this.coresPerInstance=conf.getInt(LlapConfiguration.LLAP_DAEMON_VCPUS_PER_INSTANCE,LlapConfiguration.LLAP_DAEMON_VCPUS_PER_INSTANCE_DEFAULT);
   this.executorsPerInstance=conf.getInt(LlapConfiguration.LLAP_DAEMON_NUM_EXECUTORS,LlapConfiguration.LLAP_DAEMON_NUM_EXECUTORS_DEFAULT);
-  this.nodeReEnableTimeout=conf.getLong(LlapConfiguration.LLAP_DAEMON_TASK_SCHEDULER_NODE_REENABLE_TIMEOUT_MILLIS,LlapConfiguration.LLAP_DAEMON_TASK_SCHEDULER_NODE_REENABLE_TIMEOUT_MILLIS_DEFAULT);
+  this.nodeBlacklistConf=new NodeBlacklistConf(conf.getLong(LlapConfiguration.LLAP_TASK_SCHEDULER_NODE_REENABLE_MIN_TIMEOUT_MILLIS,LlapConfiguration.LLAP_TASK_SCHEDULER_NODE_REENABLE_MIN_TIMEOUT_MILLIS_DEFAULT),conf.getLong(LlapConfiguration.LLAP_TASK_SCHEDULER_NODE_REENABLE_MAX_TIMEOUT_MILLIS,LlapConfiguration.LLAP_TASK_SCHEDULER_NODE_REENABLE_MAX_TIMEOUT_MILLIS_DEFAULT),conf.getFloat(LlapConfiguration.LLAP_TASK_SCHEDULER_NODE_DISABLE_BACK_OFF_FACTOR,LlapConfiguration.LLAP_TASK_SCHEDULER_NODE_DISABLE_BACK_OFF_FACTOR_DEFAULT));
+  this.numSchedulableTasksPerNode=conf.getInt(LlapConfiguration.LLAP_TASK_SCHEDULER_NUM_SCHEDULABLE_TASKS_PER_NODE,LlapConfiguration.LLAP_TASK_SCHEDULER_NUM_SCHEDULABLE_TASKS_PER_NODE_DEFAULT);
   int memoryPerExecutor=(int)(memoryPerInstance / (float)executorsPerInstance);
   int coresPerExecutor=(int)(coresPerInstance / (float)executorsPerInstance);
   this.resourcePerExecutor=Resource.newInstance(memoryPerExecutor,coresPerExecutor);
   String instanceId=conf.getTrimmed(LlapConfiguration.LLAP_DAEMON_SERVICE_HOSTS);
   Preconditions.checkNotNull(instanceId,LlapConfiguration.LLAP_DAEMON_SERVICE_HOSTS + " must be defined");
-  ExecutorService executorService=Executors.newFixedThreadPool(1,new ThreadFactoryBuilder().setDaemon(true).setNameFormat("LlapScheduler").build());
-  executor=MoreExecutors.listeningDecorator(executorService);
-  LOG.info("Running with configuration: " + "memoryPerInstance=" + memoryPerInstance + ", vCoresPerInstance="+ coresPerInstance+ ", executorsPerInstance="+ executorsPerInstance+ ", resourcePerInstanceInferred="+ resourcePerExecutor+ ", nodeReEnableTimeout="+ nodeReEnableTimeout+ ", nodeReEnableBackOffFactor="+ BACKOFF_FACTOR);
+  ExecutorService executorServiceRaw=Executors.newFixedThreadPool(1,new ThreadFactoryBuilder().setDaemon(true).setNameFormat("LlapSchedulerNodeEnabler").build());
+  nodeEnabledExecutor=MoreExecutors.listeningDecorator(executorServiceRaw);
+  ExecutorService schedulerExecutorServiceRaw=Executors.newFixedThreadPool(1,new ThreadFactoryBuilder().setDaemon(true).setNameFormat("LlapScheduler").build());
+  schedulerExecutor=MoreExecutors.listeningDecorator(schedulerExecutorServiceRaw);
+  LOG.info("Running with configuration: " + "memoryPerInstance=" + memoryPerInstance + ", vCoresPerInstance="+ coresPerInstance+ ", executorsPerInstance="+ executorsPerInstance+ ", resourcePerInstanceInferred="+ resourcePerExecutor+ ", nodeBlacklistConf="+ nodeBlacklistConf);
 }
