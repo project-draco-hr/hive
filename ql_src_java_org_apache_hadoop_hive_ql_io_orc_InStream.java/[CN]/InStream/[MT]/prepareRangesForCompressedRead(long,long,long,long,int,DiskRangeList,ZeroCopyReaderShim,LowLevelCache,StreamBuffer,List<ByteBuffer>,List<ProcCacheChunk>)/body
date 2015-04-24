@@ -1,0 +1,45 @@
+{
+  if (cOffset > current.getOffset()) {
+    current=current.split(cOffset).next;
+  }
+  long currentOffset=cOffset;
+  TrackedCacheChunk lastUncompressed=null;
+  while (true) {
+    DiskRangeList next=null;
+    if (current instanceof TrackedCacheChunk) {
+      TrackedCacheChunk cc=(TrackedCacheChunk)current;
+      if (DebugUtils.isTraceLockingEnabled()) {
+        LOG.info("Locking " + cc.buffer + " due to reuse");
+      }
+      boolean canReuse=cache.notifyReused(cc.buffer);
+      assert canReuse;
+      streamBuffer.cacheBuffers.add(cc.buffer);
+      currentOffset=cc.getEnd();
+      if (DebugUtils.isTraceOrcEnabled()) {
+        LOG.info("Adding an already-uncompressed buffer " + cc.buffer);
+      }
+      ponderReleaseInitialRefcount(cache,unlockUntilCOffset,streamOffset,cc);
+      lastUncompressed=cc;
+      next=current.next;
+    }
+ else     if (current instanceof IncompleteCb) {
+      if (DebugUtils.isTraceOrcEnabled()) {
+        LOG.info("Cannot read " + current);
+      }
+      next=null;
+      currentOffset=-1;
+    }
+ else {
+      BufferChunk bc=(BufferChunk)current;
+      ProcCacheChunk newCached=addOneCompressionBuffer(bc,zcr,bufferSize,cache,streamBuffer.cacheBuffers,toDecompress,toRelease);
+      lastUncompressed=(newCached == null) ? lastUncompressed : newCached;
+      next=(newCached != null) ? newCached.next : null;
+      currentOffset=(next != null) ? next.getOffset() : -1;
+    }
+    if (next == null || (endCOffset >= 0 && currentOffset >= endCOffset)) {
+      break;
+    }
+    current=next;
+  }
+  return lastUncompressed;
+}
