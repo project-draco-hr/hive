@@ -1,0 +1,33 @@
+{
+  Key key=new Key(dbName,tblName,colName);
+  AggrColStatsList candidateList=cacheStore.get(key);
+  if ((candidateList == null) || (candidateList.nodes.size() == 0)) {
+    LOG.info("No aggregate stats cached for " + key.toString());
+    return null;
+  }
+  AggrColStats match=null;
+  boolean isLocked=false;
+  try {
+    isLocked=candidateList.readLock.tryLock(maxReaderWaitTime,TimeUnit.MILLISECONDS);
+    if (isLocked) {
+      match=findBestMatch(partNames,candidateList.nodes);
+    }
+    if (match != null) {
+      candidateList.updateLastAccessTime();
+      cacheHits.incrementAndGet();
+      LOG.info("Returning aggregate stats from the cache; total hits: " + cacheHits.longValue() + ", total misses: "+ cacheMisses.longValue()+ ", hit ratio: "+ getHitRatio());
+    }
+ else {
+      cacheMisses.incrementAndGet();
+    }
+  }
+ catch (  InterruptedException e) {
+    LOG.debug(e);
+  }
+ finally {
+    if (isLocked) {
+      candidateList.readLock.unlock();
+    }
+  }
+  return match;
+}

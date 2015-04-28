@@ -1,0 +1,32 @@
+{
+  if (getCurrentNodes() / maxCacheNodes > maxFull) {
+    spawnCleaner();
+  }
+  Key key=new Key(dbName,tblName,colName);
+  AggrColStats node=new AggrColStats(numPartsCached,bloomFilter,colStats);
+  AggrColStatsList nodeList;
+  AggrColStatsList newNodeList=new AggrColStatsList();
+  newNodeList.nodes=new ArrayList<AggrColStats>();
+  nodeList=cacheStore.putIfAbsent(key,newNodeList);
+  if (nodeList == null) {
+    nodeList=newNodeList;
+  }
+  boolean isLocked=false;
+  try {
+    isLocked=nodeList.writeLock.tryLock(maxWriterWaitTime,TimeUnit.MILLISECONDS);
+    if (isLocked) {
+      nodeList.nodes.add(node);
+      node.updateLastAccessTime();
+      nodeList.updateLastAccessTime();
+      currentNodes.getAndIncrement();
+    }
+  }
+ catch (  InterruptedException e) {
+    LOG.debug(e);
+  }
+ finally {
+    if (isLocked) {
+      nodeList.writeLock.unlock();
+    }
+  }
+}
