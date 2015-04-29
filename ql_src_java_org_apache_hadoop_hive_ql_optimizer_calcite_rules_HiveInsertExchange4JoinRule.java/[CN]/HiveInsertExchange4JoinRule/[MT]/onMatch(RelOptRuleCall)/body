@@ -1,27 +1,49 @@
 {
-  Join join=call.rel(0);
-  if (call.rel(1) instanceof Exchange && call.rel(2) instanceof Exchange) {
+  JoinPredicateInfo joinPredInfo;
+  if (call.rel(0) instanceof MultiJoin) {
+    MultiJoin multiJoin=call.rel(0);
+    joinPredInfo=HiveCalciteUtil.JoinPredicateInfo.constructJoinPredicateInfo(multiJoin);
+  }
+ else   if (call.rel(0) instanceof Join) {
+    Join join=call.rel(0);
+    joinPredInfo=HiveCalciteUtil.JoinPredicateInfo.constructJoinPredicateInfo(join);
+  }
+ else {
     return;
   }
-  JoinPredicateInfo joinPredInfo=HiveCalciteUtil.JoinPredicateInfo.constructJoinPredicateInfo(join);
-  List<Integer> joinLeftKeyPositions=new ArrayList<Integer>();
-  List<Integer> joinRightKeyPositions=new ArrayList<Integer>();
-  ImmutableList.Builder<RelFieldCollation> leftCollationListBuilder=new ImmutableList.Builder<RelFieldCollation>();
-  ImmutableList.Builder<RelFieldCollation> rightCollationListBuilder=new ImmutableList.Builder<RelFieldCollation>();
-  for (int i=0; i < joinPredInfo.getEquiJoinPredicateElements().size(); i++) {
-    JoinLeafPredicateInfo joinLeafPredInfo=joinPredInfo.getEquiJoinPredicateElements().get(i);
-    joinLeftKeyPositions.addAll(joinLeafPredInfo.getProjsFromLeftPartOfJoinKeysInChildSchema());
-    for (    int leftPos : joinLeafPredInfo.getProjsFromLeftPartOfJoinKeysInChildSchema()) {
-      leftCollationListBuilder.add(new RelFieldCollation(leftPos));
-    }
-    joinRightKeyPositions.addAll(joinLeafPredInfo.getProjsFromRightPartOfJoinKeysInChildSchema());
-    for (    int rightPos : joinLeafPredInfo.getProjsFromRightPartOfJoinKeysInChildSchema()) {
-      rightCollationListBuilder.add(new RelFieldCollation(rightPos));
+  for (  RelNode child : call.rel(0).getInputs()) {
+    if (((HepRelVertex)child).getCurrentRel() instanceof Exchange) {
+      return;
     }
   }
-  HiveSortExchange left=HiveSortExchange.create(join.getLeft(),new HiveRelDistribution(RelDistribution.Type.HASH_DISTRIBUTED,joinLeftKeyPositions),new HiveRelCollation(leftCollationListBuilder.build()));
-  HiveSortExchange right=HiveSortExchange.create(join.getRight(),new HiveRelDistribution(RelDistribution.Type.HASH_DISTRIBUTED,joinRightKeyPositions),new HiveRelCollation(rightCollationListBuilder.build()));
-  Join newJoin=join.copy(join.getTraitSet(),join.getCondition(),left,right,join.getJoinType(),join.isSemiJoinDone());
-  call.getPlanner().onCopy(join,newJoin);
-  call.transformTo(newJoin);
+  List<RelNode> newInputs=new ArrayList<RelNode>();
+  for (int i=0; i < call.rel(0).getInputs().size(); i++) {
+    List<Integer> joinKeyPositions=new ArrayList<Integer>();
+    ImmutableList.Builder<RelFieldCollation> collationListBuilder=new ImmutableList.Builder<RelFieldCollation>();
+    for (int j=0; j < joinPredInfo.getEquiJoinPredicateElements().size(); j++) {
+      JoinLeafPredicateInfo joinLeafPredInfo=joinPredInfo.getEquiJoinPredicateElements().get(j);
+      for (      int pos : joinLeafPredInfo.getProjsJoinKeysInChildSchema(i)) {
+        if (!joinKeyPositions.contains(pos)) {
+          joinKeyPositions.add(pos);
+          collationListBuilder.add(new RelFieldCollation(pos));
+        }
+      }
+    }
+    HiveSortExchange exchange=HiveSortExchange.create(call.rel(0).getInput(i),new HiveRelDistribution(RelDistribution.Type.HASH_DISTRIBUTED,joinKeyPositions),new HiveRelCollation(collationListBuilder.build()));
+    newInputs.add(exchange);
+  }
+  RelNode newOp;
+  if (call.rel(0) instanceof MultiJoin) {
+    MultiJoin multiJoin=call.rel(0);
+    newOp=multiJoin.copy(multiJoin.getTraitSet(),newInputs);
+  }
+ else   if (call.rel(0) instanceof Join) {
+    Join join=call.rel(0);
+    newOp=join.copy(join.getTraitSet(),join.getCondition(),newInputs.get(0),newInputs.get(1),join.getJoinType(),join.isSemiJoinDone());
+  }
+ else {
+    return;
+  }
+  call.getPlanner().onCopy(call.rel(0),newOp);
+  call.transformTo(newOp);
 }

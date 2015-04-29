@@ -1,0 +1,78 @@
+{
+  final Join join=call.rel(0);
+  final RelNode left=call.rel(1);
+  final RelNode right=call.rel(2);
+  final RexBuilder rexBuilder=join.getCluster().getRexBuilder();
+  if (join.getJoinType() != JoinRelType.INNER) {
+    return;
+  }
+  final List<RelNode> newInputs=Lists.newArrayList();
+  final List<RexNode> newJoinFilters=Lists.newArrayList();
+  newJoinFilters.add(join.getCondition());
+  final List<Pair<JoinRelType,RexNode>> joinSpecs=Lists.newArrayList();
+  final List<ImmutableBitSet> projFields=Lists.newArrayList();
+  if (left instanceof Join || left instanceof MultiJoin) {
+    final RexNode leftCondition;
+    if (left instanceof Join) {
+      leftCondition=((Join)left).getCondition();
+    }
+ else {
+      leftCondition=((MultiJoin)left).getJoinFilter();
+    }
+    boolean combinable=isCombinablePredicate(join,join.getCondition(),leftCondition);
+    if (combinable) {
+      newJoinFilters.add(leftCondition);
+      for (      RelNode input : left.getInputs()) {
+        projFields.add(null);
+        joinSpecs.add(Pair.of(JoinRelType.INNER,(RexNode)null));
+        newInputs.add(input);
+      }
+    }
+ else {
+      projFields.add(null);
+      joinSpecs.add(Pair.of(JoinRelType.INNER,(RexNode)null));
+      newInputs.add(left);
+    }
+  }
+ else {
+    projFields.add(null);
+    joinSpecs.add(Pair.of(JoinRelType.INNER,(RexNode)null));
+    newInputs.add(left);
+  }
+  if (right instanceof Join || right instanceof MultiJoin) {
+    final RexNode rightCondition;
+    if (right instanceof Join) {
+      rightCondition=shiftRightFilter(join,left,right,((Join)right).getCondition());
+    }
+ else {
+      rightCondition=shiftRightFilter(join,left,right,((MultiJoin)right).getJoinFilter());
+    }
+    boolean combinable=isCombinablePredicate(join,join.getCondition(),rightCondition);
+    if (combinable) {
+      newJoinFilters.add(rightCondition);
+      for (      RelNode input : right.getInputs()) {
+        projFields.add(null);
+        joinSpecs.add(Pair.of(JoinRelType.INNER,(RexNode)null));
+        newInputs.add(input);
+      }
+    }
+ else {
+      projFields.add(null);
+      joinSpecs.add(Pair.of(JoinRelType.INNER,(RexNode)null));
+      newInputs.add(right);
+    }
+  }
+ else {
+    projFields.add(null);
+    joinSpecs.add(Pair.of(JoinRelType.INNER,(RexNode)null));
+    newInputs.add(right);
+  }
+  if (newJoinFilters.size() == 1) {
+    return;
+  }
+  RexNode newCondition=RexUtil.flatten(rexBuilder,RexUtil.composeConjunction(rexBuilder,newJoinFilters,false));
+  final ImmutableMap<Integer,ImmutableIntList> newJoinFieldRefCountsMap=addOnJoinFieldRefCounts(newInputs,join.getRowType().getFieldCount(),newCondition);
+  List<RexNode> newPostJoinFilters=combinePostJoinFilters(join,left,right);
+  RelNode multiJoin=new MultiJoin(join.getCluster(),newInputs,newCondition,join.getRowType(),false,Pair.right(joinSpecs),Pair.left(joinSpecs),projFields,newJoinFieldRefCountsMap,RexUtil.composeConjunction(rexBuilder,newPostJoinFilters,true));
+  call.transformTo(multiJoin);
+}
