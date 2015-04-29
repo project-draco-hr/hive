@@ -19,22 +19,25 @@
   final List<String> mapIds=splitMaps(q.get("map"));
   final List<String> reduceQ=q.get("reduce");
   final List<String> jobQ=q.get("job");
+  final List<String> dagIdQ=q.get("dag");
   if (LOG.isDebugEnabled()) {
-    LOG.debug("RECV: " + request.getUri() + "\n  mapId: "+ mapIds+ "\n  reduceId: "+ reduceQ+ "\n  jobId: "+ jobQ+ "\n  keepAlive: "+ keepAliveParam);
+    LOG.debug("RECV: " + request.getUri() + "\n  mapId: "+ mapIds+ "\n  reduceId: "+ reduceQ+ "\n  jobId: "+ jobQ+ "\n  dagId: "+ dagIdQ+ "\n  keepAlive: "+ keepAliveParam);
   }
-  if (mapIds == null || reduceQ == null || jobQ == null) {
+  if (mapIds == null || reduceQ == null || jobQ == null | dagIdQ == null) {
     sendError(ctx,"Required param job, map and reduce",BAD_REQUEST);
     return;
   }
-  if (reduceQ.size() != 1 || jobQ.size() != 1) {
+  if (reduceQ.size() != 1 || jobQ.size() != 1 || dagIdQ.size() != 1) {
     sendError(ctx,"Too many job/reduce parameters",BAD_REQUEST);
     return;
   }
   int reduceId;
   String jobId;
+  int dagId;
   try {
     reduceId=Integer.parseInt(reduceQ.get(0));
     jobId=jobQ.get(0);
+    dagId=Integer.parseInt(dagIdQ.get(0));
   }
  catch (  NumberFormatException e) {
     sendError(ctx,"Bad reduce parameter",BAD_REQUEST);
@@ -62,7 +65,7 @@ catch (  IllegalArgumentException e) {
   Channel ch=evt.getChannel();
   String user=userRsrc.get(jobId);
   try {
-    populateHeaders(mapIds,jobId,user,reduceId,response,keepAliveParam,mapOutputInfoMap);
+    populateHeaders(mapIds,jobId,dagId,user,reduceId,response,keepAliveParam,mapOutputInfoMap);
   }
  catch (  IOException e) {
     ch.write(response);
@@ -77,7 +80,7 @@ catch (  IllegalArgumentException e) {
     try {
       MapOutputInfo info=mapOutputInfoMap.get(mapId);
       if (info == null) {
-        info=getMapOutputInfo(jobId,mapId,reduceId,user);
+        info=getMapOutputInfo(jobId,dagId,mapId,reduceId,user);
       }
       lastMap=sendMapOutput(ctx,ch,user,mapId,reduceId,info);
       if (null == lastMap) {
