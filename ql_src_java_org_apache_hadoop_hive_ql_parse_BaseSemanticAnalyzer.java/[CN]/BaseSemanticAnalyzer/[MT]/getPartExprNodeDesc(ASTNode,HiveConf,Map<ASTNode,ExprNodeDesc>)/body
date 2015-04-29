@@ -6,18 +6,21 @@
     return astNode.getType() != HiveParser.TOK_PARTVAL;
   }
   TypeCheckCtx typeCheckCtx=new TypeCheckCtx(null);
+  String defaultPartitionName=HiveConf.getVar(conf,HiveConf.ConfVars.DEFAULTPARTITIONNAME);
   boolean result=true;
   for (  Node childNode : astNode.getChildren()) {
     ASTNode childASTNode=(ASTNode)childNode;
     if (childASTNode.getType() != HiveParser.TOK_PARTVAL) {
-      result=getPartExprNodeDesc(childASTNode,astExprNodeMap) && result;
+      result=getPartExprNodeDesc(childASTNode,conf,astExprNodeMap) && result;
     }
  else {
       boolean isDynamicPart=childASTNode.getChildren().size() <= 1;
       result=!isDynamicPart && result;
       if (!isDynamicPart) {
         ASTNode partVal=(ASTNode)childASTNode.getChildren().get(1);
-        astExprNodeMap.put((ASTNode)childASTNode.getChildren().get(0),TypeCheckProcFactory.genExprNode(partVal,typeCheckCtx).get(partVal));
+        if (!defaultPartitionName.equalsIgnoreCase(unescapeSQLString(partVal.getText()))) {
+          astExprNodeMap.put((ASTNode)childASTNode.getChildren().get(0),TypeCheckProcFactory.genExprNode(partVal,typeCheckCtx).get(partVal));
+        }
       }
     }
   }
