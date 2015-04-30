@@ -1,0 +1,22 @@
+{
+  Iterator<Partition> partitionIterator=context.getPartitionIterator();
+  final TableWrapper table=new TableWrapper(context.getTable());
+  final Iterator<org.apache.hadoop.hive.ql.metadata.Partition> qlPartitionIterator=Iterators.transform(partitionIterator,new Function<Partition,org.apache.hadoop.hive.ql.metadata.Partition>(){
+    @Override public org.apache.hadoop.hive.ql.metadata.Partition apply(    Partition partition){
+      try {
+        return new PartitionWrapper(table,partition);
+      }
+ catch (      Exception exception) {
+        LOG.error("Could not construct partition-object for: " + partition,exception);
+        throw new RuntimeException(exception);
+      }
+    }
+  }
+);
+  authorizer.authorize(new TableWrapper(context.getTable()),new Iterable<org.apache.hadoop.hive.ql.metadata.Partition>(){
+    @Override public Iterator<org.apache.hadoop.hive.ql.metadata.Partition> iterator(){
+      return qlPartitionIterator;
+    }
+  }
+,HiveOperation.ALTERTABLE_DROPPARTS.getInputRequiredPrivileges(),HiveOperation.ALTERTABLE_DROPPARTS.getOutputRequiredPrivileges());
+}

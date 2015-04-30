@@ -1,12 +1,15 @@
 {
   try {
-    TableWrapper tableWrapper=new TableWrapper(context.getTable());
-    Iterator<Partition> partitionIterator=context.getPartitionIterator();
-    while (partitionIterator.hasNext()) {
-      org.apache.hadoop.hive.metastore.api.Partition mapiPart=partitionIterator.next();
-      org.apache.hadoop.hive.ql.metadata.Partition wrappedPartition=new PartitionWrapper(tableWrapper,mapiPart);
-      for (      HiveMetastoreAuthorizationProvider authorizer : tAuthorizers.get()) {
-        authorizer.authorize(wrappedPartition,HiveOperation.ALTERTABLE_DROPPARTS.getInputRequiredPrivileges(),HiveOperation.ALTERTABLE_DROPPARTS.getOutputRequiredPrivileges());
+    for (    HiveMetastoreAuthorizationProvider authorizer : tAuthorizers.get()) {
+      if (authorizer instanceof HiveMultiPartitionAuthorizationProviderBase) {
+        authorizeDropMultiPartition((HiveMultiPartitionAuthorizationProviderBase)authorizer,context);
+      }
+ else {
+        TableWrapper table=new TableWrapper(context.getTable());
+        Iterator<Partition> partitionIterator=context.getPartitionIterator();
+        while (partitionIterator.hasNext()) {
+          authorizer.authorize(new PartitionWrapper(table,partitionIterator.next()),HiveOperation.ALTERTABLE_DROPPARTS.getInputRequiredPrivileges(),HiveOperation.ALTERTABLE_DROPPARTS.getOutputRequiredPrivileges());
+        }
       }
     }
   }
