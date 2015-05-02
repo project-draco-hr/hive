@@ -37,5 +37,66 @@
       }
     }
   }
+  if (udf instanceof GenericUDFWhen) {
+    if (!(newExprs.size() == 2 || newExprs.size() == 3)) {
+      return null;
+    }
+    ExprNodeDesc thenExpr=newExprs.get(1);
+    if (thenExpr instanceof ExprNodeNullDesc && (newExprs.size() == 2 || newExprs.get(2) instanceof ExprNodeNullDesc)) {
+      return thenExpr;
+    }
+    ExprNodeDesc elseExpr=newExprs.size() == 3 ? newExprs.get(2) : new ExprNodeConstantDesc(newExprs.get(2).getTypeInfo(),null);
+    ExprNodeDesc whenExpr=newExprs.get(0);
+    if (whenExpr instanceof ExprNodeConstantDesc) {
+      Boolean whenVal=(Boolean)((ExprNodeConstantDesc)whenExpr).getValue();
+      return (whenVal == null || Boolean.FALSE.equals(whenVal)) ? elseExpr : thenExpr;
+    }
+    if (thenExpr instanceof ExprNodeConstantDesc && elseExpr instanceof ExprNodeConstantDesc) {
+      ExprNodeConstantDesc constThen=(ExprNodeConstantDesc)thenExpr;
+      ExprNodeConstantDesc constElse=(ExprNodeConstantDesc)elseExpr;
+      Object thenVal=constThen.getValue();
+      Object elseVal=constElse.getValue();
+      if (thenVal == null) {
+        return elseVal == null ? thenExpr : null;
+      }
+ else       if (thenVal.equals(elseVal)) {
+        return thenExpr;
+      }
+ else       if (thenVal instanceof Boolean && elseVal instanceof Boolean) {
+        return Boolean.TRUE.equals(thenVal) ? newExprs.get(0) : ExprNodeGenericFuncDesc.newInstance(new GenericUDFOPNot(),newExprs.subList(0,1));
+      }
+ else {
+        return null;
+      }
+    }
+  }
+  if (udf instanceof GenericUDFCase) {
+    if (!(newExprs.size() == 3 || newExprs.size() == 4)) {
+      return null;
+    }
+    ExprNodeDesc thenExpr=newExprs.get(2);
+    if (thenExpr instanceof ExprNodeNullDesc && (newExprs.size() == 3 || newExprs.get(3) instanceof ExprNodeNullDesc)) {
+      return thenExpr;
+    }
+    ExprNodeDesc elseExpr=newExprs.size() == 4 ? newExprs.get(3) : new ExprNodeConstantDesc(newExprs.get(2).getTypeInfo(),null);
+    if (thenExpr instanceof ExprNodeConstantDesc && elseExpr instanceof ExprNodeConstantDesc) {
+      ExprNodeConstantDesc constThen=(ExprNodeConstantDesc)thenExpr;
+      ExprNodeConstantDesc constElse=(ExprNodeConstantDesc)elseExpr;
+      Object thenVal=constThen.getValue();
+      Object elseVal=constElse.getValue();
+      if (thenVal == null) {
+        return elseVal == null ? thenExpr : null;
+      }
+ else       if (thenVal.equals(elseVal)) {
+        return thenExpr;
+      }
+ else       if (thenVal instanceof Boolean && elseVal instanceof Boolean) {
+        return Boolean.TRUE.equals(thenVal) ? ExprNodeGenericFuncDesc.newInstance(new GenericUDFOPEqual(),newExprs.subList(0,2)) : ExprNodeGenericFuncDesc.newInstance(new GenericUDFOPNotEqual(),newExprs.subList(0,2));
+      }
+ else {
+        return null;
+      }
+    }
+  }
   return null;
 }
