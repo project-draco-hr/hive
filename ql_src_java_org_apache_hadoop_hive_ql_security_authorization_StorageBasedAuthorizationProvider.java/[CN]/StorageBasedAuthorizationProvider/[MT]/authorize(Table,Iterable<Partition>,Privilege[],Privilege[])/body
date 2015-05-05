@@ -1,0 +1,46 @@
+{
+  try {
+class MustCheckTablePermissions {
+      public boolean value=false;
+    }
+    final MustCheckTablePermissions mustCheckTablePermissions=new MustCheckTablePermissions();
+    final FileSystem fs=table.getDataLocation().getFileSystem(getConf());
+    Iterator<Partition> nonNullPartitions=Iterators.filter(partitions.iterator(),new Predicate<Partition>(){
+      @Override public boolean apply(      Partition partition){
+        try {
+          boolean isValidPartitionPath=partition != null && partition.getDataLocation() != null && fs.exists(partition.getDataLocation());
+          mustCheckTablePermissions.value|=isValidPartitionPath;
+          return isValidPartitionPath;
+        }
+ catch (        IOException exception) {
+          throw new RuntimeException("Could not find location for partition: " + partition,exception);
+        }
+      }
+    }
+);
+    if (mustCheckTablePermissions.value) {
+      authorize(table,new Privilege[]{},new Privilege[]{Privilege.ALTER_DATA});
+    }
+    DropPrivilegeExtractor privExtractor=new DropPrivilegeExtractor(requiredReadPrivileges,requiredWritePrivileges);
+    requiredReadPrivileges=privExtractor.getReadReqPriv();
+    requiredWritePrivileges=privExtractor.getWriteReqPriv();
+    EnumSet<FsAction> actions=getFsActions(requiredReadPrivileges);
+    actions.addAll(getFsActions(requiredWritePrivileges));
+    ArrayList<Path> allPartitionPaths=Lists.newArrayList(Iterators.transform(nonNullPartitions,new Function<Partition,Path>(){
+      @Override public Path apply(      Partition input){
+        return input.getDataLocation();
+      }
+    }
+));
+    for (    List<Path> partitionPaths : Lists.partition(allPartitionPaths,getListStatusBatchSize(getConf()))) {
+      List<FileStatus> fileStatuses=Arrays.asList(fs.listStatus(partitionPaths.toArray(new Path[partitionPaths.size()])));
+      if (privExtractor.hasDropPrivilege) {
+        FileUtils.checkDeletePermission(fs,fileStatuses,getConf(),authenticator.getUserName());
+      }
+      checkPermissions(fs,fileStatuses.iterator(),actions,authenticator.getUserName());
+    }
+  }
+ catch (  Exception exception) {
+    throw hiveException(exception);
+  }
+}

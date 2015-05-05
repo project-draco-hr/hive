@@ -1,0 +1,30 @@
+{
+  if (groups == null) {
+    groups=emptyGroups;
+  }
+  String superGroupName=getSuperGroupName(fs.getConf());
+  if (userBelongsToSuperGroup(superGroupName,groups)) {
+    LOG.info("User \"" + user + "\" belongs to super-group \""+ superGroupName+ "\". "+ "Permission granted for actions: "+ actions+ ".");
+    return;
+  }
+  while (statuses.hasNext()) {
+    FileStatus stat=statuses.next();
+    final FsPermission dirPerms=stat.getPermission();
+    final String grp=stat.getGroup();
+    FsAction combinedAction=combine(actions);
+    if (user.equals(stat.getOwner())) {
+      if (dirPerms.getUserAction().implies(combinedAction)) {
+        continue;
+      }
+    }
+ else     if (groups.contains(grp)) {
+      if (dirPerms.getGroupAction().implies(combinedAction)) {
+        continue;
+      }
+    }
+ else     if (dirPerms.getOtherAction().implies(combinedAction)) {
+      continue;
+    }
+    throw new AccessControlException("action " + combinedAction + " not permitted on path "+ stat.getPath()+ " for user "+ user);
+  }
+}
