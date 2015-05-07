@@ -1,0 +1,30 @@
+{
+  SSLSocketFactory socketFactory=null;
+  try {
+    KeyManagerFactory keyManagerFactory=KeyManagerFactory.getInstance(JdbcConnectionParams.SUNX509_ALGORITHM_STRING,JdbcConnectionParams.SUNJSSE_ALGORITHM_STRING);
+    String keyStorePath=sessConfMap.get(JdbcConnectionParams.SSL_KEY_STORE);
+    String keyStorePassword=sessConfMap.get(JdbcConnectionParams.SSL_KEY_STORE_PASSWORD);
+    KeyStore sslKeyStore=KeyStore.getInstance(JdbcConnectionParams.SSL_KEY_STORE_TYPE);
+    if (keyStorePath == null || keyStorePath.isEmpty()) {
+      throw new IllegalArgumentException(JdbcConnectionParams.SSL_KEY_STORE + " Not configured for 2 way SSL connection, keyStorePath param is empty");
+    }
+    sslKeyStore.load(new FileInputStream(keyStorePath),keyStorePassword.toCharArray());
+    keyManagerFactory.init(sslKeyStore,keyStorePassword.toCharArray());
+    TrustManagerFactory trustManagerFactory=TrustManagerFactory.getInstance(JdbcConnectionParams.SUNX509_ALGORITHM_STRING);
+    String trustStorePath=sessConfMap.get(JdbcConnectionParams.SSL_TRUST_STORE);
+    String trustStorePassword=sessConfMap.get(JdbcConnectionParams.SSL_TRUST_STORE_PASSWORD);
+    KeyStore sslTrustStore=KeyStore.getInstance(JdbcConnectionParams.SSL_TRUST_STORE_TYPE);
+    if (trustStorePath == null || trustStorePath.isEmpty()) {
+      throw new IllegalArgumentException(JdbcConnectionParams.SSL_TRUST_STORE + " Not configured for 2 way SSL connection");
+    }
+    sslTrustStore.load(new FileInputStream(trustStorePath),trustStorePassword.toCharArray());
+    trustManagerFactory.init(sslTrustStore);
+    SSLContext context=SSLContext.getInstance("TLS");
+    context.init(keyManagerFactory.getKeyManagers(),trustManagerFactory.getTrustManagers(),new SecureRandom());
+    socketFactory=new SSLSocketFactory(context);
+  }
+ catch (  Exception e) {
+    throw new SQLException("Error while initializing 2 way ssl socket factory ",e);
+  }
+  return socketFactory;
+}

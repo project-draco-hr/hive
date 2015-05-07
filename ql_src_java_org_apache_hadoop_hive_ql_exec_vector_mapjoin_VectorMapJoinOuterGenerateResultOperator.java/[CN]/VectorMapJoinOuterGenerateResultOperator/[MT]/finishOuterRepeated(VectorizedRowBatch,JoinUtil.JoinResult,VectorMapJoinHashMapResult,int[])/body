@@ -1,0 +1,44 @@
+{
+  int numSel=0;
+  if (joinResult == JoinUtil.JoinResult.MATCH && bigTableFilterExpressions.length > 0) {
+    int[] rememberSelected=scratch1;
+    int rememberBatchSize=batch.size;
+    if (batch.selectedInUse) {
+      System.arraycopy(batch.selected,0,rememberSelected,0,batch.size);
+    }
+    for (    VectorExpression ve : bigTableFilterExpressions) {
+      ve.evaluate(batch);
+    }
+    if (batch.size == 0) {
+      joinResult=JoinUtil.JoinResult.NOMATCH;
+      if (batch.selectedInUse) {
+        System.arraycopy(rememberSelected,0,batch.selected,0,rememberBatchSize);
+      }
+ else {
+      }
+      batch.size=rememberBatchSize;
+    }
+  }
+switch (joinResult) {
+case MATCH:
+    if (bigTableValueExpressions != null) {
+      for (      VectorExpression ve : bigTableValueExpressions) {
+        ve.evaluate(batch);
+      }
+    }
+  numSel=generateHashMapResultRepeatedAll(batch,hashMapResult);
+break;
+case SPILL:
+spillBatchRepeated(batch,(VectorMapJoinHashTableResult)hashMapResult);
+break;
+case NOMATCH:
+if (bigTableValueExpressions != null) {
+for (VectorExpression ve : bigTableValueExpressions) {
+ve.evaluate(batch);
+}
+}
+numSel=generateOuterNullsRepeatedAll(batch);
+break;
+}
+return numSel;
+}

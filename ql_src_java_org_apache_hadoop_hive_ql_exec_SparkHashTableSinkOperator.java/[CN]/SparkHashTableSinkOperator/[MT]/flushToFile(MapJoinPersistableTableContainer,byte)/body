@@ -1,5 +1,4 @@
 {
-  perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.SPARK_FLUSH_HASHTABLE + this.getName());
   MapredLocalWork localWork=getExecContext().getLocalWork();
   BucketMapJoinContext mapJoinCtx=localWork.getBucketMapjoinContext();
   Path inputPath=getExecContext().getCurrentInputPath();
@@ -26,7 +25,7 @@
  catch (    FileExistsException e) {
     }
     int numOfPartitions=replication;
-    replication=(short)Math.min(MIN_REPLICATION,numOfPartitions);
+    replication=(short)Math.max(MIN_REPLICATION,numOfPartitions);
   }
   htsOperator.console.printInfo(Utilities.now() + "\tDump the side-table for tag: " + tag+ " with group count: "+ tableContainer.size()+ " into file: "+ path);
   OutputStream os=null;
@@ -36,8 +35,19 @@
     out=new ObjectOutputStream(new BufferedOutputStream(os,4096));
     MapJoinTableContainerSerDe mapJoinTableSerde=htsOperator.mapJoinTableSerdes[tag];
     mapJoinTableSerde.persist(out,tableContainer);
+    FileStatus status=fs.getFileStatus(path);
+    htsOperator.console.printInfo(Utilities.now() + "\tUploaded 1 File to: " + path+ " ("+ status.getLen()+ " bytes)");
   }
-  finally {
+ catch (  Exception e) {
+    try {
+      fs.delete(path,false);
+    }
+ catch (    Exception ex) {
+      LOG.warn("Got exception in deleting partial side-table dump for tag: " + tag + ", file "+ path,ex);
+    }
+    throw e;
+  }
+ finally {
     if (out != null) {
       out.close();
     }
@@ -46,7 +56,4 @@
     }
   }
   tableContainer.clear();
-  FileStatus status=fs.getFileStatus(path);
-  htsOperator.console.printInfo(Utilities.now() + "\tUploaded 1 File to: " + path+ " ("+ status.getLen()+ " bytes)");
-  perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.SPARK_FLUSH_HASHTABLE + this.getName());
 }

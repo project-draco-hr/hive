@@ -4,7 +4,10 @@
   String instanceURI=getServerInstanceURI(hiveConf);
   byte[] znodeDataUTF8=instanceURI.getBytes(Charset.forName("UTF-8"));
   setUpZooKeeperAuth(hiveConf);
-  zooKeeperClient=CuratorFrameworkFactory.builder().connectString(zooKeeperEnsemble).aclProvider(zooKeeperAclProvider).retryPolicy(new ExponentialBackoffRetry(1000,3)).build();
+  int sessionTimeout=(int)hiveConf.getTimeVar(HiveConf.ConfVars.HIVE_ZOOKEEPER_SESSION_TIMEOUT,TimeUnit.MILLISECONDS);
+  int baseSleepTime=(int)hiveConf.getTimeVar(HiveConf.ConfVars.HIVE_ZOOKEEPER_CONNECTION_BASESLEEPTIME,TimeUnit.MILLISECONDS);
+  int maxRetries=hiveConf.getIntVar(HiveConf.ConfVars.HIVE_ZOOKEEPER_CONNECTION_MAX_RETRIES);
+  zooKeeperClient=CuratorFrameworkFactory.builder().connectString(zooKeeperEnsemble).sessionTimeoutMs(sessionTimeout).aclProvider(zooKeeperAclProvider).retryPolicy(new ExponentialBackoffRetry(baseSleepTime,maxRetries)).build();
   zooKeeperClient.start();
   try {
     zooKeeperClient.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT).forPath(ZooKeeperHiveHelper.ZOOKEEPER_PATH_SEPARATOR + rootNamespace);
@@ -18,15 +21,24 @@
   }
   try {
     String pathPrefix=ZooKeeperHiveHelper.ZOOKEEPER_PATH_SEPARATOR + rootNamespace + ZooKeeperHiveHelper.ZOOKEEPER_PATH_SEPARATOR+ "serverUri="+ instanceURI+ ";"+ "version="+ HiveVersionInfo.getVersion()+ ";"+ "sequence=";
-    znodePath=zooKeeperClient.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL_SEQUENTIAL).forPath(pathPrefix,znodeDataUTF8);
+    znode=new PersistentEphemeralNode(zooKeeperClient,PersistentEphemeralNode.Mode.EPHEMERAL_SEQUENTIAL,pathPrefix,znodeDataUTF8);
+    znode.start();
+    long znodeCreationTimeout=120;
+    if (!znode.waitForInitialCreate(znodeCreationTimeout,TimeUnit.SECONDS)) {
+      throw new Exception("Max znode creation wait time: " + znodeCreationTimeout + "s exhausted");
+    }
     setRegisteredWithZooKeeper(true);
+    znodePath=znode.getActualPath();
     if (zooKeeperClient.checkExists().usingWatcher(new DeRegisterWatcher()).forPath(znodePath) == null) {
       throw new Exception("Unable to create znode for this HiveServer2 instance on ZooKeeper.");
     }
     LOG.info("Created a znode on ZooKeeper for HiveServer2 uri: " + instanceURI);
   }
- catch (  KeeperException e) {
+ catch (  Exception e) {
     LOG.fatal("Unable to create a znode for this server instance",e);
+    if (znode != null) {
+      znode.close();
+    }
     throw (e);
   }
 }

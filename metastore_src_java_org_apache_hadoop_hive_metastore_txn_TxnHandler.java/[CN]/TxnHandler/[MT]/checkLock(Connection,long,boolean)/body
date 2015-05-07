@@ -2,9 +2,9 @@
   List<LockInfo> locksBeingChecked=getLockInfoFromLockId(dbConn,extLockId);
   LockResponse response=new LockResponse();
   response.setLockid(extLockId);
-  LOG.debug("Setting savepoint");
+  LOG.debug("checkLock(): Setting savepoint. extLockId=" + extLockId);
   Savepoint save=dbConn.setSavepoint();
-  StringBuilder query=new StringBuilder("select hl_lock_ext_id, " + "hl_lock_int_id, hl_db, hl_table, hl_partition, hl_lock_state, " + "hl_lock_type from HIVE_LOCKS where hl_db in (");
+  StringBuilder query=new StringBuilder("select hl_lock_ext_id, " + "hl_lock_int_id, hl_db, hl_table, hl_partition, hl_lock_state, " + "hl_lock_type, hl_txnid from HIVE_LOCKS where hl_db in (");
   Set<String> strings=new HashSet<String>(locksBeingChecked.size());
   for (  LockInfo info : locksBeingChecked) {
     strings.add(info.db);
@@ -64,16 +64,23 @@
       query.append("))");
     }
   }
+  query.append(" and hl_lock_ext_id <= ").append(extLockId);
   LOG.debug("Going to execute query <" + query.toString() + ">");
   Statement stmt=null;
   try {
     stmt=dbConn.createStatement();
     ResultSet rs=stmt.executeQuery(query.toString());
-    SortedSet lockSet=new TreeSet(new LockInfoComparator());
+    SortedSet<LockInfo> lockSet=new TreeSet<LockInfo>(new LockInfoComparator());
     while (rs.next()) {
       lockSet.add(new LockInfo(rs));
     }
-    LockInfo[] locks=(LockInfo[])lockSet.toArray(new LockInfo[1]);
+    LockInfo[] locks=lockSet.toArray(new LockInfo[lockSet.size()]);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Locks to check(full): ");
+      for (      LockInfo info : locks) {
+        LOG.debug("  " + info);
+      }
+    }
     for (    LockInfo info : locksBeingChecked) {
       int index=-1;
       for (int i=0; i < locks.length; i++) {
@@ -101,21 +108,26 @@
         if (locks[index].partition != null && locks[i].partition != null && !locks[index].partition.equals(locks[i].partition)) {
           continue;
         }
-switch (jumpTable.get(locks[index].type).get(locks[i].type).get(locks[i].state)) {
-case ACQUIRE:
-          acquire(dbConn,stmt,extLockId,info.intLockId);
-        acquired=true;
-      break;
+        LockAction lockAction=jumpTable.get(locks[index].type).get(locks[i].type).get(locks[i].state);
+        LOG.debug("desired Lock: " + info + " checked Lock: "+ locks[i]+ " action: "+ lockAction);
+switch (lockAction) {
 case WAIT:
-    wait(dbConn,save);
-  if (alwaysCommit) {
-    LOG.debug("Going to commit");
-    dbConn.commit();
-  }
-response.setState(LockState.WAITING);
-return response;
+          if (!ignoreConflict(info,locks[i])) {
+            wait(dbConn,save);
+            if (alwaysCommit) {
+              LOG.debug("Going to commit");
+              dbConn.commit();
+            }
+            response.setState(LockState.WAITING);
+            LOG.debug("Lock(" + info + ") waiting for Lock("+ locks[i]+ ")");
+            return response;
+          }
+case ACQUIRE:
+        acquire(dbConn,stmt,extLockId,info.intLockId);
+      acquired=true;
+    break;
 case KEEP_LOOKING:
-continue;
+  continue;
 }
 if (acquired) break;
 }

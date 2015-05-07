@@ -1,0 +1,67 @@
+{
+  OpAttr inputOpAf=dispatch(sortRel.getInput());
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Translating operator rel#" + sortRel.getId() + ":"+ sortRel.getRelTypeName()+ " with row type: ["+ sortRel.getRowType()+ "]");
+    if (sortRel.getCollation() == RelCollations.EMPTY) {
+      LOG.debug("Operator rel#" + sortRel.getId() + ":"+ sortRel.getRelTypeName()+ " consists of limit");
+    }
+ else     if (sortRel.fetch == null) {
+      LOG.debug("Operator rel#" + sortRel.getId() + ":"+ sortRel.getRelTypeName()+ " consists of sort");
+    }
+ else {
+      LOG.debug("Operator rel#" + sortRel.getId() + ":"+ sortRel.getRelTypeName()+ " consists of sort+limit");
+    }
+  }
+  Operator<?> inputOp=inputOpAf.inputs.get(0);
+  Operator<?> resultOp=inputOpAf.inputs.get(0);
+  if (sortRel.getCollation() != RelCollations.EMPTY) {
+    if (strictMode && sortRel.fetch == null) {
+      throw new SemanticException(ErrorMsg.NO_LIMIT_WITH_ORDERBY.getMsg());
+    }
+    ImmutableBitSet.Builder sortColsPosBuilder=new ImmutableBitSet.Builder();
+    ImmutableBitSet.Builder sortOutputColsPosBuilder=new ImmutableBitSet.Builder();
+    Map<Integer,RexNode> obRefToCallMap=sortRel.getInputRefToCallMap();
+    List<ExprNodeDesc> sortCols=new ArrayList<ExprNodeDesc>();
+    StringBuilder order=new StringBuilder();
+    for (    RelFieldCollation sortInfo : sortRel.getCollation().getFieldCollations()) {
+      int sortColumnPos=sortInfo.getFieldIndex();
+      ColumnInfo columnInfo=new ColumnInfo(inputOp.getSchema().getSignature().get(sortColumnPos));
+      ExprNodeColumnDesc sortColumn=new ExprNodeColumnDesc(columnInfo.getType(),columnInfo.getInternalName(),columnInfo.getTabAlias(),columnInfo.getIsVirtualCol());
+      sortCols.add(sortColumn);
+      if (sortInfo.getDirection() == RelFieldCollation.Direction.DESCENDING) {
+        order.append("-");
+      }
+ else {
+        order.append("+");
+      }
+      if (obRefToCallMap != null) {
+        RexNode obExpr=obRefToCallMap.get(sortColumnPos);
+        sortColsPosBuilder.set(sortColumnPos);
+        if (obExpr == null) {
+          sortOutputColsPosBuilder.set(sortColumnPos);
+        }
+      }
+    }
+    int numReducers=1;
+    List<String> keepColumns=new ArrayList<String>();
+    final ImmutableBitSet sortColsPos=sortColsPosBuilder.build();
+    final ImmutableBitSet sortOutputColsPos=sortOutputColsPosBuilder.build();
+    final ArrayList<ColumnInfo> inputSchema=inputOp.getSchema().getSignature();
+    for (int pos=0; pos < inputSchema.size(); pos++) {
+      if ((sortColsPos.get(pos) && sortOutputColsPos.get(pos)) || (!sortColsPos.get(pos) && !sortOutputColsPos.get(pos))) {
+        keepColumns.add(inputSchema.get(pos).getInternalName());
+      }
+    }
+    resultOp=genReduceSinkAndBacktrackSelect(resultOp,sortCols.toArray(new ExprNodeDesc[sortCols.size()]),0,new ArrayList<ExprNodeDesc>(),order.toString(),numReducers,Operation.NOT_ACID,strictMode,keepColumns);
+  }
+  if (sortRel.fetch != null) {
+    int limit=RexLiteral.intValue(sortRel.fetch);
+    LimitDesc limitDesc=new LimitDesc(limit);
+    ArrayList<ColumnInfo> cinfoLst=createColInfos(inputOp);
+    resultOp=OperatorFactory.getAndMakeChild(limitDesc,new RowSchema(cinfoLst),resultOp);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Generated " + resultOp + " with row schema: ["+ resultOp.getSchema()+ "]");
+    }
+  }
+  return inputOpAf.clone(resultOp);
+}

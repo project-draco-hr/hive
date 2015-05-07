@@ -1,0 +1,145 @@
+{
+  Operator<? extends OperatorDesc> vectorOp=null;
+  Class<? extends Operator<?>> opClass=null;
+  boolean isOuterJoin=!desc.getNoOuterJoin();
+  VectorMapJoinDesc.HashTableImplementationType hashTableImplementationType=HashTableImplementationType.NONE;
+  VectorMapJoinDesc.HashTableKind hashTableKind=HashTableKind.NONE;
+  VectorMapJoinDesc.HashTableKeyType hashTableKeyType=HashTableKeyType.NONE;
+  if (HiveConf.getBoolVar(hiveConf,HiveConf.ConfVars.HIVE_VECTORIZATION_MAPJOIN_NATIVE_FAST_HASHTABLE_ENABLED)) {
+    hashTableImplementationType=HashTableImplementationType.FAST;
+  }
+ else {
+    hashTableImplementationType=HashTableImplementationType.OPTIMIZED;
+  }
+  int joinType=desc.getConds()[0].getType();
+  boolean isInnerBigOnly=false;
+  if (joinType == JoinDesc.INNER_JOIN && isBigTableOnlyResults(desc)) {
+    isInnerBigOnly=true;
+  }
+  hashTableKeyType=HashTableKeyType.MULTI_KEY;
+  if (!HiveConf.getBoolVar(hiveConf,HiveConf.ConfVars.HIVE_VECTORIZATION_MAPJOIN_NATIVE_MULTIKEY_ONLY_ENABLED)) {
+    byte posBigTable=(byte)desc.getPosBigTable();
+    Map<Byte,List<ExprNodeDesc>> keyExprs=desc.getKeys();
+    List<ExprNodeDesc> bigTableKeyExprs=keyExprs.get(posBigTable);
+    if (bigTableKeyExprs.size() == 1) {
+      String typeName=bigTableKeyExprs.get(0).getTypeString();
+      LOG.info("Vectorizer vectorizeOperator map join typeName " + typeName);
+      if (typeName.equals("boolean")) {
+        hashTableKeyType=HashTableKeyType.BOOLEAN;
+      }
+ else       if (typeName.equals("tinyint")) {
+        hashTableKeyType=HashTableKeyType.BYTE;
+      }
+ else       if (typeName.equals("smallint")) {
+        hashTableKeyType=HashTableKeyType.SHORT;
+      }
+ else       if (typeName.equals("int")) {
+        hashTableKeyType=HashTableKeyType.INT;
+      }
+ else       if (typeName.equals("bigint") || typeName.equals("long")) {
+        hashTableKeyType=HashTableKeyType.LONG;
+      }
+ else       if (VectorizationContext.isStringFamily(typeName)) {
+        hashTableKeyType=HashTableKeyType.STRING;
+      }
+    }
+  }
+switch (joinType) {
+case JoinDesc.INNER_JOIN:
+    if (!isInnerBigOnly) {
+      hashTableKind=HashTableKind.HASH_MAP;
+    }
+ else {
+      hashTableKind=HashTableKind.HASH_MULTISET;
+    }
+  break;
+case JoinDesc.LEFT_OUTER_JOIN:
+case JoinDesc.RIGHT_OUTER_JOIN:
+hashTableKind=HashTableKind.HASH_MAP;
+break;
+case JoinDesc.LEFT_SEMI_JOIN:
+hashTableKind=HashTableKind.HASH_SET;
+break;
+default :
+throw new HiveException("Unknown join type " + joinType);
+}
+LOG.info("Vectorizer vectorizeOperator map join hashTableKind " + hashTableKind.name() + " hashTableKeyType "+ hashTableKeyType.name());
+switch (hashTableKeyType) {
+case BOOLEAN:
+case BYTE:
+case SHORT:
+case INT:
+case LONG:
+switch (joinType) {
+case JoinDesc.INNER_JOIN:
+if (!isInnerBigOnly) {
+opClass=VectorMapJoinInnerLongOperator.class;
+}
+ else {
+opClass=VectorMapJoinInnerBigOnlyLongOperator.class;
+}
+break;
+case JoinDesc.LEFT_OUTER_JOIN:
+case JoinDesc.RIGHT_OUTER_JOIN:
+opClass=VectorMapJoinOuterLongOperator.class;
+break;
+case JoinDesc.LEFT_SEMI_JOIN:
+opClass=VectorMapJoinLeftSemiLongOperator.class;
+break;
+default :
+throw new HiveException("Unknown join type " + joinType);
+}
+break;
+case STRING:
+switch (joinType) {
+case JoinDesc.INNER_JOIN:
+if (!isInnerBigOnly) {
+opClass=VectorMapJoinInnerStringOperator.class;
+}
+ else {
+opClass=VectorMapJoinInnerBigOnlyStringOperator.class;
+}
+break;
+case JoinDesc.LEFT_OUTER_JOIN:
+case JoinDesc.RIGHT_OUTER_JOIN:
+opClass=VectorMapJoinOuterStringOperator.class;
+break;
+case JoinDesc.LEFT_SEMI_JOIN:
+opClass=VectorMapJoinLeftSemiStringOperator.class;
+break;
+default :
+throw new HiveException("Unknown join type " + joinType);
+}
+break;
+case MULTI_KEY:
+switch (joinType) {
+case JoinDesc.INNER_JOIN:
+if (!isInnerBigOnly) {
+opClass=VectorMapJoinInnerMultiKeyOperator.class;
+}
+ else {
+opClass=VectorMapJoinInnerBigOnlyMultiKeyOperator.class;
+}
+break;
+case JoinDesc.LEFT_OUTER_JOIN:
+case JoinDesc.RIGHT_OUTER_JOIN:
+opClass=VectorMapJoinOuterMultiKeyOperator.class;
+break;
+case JoinDesc.LEFT_SEMI_JOIN:
+opClass=VectorMapJoinLeftSemiMultiKeyOperator.class;
+break;
+default :
+throw new HiveException("Unknown join type " + joinType);
+}
+break;
+}
+vectorOp=OperatorFactory.getVectorOperator(opClass,op.getConf(),vContext);
+LOG.info("Vectorizer vectorizeOperator map join class " + vectorOp.getClass().getSimpleName());
+boolean minMaxEnabled=HiveConf.getBoolVar(hiveConf,HiveConf.ConfVars.HIVE_VECTORIZATION_MAPJOIN_NATIVE_MINMAX_ENABLED);
+VectorMapJoinDesc vectorDesc=desc.getVectorDesc();
+vectorDesc.setHashTableImplementationType(hashTableImplementationType);
+vectorDesc.setHashTableKind(hashTableKind);
+vectorDesc.setHashTableKeyType(hashTableKeyType);
+vectorDesc.setMinMaxEnabled(minMaxEnabled);
+return vectorOp;
+}

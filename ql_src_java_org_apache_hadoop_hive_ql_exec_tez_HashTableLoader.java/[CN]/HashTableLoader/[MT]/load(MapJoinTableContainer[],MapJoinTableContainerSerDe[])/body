@@ -1,0 +1,86 @@
+{
+  Map<Integer,String> parentToInput=desc.getParentToInput();
+  Map<Integer,Long> parentKeyCounts=desc.getParentKeyCounts();
+  boolean useOptimizedTables=HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVEMAPJOINUSEOPTIMIZEDTABLE);
+  boolean useHybridGraceHashJoin=desc.isHybridHashJoin();
+  boolean isFirstKey=true;
+  long noConditionalTaskThreshold=HiveConf.getLongVar(hconf,HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASKTHRESHOLD);
+  HybridHashTableConf nwayConf=null;
+  long totalSize=0;
+  int biggest=0;
+  if (useHybridGraceHashJoin && mapJoinTables.length > 2) {
+    nwayConf=new HybridHashTableConf();
+    long maxSize=0;
+    for (int pos=0; pos < mapJoinTables.length; pos++) {
+      if (pos == desc.getPosBigTable()) {
+        continue;
+      }
+      totalSize+=desc.getParentDataSizes().get(pos);
+      biggest=desc.getParentDataSizes().get(pos) > maxSize ? pos : biggest;
+      maxSize=desc.getParentDataSizes().get(pos) > maxSize ? desc.getParentDataSizes().get(pos) : maxSize;
+    }
+    float percentage=(float)maxSize / totalSize;
+    long memory=(long)(noConditionalTaskThreshold * percentage);
+    int numPartitions=0;
+    try {
+      numPartitions=HybridHashTableContainer.calcNumPartitions(memory,desc.getParentDataSizes().get(biggest),HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVEHYBRIDGRACEHASHJOINMINNUMPARTITIONS),HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVEHYBRIDGRACEHASHJOINMINWBSIZE),nwayConf);
+    }
+ catch (    IOException e) {
+      throw new HiveException(e);
+    }
+    nwayConf.setNumberOfPartitions(numPartitions);
+  }
+  for (int pos=0; pos < mapJoinTables.length; pos++) {
+    if (pos == desc.getPosBigTable()) {
+      continue;
+    }
+    String inputName=parentToInput.get(pos);
+    LogicalInput input=tezContext.getInput(inputName);
+    try {
+      input.start();
+      tezContext.getTezProcessorContext().waitForAnyInputReady(Collections.<Input>singletonList(input));
+    }
+ catch (    Exception e) {
+      throw new HiveException(e);
+    }
+    try {
+      KeyValueReader kvReader=(KeyValueReader)input.getReader();
+      MapJoinObjectSerDeContext keyCtx=mapJoinTableSerdes[pos].getKeyContext(), valCtx=mapJoinTableSerdes[pos].getValueContext();
+      if (useOptimizedTables) {
+        ObjectInspector keyOi=keyCtx.getSerDe().getObjectInspector();
+        if (!MapJoinBytesTableContainer.isSupportedKey(keyOi)) {
+          if (isFirstKey) {
+            useOptimizedTables=false;
+            LOG.info(describeOi("Not using optimized hash table. " + "Only a subset of mapjoin keys is supported. Unsupported key: ",keyOi));
+          }
+ else {
+            throw new HiveException(describeOi("Only a subset of mapjoin keys is supported. Unsupported key: ",keyOi));
+          }
+        }
+      }
+      isFirstKey=false;
+      Long keyCountObj=parentKeyCounts.get(pos);
+      long keyCount=(keyCountObj == null) ? -1 : keyCountObj.longValue();
+      long memory=0;
+      if (useHybridGraceHashJoin) {
+        if (mapJoinTables.length > 2) {
+          float percentage=(float)desc.getParentDataSizes().get(pos) / totalSize;
+          memory=(long)(noConditionalTaskThreshold * percentage);
+        }
+ else {
+          memory=noConditionalTaskThreshold;
+        }
+      }
+      MapJoinTableContainer tableContainer=useOptimizedTables ? (useHybridGraceHashJoin ? new HybridHashTableContainer(hconf,keyCount,memory,desc.getParentDataSizes().get(pos),nwayConf) : new MapJoinBytesTableContainer(hconf,valCtx,keyCount,0)) : new HashMapWrapper(hconf,keyCount);
+      LOG.info("Using tableContainer " + tableContainer.getClass().getSimpleName());
+      while (kvReader.next()) {
+        tableContainer.putRow(keyCtx,(Writable)kvReader.getCurrentKey(),valCtx,(Writable)kvReader.getCurrentValue());
+      }
+      tableContainer.seal();
+      mapJoinTables[pos]=tableContainer;
+    }
+ catch (    Exception e) {
+      throw new HiveException(e);
+    }
+  }
+}

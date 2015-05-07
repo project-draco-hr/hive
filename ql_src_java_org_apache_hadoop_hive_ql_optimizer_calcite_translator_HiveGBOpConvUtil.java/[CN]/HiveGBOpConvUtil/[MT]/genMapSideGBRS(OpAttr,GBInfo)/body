@@ -1,0 +1,23 @@
+{
+  Map<String,ExprNodeDesc> colExprMap=new HashMap<String,ExprNodeDesc>();
+  List<String> outputKeyColumnNames=new ArrayList<String>();
+  List<String> outputValueColumnNames=new ArrayList<String>();
+  ArrayList<ColumnInfo> colInfoLst=new ArrayList<ColumnInfo>();
+  GroupByOperator mapGB=(GroupByOperator)inputOpAf.inputs.get(0);
+  ArrayList<ExprNodeDesc> reduceKeys=getReduceKeysForRS(mapGB,0,gbInfo.gbKeys.size() - 1,outputKeyColumnNames,false,colInfoLst,colExprMap,false,false);
+  int keyLength=reduceKeys.size();
+  if (inclGrpSetInMapSide(gbInfo)) {
+    addGrpSetCol(false,SemanticAnalyzer.getColumnInternalName(reduceKeys.size()),true,reduceKeys,outputKeyColumnNames,colInfoLst,colExprMap);
+    keyLength++;
+  }
+  if (mapGB.getConf().getKeys().size() > reduceKeys.size()) {
+    reduceKeys.addAll(getReduceKeysForRS(mapGB,reduceKeys.size(),mapGB.getConf().getKeys().size() - 1,outputKeyColumnNames,true,colInfoLst,colExprMap,false,false));
+  }
+ else   if (!gbInfo.distColIndices.isEmpty()) {
+    outputKeyColumnNames.add(SemanticAnalyzer.getColumnInternalName(reduceKeys.size()));
+  }
+  ArrayList<ExprNodeDesc> reduceValues=getValueKeysForRS(mapGB,mapGB.getConf().getKeys().size(),outputValueColumnNames,colInfoLst,colExprMap,false,false);
+  ReduceSinkOperator rsOp=(ReduceSinkOperator)OperatorFactory.getAndMakeChild(PlanUtils.getReduceSinkDesc(reduceKeys,keyLength,reduceValues,gbInfo.distColIndices,outputKeyColumnNames,outputValueColumnNames,true,-1,getNumPartFieldsForMapSideRS(gbInfo),getParallelismForMapSideRS(gbInfo),AcidUtils.Operation.NOT_ACID),new RowSchema(colInfoLst),mapGB);
+  rsOp.setColumnExprMap(colExprMap);
+  return new OpAttr("",new HashSet<Integer>(),rsOp);
+}

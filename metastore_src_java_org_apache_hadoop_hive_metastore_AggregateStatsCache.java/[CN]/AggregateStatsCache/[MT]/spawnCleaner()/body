@@ -1,0 +1,66 @@
+{
+synchronized (this) {
+    if (isCleaning) {
+      return;
+    }
+    isCleaning=true;
+  }
+  Thread cleaner=new Thread("AggregateStatsCache-CleanerThread"){
+    @Override public void run(){
+      numRemovedTTL=0;
+      numRemovedLRU=0;
+      long cleanerStartTime=System.currentTimeMillis();
+      LOG.info("AggregateStatsCache is " + getFullPercent() + "% full, with "+ getCurrentNodes()+ " nodes; starting cleaner thread");
+      try {
+        Iterator<Map.Entry<Key,AggrColStatsList>> mapIterator=cacheStore.entrySet().iterator();
+        while (mapIterator.hasNext()) {
+          Map.Entry<Key,AggrColStatsList> pair=(Map.Entry<Key,AggrColStatsList>)mapIterator.next();
+          AggrColStats node;
+          AggrColStatsList candidateList=(AggrColStatsList)pair.getValue();
+          List<AggrColStats> nodes=candidateList.nodes;
+          if (nodes.size() == 0) {
+            mapIterator.remove();
+            continue;
+          }
+          boolean isLocked=false;
+          try {
+            isLocked=candidateList.writeLock.tryLock(maxWriterWaitTime,TimeUnit.MILLISECONDS);
+            if (isLocked) {
+              for (Iterator<AggrColStats> listIterator=nodes.iterator(); listIterator.hasNext(); ) {
+                node=listIterator.next();
+                if (isExpired(node)) {
+                  listIterator.remove();
+                  numRemovedTTL++;
+                  currentNodes.getAndDecrement();
+                }
+              }
+            }
+          }
+ catch (          InterruptedException e) {
+            LOG.debug(e);
+          }
+ finally {
+            if (isLocked) {
+              candidateList.writeLock.unlock();
+            }
+          }
+          Thread.yield();
+        }
+        while (getCurrentNodes() / maxCacheNodes > cleanUntil) {
+          evictOneNode();
+        }
+      }
+  finally {
+        isCleaning=false;
+        LOG.info("Stopping cleaner thread; AggregateStatsCache is now " + getFullPercent() + "% full, with "+ getCurrentNodes()+ " nodes");
+        LOG.info("Number of expired nodes removed: " + numRemovedTTL);
+        LOG.info("Number of LRU nodes removed: " + numRemovedLRU);
+        LOG.info("Cleaner ran for: " + (System.currentTimeMillis() - cleanerStartTime) + "ms");
+      }
+    }
+  }
+;
+  cleaner.setPriority(Thread.MIN_PRIORITY);
+  cleaner.setDaemon(true);
+  cleaner.start();
+}

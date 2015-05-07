@@ -1,6 +1,37 @@
 {
   long partsFound=partsFoundForPartitions(dbName,tableName,partNames,colNames);
-  List<ColumnStatisticsObj> stats=columnStatisticsObjForPartitions(dbName,tableName,partNames,colNames,partsFound,useDensityFunctionForNDVEstimation);
-  LOG.info("useDensityFunctionForNDVEstimation = " + useDensityFunctionForNDVEstimation + "\npartsFound = "+ partsFound+ "\nColumnStatisticsObj = "+ Arrays.toString(stats.toArray()));
-  return new AggrStats(stats,partsFound);
+  List<ColumnStatisticsObj> colStatsList;
+  if (isAggregateStatsCacheEnabled) {
+    AggrColStats colStatsAggrCached;
+    List<ColumnStatisticsObj> colStatsAggrFromDB;
+    int maxPartitionsPerCacheNode=aggrStatsCache.getMaxPartsPerCacheNode();
+    float falsePositiveProbability=aggrStatsCache.getFalsePositiveProbability();
+    int partitionsRequested=partNames.size();
+    if (partitionsRequested > maxPartitionsPerCacheNode) {
+      colStatsList=columnStatisticsObjForPartitions(dbName,tableName,partNames,colNames,partsFound,useDensityFunctionForNDVEstimation);
+    }
+ else {
+      colStatsList=new ArrayList<ColumnStatisticsObj>();
+      for (      String colName : colNames) {
+        colStatsAggrCached=aggrStatsCache.get(dbName,tableName,colName,partNames);
+        if (colStatsAggrCached != null) {
+          colStatsList.add(colStatsAggrCached.getColStats());
+        }
+ else {
+          BloomFilter bloomFilter=new BloomFilter(maxPartitionsPerCacheNode,falsePositiveProbability);
+          List<String> colNamesForDB=new ArrayList<String>();
+          colNamesForDB.add(colName);
+          colStatsAggrFromDB=columnStatisticsObjForPartitions(dbName,tableName,partNames,colNamesForDB,partsFound,useDensityFunctionForNDVEstimation);
+          ColumnStatisticsObj colStatsAggr=colStatsAggrFromDB.get(0);
+          colStatsList.add(colStatsAggr);
+          aggrStatsCache.add(dbName,tableName,colName,partsFound,colStatsAggr,bloomFilter);
+        }
+      }
+    }
+  }
+ else {
+    colStatsList=columnStatisticsObjForPartitions(dbName,tableName,partNames,colNames,partsFound,useDensityFunctionForNDVEstimation);
+  }
+  LOG.info("useDensityFunctionForNDVEstimation = " + useDensityFunctionForNDVEstimation + "\npartsFound = "+ partsFound+ "\nColumnStatisticsObj = "+ Arrays.toString(colStatsList.toArray()));
+  return new AggrStats(colStatsList,partsFound);
 }

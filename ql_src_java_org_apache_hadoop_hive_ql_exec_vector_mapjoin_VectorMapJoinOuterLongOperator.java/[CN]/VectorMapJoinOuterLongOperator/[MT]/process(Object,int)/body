@@ -1,0 +1,144 @@
+{
+  try {
+    VectorizedRowBatch batch=(VectorizedRowBatch)row;
+    alias=(byte)tag;
+    if (needCommonSetup) {
+      commonSetup(batch);
+      singleJoinColumn=bigTableKeyColumnMap[0];
+      needCommonSetup=false;
+    }
+    if (needHashTableSetup) {
+      hashMap=(VectorMapJoinLongHashMap)vectorMapJoinHashTable;
+      useMinMax=hashMap.useMinMax();
+      if (useMinMax) {
+        min=hashMap.min();
+        max=hashMap.max();
+      }
+      needHashTableSetup=false;
+    }
+    batchCounter++;
+    outerPerBatchSetup(batch);
+    final int inputLogicalSize=batch.size;
+    if (inputLogicalSize == 0) {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug(CLASS_NAME + " batch #" + batchCounter+ " empty");
+      }
+      return;
+    }
+    if (bigTableKeyExpressions != null) {
+      for (      VectorExpression ve : bigTableKeyExpressions) {
+        ve.evaluate(batch);
+      }
+    }
+    int numSel=0;
+    LongColumnVector joinColVector=(LongColumnVector)batch.cols[singleJoinColumn];
+    long[] vector=joinColVector.vector;
+    boolean allKeyInputColumnsRepeating=joinColVector.isRepeating;
+    if (allKeyInputColumnsRepeating) {
+      JoinUtil.JoinResult joinResult;
+      if (!joinColVector.noNulls && joinColVector.isNull[0]) {
+        joinResult=JoinUtil.JoinResult.NOMATCH;
+      }
+ else {
+        long key=vector[0];
+        if (useMinMax && (key < min || key > max)) {
+          joinResult=JoinUtil.JoinResult.NOMATCH;
+        }
+ else {
+          joinResult=hashMap.lookup(key,hashMapResults[0]);
+        }
+      }
+      if (LOG.isDebugEnabled()) {
+        LOG.debug(CLASS_NAME + " batch #" + batchCounter+ " repeated joinResult "+ joinResult.name());
+      }
+      numSel=finishOuterRepeated(batch,joinResult,hashMapResults[0],scratch1);
+    }
+ else {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug(CLASS_NAME + " batch #" + batchCounter+ " non-repeated");
+      }
+      int selected[]=batch.selected;
+      boolean selectedInUse=batch.selectedInUse;
+      int hashMapResultCount=0;
+      int matchCount=0;
+      int nonSpillCount=0;
+      int spillCount=0;
+      long saveKey=0;
+      boolean haveSaveKey=false;
+      JoinUtil.JoinResult saveJoinResult=JoinUtil.JoinResult.NOMATCH;
+      for (int logical=0; logical < inputLogicalSize; logical++) {
+        int batchIndex=(selectedInUse ? selected[logical] : logical);
+        boolean isNull=!joinColVector.noNulls && joinColVector.isNull[batchIndex];
+        if (isNull) {
+          nonSpills[nonSpillCount++]=batchIndex;
+        }
+ else {
+          long currentKey=vector[batchIndex];
+          if (!haveSaveKey || currentKey != saveKey) {
+            if (haveSaveKey) {
+switch (saveJoinResult) {
+case MATCH:
+case SPILL:
+                hashMapResultCount++;
+              break;
+case NOMATCH:
+            break;
+        }
+      }
+      haveSaveKey=true;
+      saveKey=currentKey;
+      if (useMinMax && (currentKey < min || currentKey > max)) {
+        saveJoinResult=JoinUtil.JoinResult.NOMATCH;
+      }
+ else {
+        saveJoinResult=hashMap.lookup(currentKey,hashMapResults[hashMapResultCount]);
+      }
+    }
+ else {
+    }
+switch (saveJoinResult) {
+case MATCH:
+      matchs[matchCount]=batchIndex;
+    matchHashMapResultIndices[matchCount]=hashMapResultCount;
+  matchCount++;
+nonSpills[nonSpillCount++]=batchIndex;
+break;
+case SPILL:
+spills[spillCount]=batchIndex;
+spillHashMapResultIndices[spillCount]=hashMapResultCount;
+spillCount++;
+break;
+case NOMATCH:
+nonSpills[nonSpillCount++]=batchIndex;
+break;
+}
+}
+}
+if (haveSaveKey) {
+switch (saveJoinResult) {
+case MATCH:
+case SPILL:
+hashMapResultCount++;
+break;
+case NOMATCH:
+break;
+}
+}
+if (LOG.isDebugEnabled()) {
+LOG.debug(CLASS_NAME + " batch #" + batchCounter+ " matchs "+ intArrayToRangesString(matchs,matchCount)+ " matchHashMapResultIndices "+ intArrayToRangesString(matchHashMapResultIndices,matchCount)+ " nonSpills "+ intArrayToRangesString(nonSpills,nonSpillCount)+ " spills "+ intArrayToRangesString(spills,spillCount)+ " spillHashMapResultIndices "+ intArrayToRangesString(spillHashMapResultIndices,spillCount)+ " hashMapResults "+ Arrays.toString(Arrays.copyOfRange(hashMapResults,0,hashMapResultCount)));
+}
+numSel=finishOuter(batch,matchs,matchHashMapResultIndices,matchCount,nonSpills,nonSpillCount,spills,spillHashMapResultIndices,spillCount,hashMapResults,hashMapResultCount,scratch1);
+}
+batch.selectedInUse=true;
+batch.size=numSel;
+if (batch.size > 0) {
+forwardBigTableBatch(batch);
+}
+}
+ catch (IOException e) {
+throw new HiveException(e);
+}
+catch (Exception e) {
+throw new HiveException(e);
+}
+}

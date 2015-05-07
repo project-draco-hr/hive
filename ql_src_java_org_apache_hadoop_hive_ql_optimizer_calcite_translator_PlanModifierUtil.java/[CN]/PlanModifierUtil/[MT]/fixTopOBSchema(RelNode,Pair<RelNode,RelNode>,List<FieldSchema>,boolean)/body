@@ -1,0 +1,50 @@
+{
+  if (!(topSelparentPair.getKey() instanceof Sort) || !HiveCalciteUtil.orderRelNode(topSelparentPair.getKey())) {
+    return;
+  }
+  HiveSort obRel=(HiveSort)topSelparentPair.getKey();
+  Project obChild=(Project)topSelparentPair.getValue();
+  if (obChild.getRowType().getFieldCount() <= resultSchema.size()) {
+    return;
+  }
+  RelDataType rt=obChild.getRowType();
+  @SuppressWarnings({"unchecked","rawtypes"}) Set<Integer> collationInputRefs=new HashSet(RelCollations.ordinals(obRel.getCollation()));
+  ImmutableMap.Builder<Integer,RexNode> inputRefToCallMapBldr=ImmutableMap.builder();
+  for (int i=resultSchema.size(); i < rt.getFieldCount(); i++) {
+    if (collationInputRefs.contains(i)) {
+      RexNode obyExpr=obChild.getChildExps().get(i);
+      if (obyExpr instanceof RexCall) {
+        int a=-1;
+        List<RexNode> operands=new ArrayList<>();
+        for (int k=0; k < ((RexCall)obyExpr).operands.size(); k++) {
+          RexNode rn=((RexCall)obyExpr).operands.get(k);
+          for (int j=0; j < resultSchema.size(); j++) {
+            if (obChild.getChildExps().get(j).toString().equals(rn.toString())) {
+              a=j;
+              break;
+            }
+          }
+          if (a != -1) {
+            operands.add(new RexInputRef(a,rn.getType()));
+          }
+ else {
+            operands.add(rn);
+          }
+          a=-1;
+        }
+        obyExpr=obChild.getCluster().getRexBuilder().makeCall(((RexCall)obyExpr).getOperator(),operands);
+      }
+      inputRefToCallMapBldr.put(i,obyExpr);
+    }
+  }
+  ImmutableMap<Integer,RexNode> inputRefToCallMap=inputRefToCallMapBldr.build();
+  if ((obChild.getRowType().getFieldCount() - inputRefToCallMap.size()) != resultSchema.size()) {
+    LOG.error(generateInvalidSchemaMessage(obChild,resultSchema,inputRefToCallMap.size()));
+    throw new CalciteSemanticException("Result Schema didn't match Optimized Op Tree Schema");
+  }
+  if (replaceProject) {
+    HiveProject replacementProjectRel=HiveProject.create(obChild.getInput(),obChild.getChildExps().subList(0,resultSchema.size()),obChild.getRowType().getFieldNames().subList(0,resultSchema.size()));
+    obRel.replaceInput(0,replacementProjectRel);
+  }
+  obRel.setInputRefToCallMap(inputRefToCallMap);
+}

@@ -1,0 +1,37 @@
+{
+  Operator<? extends OperatorDesc> vectorOp=null;
+switch (op.getType()) {
+case MAPJOIN:
+{
+      MapJoinDesc desc=(MapJoinDesc)op.getConf();
+      boolean specialize=canSpecializeMapJoin(op,desc,isTez);
+      if (!specialize) {
+        vectorOp=OperatorFactory.getVectorOperator(desc,vContext);
+      }
+ else {
+        vectorOp=specializeMapJoinOperator(op,vContext,desc);
+      }
+    }
+  break;
+case GROUPBY:
+case FILTER:
+case SELECT:
+case FILESINK:
+case REDUCESINK:
+case LIMIT:
+case EXTRACT:
+case EVENT:
+vectorOp=OperatorFactory.getVectorOperator(op.getConf(),vContext);
+break;
+default :
+vectorOp=op;
+break;
+}
+LOG.info("vectorizeOperator " + (vectorOp == null ? "NULL" : vectorOp.getClass().getName()));
+LOG.info("vectorizeOperator " + (vectorOp == null || vectorOp.getConf() == null ? "NULL" : vectorOp.getConf().getClass().getName()));
+if (vectorOp != op) {
+fixupParentChildOperators(op,vectorOp);
+((AbstractOperatorDesc)vectorOp.getConf()).setVectorMode(true);
+}
+return vectorOp;
+}

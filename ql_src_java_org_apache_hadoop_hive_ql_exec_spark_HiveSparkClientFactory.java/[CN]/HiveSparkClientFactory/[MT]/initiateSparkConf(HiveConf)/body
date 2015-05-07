@@ -3,6 +3,7 @@
   sparkConf.put("spark.master",SPARK_DEFAULT_MASTER);
   sparkConf.put("spark.app.name",SPARK_DEFAULT_APP_NAME);
   sparkConf.put("spark.serializer",SPARK_DEFAULT_SERIALIZER);
+  sparkConf.put("spark.kryo.referenceTracking",SPARK_DEFAULT_REFERENCE_TRACKING);
   InputStream inputStream=null;
   try {
     inputStream=HiveSparkClientFactory.class.getClassLoader().getResourceAsStream(SPARK_DEFAULT_CONF_FILE);
@@ -36,6 +37,9 @@
   if (sparkMaster == null) {
     sparkMaster=sparkConf.get("spark.master");
   }
+  if (sparkMaster.equals("yarn-cluster")) {
+    sparkConf.put("spark.yarn.maxAppAttempts","1");
+  }
   for (  Map.Entry<String,String> entry : hiveConf) {
     String propertyName=entry.getKey();
     if (propertyName.startsWith("spark")) {
@@ -54,5 +58,10 @@
       LOG.info(String.format("load RPC property from hive configuration (%s -> %s).",propertyName,value));
     }
   }
+  Set<String> classes=Sets.newHashSet(Splitter.on(",").trimResults().omitEmptyStrings().split(Strings.nullToEmpty(sparkConf.get("spark.kryo.classesToRegister"))));
+  classes.add(VectorizedRowBatch.class.getName());
+  classes.add(BytesWritable.class.getName());
+  classes.add(HiveKey.class.getName());
+  sparkConf.put("spark.kryo.classesToRegister",Joiner.on(",").join(classes));
   return sparkConf;
 }

@@ -1,0 +1,53 @@
+{
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Translating operator rel#" + scanRel.getId() + ":"+ scanRel.getRelTypeName()+ " with row type: ["+ scanRel.getRowType()+ "]");
+  }
+  RelOptHiveTable ht=(RelOptHiveTable)scanRel.getTable();
+  ArrayList<ColumnInfo> colInfos=new ArrayList<ColumnInfo>();
+  List<VirtualColumn> virtualCols=new ArrayList<VirtualColumn>();
+  List<Integer> neededColumnIDs=new ArrayList<Integer>();
+  List<String> neededColumnNames=new ArrayList<String>();
+  Set<Integer> vcolsInCalcite=new HashSet<Integer>();
+  List<String> partColNames=new ArrayList<String>();
+  Map<Integer,VirtualColumn> VColsMap=HiveCalciteUtil.getVColsMap(ht.getVirtualCols(),ht.getNoOfNonVirtualCols());
+  Map<Integer,ColumnInfo> posToPartColInfo=ht.getPartColInfoMap();
+  Map<Integer,ColumnInfo> posToNonPartColInfo=ht.getNonPartColInfoMap();
+  List<Integer> neededColIndxsFrmReloptHT=scanRel.getNeededColIndxsFrmReloptHT();
+  List<String> scanColNames=scanRel.getRowType().getFieldNames();
+  String tableAlias=scanRel.getTableAlias();
+  String colName;
+  ColumnInfo colInfo;
+  VirtualColumn vc;
+  for (int index=0; index < scanRel.getRowType().getFieldList().size(); index++) {
+    colName=scanColNames.get(index);
+    if (VColsMap.containsKey(index)) {
+      vc=VColsMap.get(index);
+      virtualCols.add(vc);
+      colInfo=new ColumnInfo(vc.getName(),vc.getTypeInfo(),tableAlias,true,vc.getIsHidden());
+      vcolsInCalcite.add(index);
+    }
+ else     if (posToPartColInfo.containsKey(index)) {
+      partColNames.add(colName);
+      colInfo=posToPartColInfo.get(index);
+      vcolsInCalcite.add(index);
+    }
+ else {
+      colInfo=posToNonPartColInfo.get(index);
+    }
+    colInfos.add(colInfo);
+    if (neededColIndxsFrmReloptHT.contains(index)) {
+      neededColumnIDs.add(index);
+      neededColumnNames.add(colName);
+    }
+  }
+  TableScanDesc tsd=new TableScanDesc(tableAlias,virtualCols,ht.getHiveTableMD());
+  tsd.setPartColumns(partColNames);
+  tsd.setNeededColumnIDs(neededColumnIDs);
+  tsd.setNeededColumns(neededColumnNames);
+  TableScanOperator ts=(TableScanOperator)OperatorFactory.get(tsd,new RowSchema(colInfos));
+  topOps.put(scanRel.getConcatQbIDAlias(),ts);
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Generated " + ts + " with row schema: ["+ ts.getSchema()+ "]");
+  }
+  return new OpAttr(tableAlias,vcolsInCalcite,ts);
+}
