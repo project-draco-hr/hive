@@ -1,3 +1,17 @@
 {
-  checkFileAccessWithImpersonation(fs,Iterators.singletonIterator(stat),EnumSet.of(action),user);
+  UserGroupInformation ugi=Utils.getUGI();
+  String currentUser=ugi.getShortUserName();
+  if (user == null || currentUser.equals(user)) {
+    ShimLoader.getHadoopShims().checkFileAccess(fs,stat,action);
+    return;
+  }
+  UserGroupInformation proxyUser=UserGroupInformation.createProxyUser(user,UserGroupInformation.getLoginUser());
+  proxyUser.doAs(new PrivilegedExceptionAction<Object>(){
+    @Override public Object run() throws Exception {
+      FileSystem fsAsUser=FileSystem.get(fs.getUri(),fs.getConf());
+      ShimLoader.getHadoopShims().checkFileAccess(fsAsUser,stat,action);
+      return null;
+    }
+  }
+);
 }
