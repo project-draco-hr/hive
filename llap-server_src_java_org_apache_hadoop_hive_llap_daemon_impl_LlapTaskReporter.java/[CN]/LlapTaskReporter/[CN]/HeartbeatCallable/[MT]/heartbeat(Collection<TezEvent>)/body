@@ -15,7 +15,8 @@
     events.add(updateEvent);
   }
   long requestId=requestCounter.incrementAndGet();
-  TezHeartbeatRequest request=new TezHeartbeatRequest(requestId,events,containerIdStr,task.getTaskAttemptID(),task.getEventCounter(),maxEventsToGet);
+  int fromEventId=task.getNextFromEventId();
+  TezHeartbeatRequest request=new TezHeartbeatRequest(requestId,events,containerIdStr,task.getTaskAttemptID(),fromEventId,maxEventsToGet);
   if (LOG.isDebugEnabled()) {
     LOG.debug("Sending heartbeat to AM, request=" + request);
   }
@@ -26,6 +27,7 @@
   }
   if (response.shouldDie()) {
     LOG.info("Received should die response from AM");
+    askedToDie.set(true);
     return new ResponseWrapper(true,1);
   }
   if (response.getLastRequestId() != requestId) {
@@ -38,9 +40,10 @@
     }
   }
  else {
+    task.setNextFromEventId(response.getNextFromEventId());
     if (response.getEvents() != null && !response.getEvents().isEmpty()) {
       if (LOG.isDebugEnabled()) {
-        LOG.debug("Routing events from heartbeat response to task" + ", currentTaskAttemptId=" + task.getTaskAttemptID() + ", eventCount="+ response.getEvents().size());
+        LOG.debug("Routing events from heartbeat response to task" + ", currentTaskAttemptId=" + task.getTaskAttemptID() + ", eventCount="+ response.getEvents().size()+ " fromEventId="+ fromEventId+ " nextFromEventId="+ response.getNextFromEventId());
       }
       numEventsReceived=response.getEvents().size();
       task.handleEvents(response.getEvents());
