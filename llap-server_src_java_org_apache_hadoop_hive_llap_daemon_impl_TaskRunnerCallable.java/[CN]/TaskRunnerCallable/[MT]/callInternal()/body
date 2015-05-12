@@ -7,7 +7,7 @@
   this.amReporter.unregisterTask(request.getAmHost(),request.getAmPort());
   ExecutorService executorReal=Executors.newFixedThreadPool(1,new ThreadFactoryBuilder().setDaemon(true).setNameFormat("TezTaskRunner_" + request.getFragmentSpec().getTaskAttemptIdString()).build());
   executor=MoreExecutors.listeningDecorator(executorReal);
-  Stopwatch sw=new Stopwatch().start();
+  runtimeWatch.start();
   UserGroupInformation taskUgi=UserGroupInformation.createRemoteUser(request.getUser());
   taskUgi.addCredentials(credentials);
   Map<String,ByteBuffer> serviceConsumerMetadata=new HashMap<>();
@@ -24,7 +24,15 @@
   }
 );
   taskReporter=new LlapTaskReporter(umbilical,confParams.amHeartbeatIntervalMsMax,confParams.amCounterHeartbeatInterval,confParams.amMaxEventsPerHeartbeat,new AtomicLong(0),request.getContainerIdString());
-  taskRunner=new TezTaskRunner2(conf,taskUgi,localDirs,taskSpec,request.getAppAttemptNumber(),serviceConsumerMetadata,envMap,startedInputsMap,taskReporter,executor,objectRegistry,pid,executionContext,memoryAvailable);
+synchronized (this) {
+    if (shouldRunTask) {
+      taskRunner=new TezTaskRunner2(conf,taskUgi,localDirs,taskSpec,request.getAppAttemptNumber(),serviceConsumerMetadata,envMap,startedInputsMap,taskReporter,executor,objectRegistry,pid,executionContext,memoryAvailable);
+    }
+  }
+  if (taskRunner == null) {
+    LOG.info("Not starting task {} since it was killed earlier",taskSpec.getTaskAttemptID());
+    return new TaskRunner2Result(EndReason.KILL_REQUESTED,null,false);
+  }
   try {
     TaskRunner2Result result=taskRunner.run();
     if (result.isContainerShutdownRequested()) {
@@ -33,7 +41,7 @@
     return result;
   }
   finally {
-    LOG.info("ExecutionTime for Container: " + request.getContainerIdString() + "="+ sw.stop().elapsed(TimeUnit.MILLISECONDS));
+    LOG.info("ExecutionTime for Container: " + request.getContainerIdString() + "="+ runtimeWatch.stop().elapsed(TimeUnit.MILLISECONDS));
     if (LOG.isDebugEnabled()) {
       LOG.debug("canFinish post completion: " + taskSpec.getTaskAttemptID() + ": "+ canFinish());
     }
