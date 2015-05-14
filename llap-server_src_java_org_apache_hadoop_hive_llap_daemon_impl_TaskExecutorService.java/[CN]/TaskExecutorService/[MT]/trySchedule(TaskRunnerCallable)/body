@@ -11,7 +11,7 @@
       if (isDebugEnabled) {
         LOG.debug(task.getRequestId() + " is not finishable and pre-emption is enabled." + "Adding it to pre-emption queue.");
       }
-      addTaskToPreemptionList(task,future);
+      addTaskToPreemptionList(task);
     }
     numSlotsAvailable.decrementAndGet();
     scheduled=true;
@@ -20,41 +20,14 @@
     if (enablePreemption && task.canFinish() && !preemptionQueue.isEmpty()) {
       if (isTraceEnabled) {
         LOG.trace("idToTaskMap: " + idToTaskMap.keySet());
-        LOG.trace("preemptionMap: " + preemptionMap.keySet());
         LOG.trace("preemptionQueue: " + preemptionQueue);
       }
-      TaskRunnerCallable pRequest=preemptionQueue.remove();
+      TaskRunnerCallable pRequest=preemptionQueue.peek();
       if (pRequest != null) {
         if (isDebugEnabled) {
-          LOG.debug(pRequest.getRequestId() + " is chosen for pre-emption.");
+          LOG.debug("Kill task invoked for " + pRequest.getRequestId() + " due to pre-emption");
         }
-        ListenableFuture<?> pFuture=preemptionMap.get(pRequest);
-        if (pFuture != null) {
-          if (isDebugEnabled) {
-            LOG.debug("Pre-emption invoked for " + pRequest.getRequestId() + " by interrupting the thread.");
-          }
-          pRequest.killTask();
-          removeTaskFromPreemptionList(pRequest,pRequest.getRequestId());
-          if (pFuture.isDone() && pFuture.isCancelled()) {
-            if (isDebugEnabled) {
-              LOG.debug(pRequest.getRequestId() + " request preempted by " + task.getRequestId());
-            }
-          }
-        }
-        try {
-          ListenableFuture<TaskRunner2Result> future=executorService.submit(task);
-          FutureCallback<TaskRunner2Result> wrappedCallback=new InternalCompletionListener(task.getCallback());
-          Futures.addCallback(future,wrappedCallback);
-          numSlotsAvailable.decrementAndGet();
-          scheduled=true;
-          if (isDebugEnabled) {
-            LOG.debug("Request " + task.getRequestId() + " from wait queue submitted"+ " to executor service.");
-          }
-        }
- catch (        RejectedExecutionException e1) {
-          scheduled=false;
-          LOG.error("Request " + task.getRequestId() + " from wait queue rejected by"+ " executor service.");
-        }
+        pRequest.killTask();
       }
     }
   }
