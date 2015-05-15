@@ -1,0 +1,46 @@
+{
+  List<String> commands=Collections.emptyList();
+  CliOptionsProcessor optionsProcessor=new CliOptionsProcessor();
+  if (!optionsProcessor.process(args)) {
+    return 1;
+  }
+  CommandLine commandLine=optionsProcessor.getCommandLine();
+  Properties confProps=commandLine.getOptionProperties("hiveconf");
+  for (  String propKey : confProps.stringPropertyNames()) {
+    getOpts().getHiveConfVariables().put(propKey,confProps.getProperty(propKey));
+  }
+  Properties hiveVars=commandLine.getOptionProperties("define");
+  for (  String propKey : hiveVars.stringPropertyNames()) {
+    getOpts().getHiveConfVariables().put(propKey,hiveVars.getProperty(propKey));
+  }
+  Properties hiveVars2=commandLine.getOptionProperties("hivevar");
+  for (  String propKey : hiveVars2.stringPropertyNames()) {
+    getOpts().getHiveConfVariables().put(propKey,hiveVars2.getProperty(propKey));
+  }
+  getOpts().setScriptFile(commandLine.getOptionValue("f"));
+  dbName=commandLine.getOptionValue("database");
+  getOpts().setVerbose(Boolean.valueOf(commandLine.getOptionValue("verbose")));
+  getOpts().setSilent(Boolean.valueOf(commandLine.getOptionValue("slient")));
+  int code=0;
+  if (commandLine.getOptionValues("e") != null) {
+    commands=Arrays.asList(commandLine.getOptionValues("e"));
+  }
+  if (!commands.isEmpty() && getOpts().getScriptFile() != null) {
+    System.err.println("The '-e' and '-f' options cannot be specified simultaneously");
+    optionsProcessor.printCliUsage();
+    return 1;
+  }
+  if (!commands.isEmpty()) {
+    embeddedConnect();
+    connectDBInEmbededMode();
+    for (Iterator<String> i=commands.iterator(); i.hasNext(); ) {
+      String command=i.next().toString();
+      debug(loc("executing-command",command));
+      if (!dispatch(command)) {
+        code++;
+      }
+    }
+    exit=true;
+  }
+  return code;
+}
