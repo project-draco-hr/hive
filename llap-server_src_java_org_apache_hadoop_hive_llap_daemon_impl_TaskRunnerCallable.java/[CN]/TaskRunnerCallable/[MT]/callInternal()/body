@@ -1,2 +1,49 @@
 {
+  this.startTime=System.currentTimeMillis();
+  this.threadName=Thread.currentThread().getName();
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("canFinish: " + taskSpec.getTaskAttemptID() + ": "+ canFinish());
+  }
+  this.amReporter.unregisterTask(request.getAmHost(),request.getAmPort());
+  ExecutorService executorReal=Executors.newFixedThreadPool(1,new ThreadFactoryBuilder().setDaemon(true).setNameFormat("TezTaskRunner_" + request.getFragmentSpec().getTaskAttemptIdString()).build());
+  executor=MoreExecutors.listeningDecorator(executorReal);
+  runtimeWatch.start();
+  UserGroupInformation taskUgi=UserGroupInformation.createRemoteUser(request.getUser());
+  taskUgi.addCredentials(credentials);
+  Map<String,ByteBuffer> serviceConsumerMetadata=new HashMap<>();
+  serviceConsumerMetadata.put(TezConstants.TEZ_SHUFFLE_HANDLER_SERVICE_ID,TezCommonUtils.convertJobTokenToBytes(jobToken));
+  Multimap<String,String> startedInputsMap=createStartedInputMap(request.getFragmentSpec());
+  UserGroupInformation taskOwner=UserGroupInformation.createRemoteUser(request.getTokenIdentifier());
+  final InetSocketAddress address=NetUtils.createSocketAddrForHost(request.getAmHost(),request.getAmPort());
+  SecurityUtil.setTokenService(jobToken,address);
+  taskOwner.addToken(jobToken);
+  umbilical=taskOwner.doAs(new PrivilegedExceptionAction<LlapTaskUmbilicalProtocol>(){
+    @Override public LlapTaskUmbilicalProtocol run() throws Exception {
+      return RPC.getProxy(LlapTaskUmbilicalProtocol.class,LlapTaskUmbilicalProtocol.versionID,address,conf);
+    }
+  }
+);
+  taskReporter=new LlapTaskReporter(umbilical,confParams.amHeartbeatIntervalMsMax,confParams.amCounterHeartbeatInterval,confParams.amMaxEventsPerHeartbeat,new AtomicLong(0),request.getContainerIdString());
+synchronized (this) {
+    if (shouldRunTask) {
+      taskRunner=new TezTaskRunner2(conf,taskUgi,localDirs,taskSpec,request.getAppAttemptNumber(),serviceConsumerMetadata,envMap,startedInputsMap,taskReporter,executor,objectRegistry,pid,executionContext,memoryAvailable);
+    }
+  }
+  if (taskRunner == null) {
+    LOG.info("Not starting task {} since it was killed earlier",taskSpec.getTaskAttemptID());
+    return new TaskRunner2Result(EndReason.KILL_REQUESTED,null,false);
+  }
+  try {
+    TaskRunner2Result result=taskRunner.run();
+    if (result.isContainerShutdownRequested()) {
+      LOG.warn("Unexpected container shutdown requested while running task. Ignoring");
+    }
+    return result;
+  }
+  finally {
+    LOG.info("ExecutionTime for Container: " + request.getContainerIdString() + "="+ runtimeWatch.stop().elapsed(TimeUnit.MILLISECONDS));
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("canFinish post completion: " + taskSpec.getTaskAttemptID() + ": "+ canFinish());
+    }
+  }
 }
