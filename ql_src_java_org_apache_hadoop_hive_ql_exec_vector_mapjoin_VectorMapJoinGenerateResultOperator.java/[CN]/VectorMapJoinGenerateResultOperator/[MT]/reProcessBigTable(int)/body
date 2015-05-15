@@ -1,0 +1,40 @@
+{
+  LOG.info(CLASS_NAME + " reProcessBigTable enter...");
+  if (spillReplayBatch == null) {
+    return;
+  }
+  HashPartition partition=firstSmallTable.getHashPartitions()[partitionId];
+  int rowCount=0;
+  int batchCount=0;
+  try {
+    VectorMapJoinRowBytesContainer bigTable=partition.getMatchfileRowBytesContainer();
+    bigTable.prepareForReading();
+    while (bigTable.readNext()) {
+      rowCount++;
+      byte[] bytes=bigTable.currentBytes();
+      int offset=bigTable.currentOffset();
+      int length=bigTable.currentLength();
+      bigTableVectorDeserializeRow.setBytes(bytes,offset,length);
+      bigTableVectorDeserializeRow.deserializeByValue(spillReplayBatch,spillReplayBatch.size);
+      spillReplayBatch.size++;
+      if (spillReplayBatch.size == VectorizedRowBatch.DEFAULT_SIZE) {
+        LOG.info("reProcessBigTable going to call process with spillReplayBatch.size " + spillReplayBatch.size + " rows");
+        process(spillReplayBatch,posBigTable);
+        spillReplayBatch.reset();
+        batchCount++;
+      }
+    }
+    if (spillReplayBatch.size > 0) {
+      LOG.info("reProcessBigTable going to call process with spillReplayBatch.size " + spillReplayBatch.size + " rows");
+      process(spillReplayBatch,posBigTable);
+      spillReplayBatch.reset();
+      batchCount++;
+    }
+    bigTable.clear();
+  }
+ catch (  Exception e) {
+    LOG.info(CLASS_NAME + " reProcessBigTable exception! " + e);
+    throw new HiveException(e);
+  }
+  LOG.info(CLASS_NAME + " reProcessBigTable exit! " + rowCount+ " row processed and "+ batchCount+ " batches processed");
+}

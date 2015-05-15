@@ -6,7 +6,21 @@ case MAPJOIN:
       MapJoinDesc desc=(MapJoinDesc)op.getConf();
       boolean specialize=canSpecializeMapJoin(op,desc,isTez);
       if (!specialize) {
-        vectorOp=OperatorFactory.getVectorOperator(desc,vContext);
+        Class<? extends Operator<?>> opClass=null;
+        if (op instanceof MapJoinOperator) {
+          List<ExprNodeDesc> bigTableFilters=desc.getFilters().get((byte)desc.getPosBigTable());
+          boolean isOuterAndFiltered=(!desc.isNoOuterJoin() && bigTableFilters.size() > 0);
+          if (!isOuterAndFiltered) {
+            opClass=VectorMapJoinOperator.class;
+          }
+ else {
+            opClass=VectorMapJoinOuterFilteredOperator.class;
+          }
+        }
+ else         if (op instanceof SMBMapJoinOperator) {
+          opClass=VectorSMBMapJoinOperator.class;
+        }
+        vectorOp=OperatorFactory.getVectorOperator(opClass,op.getConf(),vContext);
       }
  else {
         vectorOp=specializeMapJoinOperator(op,vContext,desc);
