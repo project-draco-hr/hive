@@ -1,14 +1,25 @@
 {
-  LOG.info("Processing queryComplete for dagName={} with deleteDelay={} seconds",dagName,deleteDelay);
-  QueryInfo queryInfo=queryInfoMap.remove(dagName);
-  if (queryInfo == null) {
-    LOG.warn("Ignoring query complete for unknown dag: {}",dagName);
-  }
-  String[] localDirs=queryInfo.getLocalDirsNoCreate();
-  if (localDirs != null) {
-    for (    String localDir : localDirs) {
-      queryFileCleaner.cleanupDir(localDir,deleteDelay);
-      ShuffleHandler.get().unregisterDag(localDir,dagName,queryInfo.dagIdentifier);
+  ReadWriteLock dagLock=getDagLock(dagName);
+  dagLock.writeLock().lock();
+  try {
+    completedDagMap.add(dagName);
+    LOG.info("Processing queryComplete for dagName={} with deleteDelay={} seconds",dagName,deleteDelay);
+    completedDagMap.add(dagName);
+    QueryInfo queryInfo=queryInfoMap.remove(dagName);
+    if (queryInfo == null) {
+      LOG.warn("Ignoring query complete for unknown dag: {}",dagName);
     }
+    String[] localDirs=queryInfo.getLocalDirsNoCreate();
+    if (localDirs != null) {
+      for (      String localDir : localDirs) {
+        queryFileCleaner.cleanupDir(localDir,deleteDelay);
+        ShuffleHandler.get().unregisterDag(localDir,dagName,queryInfo.getDagIdentifier());
+      }
+    }
+    sourceCompletionMap.remove(dagName);
+    dagSpecificLocks.remove(dagName);
+  }
+  finally {
+    dagLock.writeLock().unlock();
   }
 }

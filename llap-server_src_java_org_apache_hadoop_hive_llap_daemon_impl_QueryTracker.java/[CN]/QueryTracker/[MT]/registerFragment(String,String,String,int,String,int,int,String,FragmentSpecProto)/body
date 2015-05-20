@@ -1,0 +1,21 @@
+{
+  ReadWriteLock dagLock=getDagLock(dagName);
+  dagLock.readLock().lock();
+  try {
+    if (!completedDagMap.contains(dagName)) {
+      QueryInfo queryInfo=queryInfoMap.get(dagName);
+      if (queryInfo == null) {
+        queryInfo=new QueryInfo(queryId,appIdString,dagName,dagIdentifier,user,getSourceCompletionMap(dagName),localDirsBase,localFs);
+        queryInfoMap.putIfAbsent(dagName,queryInfo);
+      }
+      return queryInfo.registerFragment(vertexName,fragmentNumber,attemptNumber,fragmentSpec);
+    }
+ else {
+      dagSpecificLocks.remove(dagName);
+      throw new RuntimeException("Dag " + dagName + " already complete. Rejecting fragment ["+ vertexName+ ", "+ fragmentNumber+ ", "+ attemptNumber);
+    }
+  }
+  finally {
+    dagLock.readLock().unlock();
+  }
+}
