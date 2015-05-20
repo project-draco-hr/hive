@@ -4,6 +4,7 @@
   Path tblPath=null;
   List<Path> partPaths=null;
   Table tbl=null;
+  boolean ifPurge=false;
   try {
     ms.openTransaction();
     tbl=get_table_core(dbname,name);
@@ -13,6 +14,7 @@
     if (tbl.getSd() == null) {
       throw new MetaException("Table metadata is corrupted");
     }
+    ifPurge=((envContext != null) && Boolean.parseBoolean(envContext.getProperties().get("ifPurge"))) || (tbl.isSetParameters() && "true".equalsIgnoreCase(tbl.getParameters().get("auto.purge")));
     firePreEvent(new PreDropTableEvent(tbl,deleteData,this));
     boolean isIndexTable=isIndexTable(tbl);
     if (indexName == null && isIndexTable) {
@@ -40,6 +42,16 @@
         throw new MetaException(target + " metadata not deleted since " + tblPath.getParent()+ " is not writable by "+ hiveConf.getUser());
       }
     }
+    if (!ifPurge) {
+      String trashInterval=hiveConf.get("fs.trash.interval");
+      boolean trashEnabled=trashInterval != null && trashInterval.length() > 0 && Float.parseFloat(trashInterval) > 0;
+      if (trashEnabled) {
+        HadoopShims.HdfsEncryptionShim shim=ShimLoader.getHadoopShims().createHdfsEncryptionShim(FileSystem.get(hiveConf),hiveConf);
+        if (shim.isPathEncrypted(tblPath)) {
+          throw new MetaException("Unable to drop table because it is in an encryption zone" + " and trash is enabled.  Use PURGE option to skip trash.");
+        }
+      }
+    }
     partPaths=dropPartitionsAndGetLocations(ms,dbname,name,tblPath,tbl.getPartitionKeys(),deleteData && !isExternal);
     if (!ms.dropTable(dbname,name)) {
       String tableName=dbname + "." + name;
@@ -52,7 +64,6 @@
       ms.rollbackTransaction();
     }
  else     if (deleteData && !isExternal) {
-      boolean ifPurge=((envContext != null) && Boolean.parseBoolean(envContext.getProperties().get("ifPurge"))) || (tbl.isSetParameters() && "true".equalsIgnoreCase(tbl.getParameters().get("auto.purge")));
       deletePartitionData(partPaths,ifPurge);
       deleteTableData(tblPath,ifPurge);
     }
