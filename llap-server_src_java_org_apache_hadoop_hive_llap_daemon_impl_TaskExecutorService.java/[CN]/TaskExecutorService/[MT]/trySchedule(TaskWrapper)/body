@@ -1,0 +1,46 @@
+{
+  boolean scheduled=false;
+  try {
+synchronized (lock) {
+      boolean canFinish=taskWrapper.getTaskRunnerCallable().canFinish();
+      boolean stateChanged=taskWrapper.maybeRegisterForFinishedStateNotifications(canFinish);
+      ListenableFuture<TaskRunner2Result> future=executorService.submit(taskWrapper.getTaskRunnerCallable());
+      taskWrapper.setIsInWaitQueue(false);
+      FutureCallback<TaskRunner2Result> wrappedCallback=new InternalCompletionListener(taskWrapper);
+      Futures.addCallback(future,wrappedCallback,executionCompletionExecutorService);
+      if (isInfoEnabled) {
+        LOG.info("{} scheduled for execution. canFinish={}",taskWrapper.getRequestId(),canFinish);
+      }
+      if (enablePreemption) {
+        if (!canFinish && !stateChanged) {
+          if (isInfoEnabled) {
+            LOG.info("{} is not finishable. Adding it to pre-emption queue",taskWrapper.getRequestId());
+          }
+          addToPreemptionQueue(taskWrapper);
+        }
+      }
+    }
+    numSlotsAvailable.decrementAndGet();
+    scheduled=true;
+  }
+ catch (  RejectedExecutionException e) {
+    if (enablePreemption && taskWrapper.getTaskRunnerCallable().canFinish() && !preemptionQueue.isEmpty()) {
+      if (isDebugEnabled) {
+        LOG.debug("Preemption Queue: " + preemptionQueue);
+      }
+      TaskWrapper pRequest=removeAndGetFromPreemptionQueue();
+      if (pRequest != null) {
+        if (pRequest.getTaskRunnerCallable().canFinish()) {
+          LOG.info("Removed {} from preemption queue, but not preempting since it's now finishable",pRequest.getRequestId());
+        }
+ else {
+          if (isInfoEnabled) {
+            LOG.info("Invoking kill task for {} due to pre-emption to run {}",pRequest.getRequestId(),taskWrapper.getRequestId());
+          }
+          pRequest.getTaskRunnerCallable().killTask();
+        }
+      }
+    }
+  }
+  return scheduled;
+}

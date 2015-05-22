@@ -1,14 +1,18 @@
 {
   try {
-synchronized (waitLock) {
+synchronized (lock) {
       while (waitQueue.isEmpty()) {
-        waitLock.wait();
+        lock.wait();
       }
     }
-    while ((task=waitQueue.peek()) != null) {
-synchronized (waitLock) {
+    while (true) {
+synchronized (lock) {
+        task=waitQueue.peek();
+        if (task == null) {
+          break;
+        }
         boolean shouldWait=false;
-        if (task.canFinish()) {
+        if (task.getTaskRunnerCallable().canFinish()) {
           if (numSlotsAvailable.get() == 0 && preemptionQueue.isEmpty()) {
             shouldWait=true;
           }
@@ -19,17 +23,19 @@ synchronized (waitLock) {
           }
         }
         if (shouldWait) {
-          waitLock.wait();
+          lock.wait();
           continue;
         }
       }
       boolean scheduled=trySchedule(task);
       if (scheduled) {
-        waitQueue.remove(task);
+synchronized (lock) {
+          waitQueue.remove(task);
+        }
       }
-synchronized (waitLock) {
+synchronized (lock) {
         while (waitQueue.isEmpty()) {
-          waitLock.wait();
+          lock.wait();
         }
       }
     }

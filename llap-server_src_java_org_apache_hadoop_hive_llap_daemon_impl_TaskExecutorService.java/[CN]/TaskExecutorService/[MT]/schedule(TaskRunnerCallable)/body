@@ -1,5 +1,14 @@
 {
-  TaskRunnerCallable evictedTask=waitQueue.offer(task);
+  TaskWrapper taskWrapper=new TaskWrapper(task);
+  knownTasks.add(taskWrapper);
+  TaskWrapper evictedTask;
+  try {
+    evictedTask=waitQueue.offer(taskWrapper);
+  }
+ catch (  RejectedExecutionException e) {
+    knownTasks.remove(taskWrapper);
+    throw e;
+  }
   if (evictedTask == null) {
     if (isInfoEnabled) {
       LOG.info(task.getRequestId() + " added to wait queue.");
@@ -7,14 +16,15 @@
     if (isDebugEnabled) {
       LOG.debug("Wait Queue: {}",waitQueue);
     }
-synchronized (waitLock) {
-      waitLock.notify();
-    }
   }
  else {
-    evictedTask.killTask();
+    evictedTask.maybeUnregisterForFinishedStateNotifications();
+    evictedTask.getTaskRunnerCallable().killTask();
     if (isInfoEnabled) {
-      LOG.info(task.getRequestId() + " evicted from wait queue because of low priority");
+      LOG.info("{} evicted from wait queue in favor of {} because of lower priority",evictedTask.getRequestId(),task.getRequestId());
     }
+  }
+synchronized (lock) {
+    lock.notify();
   }
 }
