@@ -1,0 +1,52 @@
+{
+  if (ranges == null)   return null;
+  DiskRangeList prev=ranges.prev;
+  FileCache subCache=cache.get(fileId);
+  if (subCache == null || !subCache.incRef()) {
+    long totalMissed=ranges.getTotalLength();
+    metrics.incrCacheRequestedBytes(totalMissed);
+    if (qfCounters != null) {
+      qfCounters.recordCacheMiss(totalMissed);
+    }
+    if (prev != null && prev instanceof CacheListHelper) {
+      ((CacheListHelper)prev).didGetAllData=false;
+    }
+    return ranges;
+  }
+  CacheListHelper resultObj=null;
+  try {
+    if (prev == null) {
+      prev=new DiskRangeListMutateHelper(ranges);
+    }
+ else     if (prev instanceof CacheListHelper) {
+      resultObj=(CacheListHelper)prev;
+      resultObj.didGetAllData=true;
+    }
+    DiskRangeList current=ranges;
+    while (current != null) {
+      metrics.incrCacheRequestedBytes(current.getLength());
+      DiskRangeList next=current.next;
+      getOverlappingRanges(baseOffset,current,subCache.cache,factory,resultObj);
+      current=next;
+    }
+  }
+  finally {
+    subCache.decRef();
+  }
+  if (qfCounters != null) {
+    DiskRangeList current=prev.next;
+    long bytesHit=0, bytesMissed=0;
+    while (current != null) {
+      if (current.hasData()) {
+        bytesHit+=current.getLength();
+      }
+ else {
+        bytesMissed+=current.getLength();
+      }
+      current=current.next;
+    }
+    qfCounters.recordCacheHit(bytesHit);
+    qfCounters.recordCacheMiss(bytesMissed);
+  }
+  return prev.next;
+}

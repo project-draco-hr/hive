@@ -1,8 +1,13 @@
 {
+  long startTime=counters.startTimeCounter();
   if (LlapIoImpl.LOGL.isInfoEnabled()) {
-    LlapIoImpl.LOG.info("Processing split for " + split.getPath());
+    LlapIoImpl.LOG.info("Processing data for " + split.getPath());
   }
-  if (processStop())   return null;
+  if (processStop()) {
+    recordReaderTime(startTime);
+    return null;
+  }
+  counters.setDesc(QueryFragmentCounters.Desc.TABLE,getDbAndTableName(split.getPath()));
   orcReader=null;
   fs=split.getPath().getFileSystem(conf);
   fileId=determineFileId(fs,split);
@@ -16,11 +21,13 @@
     determineStripesToRead();
   }
  catch (  Throwable t) {
+    recordReaderTime(startTime);
     consumer.setError(t);
     return null;
   }
   if (readState.length == 0) {
     consumer.setDone();
+    recordReaderTime(startTime);
     return null;
   }
   int stride=fileMetadata.getRowIndexStride();
@@ -44,9 +51,14 @@
  catch (  Throwable t) {
     cleanupReaders();
     consumer.setError(t);
+    recordReaderTime(startTime);
     return null;
   }
-  if (processStop())   return null;
+  if (processStop()) {
+    cleanupReaders();
+    recordReaderTime(startTime);
+    return null;
+  }
   List<Integer>[] stripeColsToRead=null;
   if (cache != null) {
     try {
@@ -55,22 +67,28 @@
  catch (    Throwable t) {
       consumer.setError(t);
       cleanupReaders();
+      recordReaderTime(startTime);
       return null;
     }
   }
   Consumer<OrcEncodedColumnBatch> dataConsumer=(cache == null) ? this.consumer : this;
   try {
     ensureOrcReader();
-    stripeReader=orcReader.encodedReader(fileId,lowLevelCache,dataConsumer);
+    stripeReader=orcReader.encodedReader(fileId,lowLevelCache,counters,dataConsumer);
   }
  catch (  Throwable t) {
     consumer.setError(t);
+    recordReaderTime(startTime);
     cleanupReaders();
     return null;
   }
   OrcBatchKey stripeKey=new OrcBatchKey(fileId,-1,0);
   for (int stripeIxMod=0; stripeIxMod < readState.length; ++stripeIxMod) {
-    if (processStop())     return null;
+    if (processStop()) {
+      cleanupReaders();
+      recordReaderTime(startTime);
+      return null;
+    }
     int stripeIx=stripeIxFrom + stripeIxMod;
     boolean[][] colRgs=null;
     boolean[] stripeIncludes=null;
@@ -84,7 +102,7 @@
         LlapIoImpl.LOG.info("Reading stripe " + stripeIx + ": "+ stripe.getOffset()+ ", "+ stripe.getLength());
       }
       colRgs=readState[stripeIxMod];
-      if (cols == null || cols.size() == colRgs.length) {
+      if (cache == null || cols == null || cols.size() == colRgs.length) {
         cols=columnIds;
         stripeIncludes=globalIncludes;
       }
@@ -92,15 +110,21 @@
         stripeIncludes=OrcInputFormat.genIncludedColumns(fileMetadata.getTypes(),cols,true);
         colRgs=genStripeColRgs(cols,colRgs);
       }
+      boolean isFoundInCache=false;
       if (stripeMetadatas != null) {
         stripeMetadata=stripeMetadatas.get(stripeIxMod);
       }
  else {
         stripeKey.stripeIx=stripeIx;
         stripeMetadata=metadataCache.getStripeMetadata(stripeKey);
-        if (stripeMetadata == null) {
+        isFoundInCache=(stripeMetadata != null);
+        if (!isFoundInCache) {
+          counters.incrCounter(Counter.METADATA_CACHE_MISS);
           ensureMetadataReader();
-          stripeMetadata=metadataCache.putStripeMetadata(new OrcStripeMetadata(stripeKey,metadataReader,stripe,stripeIncludes,sargColumns));
+          long startTimeHdfs=counters.startTimeCounter();
+          stripeMetadata=new OrcStripeMetadata(stripeKey,metadataReader,stripe,stripeIncludes,sargColumns);
+          counters.incrTimeCounter(Counter.HDFS_TIME_US,startTimeHdfs);
+          stripeMetadata=metadataCache.putStripeMetadata(stripeMetadata);
           if (DebugUtils.isTraceOrcEnabled()) {
             LlapIoImpl.LOG.info("Caching stripe " + stripeKey.stripeIx + " metadata with includes: "+ DebugUtils.toString(stripeIncludes));
           }
@@ -112,25 +136,37 @@
         if (DebugUtils.isTraceOrcEnabled()) {
           LlapIoImpl.LOG.info("Updating indexes in stripe " + stripeKey.stripeIx + " metadata for includes: "+ DebugUtils.toString(stripeIncludes));
         }
+        assert isFoundInCache;
+        counters.incrCounter(Counter.METADATA_CACHE_MISS);
         ensureMetadataReader();
         updateLoadedIndexes(stripeMetadata,stripe,stripeIncludes,sargColumns);
+      }
+ else       if (isFoundInCache) {
+        counters.incrCounter(Counter.METADATA_CACHE_HIT);
       }
     }
  catch (    Throwable t) {
       consumer.setError(t);
       cleanupReaders();
+      recordReaderTime(startTime);
       return null;
     }
-    if (processStop())     return null;
+    if (processStop()) {
+      cleanupReaders();
+      recordReaderTime(startTime);
+      return null;
+    }
     try {
       stripeReader.readEncodedColumns(stripeIx,stripe,stripeMetadata.getRowIndexes(),stripeMetadata.getEncodings(),stripeMetadata.getStreams(),stripeIncludes,colRgs);
     }
  catch (    Throwable t) {
       consumer.setError(t);
       cleanupReaders();
+      recordReaderTime(startTime);
       return null;
     }
   }
+  recordReaderTime(startTime);
   dataConsumer.setDone();
   if (DebugUtils.isTraceMttEnabled()) {
     LlapIoImpl.LOG.info("done processing " + split);

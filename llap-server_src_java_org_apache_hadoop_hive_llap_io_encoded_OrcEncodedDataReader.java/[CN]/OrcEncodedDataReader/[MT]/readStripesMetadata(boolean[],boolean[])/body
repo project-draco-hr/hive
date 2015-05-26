@@ -5,10 +5,14 @@
     stripeKey.stripeIx=stripeIxMod + stripeIxFrom;
     OrcStripeMetadata value=metadataCache.getStripeMetadata(stripeKey);
     if (value == null || !value.hasAllIndexes(globalInc)) {
+      counters.incrCounter(Counter.METADATA_CACHE_MISS);
       ensureMetadataReader();
       StripeInformation si=fileMetadata.getStripes().get(stripeKey.stripeIx);
       if (value == null) {
-        value=metadataCache.putStripeMetadata(new OrcStripeMetadata(stripeKey,metadataReader,si,globalInc,sargColumns));
+        long startTime=counters.startTimeCounter();
+        value=new OrcStripeMetadata(stripeKey,metadataReader,si,globalInc,sargColumns);
+        counters.incrTimeCounter(Counter.HDFS_TIME_US,startTime);
+        value=metadataCache.putStripeMetadata(value);
         if (DebugUtils.isTraceOrcEnabled()) {
           LlapIoImpl.LOG.info("Caching stripe " + stripeKey.stripeIx + " metadata with includes: "+ DebugUtils.toString(globalInc));
         }
@@ -20,6 +24,9 @@
         }
         updateLoadedIndexes(value,si,globalInc,sargColumns);
       }
+    }
+ else {
+      counters.incrCounter(Counter.METADATA_CACHE_HIT);
     }
     result.add(value);
     consumer.setStripeMetadata(value);
