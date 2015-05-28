@@ -1,9 +1,9 @@
 {
   boolean scheduled=false;
   try {
+    boolean canFinish=taskWrapper.getTaskRunnerCallable().canFinish();
+    boolean stateChanged=!taskWrapper.maybeRegisterForFinishedStateNotifications(canFinish);
 synchronized (lock) {
-      boolean canFinish=taskWrapper.getTaskRunnerCallable().canFinish();
-      boolean stateChanged=!taskWrapper.maybeRegisterForFinishedStateNotifications(canFinish);
       ListenableFuture<TaskRunner2Result> future=executorService.submit(taskWrapper.getTaskRunnerCallable());
       taskWrapper.setIsInWaitQueue(false);
       FutureCallback<TaskRunner2Result> wrappedCallback=new InternalCompletionListener(taskWrapper);
@@ -12,7 +12,7 @@ synchronized (lock) {
         LOG.info("{} scheduled for execution. canFinish={}",taskWrapper.getRequestId(),canFinish);
       }
       if (enablePreemption) {
-        if (!canFinish && !stateChanged) {
+        if ((!canFinish && !stateChanged) || (canFinish && stateChanged)) {
           if (isInfoEnabled) {
             LOG.info("{} is not finishable. Adding it to pre-emption queue",taskWrapper.getRequestId());
           }
