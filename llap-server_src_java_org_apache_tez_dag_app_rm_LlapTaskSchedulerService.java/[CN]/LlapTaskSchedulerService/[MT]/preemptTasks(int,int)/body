@@ -1,0 +1,44 @@
+{
+  writeLock.lock();
+  List<TaskInfo> preemptedTaskList=null;
+  try {
+    NavigableMap<Integer,TreeSet<TaskInfo>> orderedMap=runningTasks.descendingMap();
+    Iterator<Entry<Integer,TreeSet<TaskInfo>>> iterator=orderedMap.entrySet().iterator();
+    int preemptedCount=0;
+    while (iterator.hasNext() && preemptedCount < numTasksToPreempt) {
+      Entry<Integer,TreeSet<TaskInfo>> entryAtPriority=iterator.next();
+      if (entryAtPriority.getKey() > forPriority) {
+        Iterator<TaskInfo> taskInfoIterator=entryAtPriority.getValue().iterator();
+        while (taskInfoIterator.hasNext() && preemptedCount < numTasksToPreempt) {
+          TaskInfo taskInfo=taskInfoIterator.next();
+          preemptedCount++;
+          LOG.info("preempting {} for task at priority {}",taskInfo,forPriority);
+          taskInfo.setPreemptedInfo(clock.getTime());
+          if (preemptedTaskList == null) {
+            preemptedTaskList=new LinkedList<>();
+          }
+          dagStats.registerTaskPreempted(taskInfo.assignedInstance.getHost());
+          preemptedTaskList.add(taskInfo);
+          pendingPreemptions.incrementAndGet();
+          taskInfoIterator.remove();
+        }
+        if (entryAtPriority.getValue().isEmpty()) {
+          iterator.remove();
+        }
+      }
+ else {
+        LOG.info("DBG: No tasks qualify as killable to schedule tasks at priority {}",forPriority);
+        break;
+      }
+    }
+  }
+  finally {
+    writeLock.unlock();
+  }
+  if (preemptedTaskList != null) {
+    for (    TaskInfo taskInfo : preemptedTaskList) {
+      LOG.info("DBG: Preempting task {}",taskInfo);
+      appClientDelegate.preemptContainer(taskInfo.containerId);
+    }
+  }
+}

@@ -1,23 +1,21 @@
 {
-  TaskWrapper taskWrapper=new TaskWrapper(task);
-  knownTasks.add(taskWrapper);
+  TaskWrapper taskWrapper=new TaskWrapper(task,this);
+  knownTasks.put(taskWrapper.getRequestId(),taskWrapper);
   TaskWrapper evictedTask;
   try {
     evictedTask=waitQueue.offer(taskWrapper);
   }
  catch (  RejectedExecutionException e) {
-    knownTasks.remove(taskWrapper);
+    knownTasks.remove(taskWrapper.getRequestId());
     throw e;
   }
-  if (evictedTask == null) {
-    if (isInfoEnabled) {
-      LOG.info(task.getRequestId() + " added to wait queue.");
-    }
-    if (isDebugEnabled) {
-      LOG.debug("Wait Queue: {}",waitQueue);
-    }
+  if (isInfoEnabled) {
+    LOG.info("{} added to wait queue. Current wait queue size={}",task.getRequestId(),waitQueue.size());
   }
- else {
+  if (isDebugEnabled) {
+    LOG.debug("Wait Queue: {}",waitQueue);
+  }
+  if (evictedTask != null) {
     evictedTask.maybeUnregisterForFinishedStateNotifications();
     evictedTask.getTaskRunnerCallable().killTask();
     if (isInfoEnabled) {

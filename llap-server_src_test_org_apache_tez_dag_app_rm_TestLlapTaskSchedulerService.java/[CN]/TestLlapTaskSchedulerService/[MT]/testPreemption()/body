@@ -1,0 +1,42 @@
+{
+  Priority priority1=Priority.newInstance(1);
+  Priority priority2=Priority.newInstance(2);
+  String[] hosts=new String[]{HOST1};
+  TestTaskSchedulerServiceWrapper tsWrapper=new TestTaskSchedulerServiceWrapper(2000,hosts,1,1);
+  try {
+    Object task1=new String("task1");
+    Object clientCookie1=new String("cookie1");
+    Object task2=new String("task2");
+    Object clientCookie2=new String("cookie1");
+    Object task3=new String("task3");
+    Object clientCookie3=new String("cookie1");
+    Object task4=new String("task4");
+    Object clientCookie4=new String("cookie1");
+    tsWrapper.controlScheduler(true);
+    int schedulerRunNumber=tsWrapper.getSchedulerRunNumber();
+    tsWrapper.allocateTask(task1,hosts,priority2,clientCookie1);
+    tsWrapper.allocateTask(task2,hosts,priority2,clientCookie2);
+    tsWrapper.allocateTask(task3,hosts,priority2,clientCookie3);
+    tsWrapper.signalScheduler();
+    tsWrapper.controlScheduler(false);
+    tsWrapper.awaitSchedulerRunNumber(schedulerRunNumber + 1);
+    verify(tsWrapper.mockAppCallback,times(2)).taskAllocated(any(Object.class),any(Object.class),any(Container.class));
+    assertEquals(2,tsWrapper.ts.dagStats.numLocalAllocations);
+    assertEquals(0,tsWrapper.ts.dagStats.numAllocationsNoLocalityRequest);
+    reset(tsWrapper.mockAppCallback);
+    tsWrapper.controlScheduler(true);
+    schedulerRunNumber=tsWrapper.getSchedulerRunNumber();
+    tsWrapper.allocateTask(task4,hosts,priority1,clientCookie4);
+    tsWrapper.controlScheduler(false);
+    tsWrapper.awaitSchedulerRunNumber(schedulerRunNumber + 1);
+    verify(tsWrapper.mockAppCallback).preemptContainer(any(ContainerId.class));
+    schedulerRunNumber=tsWrapper.getSchedulerRunNumber();
+    tsWrapper.deallocateTask(task2,false,TaskAttemptEndReason.INTERNAL_PREEMPTION);
+    tsWrapper.signalScheduler();
+    Thread.sleep(2000l);
+    verify(tsWrapper.mockAppCallback,times(1)).taskAllocated(eq(task4),eq(clientCookie4),any(Container.class));
+  }
+  finally {
+    tsWrapper.shutdown();
+  }
+}

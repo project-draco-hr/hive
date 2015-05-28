@@ -1,18 +1,19 @@
 {
   try {
-synchronized (lock) {
-      while (waitQueue.isEmpty()) {
-        lock.wait();
-      }
-    }
-    while (true) {
+    while (!isShutdown.get()) {
 synchronized (lock) {
         task=waitQueue.peek();
         if (task == null) {
-          break;
+          if (!isShutdown.get()) {
+            lock.wait();
+          }
+          continue;
         }
         boolean shouldWait=false;
         if (task.getTaskRunnerCallable().canFinish()) {
+          if (isDebugEnabled) {
+            LOG.debug("Attempting to schedule task {}, canFinish={}. Current state: preemptionQueueSize={}, numSlotsAvailable={}",task.getRequestId(),task.getTaskRunnerCallable().canFinish(),preemptionQueue.size(),numSlotsAvailable.get());
+          }
           if (numSlotsAvailable.get() == 0 && preemptionQueue.isEmpty()) {
             shouldWait=true;
           }
@@ -23,7 +24,9 @@ synchronized (lock) {
           }
         }
         if (shouldWait) {
-          lock.wait();
+          if (!isShutdown.get()) {
+            lock.wait();
+          }
           continue;
         }
       }
@@ -35,12 +38,20 @@ synchronized (lock) {
       }
 synchronized (lock) {
         while (waitQueue.isEmpty()) {
-          lock.wait();
+          if (!isShutdown.get()) {
+            lock.wait();
+          }
         }
       }
     }
   }
  catch (  InterruptedException e) {
-    LOG.info(WAIT_QUEUE_SCHEDULER_THREAD_NAME_FORMAT + " thread has been interrupted.");
+    if (isShutdown.get()) {
+      LOG.info(WAIT_QUEUE_SCHEDULER_THREAD_NAME_FORMAT + " thread has been interrupted after shutdown.");
+    }
+ else {
+      LOG.warn(WAIT_QUEUE_SCHEDULER_THREAD_NAME_FORMAT + " interrupted without shutdown",e);
+      throw new RuntimeException(e);
+    }
   }
 }
