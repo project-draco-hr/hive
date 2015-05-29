@@ -1,7 +1,7 @@
 {
   List<String> targetTableSchema=qb.getParseInfo().getDestSchemaForClause(dest);
   if (targetTableSchema == null) {
-    return;
+    return outputRR;
   }
   if (targetTableSchema.size() != col_list.size()) {
     Table target=qb.getMetaData().getDestTableForAlias(dest);
@@ -12,7 +12,7 @@
   Map<String,ColumnInfo> targetCol2ColumnInfo=new HashMap<String,ColumnInfo>();
   int colListPos=0;
   for (  String targetCol : targetTableSchema) {
-    targetCol2ColumnInfo.put(targetCol,out_rwsch.getColumnInfos().get(colListPos));
+    targetCol2ColumnInfo.put(targetCol,outputRR.getColumnInfos().get(colListPos));
     targetCol2Projection.put(targetCol,col_list.get(colListPos++));
   }
   Table target=qb.getMetaData().getDestTableForAlias(dest);
@@ -36,12 +36,13 @@
       }
     }
   }
+  RowResolver newOutputRR=new RowResolver();
   for (  String f : targetTableColNames) {
     if (targetCol2Projection.containsKey(f)) {
       new_col_list.add(targetCol2Projection.get(f));
       ColumnInfo ci=targetCol2ColumnInfo.get(f);
       ci.setInternalName(getColumnInternalName(colListPos));
-      newSchema.add(ci);
+      newOutputRR.put(ci.getTabAlias(),ci.getInternalName(),ci);
     }
  else {
       TypeCheckCtx tcCtx=new TypeCheckCtx(inputRR);
@@ -49,13 +50,13 @@
       t.setText("TOK_NULL");
       ExprNodeDesc exp=genExprNodeDesc(new ASTNode(t),inputRR,tcCtx);
       new_col_list.add(exp);
-      final String tableAlias="";
+      final String tableAlias=null;
       ColumnInfo colInfo=new ColumnInfo(getColumnInternalName(colListPos),exp.getWritableObjectInspector(),tableAlias,false);
-      newSchema.add(colInfo);
+      newOutputRR.put(colInfo.getTabAlias(),colInfo.getInternalName(),colInfo);
     }
     colListPos++;
   }
   col_list.clear();
   col_list.addAll(new_col_list);
-  out_rwsch.setRowSchema(new RowSchema(newSchema));
+  return newOutputRR;
 }

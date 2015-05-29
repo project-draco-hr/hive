@@ -1,0 +1,51 @@
+{
+switch (joinResult) {
+case MATCH:
+    if (someRowsFilteredOut) {
+      doValueExprOnInputSelected(batch,inputSelectedInUse,inputLogicalSize);
+      int noMatchCount=subtractFromInputSelected(inputSelectedInUse,inputLogicalSize,batch.selected,batch.size,noMatchs);
+      generateOuterNulls(batch,noMatchs,noMatchCount);
+      generateHashMapResultRepeatedAll(batch,hashMapResult);
+      int mergeCount=sortMerge(noMatchs,noMatchCount,batch.selected,batch.size,merged);
+      System.arraycopy(merged,0,batch.selected,0,mergeCount);
+      batch.size=mergeCount;
+      batch.selectedInUse=true;
+    }
+ else {
+      if (bigTableValueExpressions != null) {
+        for (        VectorExpression ve : bigTableValueExpressions) {
+          ve.evaluate(batch);
+        }
+      }
+      generateHashMapResultRepeatedAll(batch,hashMapResult);
+    }
+  break;
+case SPILL:
+spillBatchRepeated(batch,(VectorMapJoinHashTableResult)hashMapResult);
+if (someRowsFilteredOut) {
+int noMatchCount=subtractFromInputSelected(inputSelectedInUse,inputLogicalSize,batch.selected,batch.size,noMatchs);
+System.arraycopy(noMatchs,0,batch.selected,0,noMatchCount);
+batch.size=noMatchCount;
+batch.selectedInUse=true;
+generateOuterNullsRepeatedAll(batch);
+}
+ else {
+batch.size=0;
+}
+break;
+case NOMATCH:
+if (someRowsFilteredOut) {
+if (inputSelectedInUse) {
+System.arraycopy(inputSelected,0,batch.selected,0,inputLogicalSize);
+}
+batch.size=inputLogicalSize;
+}
+if (bigTableValueExpressions != null) {
+for (VectorExpression ve : bigTableValueExpressions) {
+ve.evaluate(batch);
+}
+}
+generateOuterNullsRepeatedAll(batch);
+break;
+}
+}

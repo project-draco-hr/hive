@@ -59,7 +59,8 @@
     if (rename && !oldt.getTableType().equals(TableType.VIRTUAL_VIEW.toString()) && (oldt.getSd().getLocation().compareTo(newt.getSd().getLocation()) == 0 || StringUtils.isEmpty(newt.getSd().getLocation()))&& !MetaStoreUtils.isExternalTable(oldt)) {
       srcPath=new Path(oldt.getSd().getLocation());
       srcFs=wh.getFs(srcPath);
-      Path databasePath=constructRenamedPath(wh.getDefaultDatabasePath(newt.getDbName()),srcPath);
+      Database db=msdb.getDatabase(newt.getDbName());
+      Path databasePath=constructRenamedPath(wh.getDatabasePath(db),srcPath);
       destPath=new Path(databasePath,newt.getTableName());
       destFs=wh.getFs(destPath);
       newt.getSd().setLocation(destPath.toString());
@@ -123,18 +124,19 @@ catch (  NoSuchObjectException e) {
     if (success && moveData) {
       try {
         if (srcFs.exists(srcPath) && !srcFs.rename(srcPath,destPath)) {
-          throw new IOException("Renaming " + srcPath + " to "+ destPath+ " is failed");
+          throw new IOException("Renaming " + srcPath + " to "+ destPath+ " failed");
         }
       }
  catch (      IOException e) {
+        LOG.error("Alter Table operation for " + dbname + "."+ name+ " failed.",e);
         boolean revertMetaDataTransaction=false;
         try {
           msdb.openTransaction();
-          msdb.alterTable(dbname,newt.getTableName(),oldt);
+          msdb.alterTable(newt.getDbName(),newt.getTableName(),oldt);
           for (          ObjectPair<Partition,String> pair : altps) {
             Partition part=pair.getFirst();
             part.getSd().setLocation(pair.getSecond());
-            msdb.alterPartition(dbname,name,part.getValues(),part);
+            msdb.alterPartition(newt.getDbName(),name,part.getValues(),part);
           }
           revertMetaDataTransaction=msdb.commitTransaction();
         }
@@ -149,7 +151,7 @@ catch (  NoSuchObjectException e) {
             msdb.rollbackTransaction();
           }
         }
-        throw new InvalidOperationException("Unable to access old location " + srcPath + " for table "+ dbname+ "."+ name);
+        throw new InvalidOperationException("Alter Table operation for " + dbname + "."+ name+ " failed to move data due to: '"+ getSimpleMessage(e)+ "' See hive log file for details.");
       }
     }
   }
