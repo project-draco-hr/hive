@@ -1,0 +1,31 @@
+{
+  if (desc instanceof ExprNodeColumnDesc) {
+    ExprNodeColumnDesc c=(ExprNodeColumnDesc)desc;
+    if (VirtualColumn.VIRTUAL_COLUMN_NAMES.contains(c.getColumn())) {
+      LOG.info("Cannot vectorize virtual column " + c.getColumn());
+      return false;
+    }
+  }
+  String typeName=desc.getTypeInfo().getTypeName();
+  boolean ret=validateDataType(typeName,mode);
+  if (!ret) {
+    LOG.info("Cannot vectorize " + desc.toString() + " of type "+ typeName);
+    return false;
+  }
+  if (desc instanceof ExprNodeGenericFuncDesc) {
+    ExprNodeGenericFuncDesc d=(ExprNodeGenericFuncDesc)desc;
+    boolean r=validateGenericUdf(d);
+    if (!r) {
+      return false;
+    }
+  }
+  if (desc.getChildren() != null) {
+    for (    ExprNodeDesc d : desc.getChildren()) {
+      boolean r=validateExprNodeDescRecursive(d,VectorExpressionDescriptor.Mode.FILTER);
+      if (!r) {
+        return false;
+      }
+    }
+  }
+  return true;
+}

@@ -1,0 +1,47 @@
+{
+  JoinPredicateInfo jpi=null;
+  JoinLeafPredicateInfo jlpi=null;
+  List<JoinLeafPredicateInfo> equiLPIList=new ArrayList<JoinLeafPredicateInfo>();
+  List<JoinLeafPredicateInfo> nonEquiLPIList=new ArrayList<JoinLeafPredicateInfo>();
+  List<Set<Integer>> projsJoinKeys=new ArrayList<Set<Integer>>();
+  for (int i=0; i < inputs.size(); i++) {
+    Set<Integer> projsJoinKeysInput=Sets.newHashSet();
+    projsJoinKeys.add(projsJoinKeysInput);
+  }
+  List<Set<Integer>> projsJoinKeysInJoinSchema=new ArrayList<Set<Integer>>();
+  for (int i=0; i < inputs.size(); i++) {
+    Set<Integer> projsJoinKeysInJoinSchemaInput=Sets.newHashSet();
+    projsJoinKeysInJoinSchema.add(projsJoinKeysInJoinSchemaInput);
+  }
+  Map<Integer,List<JoinLeafPredicateInfo>> tmpMapOfProjIndxInJoinSchemaToLeafPInfo=new HashMap<Integer,List<JoinLeafPredicateInfo>>();
+  Map<Integer,ImmutableList<JoinLeafPredicateInfo>> mapOfProjIndxInJoinSchemaToLeafPInfo=new HashMap<Integer,ImmutableList<JoinLeafPredicateInfo>>();
+  List<JoinLeafPredicateInfo> tmpJLPILst=null;
+  List<RexNode> conjuctiveElements;
+  conjuctiveElements=RelOptUtil.conjunctions(predicate);
+  for (  RexNode ce : conjuctiveElements) {
+    jlpi=JoinLeafPredicateInfo.constructJoinLeafPredicateInfo(inputs,systemFieldList,ce);
+    if (jlpi.comparisonType.equals(SqlKind.EQUALS)) {
+      equiLPIList.add(jlpi);
+    }
+ else {
+      nonEquiLPIList.add(jlpi);
+    }
+    for (int i=0; i < inputs.size(); i++) {
+      projsJoinKeys.get(i).addAll(jlpi.getProjsJoinKeysInChildSchema(i));
+      projsJoinKeysInJoinSchema.get(i).addAll(jlpi.getProjsJoinKeysInJoinSchema(i));
+      for (      Integer projIndx : jlpi.getProjsJoinKeysInJoinSchema(i)) {
+        tmpJLPILst=tmpMapOfProjIndxInJoinSchemaToLeafPInfo.get(projIndx);
+        if (tmpJLPILst == null) {
+          tmpJLPILst=new ArrayList<JoinLeafPredicateInfo>();
+        }
+        tmpJLPILst.add(jlpi);
+        tmpMapOfProjIndxInJoinSchemaToLeafPInfo.put(projIndx,tmpJLPILst);
+      }
+    }
+  }
+  for (  Entry<Integer,List<JoinLeafPredicateInfo>> e : tmpMapOfProjIndxInJoinSchemaToLeafPInfo.entrySet()) {
+    mapOfProjIndxInJoinSchemaToLeafPInfo.put(e.getKey(),ImmutableList.copyOf(e.getValue()));
+  }
+  jpi=new JoinPredicateInfo(nonEquiLPIList,equiLPIList,projsJoinKeys,projsJoinKeysInJoinSchema,mapOfProjIndxInJoinSchemaToLeafPInfo);
+  return jpi;
+}

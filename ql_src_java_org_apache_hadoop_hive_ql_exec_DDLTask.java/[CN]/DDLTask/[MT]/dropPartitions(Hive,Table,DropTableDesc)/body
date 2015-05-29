@@ -1,4 +1,20 @@
 {
+  ReplicationSpec replicationSpec=dropTbl.getReplicationSpec();
+  if (replicationSpec.isInReplicationScope()) {
+    for (    DropTableDesc.PartSpec partSpec : dropTbl.getPartSpecs()) {
+      try {
+        for (        Partition p : Iterables.filter(db.getPartitionsByFilter(tbl,partSpec.getPartSpec().getExprString()),replicationSpec.allowEventReplacementInto())) {
+          db.dropPartition(tbl.getDbName(),tbl.getTableName(),p.getValues(),true);
+        }
+      }
+ catch (      NoSuchObjectException e) {
+      }
+catch (      Exception e) {
+        throw new HiveException(e.getMessage(),e);
+      }
+    }
+    return;
+  }
   List<Partition> droppedParts=db.dropPartitions(dropTbl.getTableName(),dropTbl.getPartSpecs(),PartitionDropOptions.instance().deleteData(true).ignoreProtection(dropTbl.getIgnoreProtection()).ifExists(true).purgeData(dropTbl.getIfPurge()));
   for (  Partition partition : droppedParts) {
     console.printInfo("Dropped the partition " + partition.getName());

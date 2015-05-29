@@ -1,0 +1,51 @@
+{
+  JoinPredicateInfo joinPredInfo;
+  if (call.rel(0) instanceof MultiJoin) {
+    MultiJoin multiJoin=call.rel(0);
+    joinPredInfo=HiveCalciteUtil.JoinPredicateInfo.constructJoinPredicateInfo(multiJoin);
+  }
+ else   if (call.rel(0) instanceof Join) {
+    Join join=call.rel(0);
+    joinPredInfo=HiveCalciteUtil.JoinPredicateInfo.constructJoinPredicateInfo(join);
+  }
+ else {
+    return;
+  }
+  for (  RelNode child : call.rel(0).getInputs()) {
+    if (((HepRelVertex)child).getCurrentRel() instanceof Exchange) {
+      return;
+    }
+  }
+  List<RelNode> newInputs=new ArrayList<RelNode>();
+  for (int i=0; i < call.rel(0).getInputs().size(); i++) {
+    List<Integer> joinKeyPositions=new ArrayList<Integer>();
+    ImmutableList.Builder<RexNode> keyListBuilder=new ImmutableList.Builder<RexNode>();
+    ImmutableList.Builder<RelFieldCollation> collationListBuilder=new ImmutableList.Builder<RelFieldCollation>();
+    for (int j=0; j < joinPredInfo.getEquiJoinPredicateElements().size(); j++) {
+      JoinLeafPredicateInfo joinLeafPredInfo=joinPredInfo.getEquiJoinPredicateElements().get(j);
+      for (      int pos : joinLeafPredInfo.getProjsJoinKeysInChildSchema(i)) {
+        if (!joinKeyPositions.contains(pos)) {
+          joinKeyPositions.add(pos);
+          collationListBuilder.add(new RelFieldCollation(pos));
+          keyListBuilder.add(joinLeafPredInfo.getJoinKeyExprs(i).get(0));
+        }
+      }
+    }
+    HiveSortExchange exchange=HiveSortExchange.create(call.rel(0).getInput(i),new HiveRelDistribution(RelDistribution.Type.HASH_DISTRIBUTED,joinKeyPositions),new HiveRelCollation(collationListBuilder.build()),keyListBuilder.build());
+    newInputs.add(exchange);
+  }
+  RelNode newOp;
+  if (call.rel(0) instanceof MultiJoin) {
+    MultiJoin multiJoin=call.rel(0);
+    newOp=multiJoin.copy(multiJoin.getTraitSet(),newInputs);
+  }
+ else   if (call.rel(0) instanceof Join) {
+    Join join=call.rel(0);
+    newOp=join.copy(join.getTraitSet(),join.getCondition(),newInputs.get(0),newInputs.get(1),join.getJoinType(),join.isSemiJoinDone());
+  }
+ else {
+    return;
+  }
+  call.getPlanner().onCopy(call.rel(0),newOp);
+  call.transformTo(newOp);
+}

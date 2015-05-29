@@ -7,19 +7,38 @@
     result=(DoubleColumnVector)previousVector;
   }
   super.nextVector(result,batchSize);
-  for (int i=0; i < batchSize; i++) {
-    if (!result.isNull[i]) {
-      result.vector[i]=utils.readDouble(stream);
+  final boolean hasNulls=!result.noNulls;
+  boolean allNulls=hasNulls;
+  if (hasNulls) {
+    for (int i=0; i < batchSize && batchSize <= result.isNull.length; i++) {
+      allNulls=allNulls & result.isNull[i];
+    }
+    if (allNulls) {
+      result.vector[0]=Double.NaN;
+      result.isRepeating=true;
     }
  else {
-      result.vector[i]=Double.NaN;
+      result.isRepeating=false;
+      for (int i=0; batchSize <= result.isNull.length && batchSize <= result.vector.length && i < batchSize; i++) {
+        if (!result.isNull[i]) {
+          result.vector[i]=utils.readDouble(stream);
+        }
+ else {
+          result.vector[i]=Double.NaN;
+        }
+      }
     }
   }
-  result.isRepeating=true;
-  for (int i=0; (i < batchSize - 1 && result.isRepeating); i++) {
-    if (result.vector[i] != result.vector[i + 1]) {
-      result.isRepeating=false;
+ else {
+    boolean repeating=(batchSize > 1);
+    final double d1=utils.readDouble(stream);
+    result.vector[0]=d1;
+    for (int i=1; i < batchSize && batchSize <= result.vector.length; i++) {
+      final double d2=utils.readDouble(stream);
+      repeating=repeating && (d1 == d2);
+      result.vector[i]=d2;
     }
+    result.isRepeating=repeating;
   }
   return result;
 }

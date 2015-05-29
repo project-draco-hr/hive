@@ -7,8 +7,8 @@
       LOG.debug(msg);
       throw new CalciteSemanticException(msg,UnsupportedFeature.Table_sample_clauses);
     }
-    Table tab=qb.getMetaData().getSrcForAlias(tableAlias);
-    @SuppressWarnings("deprecation") StructObjectInspector rowObjectInspector=(StructObjectInspector)tab.getDeserializer().getObjectInspector();
+    Table tabMetaData=qb.getMetaData().getSrcForAlias(tableAlias);
+    @SuppressWarnings("deprecation") StructObjectInspector rowObjectInspector=(StructObjectInspector)tabMetaData.getDeserializer().getObjectInspector();
     List<? extends StructField> fields=rowObjectInspector.getAllStructFieldRefs();
     ColumnInfo colInfo;
     String colName;
@@ -22,26 +22,32 @@
     }
     ArrayList<ColumnInfo> nonPartitionColumns=new ArrayList<ColumnInfo>(cInfoLst);
     ArrayList<ColumnInfo> partitionColumns=new ArrayList<ColumnInfo>();
-    for (    FieldSchema part_col : tab.getPartCols()) {
+    for (    FieldSchema part_col : tabMetaData.getPartCols()) {
       colName=part_col.getName();
       colInfo=new ColumnInfo(colName,TypeInfoFactory.getPrimitiveTypeInfo(part_col.getType()),tableAlias,true);
       rr.put(tableAlias,colName,colInfo);
       cInfoLst.add(colInfo);
       partitionColumns.add(colInfo);
     }
+    List<VirtualColumn> virtualCols=new ArrayList<VirtualColumn>();
     Iterator<VirtualColumn> vcs=VirtualColumn.getRegistry(conf).iterator();
     while (vcs.hasNext()) {
       VirtualColumn vc=vcs.next();
       colInfo=new ColumnInfo(vc.getName(),vc.getTypeInfo(),tableAlias,true,vc.getIsHidden());
       rr.put(tableAlias,vc.getName(),colInfo);
       cInfoLst.add(colInfo);
+      virtualCols.add(vc);
     }
     RelDataType rowType=TypeConverter.getType(cluster,rr,null);
-    String fullyQualifiedTabName=tab.getDbName();
-    if (fullyQualifiedTabName != null && !fullyQualifiedTabName.isEmpty())     fullyQualifiedTabName=fullyQualifiedTabName + "." + tab.getTableName();
- else     fullyQualifiedTabName=tab.getTableName();
-    RelOptHiveTable optTable=new RelOptHiveTable(relOptSchema,fullyQualifiedTabName,tableAlias,rowType,tab,nonPartitionColumns,partitionColumns,conf,partitionCache,noColsMissingStats);
-    tableRel=new HiveTableScan(cluster,cluster.traitSetOf(HiveRelNode.CONVENTION),optTable,rowType);
+    String fullyQualifiedTabName=tabMetaData.getDbName();
+    if (fullyQualifiedTabName != null && !fullyQualifiedTabName.isEmpty()) {
+      fullyQualifiedTabName=fullyQualifiedTabName + "." + tabMetaData.getTableName();
+    }
+ else {
+      fullyQualifiedTabName=tabMetaData.getTableName();
+    }
+    RelOptHiveTable optTable=new RelOptHiveTable(relOptSchema,fullyQualifiedTabName,rowType,tabMetaData,nonPartitionColumns,partitionColumns,virtualCols,conf,partitionCache,noColsMissingStats);
+    tableRel=new HiveTableScan(cluster,cluster.traitSetOf(HiveRelNode.CONVENTION),optTable,null == tableAlias ? tabMetaData.getTableName() : tableAlias,getAliasId(tableAlias,qb),HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_CBO_RETPATH_HIVEOP));
     ImmutableMap<String,Integer> hiveToCalciteColMap=buildHiveToCalciteColumnMap(rr,tableRel);
     relToHiveRR.put(tableRel,rr);
     relToHiveColNameCalcitePosMap.put(tableRel,hiveToCalciteColMap);

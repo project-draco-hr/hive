@@ -1,0 +1,29 @@
+{
+  VectorizedRowBatch batch=(VectorizedRowBatch)data;
+  this.tag=tag;
+  if (scratchBatch == null) {
+    scratchBatch=VectorizedBatchUtil.makeLike(batch);
+  }
+  if (firstBatch) {
+    vectorExtractRowDynBatch=new VectorExtractRowDynBatch();
+    vectorExtractRowDynBatch.init((StructObjectInspector)inputObjInspectors[0],vContext.getProjectedColumns());
+    singleRow=new Object[vectorExtractRowDynBatch.getCount()];
+    firstBatch=false;
+  }
+  vectorExtractRowDynBatch.setBatchOnEntry(batch);
+  if (batch.selectedInUse) {
+    int selected[]=batch.selected;
+    for (int logical=0; logical < batch.size; logical++) {
+      int batchIndex=selected[logical];
+      vectorExtractRowDynBatch.extractRow(batchIndex,singleRow);
+      super.process(singleRow,tag);
+    }
+  }
+ else {
+    for (int batchIndex=0; batchIndex < batch.size; batchIndex++) {
+      vectorExtractRowDynBatch.extractRow(batchIndex,singleRow);
+      super.process(singleRow,tag);
+    }
+  }
+  vectorExtractRowDynBatch.forgetBatchOnExit();
+}

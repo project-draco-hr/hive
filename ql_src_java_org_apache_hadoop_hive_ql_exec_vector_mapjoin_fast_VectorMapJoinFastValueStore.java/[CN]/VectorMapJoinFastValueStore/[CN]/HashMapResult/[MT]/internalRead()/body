@@ -1,0 +1,74 @@
+{
+  long absoluteValueOffset;
+  int valueLength;
+  if (readIndex == 0) {
+    absoluteValueOffset=(valueRefWord & AbsoluteValueOffset.bitMask);
+    valueStore.writeBuffers.setReadPoint(absoluteValueOffset,readPos);
+    if (isSingleRow) {
+      isNextEof=true;
+      valueLength=(int)((valueRefWord & SmallValueLength.bitMask) >> SmallValueLength.bitShift);
+      boolean isValueLengthSmall=(valueLength != SmallValueLength.allBitsOn);
+      if (!isValueLengthSmall) {
+        valueLength=valueStore.writeBuffers.readVInt(readPos);
+      }
+    }
+ else {
+      isNextEof=false;
+      long relativeOffsetWord=valueStore.writeBuffers.readVLong(readPos);
+      long relativeOffset=(relativeOffsetWord & NextRelativeValueOffset.bitMask) >> NextRelativeValueOffset.bitShift;
+      nextAbsoluteValueOffset=absoluteValueOffset - relativeOffset;
+      isNextLast=((relativeOffsetWord & IsNextValueLastFlag.flagOnMask) != 0);
+      isNextValueLengthSmall=((relativeOffsetWord & IsNextValueLengthSmallFlag.flagOnMask) != 0);
+    }
+    valueLength=(int)((valueRefWord & SmallValueLength.bitMask) >> SmallValueLength.bitShift);
+    boolean isValueLengthSmall=(valueLength != SmallValueLength.allBitsOn);
+    if (!isValueLengthSmall) {
+      valueLength=valueStore.writeBuffers.readVInt(readPos);
+    }
+    if (isNextValueLengthSmall) {
+      nextSmallValueLength=valueStore.writeBuffers.readVInt(readPos);
+    }
+ else {
+      nextSmallValueLength=-1;
+    }
+  }
+ else {
+    if (isNextEof) {
+      return null;
+    }
+    absoluteValueOffset=nextAbsoluteValueOffset;
+    valueStore.writeBuffers.setReadPoint(absoluteValueOffset,readPos);
+    if (isNextLast) {
+      isNextEof=true;
+      if (isNextValueLengthSmall) {
+        valueLength=nextSmallValueLength;
+      }
+ else {
+        valueLength=(int)valueStore.writeBuffers.readVLong(readPos);
+      }
+    }
+ else {
+      isNextEof=false;
+      long relativeOffsetWord=valueStore.writeBuffers.readVLong(readPos);
+      if (isNextValueLengthSmall) {
+        valueLength=nextSmallValueLength;
+      }
+ else {
+        valueLength=(int)valueStore.writeBuffers.readVLong(readPos);
+      }
+      long relativeOffset=(relativeOffsetWord & NextRelativeValueOffset.bitMask) >> NextRelativeValueOffset.bitShift;
+      nextAbsoluteValueOffset=absoluteValueOffset - relativeOffset;
+      isNextLast=((relativeOffsetWord & IsNextValueLastFlag.flagOnMask) != 0);
+      isNextValueLengthSmall=((relativeOffsetWord & IsNextValueLengthSmallFlag.flagOnMask) != 0);
+      if (isNextValueLengthSmall) {
+        nextSmallValueLength=(int)valueStore.writeBuffers.readVLong(readPos);
+      }
+ else {
+        nextSmallValueLength=-1;
+      }
+    }
+  }
+  valueStore.writeBuffers.getByteSegmentRefToCurrent(byteSegmentRef,valueLength,readPos);
+  readIndex++;
+  return byteSegmentRef;
+}

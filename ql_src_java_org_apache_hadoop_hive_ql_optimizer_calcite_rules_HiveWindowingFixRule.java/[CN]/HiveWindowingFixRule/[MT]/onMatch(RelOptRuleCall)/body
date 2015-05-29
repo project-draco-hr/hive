@@ -1,0 +1,58 @@
+{
+  Project project=call.rel(0);
+  Aggregate aggregate=call.rel(1);
+  final int groupingFields=aggregate.getGroupCount() + aggregate.getIndicatorCount();
+  Set<String> projectExprsDigest=new HashSet<String>();
+  Map<String,RexNode> windowingExprsDigestToNodes=new HashMap<String,RexNode>();
+  for (  RexNode r : project.getChildExps()) {
+    if (r instanceof RexOver) {
+      RexOver rexOverNode=(RexOver)r;
+      for (      RexNode operand : rexOverNode.getOperands()) {
+        if (operand instanceof RexInputRef && ((RexInputRef)operand).getIndex() >= groupingFields) {
+          windowingExprsDigestToNodes.put(operand.toString(),operand);
+        }
+      }
+      for (      RexNode partitionKey : rexOverNode.getWindow().partitionKeys) {
+        if (partitionKey instanceof RexInputRef && ((RexInputRef)partitionKey).getIndex() >= groupingFields) {
+          windowingExprsDigestToNodes.put(partitionKey.toString(),partitionKey);
+        }
+      }
+      for (      RexFieldCollation orderKey : rexOverNode.getWindow().orderKeys) {
+        if (orderKey.left instanceof RexInputRef && ((RexInputRef)orderKey.left).getIndex() >= groupingFields) {
+          windowingExprsDigestToNodes.put(orderKey.left.toString(),orderKey.left);
+        }
+      }
+    }
+ else {
+      projectExprsDigest.add(r.toString());
+    }
+  }
+  final List<RexNode> belowProjectExprs=new ArrayList<RexNode>();
+  final List<String> belowProjectColumnNames=new ArrayList<String>();
+  final List<RexNode> topProjectExprs=new ArrayList<RexNode>();
+  final int projectCount=project.getChildExps().size();
+  for (int i=0; i < projectCount; i++) {
+    belowProjectExprs.add(project.getChildExps().get(i));
+    belowProjectColumnNames.add(project.getRowType().getFieldNames().get(i));
+    topProjectExprs.add(RexInputRef.of(i,project.getRowType()));
+  }
+  boolean windowingFix=false;
+  for (  Entry<String,RexNode> windowingExpr : windowingExprsDigestToNodes.entrySet()) {
+    if (!projectExprsDigest.contains(windowingExpr.getKey())) {
+      windowingFix=true;
+      belowProjectExprs.add(windowingExpr.getValue());
+      int colIndex=0;
+      String alias="window_col_" + colIndex;
+      while (belowProjectColumnNames.contains(alias)) {
+        alias="window_col_" + (colIndex++);
+      }
+      belowProjectColumnNames.add(alias);
+    }
+  }
+  if (!windowingFix) {
+    return;
+  }
+  RelNode newProjectRel=projectFactory.createProject(aggregate,belowProjectExprs,belowProjectColumnNames);
+  RelNode newTopProjectRel=projectFactory.createProject(newProjectRel,topProjectExprs,project.getRowType().getFieldNames());
+  call.transformTo(newTopProjectRel);
+}

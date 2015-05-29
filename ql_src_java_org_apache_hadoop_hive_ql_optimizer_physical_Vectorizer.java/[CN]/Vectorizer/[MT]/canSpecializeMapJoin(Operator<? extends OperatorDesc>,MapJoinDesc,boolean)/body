@@ -1,0 +1,31 @@
+{
+  boolean specialize=false;
+  if (op instanceof MapJoinOperator && HiveConf.getBoolVar(hiveConf,HiveConf.ConfVars.HIVE_VECTORIZATION_MAPJOIN_NATIVE_ENABLED)) {
+    if (isTez && desc.getConds().length == 1 && !onExpressionHasNullSafes(desc)) {
+      specialize=true;
+      if (!HiveConf.getBoolVar(hiveConf,HiveConf.ConfVars.HIVE_VECTORIZATION_MAPJOIN_NATIVE_FAST_HASHTABLE_ENABLED)) {
+        if (!HiveConf.getBoolVar(hiveConf,HiveConf.ConfVars.HIVEMAPJOINUSEOPTIMIZEDTABLE)) {
+          specialize=false;
+        }
+ else {
+          byte posBigTable=(byte)desc.getPosBigTable();
+          Map<Byte,List<ExprNodeDesc>> keyExprs=desc.getKeys();
+          List<ExprNodeDesc> bigTableKeyExprs=keyExprs.get(posBigTable);
+          for (          ExprNodeDesc exprNodeDesc : bigTableKeyExprs) {
+            String typeName=exprNodeDesc.getTypeString();
+            if (!MapJoinKey.isSupportedField(typeName)) {
+              specialize=false;
+              break;
+            }
+          }
+        }
+      }
+ else {
+        if (HiveConf.getBoolVar(hiveConf,HiveConf.ConfVars.HIVEUSEHYBRIDGRACEHASHJOIN)) {
+          specialize=false;
+        }
+      }
+    }
+  }
+  return specialize;
+}

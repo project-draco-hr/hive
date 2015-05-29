@@ -2,13 +2,24 @@
   HiveConf hiveConf=new HiveConf();
   String zooKeeperEnsemble=ZooKeeperHiveHelper.getQuorumServers(hiveConf);
   String rootNamespace=hiveConf.getVar(HiveConf.ConfVars.HIVE_SERVER2_ZOOKEEPER_NAMESPACE);
-  CuratorFramework zooKeeperClient=CuratorFrameworkFactory.builder().connectString(zooKeeperEnsemble).retryPolicy(new ExponentialBackoffRetry(1000,3)).build();
+  int baseSleepTime=(int)hiveConf.getTimeVar(HiveConf.ConfVars.HIVE_ZOOKEEPER_CONNECTION_BASESLEEPTIME,TimeUnit.MILLISECONDS);
+  int maxRetries=hiveConf.getIntVar(HiveConf.ConfVars.HIVE_ZOOKEEPER_CONNECTION_MAX_RETRIES);
+  CuratorFramework zooKeeperClient=CuratorFrameworkFactory.builder().connectString(zooKeeperEnsemble).retryPolicy(new ExponentialBackoffRetry(baseSleepTime,maxRetries)).build();
   zooKeeperClient.start();
   List<String> znodePaths=zooKeeperClient.getChildren().forPath(ZooKeeperHiveHelper.ZOOKEEPER_PATH_SEPARATOR + rootNamespace);
-  for (  String znodePath : znodePaths) {
+  List<String> znodePathsUpdated;
+  for (int i=0; i < znodePaths.size(); i++) {
+    String znodePath=znodePaths.get(i);
+    deleteSignal=new CountDownLatch(1);
     if (znodePath.contains("version=" + versionNumber + ";")) {
-      LOG.info("Removing the znode: " + znodePath + " from ZooKeeper");
-      zooKeeperClient.delete().forPath(ZooKeeperHiveHelper.ZOOKEEPER_PATH_SEPARATOR + rootNamespace + ZooKeeperHiveHelper.ZOOKEEPER_PATH_SEPARATOR+ znodePath);
+      String fullZnodePath=ZooKeeperHiveHelper.ZOOKEEPER_PATH_SEPARATOR + rootNamespace + ZooKeeperHiveHelper.ZOOKEEPER_PATH_SEPARATOR+ znodePath;
+      LOG.warn("Will attempt to remove the znode: " + fullZnodePath + " from ZooKeeper");
+      System.out.println("Will attempt to remove the znode: " + fullZnodePath + " from ZooKeeper");
+      zooKeeperClient.delete().guaranteed().inBackground(new DeleteCallBack()).forPath(fullZnodePath);
+      deleteSignal.await();
+      znodePathsUpdated=zooKeeperClient.getChildren().forPath(ZooKeeperHiveHelper.ZOOKEEPER_PATH_SEPARATOR + rootNamespace);
+      znodePathsUpdated.removeAll(znodePaths);
+      znodePaths.addAll(znodePathsUpdated);
     }
   }
   zooKeeperClient.close();
