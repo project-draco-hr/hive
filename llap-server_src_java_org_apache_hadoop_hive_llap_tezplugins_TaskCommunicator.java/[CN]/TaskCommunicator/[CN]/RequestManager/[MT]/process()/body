@@ -1,0 +1,25 @@
+{
+  if (isShutdown.get()) {
+    return true;
+  }
+  currentLoopDisabledNodes.clear();
+  currentLoopSkippedRequests.clear();
+  shouldRun.compareAndSet(true,false);
+  drainNewRequestList();
+  drainCompletedNodes();
+  Iterator<CallableRequest> iterator=pendingRequests.iterator();
+  while (iterator.hasNext()) {
+    CallableRequest request=iterator.next();
+    iterator.remove();
+    LlapNodeId nodeId=request.getNodeId();
+    if (canRunForNode(nodeId,currentLoopDisabledNodes)) {
+      submitToExecutor(request,nodeId);
+    }
+ else {
+      currentLoopDisabledNodes.add(nodeId);
+      currentLoopSkippedRequests.add(request);
+    }
+  }
+  pendingRequests.addAll(0,currentLoopSkippedRequests);
+  return false;
+}
