@@ -1,5 +1,20 @@
 {
   setState(OperationState.RUNNING);
+  if (isAuthV2Enabled()) {
+    IMetaStoreClient metastoreClient=getParentSession().getMetaStoreClient();
+    String schemaPattern=convertSchemaPattern(schemaName);
+    List<String> matchingDbs;
+    try {
+      matchingDbs=metastoreClient.getDatabases(schemaPattern);
+    }
+ catch (    TException e) {
+      setState(OperationState.ERROR);
+      throw new HiveSQLException(e);
+    }
+    List<HivePrivilegeObject> privObjs=HivePrivilegeObjectUtils.getHivePrivDbObjects(matchingDbs);
+    String cmdStr="catalog : " + catalogName + ", schemaPattern : "+ schemaName;
+    authorizeMetaGets(HiveOperationType.GET_FUNCTIONS,privObjs,cmdStr);
+  }
   try {
     if ((null == catalogName || "".equals(catalogName)) && (null == schemaName || "".equals(schemaName))) {
       Set<String> functionNames=FunctionRegistry.getFunctionNames(CLIServiceUtils.patternToRegex(functionName));
