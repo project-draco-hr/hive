@@ -28,13 +28,22 @@
     throw new HiveException("Internal Error during operator initialization.");
   }
   outputObjInspector=inputObjInspectors[0];
-  Collection<Future<?>> asyncInitOperations=initializeOp(hconf);
-  if (!rootInitializeCalled || asyncInitOperations == null || childOperatorsArray.length != childOperators.size()) {
-    throw new AssertionError("Internal error during operator initialization");
+  boolean isInitOk=false;
+  try {
+    initializeOp(hconf);
+    if (!rootInitializeCalled || childOperatorsArray.length != childOperators.size()) {
+      throw new AssertionError("Internal error during operator initialization");
+    }
+    if (isLogInfoEnabled) {
+      LOG.info("Initialization Done " + id + " "+ getName());
+    }
+    initializeChildren(hconf);
+    isInitOk=true;
   }
-  if (isLogInfoEnabled) {
-    LOG.info("Initialization Done " + id + " "+ getName());
+  finally {
+    if (!isInitOk) {
+      cancelAsyncInitOps();
+    }
   }
-  initializeChildren(hconf);
   completeInitialization(asyncInitOperations);
 }

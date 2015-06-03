@@ -1,18 +1,23 @@
 {
   Object[] os=new Object[fs.size()];
   int i=0;
+  Throwable asyncEx=null;
   for (  Future<?> f : fs) {
-    try {
-      if (abortOp.get()) {
-        f.cancel(true);
-      }
+    if (abortOp.get() || asyncEx != null) {
+      f.cancel(true);
+    }
  else {
+      try {
         os[i++]=f.get();
       }
+ catch (      Throwable t) {
+        f.cancel(true);
+        asyncEx=t;
+      }
     }
- catch (    Exception e) {
-      throw new HiveException(e);
-    }
+  }
+  if (asyncEx != null) {
+    throw new HiveException("Async initialization failed",asyncEx);
   }
   completeInitializationOp(os);
 }
