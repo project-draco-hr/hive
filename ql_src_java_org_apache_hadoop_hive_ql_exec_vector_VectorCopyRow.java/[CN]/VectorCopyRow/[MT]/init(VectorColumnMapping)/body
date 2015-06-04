@@ -5,31 +5,34 @@
   for (int i=0; i < count; i++) {
     int inputColumn=columnMapping.getInputColumns()[i];
     int outputColumn=columnMapping.getOutputColumns()[i];
-    String typeName=columnMapping.getTypeNames()[i];
+    String typeName=columnMapping.getTypeNames()[i].toLowerCase();
+    TypeInfo typeInfo=TypeInfoUtils.getTypeInfoFromTypeString(typeName);
+    Type columnVectorType=VectorizationContext.getColumnVectorTypeFromTypeInfo(typeInfo);
     CopyRow copyRowByValue=null;
     CopyRow copyRowByReference=null;
-    if (VectorizationContext.isIntFamily(typeName) || VectorizationContext.isDatetimeFamily(typeName)) {
+switch (columnVectorType) {
+case LONG:
       copyRowByValue=new LongCopyRow(inputColumn,outputColumn);
-    }
- else     if (VectorizationContext.isFloatFamily(typeName)) {
-      copyRowByValue=new DoubleCopyRow(inputColumn,outputColumn);
-    }
- else     if (VectorizationContext.isStringFamily(typeName)) {
-      copyRowByValue=new BytesCopyRowByValue(inputColumn,outputColumn);
-      copyRowByReference=new BytesCopyRowByReference(inputColumn,outputColumn);
-    }
- else     if (VectorizationContext.decimalTypePattern.matcher(typeName).matches()) {
-      copyRowByValue=new DecimalCopyRow(inputColumn,outputColumn);
-    }
+    break;
+case DOUBLE:
+  copyRowByValue=new DoubleCopyRow(inputColumn,outputColumn);
+break;
+case BYTES:
+copyRowByValue=new BytesCopyRowByValue(inputColumn,outputColumn);
+copyRowByReference=new BytesCopyRowByReference(inputColumn,outputColumn);
+break;
+case DECIMAL:
+copyRowByValue=new DecimalCopyRow(inputColumn,outputColumn);
+break;
+default :
+throw new HiveException("Unexpected column vector type " + columnVectorType);
+}
+subRowToBatchCopiersByValue[i]=copyRowByValue;
+if (copyRowByReference == null) {
+subRowToBatchCopiersByReference[i]=copyRowByValue;
+}
  else {
-      throw new RuntimeException("Cannot allocate vector copy row for " + typeName);
-    }
-    subRowToBatchCopiersByValue[i]=copyRowByValue;
-    if (copyRowByReference == null) {
-      subRowToBatchCopiersByReference[i]=copyRowByValue;
-    }
- else {
-      subRowToBatchCopiersByReference[i]=copyRowByReference;
-    }
-  }
+subRowToBatchCopiersByReference[i]=copyRowByReference;
+}
+}
 }
