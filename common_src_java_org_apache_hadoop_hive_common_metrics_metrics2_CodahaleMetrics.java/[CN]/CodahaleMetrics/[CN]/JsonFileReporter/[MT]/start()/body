@@ -1,0 +1,36 @@
+{
+  this.jsonMapper=new ObjectMapper().registerModule(new MetricsModule(TimeUnit.MILLISECONDS,TimeUnit.MILLISECONDS,false));
+  this.timer=new java.util.Timer(true);
+  long time=conf.getTimeVar(HiveConf.ConfVars.HIVE_METRICS_JSON_FILE_INTERVAL,TimeUnit.MILLISECONDS);
+  final String pathString=conf.getVar(HiveConf.ConfVars.HIVE_METRICS_JSON_FILE_LOCATION);
+  timer.schedule(new TimerTask(){
+    @Override public void run(){
+      BufferedWriter bw=null;
+      try {
+        String json=jsonMapper.writerWithDefaultPrettyPrinter().writeValueAsString(metricRegistry);
+        Path tmpPath=new Path(pathString + ".tmp");
+        FileSystem fs=FileSystem.get(conf);
+        fs.delete(tmpPath,true);
+        bw=new BufferedWriter(new OutputStreamWriter(fs.create(tmpPath,true)));
+        bw.write(json);
+        bw.close();
+        Path path=new Path(pathString);
+        fs.rename(tmpPath,path);
+        fs.setPermission(path,FsPermission.createImmutable((short)0644));
+      }
+ catch (      Exception e) {
+        LOGGER.warn("Error writing JSON Metrics to file",e);
+      }
+ finally {
+        try {
+          if (bw != null) {
+            bw.close();
+          }
+        }
+ catch (        IOException e) {
+        }
+      }
+    }
+  }
+,0,time);
+}
