@@ -1,0 +1,49 @@
+{
+  final Filter filter=call.rel(0);
+  final RelNode filterChild=call.rel(1);
+  if (filterChild instanceof TableScan) {
+    return;
+  }
+  final RexBuilder rexBuilder=filter.getCluster().getRexBuilder();
+  final RexNode condition=RexUtil.pullFactors(rexBuilder,filter.getCondition());
+  List<RexNode> commonOperands=new ArrayList<>();
+switch (condition.getKind()) {
+case AND:
+    ImmutableList<RexNode> operands=RexUtil.flattenAnd(((RexCall)condition).getOperands());
+  for (  RexNode operand : operands) {
+    if (operand.getKind() == SqlKind.OR) {
+      commonOperands.addAll(extractCommonOperands(rexBuilder,operand));
+    }
+  }
+break;
+case OR:
+commonOperands=extractCommonOperands(rexBuilder,condition);
+break;
+default :
+return;
+}
+if (commonOperands.isEmpty()) {
+return;
+}
+final RelOptPredicateList predicates=RelMetadataQuery.getPulledUpPredicates(filter);
+final List<RexNode> newConjuncts=new ArrayList<>();
+for (RexNode commonOperand : commonOperands) {
+boolean found=false;
+for (RexNode conjunct : predicates.pulledUpPredicates) {
+if (commonOperand.toString().equals(conjunct.toString())) {
+found=true;
+break;
+}
+}
+if (!found) {
+newConjuncts.add(commonOperand);
+}
+}
+if (newConjuncts.isEmpty()) {
+return;
+}
+final RexNode newCondition=RexUtil.pullFactors(rexBuilder,RexUtil.composeConjunction(rexBuilder,newConjuncts,false));
+RelNode newFilter=filterFactory.createFilter(filterChild,newCondition);
+RelNode newTopFilter=filterFactory.createFilter(newFilter,condition);
+call.transformTo(newTopFilter);
+}
