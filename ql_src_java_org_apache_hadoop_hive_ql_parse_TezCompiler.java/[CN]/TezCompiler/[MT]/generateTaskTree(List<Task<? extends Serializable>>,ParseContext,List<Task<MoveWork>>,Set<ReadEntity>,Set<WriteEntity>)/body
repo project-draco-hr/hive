@@ -1,7 +1,7 @@
 {
-  GenTezUtils.getUtils().resetSequenceNumber();
   ParseContext tempParseContext=getParseContext(pCtx,rootTasks);
-  GenTezWork genTezWork=new GenTezWork(GenTezUtils.getUtils());
+  GenTezUtils utils=new GenTezUtils();
+  GenTezWork genTezWork=new GenTezWork(utils);
   GenTezProcContext procCtx=new GenTezProcContext(conf,tempParseContext,mvTask,rootTasks,inputs,outputs);
   Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
   opRules.put(new RuleRegExp("Split Work - ReduceSink",ReduceSinkOperator.getOperatorName() + "%"),genTezWork);
@@ -9,7 +9,7 @@
   opRules.put(new RuleRegExp("Recoginze a Sorted Merge Join operator to setup the right edge and" + " stop traversing the DummyStore-MapJoin",CommonMergeJoinOperator.getOperatorName() + "%"),new MergeJoinProc());
   opRules.put(new RuleRegExp("Split Work + Move/Merge - FileSink",FileSinkOperator.getOperatorName() + "%"),new CompositeProcessor(new FileSinkProcessor(),genTezWork));
   opRules.put(new RuleRegExp("Split work - DummyStore",DummyStoreOperator.getOperatorName() + "%"),genTezWork);
-  opRules.put(new RuleRegExp("Handle Potential Analyze Command",TableScanOperator.getOperatorName() + "%"),new ProcessAnalyzeTable(GenTezUtils.getUtils()));
+  opRules.put(new RuleRegExp("Handle Potential Analyze Command",TableScanOperator.getOperatorName() + "%"),new ProcessAnalyzeTable(utils));
   opRules.put(new RuleRegExp("Remember union",UnionOperator.getOperatorName() + "%"),new UnionProcessor());
   opRules.put(new RuleRegExp("AppMasterEventOperator",AppMasterEventOperator.getOperatorName() + "%"),new AppMasterEventProcessor());
   Dispatcher disp=new DefaultRuleDispatcher(null,opRules,procCtx);
@@ -18,14 +18,14 @@
   GraphWalker ogw=new GenTezWorkWalker(disp,procCtx);
   ogw.startWalking(topNodes,null);
   for (  BaseWork w : procCtx.workWithUnionOperators) {
-    GenTezUtils.getUtils().removeUnionOperators(conf,procCtx,w);
+    GenTezUtils.removeUnionOperators(conf,procCtx,w);
   }
   for (  FileSinkOperator fileSink : procCtx.fileSinkSet) {
-    GenTezUtils.getUtils().processFileSink(procCtx,fileSink);
+    GenTezUtils.processFileSink(procCtx,fileSink);
   }
   LOG.debug("There are " + procCtx.eventOperatorSet.size() + " app master events.");
   for (  AppMasterEventOperator event : procCtx.eventOperatorSet) {
     LOG.debug("Handling AppMasterEventOperator: " + event);
-    GenTezUtils.getUtils().processAppMasterEvent(procCtx,event);
+    GenTezUtils.processAppMasterEvent(procCtx,event);
   }
 }
