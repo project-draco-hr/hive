@@ -1,37 +1,26 @@
 {
   if (numAttr == 1) {
-    List<Integer> parentsWithPK=getPrimaryKeyCandidates(parents);
-    for (    Integer id : parentsWithPK) {
-      ColStatistics csPK=null;
-      Operator<? extends OperatorDesc> parent=parents.get(id);
-      for (      ColStatistics cs : parent.getStatistics().getColumnStats()) {
-        if (cs.isPrimaryKey()) {
-          csPK=cs;
-          break;
+    Map<Integer,ColStatistics> parentsWithPK=getPrimaryKeyCandidates(parents);
+    if (parentsWithPK.size() != 1) {
+      LOG.debug("STATS-" + jop.toString() + ": detects multiple PK parents.");
+      return;
+    }
+    Integer pkPos=parentsWithPK.keySet().iterator().next();
+    ColStatistics csPK=parentsWithPK.values().iterator().next();
+    Map<Integer,ColStatistics> csFKs=getForeignKeyCandidates(parents,csPK);
+    if (csFKs.size() + 1 == parents.size()) {
+      getSelectivity(parents,pkPos,csPK,csFKs);
+      if (isDebugEnabled) {
+        List<String> parentIds=Lists.newArrayList();
+        for (        Integer i : parentsWithPK.keySet()) {
+          parentIds.add(parents.get(i).toString());
         }
-      }
-      List<Integer> parentsWithFK=getForeignKeyCandidates(parents,csPK);
-      if (parentsWithFK.size() == 1 && parentsWithFK.size() + parentsWithPK.size() == parents.size()) {
-        Operator<? extends OperatorDesc> parentWithFK=parents.get(parentsWithFK.get(0));
-        List<Float> parentsSel=getSelectivity(parents,parentsWithPK);
-        Float prodSelectivity=1.0f;
-        for (        Float selectivity : parentsSel) {
-          prodSelectivity*=selectivity;
+        LOG.debug("STATS-" + jop.toString() + ": PK parent id(s) - "+ parentIds);
+        parentIds.clear();
+        for (        Integer i : csFKs.keySet()) {
+          parentIds.add(parents.get(i).toString());
         }
-        newNumRows=(long)Math.ceil(parentWithFK.getStatistics().getNumRows() * prodSelectivity);
-        pkfkInferred=true;
-        if (isDebugEnabled) {
-          List<String> parentIds=Lists.newArrayList();
-          for (          Integer i : parentsWithPK) {
-            parentIds.add(parents.get(i).toString());
-          }
-          LOG.debug("STATS-" + jop.toString() + ": PK parent id(s) - "+ parentIds);
-          parentIds.clear();
-          for (          Integer i : parentsWithFK) {
-            parentIds.add(parents.get(i).toString());
-          }
-          LOG.debug("STATS-" + jop.toString() + ": FK parent id(s) - "+ parentIds);
-        }
+        LOG.debug("STATS-" + jop.toString() + ": FK parent id(s) - "+ parentIds);
       }
     }
   }

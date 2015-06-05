@@ -1,0 +1,29 @@
+{
+  JoinLeafPredicateInfo jlpi=null;
+  List<Integer> filterNulls=new ArrayList<Integer>();
+  List<List<RexNode>> joinKeyExprs=new ArrayList<List<RexNode>>();
+  for (int i=0; i < inputs.size(); i++) {
+    joinKeyExprs.add(new ArrayList<RexNode>());
+  }
+  RelOptUtil.splitJoinCondition(systemFieldList,inputs,pe,joinKeyExprs,filterNulls,null);
+  List<Set<Integer>> projsJoinKeysInChildSchema=new ArrayList<Set<Integer>>();
+  for (int i=0; i < inputs.size(); i++) {
+    ImmutableSet.Builder<Integer> projsFromInputJoinKeysInChildSchema=ImmutableSet.builder();
+    InputReferencedVisitor irvLeft=new InputReferencedVisitor();
+    irvLeft.apply(joinKeyExprs.get(i));
+    projsFromInputJoinKeysInChildSchema.addAll(irvLeft.inputPosReferenced);
+    projsJoinKeysInChildSchema.add(projsFromInputJoinKeysInChildSchema.build());
+  }
+  List<Set<Integer>> projsJoinKeysInJoinSchema=new ArrayList<Set<Integer>>();
+  projsJoinKeysInJoinSchema.add(projsJoinKeysInChildSchema.get(0));
+  for (int i=1; i < inputs.size(); i++) {
+    int offSet=inputs.get(i - 1).getRowType().getFieldCount();
+    ImmutableSet.Builder<Integer> projsFromInputJoinKeysInJoinSchema=ImmutableSet.builder();
+    for (    Integer indx : projsJoinKeysInChildSchema.get(i)) {
+      projsFromInputJoinKeysInJoinSchema.add(indx + offSet);
+    }
+    projsJoinKeysInJoinSchema.add(projsFromInputJoinKeysInJoinSchema.build());
+  }
+  jlpi=new JoinLeafPredicateInfo(pe.getKind(),joinKeyExprs,projsJoinKeysInChildSchema,projsJoinKeysInJoinSchema);
+  return jlpi;
+}

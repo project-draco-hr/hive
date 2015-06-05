@@ -1,0 +1,47 @@
+{
+  Operator<?> input=inputOpAf.inputs.get(0);
+  wSpec.validateAndMakeEffective();
+  WindowingComponentizer groups=new WindowingComponentizer(wSpec);
+  RowResolver rr=new RowResolver();
+  for (  ColumnInfo ci : input.getSchema().getSignature()) {
+    rr.put(ci.getTabAlias(),ci.getInternalName(),ci);
+  }
+  while (groups.hasNext()) {
+    wSpec=groups.next(hiveConf,semanticAnalyzer,unparseTranslator,rr);
+    ArrayList<ExprNodeDesc> keyCols=new ArrayList<ExprNodeDesc>();
+    ArrayList<ExprNodeDesc> partCols=new ArrayList<ExprNodeDesc>();
+    StringBuilder order=new StringBuilder();
+    for (    PartitionExpression partCol : wSpec.getQueryPartitionSpec().getExpressions()) {
+      ExprNodeDesc partExpr=semanticAnalyzer.genExprNodeDesc(partCol.getExpression(),rr);
+      if (ExprNodeDescUtils.indexOf(partExpr,partCols) < 0) {
+        keyCols.add(partExpr);
+        partCols.add(partExpr);
+        order.append('+');
+      }
+    }
+    if (wSpec.getQueryOrderSpec() != null) {
+      for (      OrderExpression orderCol : wSpec.getQueryOrderSpec().getExpressions()) {
+        ExprNodeDesc orderExpr=semanticAnalyzer.genExprNodeDesc(orderCol.getExpression(),rr);
+        char orderChar=orderCol.getOrder() == PTFInvocationSpec.Order.ASC ? '+' : '-';
+        int index=ExprNodeDescUtils.indexOf(orderExpr,keyCols);
+        if (index >= 0) {
+          order.setCharAt(index,orderChar);
+          continue;
+        }
+        keyCols.add(orderExpr);
+        order.append(orderChar);
+      }
+    }
+    SelectOperator selectOp=genReduceSinkAndBacktrackSelect(input,keyCols.toArray(new ExprNodeDesc[keyCols.size()]),0,partCols,order.toString(),-1,Operation.NOT_ACID,strictMode);
+    PTFTranslator translator=new PTFTranslator();
+    PTFDesc ptfDesc=translator.translate(wSpec,semanticAnalyzer,hiveConf,rr,unparseTranslator);
+    RowResolver ptfOpRR=ptfDesc.getFuncDef().getOutputShape().getRr();
+    Operator<?> ptfOp=OperatorFactory.getAndMakeChild(ptfDesc,new RowSchema(ptfOpRR.getColumnInfos()),selectOp);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Generated " + ptfOp + " with row schema: ["+ ptfOp.getSchema()+ "]");
+    }
+    rr=ptfOpRR;
+    input=ptfOp;
+  }
+  return inputOpAf.clone(input);
+}

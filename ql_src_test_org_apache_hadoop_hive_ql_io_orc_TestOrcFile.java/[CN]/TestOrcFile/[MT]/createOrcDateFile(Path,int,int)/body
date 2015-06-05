@@ -1,0 +1,29 @@
+{
+  List<OrcProto.Type> types=new ArrayList<OrcProto.Type>();
+  types.add(OrcProto.Type.newBuilder().setKind(OrcProto.Type.Kind.STRUCT).addFieldNames("time").addFieldNames("date").addSubtypes(1).addSubtypes(2).build());
+  types.add(OrcProto.Type.newBuilder().setKind(OrcProto.Type.Kind.TIMESTAMP).build());
+  types.add(OrcProto.Type.newBuilder().setKind(OrcProto.Type.Kind.DATE).build());
+  ObjectInspector inspector;
+synchronized (TestOrcFile.class) {
+    inspector=OrcStruct.createObjectInspector(0,types);
+  }
+  Writer writer=OrcFile.createWriter(file,OrcFile.writerOptions(conf).inspector(inspector).stripeSize(100000).bufferSize(10000).blockPadding(false));
+  OrcStruct row=new OrcStruct(2);
+  for (int year=minYear; year < maxYear; ++year) {
+    for (int ms=1000; ms < 2000; ++ms) {
+      row.setFieldValue(0,new TimestampWritable(Timestamp.valueOf(year + "-05-05 12:34:56." + ms)));
+      row.setFieldValue(1,new DateWritable(new Date(year - 1900,11,25)));
+      writer.addRow(row);
+    }
+  }
+  writer.close();
+  Reader reader=OrcFile.createReader(file,OrcFile.readerOptions(conf));
+  RecordReader rows=reader.rows();
+  for (int year=minYear; year < maxYear; ++year) {
+    for (int ms=1000; ms < 2000; ++ms) {
+      row=(OrcStruct)rows.next(row);
+      assertEquals(new TimestampWritable(Timestamp.valueOf(year + "-05-05 12:34:56." + ms)),row.getFieldValue(0));
+      assertEquals(new DateWritable(new Date(year - 1900,11,25)),row.getFieldValue(1));
+    }
+  }
+}

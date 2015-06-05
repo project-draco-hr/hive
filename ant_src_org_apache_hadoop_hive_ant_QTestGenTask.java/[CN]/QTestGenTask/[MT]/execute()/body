@@ -101,8 +101,10 @@
     if (logFile != null) {
       File lf=new File(logFile);
       if (lf.exists()) {
+        System.out.println("Log file already exists: " + lf.getCanonicalPath());
         if (!lf.delete()) {
-          throw new Exception("Could not delete log file " + lf.getCanonicalPath());
+          System.out.println("Could not delete log file " + lf.getCanonicalPath());
+          logFile=createAlternativeFile(lf);
         }
       }
       ve.setProperty(RuntimeConstants.RUNTIME_LOG,logFile);
@@ -115,6 +117,26 @@
     if (hadoopVersion == null) {
       hadoopVersion="";
     }
+    File qFileNames=new File(outputDirectory,className + "QFileNames.txt");
+    String qFileNamesFile=qFileNames.toURI().getPath();
+    if (qFileNames.exists()) {
+      System.out.println("Query file names containing file already exists: " + qFileNamesFile);
+      if (!qFileNames.delete()) {
+        System.out.println("Could not delete query file names containing file " + qFileNames.getCanonicalPath());
+        qFileNamesFile=createAlternativeFile(qFileNames);
+      }
+ else       if (!qFileNames.createNewFile()) {
+        System.out.println("Could not create query file names containing file " + qFileNamesFile);
+        qFileNamesFile=createAlternativeFile(qFileNames);
+      }
+    }
+    FileWriter fw=new FileWriter(qFileNames.getCanonicalFile());
+    BufferedWriter bw=new BufferedWriter(fw);
+    for (    File qFile : qFiles) {
+      bw.write(qFile.getName());
+      bw.newLine();
+    }
+    bw.close();
     System.out.println("hiveRootDir = " + hiveRootDir);
     VelocityContext ctx=new VelocityContext();
     ctx.put("className",className);
@@ -125,6 +147,7 @@
     System.out.println("queryDir = " + strQueryDir);
     ctx.put("queryDir",strQueryDir);
     ctx.put("qfiles",qFiles);
+    ctx.put("qFileNamesFile",qFileNamesFile);
     ctx.put("qfilesMap",qFilesMap);
     if (resultsDir != null) {
       ctx.put("resultsDir",relativePath(hiveRootDir,resultsDir));

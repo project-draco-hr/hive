@@ -1,0 +1,54 @@
+{
+  if (table != null) {
+    if (table.isPartitioned()) {
+      LOG.debug("table partitioned");
+      for (      AddPartitionDesc addPartitionDesc : partitionDescs) {
+        Map<String,String> partSpec=addPartitionDesc.getPartition(0).getPartSpec();
+        org.apache.hadoop.hive.ql.metadata.Partition ptn=null;
+        if ((ptn=db.getPartition(table,partSpec,false)) == null) {
+          rootTasks.add(addSinglePartition(fromURI,fs,tblDesc,table,wh,addPartitionDesc,replicationSpec));
+        }
+ else {
+          throw new SemanticException(ErrorMsg.PARTITION_EXISTS.getMsg(partSpecToString(partSpec)));
+        }
+      }
+    }
+ else {
+      LOG.debug("table non-partitioned");
+      checkTargetLocationEmpty(fs,new Path(table.getDataLocation().toString()),replicationSpec);
+      loadTable(fromURI,table,false);
+    }
+    outputs.add(new WriteEntity(table,WriteEntity.WriteType.DDL_NO_LOCK));
+  }
+ else {
+    LOG.debug("table " + tblDesc.getTableName() + " does not exist");
+    Task<?> t=TaskFactory.get(new DDLWork(getInputs(),getOutputs(),tblDesc),conf);
+    table=new Table(tblDesc.getDatabaseName(),tblDesc.getTableName());
+    Database parentDb=db.getDatabase(tblDesc.getDatabaseName());
+    if (isPartitioned(tblDesc)) {
+      for (      AddPartitionDesc addPartitionDesc : partitionDescs) {
+        t.addDependentTask(addSinglePartition(fromURI,fs,tblDesc,table,wh,addPartitionDesc,replicationSpec));
+      }
+    }
+ else {
+      LOG.debug("adding dependent CopyWork/MoveWork for table");
+      if (tblDesc.isExternal() && (tblDesc.getLocation() == null)) {
+        LOG.debug("Importing in place, no emptiness check, no copying/loading");
+        Path dataPath=new Path(fromURI.toString(),"data");
+        tblDesc.setLocation(dataPath.toString());
+      }
+ else {
+        Path tablePath=null;
+        if (tblDesc.getLocation() != null) {
+          tablePath=new Path(tblDesc.getLocation());
+        }
+ else {
+          tablePath=wh.getTablePath(parentDb,tblDesc.getTableName());
+        }
+        checkTargetLocationEmpty(fs,tablePath,replicationSpec);
+        t.addDependentTask(loadTable(fromURI,table,false));
+      }
+    }
+    rootTasks.add(t);
+  }
+}

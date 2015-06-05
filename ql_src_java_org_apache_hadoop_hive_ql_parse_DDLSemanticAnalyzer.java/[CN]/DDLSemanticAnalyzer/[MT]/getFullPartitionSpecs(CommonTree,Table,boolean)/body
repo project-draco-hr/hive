@@ -12,17 +12,23 @@
     for (int i=0; i < partSpecTree.getChildCount(); ++i) {
       CommonTree partSpecSingleKey=(CommonTree)partSpecTree.getChild(i);
       assert(partSpecSingleKey.getType() == HiveParser.TOK_PARTVAL);
-      String key=partSpecSingleKey.getChild(0).getText().toLowerCase();
+      String key=stripIdentifierQuotes(partSpecSingleKey.getChild(0).getText()).toLowerCase();
       String operator=partSpecSingleKey.getChild(1).getText();
-      String val=stripQuotes(partSpecSingleKey.getChild(2).getText());
+      ASTNode partValNode=(ASTNode)partSpecSingleKey.getChild(2);
+      TypeCheckCtx typeCheckCtx=new TypeCheckCtx(null);
+      ExprNodeConstantDesc valExpr=(ExprNodeConstantDesc)TypeCheckProcFactory.genExprNode(partValNode,typeCheckCtx).get(partValNode);
       String type=colTypes.get(key);
       if (type == null) {
         throw new SemanticException("Column " + key + " not found");
       }
       PrimitiveTypeInfo pti=TypeInfoFactory.getPrimitiveTypeInfo(type);
-      Converter converter=ObjectInspectorConverters.getConverter(TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(TypeInfoFactory.stringTypeInfo),TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(pti));
+      Object val=valExpr.getValue();
+      if (!valExpr.getTypeString().equals(type)) {
+        Converter converter=ObjectInspectorConverters.getConverter(TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(valExpr.getTypeInfo()),TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(pti));
+        val=converter.convert(valExpr.getValue());
+      }
       ExprNodeColumnDesc column=new ExprNodeColumnDesc(pti,key,null,true);
-      ExprNodeGenericFuncDesc op=makeBinaryPredicate(operator,column,new ExprNodeConstantDesc(pti,converter.convert(val)));
+      ExprNodeGenericFuncDesc op=makeBinaryPredicate(operator,column,new ExprNodeConstantDesc(pti,val));
       expr=(expr == null) ? op : makeBinaryPredicate("and",expr,op);
       names.add(key);
     }

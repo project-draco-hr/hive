@@ -4,8 +4,8 @@
   }
   do {
     boolean setLooped=!looped.get();
+    long startedAt=System.currentTimeMillis();
     try {
-      long startedAt=System.currentTimeMillis();
       List<CompactionInfo> toClean=txnHandler.findReadyToClean();
       if (toClean.size() > 0 || compactId2LockMap.size() > 0) {
         ShowLocksResponse locksResponse=txnHandler.showLocks(new ShowLocksRequest());
@@ -50,15 +50,23 @@
           }
         }
       }
-      long elapsedTime=System.currentTimeMillis() - startedAt;
-      if (elapsedTime >= cleanerCheckInterval || stop.get())       continue;
- else       Thread.sleep(cleanerCheckInterval - elapsedTime);
     }
  catch (    Throwable t) {
       LOG.error("Caught an exception in the main loop of compactor cleaner, " + StringUtils.stringifyException(t));
     }
     if (setLooped) {
       looped.set(true);
+    }
+    long elapsedTime=System.currentTimeMillis() - startedAt;
+    if (elapsedTime >= cleanerCheckInterval || stop.get()) {
+      continue;
+    }
+ else {
+      try {
+        Thread.sleep(cleanerCheckInterval - elapsedTime);
+      }
+ catch (      InterruptedException ie) {
+      }
     }
   }
  while (!stop.get());

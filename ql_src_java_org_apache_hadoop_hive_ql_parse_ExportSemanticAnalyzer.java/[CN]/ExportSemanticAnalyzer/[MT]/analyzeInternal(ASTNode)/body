@@ -1,10 +1,42 @@
 {
   Tree tableTree=ast.getChild(0);
   Tree toTree=ast.getChild(1);
+  if (ast.getChildCount() > 2) {
+    replicationSpec=new ReplicationSpec((ASTNode)ast.getChild(2));
+  }
+ else {
+    replicationSpec=new ReplicationSpec();
+  }
   String tmpPath=stripQuotes(toTree.getText());
   URI toURI=EximUtil.getValidatedURI(conf,tmpPath);
-  TableSpec ts=new TableSpec(db,conf,(ASTNode)tableTree,false,true);
-  EximUtil.validateTable(ts.tableHandle);
+  TableSpec ts;
+  try {
+    ts=new TableSpec(db,conf,(ASTNode)tableTree,false,true);
+  }
+ catch (  SemanticException sme) {
+    if ((replicationSpec.isInReplicationScope()) && ((sme.getCause() instanceof InvalidTableException) || (sme instanceof Table.ValidationFailureSemanticException))) {
+      ts=null;
+    }
+ else {
+      throw sme;
+    }
+  }
+  if (ts != null) {
+    try {
+      EximUtil.validateTable(ts.tableHandle);
+      if (replicationSpec.isInReplicationScope() && ts.tableHandle.isTemporary()) {
+        ts=null;
+      }
+    }
+ catch (    SemanticException e) {
+      if (replicationSpec.isInReplicationScope()) {
+        ts=null;
+      }
+ else {
+        throw e;
+      }
+    }
+  }
   try {
     FileSystem fs=FileSystem.get(toURI,conf);
     Path toPath=new Path(toURI.getScheme(),toURI.getAuthority(),toURI.getPath());
@@ -28,11 +60,25 @@
   }
   PartitionIterable partitions=null;
   try {
-    if (ts.tableHandle.isPartitioned()) {
-      partitions=(ts.partitions != null) ? new PartitionIterable(ts.partitions) : new PartitionIterable(db,ts.tableHandle,null,conf.getIntVar(HiveConf.ConfVars.METASTORE_BATCH_RETRIEVE_MAX));
+    replicationSpec.setCurrentReplicationState(String.valueOf(db.getMSC().getCurrentNotificationEventId().getEventId()));
+    if ((ts != null) && (ts.tableHandle.isPartitioned())) {
+      if (ts.specType == TableSpec.SpecType.TABLE_ONLY) {
+        if (replicationSpec.isMetadataOnly()) {
+          partitions=null;
+        }
+ else {
+          partitions=new PartitionIterable(db,ts.tableHandle,null,conf.getIntVar(HiveConf.ConfVars.METASTORE_BATCH_RETRIEVE_MAX));
+        }
+      }
+ else {
+        partitions=new PartitionIterable(ts.partitions);
+      }
+    }
+ else {
+      partitions=null;
     }
     Path path=new Path(ctx.getLocalTmpPath(),"_metadata");
-    EximUtil.createExportDump(FileSystem.getLocal(conf),path,ts.tableHandle,partitions);
+    EximUtil.createExportDump(FileSystem.getLocal(conf),path,(ts != null ? ts.tableHandle : null),partitions,replicationSpec);
     Task<? extends Serializable> rTask=TaskFactory.get(new CopyWork(path,new Path(toURI),false),conf);
     rootTasks.add(rTask);
     LOG.debug("_metadata file written into " + path.toString() + " and then copied to "+ toURI.toString());
@@ -40,22 +86,24 @@
  catch (  Exception e) {
     throw new SemanticException(ErrorMsg.GENERIC_ERROR.getMsg("Exception while writing out the local file"),e);
   }
-  Path parentPath=new Path(toURI);
-  if (ts.tableHandle.isPartitioned()) {
-    for (    Partition partition : partitions) {
-      Path fromPath=partition.getDataLocation();
-      Path toPartPath=new Path(parentPath,partition.getName());
-      Task<? extends Serializable> rTask=TaskFactory.get(new CopyWork(fromPath,toPartPath,false),conf);
-      rootTasks.add(rTask);
-      inputs.add(new ReadEntity(partition));
+  if (!(replicationSpec.isMetadataOnly() || (ts == null))) {
+    Path parentPath=new Path(toURI);
+    if (ts.tableHandle.isPartitioned()) {
+      for (      Partition partition : partitions) {
+        Path fromPath=partition.getDataLocation();
+        Path toPartPath=new Path(parentPath,partition.getName());
+        Task<? extends Serializable> rTask=TaskFactory.get(new CopyWork(fromPath,toPartPath,false),conf);
+        rootTasks.add(rTask);
+        inputs.add(new ReadEntity(partition));
+      }
     }
-  }
  else {
-    Path fromPath=ts.tableHandle.getDataLocation();
-    Path toDataPath=new Path(parentPath,"data");
-    Task<? extends Serializable> rTask=TaskFactory.get(new CopyWork(fromPath,toDataPath,false),conf);
-    rootTasks.add(rTask);
-    inputs.add(new ReadEntity(ts.tableHandle));
+      Path fromPath=ts.tableHandle.getDataLocation();
+      Path toDataPath=new Path(parentPath,"data");
+      Task<? extends Serializable> rTask=TaskFactory.get(new CopyWork(fromPath,toDataPath,false),conf);
+      rootTasks.add(rTask);
+      inputs.add(new ReadEntity(ts.tableHandle));
+    }
+    outputs.add(toWriteEntity(parentPath));
   }
-  outputs.add(toWriteEntity(parentPath));
 }

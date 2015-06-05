@@ -1,0 +1,40 @@
+{
+  if ((oldValueRef & IsInvalidFlag.flagOnMask) != 0) {
+    throw new RuntimeException("Invalid optimized hash table reference");
+  }
+  long oldAbsoluteValueOffset=(oldValueRef & AbsoluteValueOffset.bitMask);
+  int oldSmallValueLength=(int)((oldValueRef & SmallValueLength.bitMask) >> SmallValueLength.bitShift);
+  boolean isOldValueLengthSmall=(oldSmallValueLength != SmallValueLength.allBitsOn);
+  int oldCappedCount=(int)((oldValueRef & CappedCount.bitMask) >> CappedCount.bitShift);
+  boolean isOldValueLast=((oldValueRef & IsLastFlag.flagOnMask) != 0);
+  long newAbsoluteOffset=writeBuffers.getWritePoint();
+  long relativeOffsetWord=0;
+  if (isOldValueLengthSmall) {
+    relativeOffsetWord|=IsNextValueLengthSmallFlag.flagOnMask;
+  }
+  if (isOldValueLast) {
+    relativeOffsetWord|=IsNextValueLastFlag.flagOnMask;
+  }
+  int newCappedCount=oldCappedCount;
+  if (newCappedCount < CappedCount.limit) {
+    newCappedCount++;
+  }
+  long relativeOffset=newAbsoluteOffset - oldAbsoluteValueOffset;
+  relativeOffsetWord|=(relativeOffset << NextRelativeValueOffset.bitShift);
+  writeBuffers.writeVLong(relativeOffsetWord);
+  if (isOldValueLengthSmall) {
+    writeBuffers.writeVInt(oldSmallValueLength);
+  }
+  long newValueRef=((long)newCappedCount) << CappedCount.bitShift;
+  boolean isNewValueSmall=(valueLength < SmallValueLength.threshold);
+  if (!isNewValueSmall) {
+    newValueRef|=((long)SmallValueLength.allBitsOn << SmallValueLength.bitShift);
+    writeBuffers.writeVInt(valueLength);
+  }
+ else {
+    newValueRef|=((long)valueLength) << SmallValueLength.bitShift;
+  }
+  writeBuffers.write(valueBytes,valueStart,valueLength);
+  newValueRef|=newAbsoluteOffset;
+  return newValueRef;
+}

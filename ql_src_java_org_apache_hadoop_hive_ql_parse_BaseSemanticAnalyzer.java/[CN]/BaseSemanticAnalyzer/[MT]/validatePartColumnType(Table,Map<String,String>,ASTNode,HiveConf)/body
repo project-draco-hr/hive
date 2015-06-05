@@ -1,0 +1,42 @@
+{
+  if (!HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_TYPE_CHECK_ON_INSERT)) {
+    return;
+  }
+  Map<ASTNode,ExprNodeDesc> astExprNodeMap=new HashMap<ASTNode,ExprNodeDesc>();
+  if (!getPartExprNodeDesc(astNode,conf,astExprNodeMap)) {
+    STATIC_LOG.warn("Dynamic partitioning is used; only validating " + astExprNodeMap.size() + " columns");
+  }
+  if (astExprNodeMap.isEmpty()) {
+    return;
+  }
+  List<FieldSchema> parts=tbl.getPartitionKeys();
+  Map<String,String> partCols=new HashMap<String,String>(parts.size());
+  for (  FieldSchema col : parts) {
+    partCols.put(col.getName(),col.getType().toLowerCase());
+  }
+  for (  Entry<ASTNode,ExprNodeDesc> astExprNodePair : astExprNodeMap.entrySet()) {
+    String astKeyName=astExprNodePair.getKey().toString().toLowerCase();
+    if (astExprNodePair.getKey().getType() == HiveParser.Identifier) {
+      astKeyName=stripIdentifierQuotes(astKeyName);
+    }
+    String colType=partCols.get(astKeyName);
+    ObjectInspector inputOI=TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(astExprNodePair.getValue().getTypeInfo());
+    TypeInfo expectedType=TypeInfoUtils.getTypeInfoFromTypeString(colType);
+    ObjectInspector outputOI=TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(expectedType);
+    Object value=((ExprNodeConstantDesc)astExprNodePair.getValue()).getValue();
+    Object convertedValue=value;
+    if (!inputOI.getTypeName().equals(outputOI.getTypeName())) {
+      convertedValue=ObjectInspectorConverters.getConverter(inputOI,outputOI).convert(value);
+      if (convertedValue == null) {
+        throw new SemanticException(ErrorMsg.PARTITION_SPEC_TYPE_MISMATCH,astKeyName,inputOI.getTypeName(),outputOI.getTypeName());
+      }
+      if (!convertedValue.toString().equals(value.toString())) {
+        STATIC_LOG.warn("Partition " + astKeyName + " expects type "+ outputOI.getTypeName()+ " but input value is in type "+ inputOI.getTypeName()+ ". Convert "+ value.toString()+ " to "+ convertedValue.toString());
+      }
+    }
+    if (!convertedValue.toString().equals(partSpec.get(astKeyName))) {
+      STATIC_LOG.warn("Partition Spec " + astKeyName + "="+ partSpec.get(astKeyName)+ " has been changed to "+ astKeyName+ "="+ convertedValue.toString());
+    }
+    partSpec.put(astKeyName,convertedValue.toString());
+  }
+}

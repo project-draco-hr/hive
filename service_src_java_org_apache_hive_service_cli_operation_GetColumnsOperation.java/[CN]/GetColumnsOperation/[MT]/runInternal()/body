@@ -10,9 +10,20 @@
     }
     List<String> dbNames=metastoreClient.getDatabases(schemaPattern);
     Collections.sort(dbNames);
+    Map<String,List<String>> db2Tabs=new HashMap<>();
     for (    String dbName : dbNames) {
       List<String> tableNames=metastoreClient.getTables(dbName,tablePattern);
       Collections.sort(tableNames);
+      db2Tabs.put(dbName,tableNames);
+    }
+    if (isAuthV2Enabled()) {
+      List<HivePrivilegeObject> privObjs=getPrivObjs(db2Tabs);
+      String cmdStr="catalog : " + catalogName + ", schemaPattern : "+ schemaName+ ", tablePattern : "+ tableName;
+      authorizeMetaGets(HiveOperationType.GET_COLUMNS,privObjs,cmdStr);
+    }
+    for (    Entry<String,List<String>> dbTabs : db2Tabs.entrySet()) {
+      String dbName=dbTabs.getKey();
+      List<String> tableNames=dbTabs.getValue();
       for (      Table table : metastoreClient.getTableObjectsByName(dbName,tableNames)) {
         TableSchema schema=new TableSchema(metastoreClient.getSchema(dbName,table.getTableName()));
         for (        ColumnDescriptor column : schema.getColumnDescriptors()) {

@@ -1,0 +1,30 @@
+{
+  OpAttr inputOpAf=dispatch(projectRel.getInput());
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Translating operator rel#" + projectRel.getId() + ":"+ projectRel.getRelTypeName()+ " with row type: ["+ projectRel.getRowType()+ "]");
+  }
+  WindowingSpec windowingSpec=new WindowingSpec();
+  List<String> exprNames=new ArrayList<String>(projectRel.getRowType().getFieldNames());
+  List<ExprNodeDesc> exprCols=new ArrayList<ExprNodeDesc>();
+  Map<String,ExprNodeDesc> colExprMap=new HashMap<String,ExprNodeDesc>();
+  for (int pos=0; pos < projectRel.getChildExps().size(); pos++) {
+    ExprNodeConverter converter=new ExprNodeConverter(inputOpAf.tabAlias,projectRel.getRowType().getFieldNames().get(pos),projectRel.getInput().getRowType(),projectRel.getRowType(),inputOpAf.vcolsInCalcite,projectRel.getCluster().getTypeFactory());
+    ExprNodeDesc exprCol=projectRel.getChildExps().get(pos).accept(converter);
+    colExprMap.put(exprNames.get(pos),exprCol);
+    exprCols.add(exprCol);
+    if (converter.getWindowFunctionSpec() != null) {
+      windowingSpec.addWindowFunction(converter.getWindowFunctionSpec());
+    }
+  }
+  if (windowingSpec.getWindowExpressions() != null && !windowingSpec.getWindowExpressions().isEmpty()) {
+    inputOpAf=genPTF(inputOpAf,windowingSpec);
+  }
+  SelectDesc sd=new SelectDesc(exprCols,exprNames);
+  Pair<ArrayList<ColumnInfo>,Set<Integer>> colInfoVColPair=createColInfos(projectRel.getChildExps(),exprCols,exprNames,inputOpAf);
+  SelectOperator selOp=(SelectOperator)OperatorFactory.getAndMakeChild(sd,new RowSchema(colInfoVColPair.getKey()),inputOpAf.inputs.get(0));
+  selOp.setColumnExprMap(colExprMap);
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Generated " + selOp + " with row schema: ["+ selOp.getSchema()+ "]");
+  }
+  return new OpAttr(inputOpAf.tabAlias,colInfoVColPair.getValue(),selOp);
+}

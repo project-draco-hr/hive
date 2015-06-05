@@ -1,0 +1,21 @@
+{
+  final boolean cboEnabled=HiveConf.getBoolVar(pctx.getConf(),HiveConf.ConfVars.HIVE_CBO_ENABLED);
+  final boolean returnPathEnabled=HiveConf.getBoolVar(pctx.getConf(),HiveConf.ConfVars.HIVE_CBO_RETPATH_HIVEOP);
+  final boolean cboSucceeded=pctx.getContext().isCboSucceeded();
+  if (!(cboEnabled && returnPathEnabled && cboSucceeded)) {
+    return pctx;
+  }
+  this.pctx=pctx;
+  this.aliasToOpInfo=new HashMap<String,Operator<? extends OperatorDesc>>();
+  this.opToAlias=new HashMap<String,String>();
+  this.uniqueCounter=0;
+  Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
+  opRules.put(new RuleRegExp("R1",JoinOperator.getOperatorName() + "%"),new JoinAnnotate());
+  opRules.put(new RuleRegExp("R2",TableScanOperator.getOperatorName() + "%"),new TableScanAnnotate());
+  Dispatcher disp=new DefaultRuleDispatcher(new DefaultAnnotate(),opRules,null);
+  GraphWalker ogw=new ForwardWalker(disp);
+  List<Node> topNodes=new ArrayList<Node>();
+  topNodes.addAll(pctx.getTopOps().values());
+  ogw.startWalking(topNodes,null);
+  return pctx;
+}

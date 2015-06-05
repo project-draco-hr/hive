@@ -12,6 +12,7 @@
   curr=genSelectPlan(dest,qb,curr,gbySource);
   Integer limit=qbp.getDestLimit(dest);
   boolean genReduceSink=false;
+  boolean hasOrderBy=false;
   if (qbp.getClusterByForClause(dest) != null) {
     genReduceSink=true;
   }
@@ -20,26 +21,27 @@
   }
   if (qbp.getOrderByForClause(dest) != null) {
     genReduceSink=true;
+    hasOrderBy=true;
   }
   if (qbp.getSortByForClause(dest) != null) {
     genReduceSink=true;
   }
   if (genReduceSink) {
     int numReducers=-1;
-    if (qbp.getOrderByForClause(dest) != null) {
+    if (hasOrderBy) {
       numReducers=1;
     }
-    curr=genReduceSinkPlan(dest,qb,curr,numReducers);
+    curr=genReduceSinkPlan(dest,qb,curr,numReducers,hasOrderBy);
   }
   if (qbp.getIsSubQ()) {
     if (limit != null) {
-      curr=genLimitMapRedPlan(dest,qb,curr,limit.intValue(),qbp.getOrderByForClause(dest) != null ? false : true);
+      curr=genLimitMapRedPlan(dest,qb,curr,limit.intValue(),!hasOrderBy);
     }
   }
  else {
     if (limit != null) {
       boolean extraMRStep=true;
-      if (qbp.getOrderByForClause(dest) != null || qb.getIsQuery() && qbp.getClusterByForClause(dest) == null && qbp.getSortByForClause(dest) == null) {
+      if (hasOrderBy || qb.getIsQuery() && qbp.getClusterByForClause(dest) == null && qbp.getSortByForClause(dest) == null) {
         extraMRStep=false;
       }
       curr=genLimitMapRedPlan(dest,qb,curr,limit.intValue(),extraMRStep);

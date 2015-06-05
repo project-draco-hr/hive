@@ -56,7 +56,19 @@
     if (!properties.setReadable(false) || !properties.setReadable(true,true)) {
       throw new IOException("Cannot change permissions of job properties file.");
     }
+    properties.deleteOnExit();
     Properties allProps=new Properties();
+    try {
+      URL sparkDefaultsUrl=Thread.currentThread().getContextClassLoader().getResource("spark-defaults.conf");
+      if (sparkDefaultsUrl != null) {
+        LOG.info("Loading spark defaults: " + sparkDefaultsUrl);
+        allProps.load(new ByteArrayInputStream(Resources.toByteArray(sparkDefaultsUrl)));
+      }
+    }
+ catch (    Exception e) {
+      String msg="Exception trying to load spark-defaults.conf: " + e;
+      throw new IOException(msg,e);
+    }
     for (    Map.Entry<String,String> e : conf.entrySet()) {
       allProps.put(e.getKey(),conf.get(e.getKey()));
     }
@@ -145,6 +157,20 @@
         argv.add(numOfExecutors);
       }
     }
+    if (hiveConf.getBoolVar(HiveConf.ConfVars.HIVE_SERVER2_ENABLE_DOAS)) {
+      try {
+        String currentUser=Utils.getUGI().getShortUserName();
+        if (!currentUser.equals(System.getProperty("user.name"))) {
+          LOG.info("Attempting impersonation of " + currentUser);
+          argv.add("--proxy-user");
+          argv.add(currentUser);
+        }
+      }
+ catch (      Exception e) {
+        String msg="Cannot obtain username: " + e;
+        throw new IllegalStateException(msg,e);
+      }
+    }
     argv.add("--properties-file");
     argv.add(properties.getAbsolutePath());
     argv.add("--class");
@@ -163,7 +189,7 @@
       argv.add("--conf");
       argv.add(String.format("%s=%s",hiveSparkConfKey,value));
     }
-    LOG.debug("Running client driver with argv: {}",Joiner.on(" ").join(argv));
+    LOG.info("Running client driver with argv: {}",Joiner.on(" ").join(argv));
     ProcessBuilder pb=new ProcessBuilder(argv.toArray(new String[argv.size()]));
     if (isTesting != null) {
       pb.environment().put("SPARK_TESTING",isTesting);
@@ -177,6 +203,7 @@
         try {
           int exitCode=child.waitFor();
           if (exitCode != 0) {
+            rpcServer.cancelClient(clientId,"Child process exited before connecting back");
             LOG.warn("Child process exited with code {}.",exitCode);
           }
         }

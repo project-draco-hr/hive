@@ -1,0 +1,36 @@
+{
+  final Aggregate aggregate=call.rel(0);
+  if (!aggregate.containsDistinctCall()) {
+    return;
+  }
+  int nonDistinctCount=0;
+  Set<List<Integer>> argListSets=new LinkedHashSet<List<Integer>>();
+  for (  AggregateCall aggCall : aggregate.getAggCallList()) {
+    if (!aggCall.isDistinct()) {
+      ++nonDistinctCount;
+      continue;
+    }
+    ArrayList<Integer> argList=new ArrayList<Integer>();
+    for (    Integer arg : aggCall.getArgList()) {
+      argList.add(arg);
+    }
+    argListSets.add(argList);
+  }
+  Util.permAssert(argListSets.size() > 0,"containsDistinctCall lied");
+  if ((nonDistinctCount == 0) && (argListSets.size() == 1)) {
+    for (    Integer arg : argListSets.iterator().next()) {
+      Set<RelColumnOrigin> colOrigs=RelMetadataQuery.getColumnOrigins(aggregate,arg);
+      if (null != colOrigs) {
+        for (        RelColumnOrigin colOrig : colOrigs) {
+          RelOptHiveTable hiveTbl=(RelOptHiveTable)colOrig.getOriginTable();
+          if (hiveTbl.getPartColInfoMap().containsKey(colOrig.getOriginColumnOrdinal())) {
+            return;
+          }
+        }
+      }
+    }
+    RelNode converted=convertMonopole(aggregate,argListSets.iterator().next());
+    call.transformTo(converted);
+    return;
+  }
+}

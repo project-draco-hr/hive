@@ -1,81 +1,83 @@
 {
   try {
     Tree fromTree=ast.getChild(0);
-    String tmpPath=stripQuotes(fromTree.getText());
-    URI fromURI=EximUtil.getValidatedURI(conf,tmpPath);
-    FileSystem fs=FileSystem.get(fromURI,conf);
-    String dbname=null;
-    CreateTableDesc tblDesc=null;
-    List<AddPartitionDesc> partitionDescs=new ArrayList<AddPartitionDesc>();
-    Path fromPath=new Path(fromURI.getScheme(),fromURI.getAuthority(),fromURI.getPath());
-    inputs.add(toReadEntity(fromPath));
-    try {
-      Path metadataPath=new Path(fromPath,METADATA_NAME);
-      Map.Entry<org.apache.hadoop.hive.metastore.api.Table,List<Partition>> rv=EximUtil.readMetaData(fs,metadataPath);
-      dbname=SessionState.get().getCurrentDatabase();
-      org.apache.hadoop.hive.metastore.api.Table table=rv.getKey();
-      tblDesc=new CreateTableDesc(table.getTableName(),false,table.isTemporary(),table.getSd().getCols(),table.getPartitionKeys(),table.getSd().getBucketCols(),table.getSd().getSortCols(),table.getSd().getNumBuckets(),null,null,null,null,null,null,table.getSd().getInputFormat(),table.getSd().getOutputFormat(),null,table.getSd().getSerdeInfo().getSerializationLib(),null,table.getSd().getSerdeInfo().getParameters(),table.getParameters(),false,(null == table.getSd().getSkewedInfo()) ? null : table.getSd().getSkewedInfo().getSkewedColNames(),(null == table.getSd().getSkewedInfo()) ? null : table.getSd().getSkewedInfo().getSkewedColValues());
-      tblDesc.setStoredAsSubDirectories(table.getSd().isStoredAsSubDirectories());
-      List<FieldSchema> partCols=tblDesc.getPartCols();
-      List<String> partColNames=new ArrayList<String>(partCols.size());
-      for (      FieldSchema fsc : partCols) {
-        partColNames.add(fsc.getName());
-      }
-      List<Partition> partitions=rv.getValue();
-      for (      Partition partition : partitions) {
-        AddPartitionDesc partsDesc=new AddPartitionDesc(dbname,tblDesc.getTableName(),EximUtil.makePartSpec(tblDesc.getPartCols(),partition.getValues()),partition.getSd().getLocation(),partition.getParameters());
-        AddPartitionDesc.OnePartitionDesc partDesc=partsDesc.getPartition(0);
-        partDesc.setInputFormat(partition.getSd().getInputFormat());
-        partDesc.setOutputFormat(partition.getSd().getOutputFormat());
-        partDesc.setNumBuckets(partition.getSd().getNumBuckets());
-        partDesc.setCols(partition.getSd().getCols());
-        partDesc.setSerializationLib(partition.getSd().getSerdeInfo().getSerializationLib());
-        partDesc.setSerdeParams(partition.getSd().getSerdeInfo().getParameters());
-        partDesc.setBucketCols(partition.getSd().getBucketCols());
-        partDesc.setSortCols(partition.getSd().getSortCols());
-        partDesc.setLocation(new Path(fromPath,Warehouse.makePartName(tblDesc.getPartCols(),partition.getValues())).toString());
-        partitionDescs.add(partsDesc);
-      }
-    }
- catch (    IOException e) {
-      throw new SemanticException(ErrorMsg.INVALID_PATH.getMsg(),e);
-    }
-    LOG.debug("metadata read and parsed");
+    boolean isLocationSet=false;
+    boolean isExternalSet=false;
+    boolean isTableSet=false;
+    boolean isDbNameSet=false;
+    boolean isPartSpecSet=false;
+    String parsedLocation=null;
+    String parsedTableName=null;
+    String parsedDbName=null;
+    LinkedHashMap<String,String> parsedPartSpec=new LinkedHashMap<String,String>();
     for (int i=1; i < ast.getChildCount(); ++i) {
       ASTNode child=(ASTNode)ast.getChild(i);
 switch (child.getToken().getType()) {
 case HiveParser.KW_EXTERNAL:
-        tblDesc.setExternal(true);
+        isExternalSet=true;
       break;
 case HiveParser.TOK_TABLELOCATION:
-    String location=unescapeSQLString(child.getChild(0).getText());
-  location=EximUtil.relativeToAbsolutePath(conf,location);
-inputs.add(toReadEntity(location));
-tblDesc.setLocation(location);
+    isLocationSet=true;
+  parsedLocation=EximUtil.relativeToAbsolutePath(conf,unescapeSQLString(child.getChild(0).getText()));
 break;
 case HiveParser.TOK_TAB:
-Tree tableTree=child.getChild(0);
-String tableName=getUnescapedName((ASTNode)tableTree);
-tblDesc.setTableName(tableName);
-LinkedHashMap<String,String> partSpec=new LinkedHashMap<String,String>();
+isTableSet=true;
+ASTNode tableNameNode=(ASTNode)child.getChild(0);
+Map.Entry<String,String> dbTablePair=getDbTableNamePair(tableNameNode);
+parsedDbName=dbTablePair.getKey();
+parsedTableName=dbTablePair.getValue();
+if (parsedDbName != null) {
+isDbNameSet=true;
+}
 if (child.getChildCount() == 2) {
 ASTNode partspec=(ASTNode)child.getChild(1);
-for (int j=0; j < partspec.getChildCount(); ++j) {
-ASTNode partspec_val=(ASTNode)partspec.getChild(j);
-String val=null;
-String colName=unescapeIdentifier(partspec_val.getChild(0).getText().toLowerCase());
-if (partspec_val.getChildCount() < 2) {
-throw new SemanticException(ErrorMsg.INVALID_PARTITION.getMsg(" - Dynamic partitions not allowed"));
+isPartSpecSet=true;
+parsePartitionSpec(child,parsedPartSpec);
 }
- else {
-val=stripQuotes(partspec_val.getChild(1).getText());
+break;
 }
-partSpec.put(colName,val);
 }
+URI fromURI=EximUtil.getValidatedURI(conf,stripQuotes(fromTree.getText()));
+FileSystem fs=FileSystem.get(fromURI,conf);
+Path fromPath=new Path(fromURI.getScheme(),fromURI.getAuthority(),fromURI.getPath());
+inputs.add(toReadEntity(fromPath));
+EximUtil.ReadMetaData rv=new EximUtil.ReadMetaData();
+try {
+rv=EximUtil.readMetaData(fs,new Path(fromPath,METADATA_NAME));
+}
+ catch (IOException e) {
+throw new SemanticException(ErrorMsg.INVALID_PATH.getMsg(),e);
+}
+ReplicationSpec replicationSpec=rv.getReplicationSpec();
+if (replicationSpec.isNoop()) {
+return;
+}
+String dbname=SessionState.get().getCurrentDatabase();
+if (isDbNameSet) {
+dbname=parsedDbName;
+}
+CreateTableDesc tblDesc=getBaseCreateTableDescFromTable(dbname,rv.getTable());
+if (isExternalSet) {
+tblDesc.setExternal(isExternalSet);
+}
+if (isLocationSet) {
+tblDesc.setLocation(parsedLocation);
+inputs.add(toReadEntity(parsedLocation));
+}
+if (isTableSet) {
+tblDesc.setTableName(parsedTableName);
+}
+List<AddPartitionDesc> partitionDescs=new ArrayList<AddPartitionDesc>();
+Iterable<Partition> partitions=rv.getPartitions();
+for (Partition partition : partitions) {
+AddPartitionDesc partsDesc=getBaseAddPartitionDescFromPartition(fromPath,dbname,tblDesc,partition);
+partitionDescs.add(partsDesc);
+}
+if (isPartSpecSet) {
 boolean found=false;
 for (Iterator<AddPartitionDesc> partnIter=partitionDescs.listIterator(); partnIter.hasNext(); ) {
 AddPartitionDesc addPartitionDesc=partnIter.next();
-if (!found && addPartitionDesc.getPartition(0).getPartSpec().equals(partSpec)) {
+if (!found && addPartitionDesc.getPartition(0).getPartSpec().equals(parsedPartSpec)) {
 found=true;
 }
  else {
@@ -84,8 +86,6 @@ partnIter.remove();
 }
 if (!found) {
 throw new SemanticException(ErrorMsg.INVALID_PARTITION.getMsg(" - Specified partition not found in import directory"));
-}
-}
 }
 }
 if (tblDesc.getTableName() == null) {
@@ -98,62 +98,17 @@ addPartitionDesc.setTableName(tblDesc.getTableName());
 }
 }
 Warehouse wh=new Warehouse(conf);
-try {
-Table table=db.getTable(tblDesc.getTableName());
-checkTable(table,tblDesc);
+Table table=tableIfExists(tblDesc);
+if (table != null) {
+checkTable(table,tblDesc,replicationSpec);
 LOG.debug("table " + tblDesc.getTableName() + " exists: metadata checked");
 tableExists=true;
-conf.set("import.destination.dir",table.getDataLocation().toString());
-if (table.isPartitioned()) {
-LOG.debug("table partitioned");
-for (AddPartitionDesc addPartitionDesc : partitionDescs) {
-Map<String,String> partSpec=addPartitionDesc.getPartition(0).getPartSpec();
-if (db.getPartition(table,partSpec,false) == null) {
-rootTasks.add(addSinglePartition(fromURI,fs,tblDesc,table,wh,addPartitionDesc));
+}
+if (!replicationSpec.isInReplicationScope()) {
+createRegularImportTasks(rootTasks,tblDesc,partitionDescs,isPartSpecSet,replicationSpec,table,fromURI,fs,wh);
 }
  else {
-throw new SemanticException(ErrorMsg.PARTITION_EXISTS.getMsg(partSpecToString(partSpec)));
-}
-}
-}
- else {
-LOG.debug("table non-partitioned");
-checkTargetLocationEmpty(fs,new Path(table.getDataLocation().toString()));
-loadTable(fromURI,table);
-}
-outputs.add(new WriteEntity(table,WriteEntity.WriteType.DDL_NO_LOCK));
-}
- catch (InvalidTableException e) {
-LOG.debug("table " + tblDesc.getTableName() + " does not exist");
-Task<?> t=TaskFactory.get(new DDLWork(getInputs(),getOutputs(),tblDesc),conf);
-Table table=new Table(dbname,tblDesc.getTableName());
-String currentDb=SessionState.get().getCurrentDatabase();
-conf.set("import.destination.dir",wh.getTablePath(db.getDatabaseCurrent(),tblDesc.getTableName()).toString());
-if ((tblDesc.getPartCols() != null) && (tblDesc.getPartCols().size() != 0)) {
-for (AddPartitionDesc addPartitionDesc : partitionDescs) {
-t.addDependentTask(addSinglePartition(fromURI,fs,tblDesc,table,wh,addPartitionDesc));
-}
-}
- else {
-LOG.debug("adding dependent CopyWork/MoveWork for table");
-if (tblDesc.isExternal() && (tblDesc.getLocation() == null)) {
-LOG.debug("Importing in place, no emptiness check, no copying/loading");
-Path dataPath=new Path(fromURI.toString(),"data");
-tblDesc.setLocation(dataPath.toString());
-}
- else {
-Path tablePath=null;
-if (tblDesc.getLocation() != null) {
-tablePath=new Path(tblDesc.getLocation());
-}
- else {
-tablePath=wh.getTablePath(db.getDatabaseCurrent(),tblDesc.getTableName());
-}
-checkTargetLocationEmpty(fs,tablePath);
-t.addDependentTask(loadTable(fromURI,table));
-}
-}
-rootTasks.add(t);
+createReplImportTasks(rootTasks,tblDesc,partitionDescs,isPartSpecSet,replicationSpec,table,fromURI,fs,wh);
 }
 }
  catch (SemanticException e) {

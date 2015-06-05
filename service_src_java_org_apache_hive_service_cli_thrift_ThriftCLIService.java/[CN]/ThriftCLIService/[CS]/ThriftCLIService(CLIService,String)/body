@@ -1,4 +1,29 @@
 {
   super(serviceName);
-  this.cliService=cliService;
+  this.cliService=service;
+  currentServerContext=new ThreadLocal<ServerContext>();
+  serverEventHandler=new TServerEventHandler(){
+    @Override public ServerContext createContext(    TProtocol input,    TProtocol output){
+      return new ThriftCLIServerContext();
+    }
+    @Override public void deleteContext(    ServerContext serverContext,    TProtocol input,    TProtocol output){
+      ThriftCLIServerContext context=(ThriftCLIServerContext)serverContext;
+      SessionHandle sessionHandle=context.getSessionHandle();
+      if (sessionHandle != null) {
+        LOG.info("Session disconnected without closing properly, close it now");
+        try {
+          cliService.closeSession(sessionHandle);
+        }
+ catch (        HiveSQLException e) {
+          LOG.warn("Failed to close session: " + e,e);
+        }
+      }
+    }
+    @Override public void preServe(){
+    }
+    @Override public void processContext(    ServerContext serverContext,    TTransport input,    TTransport output){
+      currentServerContext.set(serverContext);
+    }
+  }
+;
 }

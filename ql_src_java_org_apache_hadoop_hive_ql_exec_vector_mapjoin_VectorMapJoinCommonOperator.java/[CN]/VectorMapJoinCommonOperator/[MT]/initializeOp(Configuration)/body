@@ -1,0 +1,39 @@
+{
+  Collection<Future<?>> result=super.initializeOp(hconf);
+  if (LOG.isDebugEnabled()) {
+    BaseWork work=Utilities.getMapWork(hconf);
+    if (work == null) {
+      work=Utilities.getReduceWork(hconf);
+    }
+    taskName=work.getName();
+  }
+  overflowRepeatedThreshold=HiveConf.getIntVar(hconf,HiveConf.ConfVars.HIVE_VECTORIZATION_MAPJOIN_NATIVE_OVERFLOW_REPEATED_THRESHOLD);
+  useOverflowRepeatedThreshold=(overflowRepeatedThreshold >= 0);
+  if (smallTableMapping.getCount() > 0) {
+    smallTableVectorDeserializeRow=new VectorDeserializeRow(new LazyBinaryDeserializeRead(VectorizedBatchUtil.primitiveTypeInfosFromTypeNames(smallTableMapping.getTypeNames())));
+    smallTableVectorDeserializeRow.init(smallTableMapping.getOutputColumns());
+  }
+  if (bigTableRetainedMapping.getCount() > 0) {
+    bigTableRetainedVectorCopy=new VectorCopyRow();
+    bigTableRetainedVectorCopy.init(bigTableRetainedMapping);
+  }
+  if (bigTableOuterKeyMapping.getCount() > 0) {
+    bigTableVectorCopyOuterKeys=new VectorCopyRow();
+    bigTableVectorCopyOuterKeys.init(bigTableOuterKeyMapping);
+  }
+  overflowBatch=setupOverflowBatch();
+  needCommonSetup=true;
+  needHashTableSetup=true;
+  if (LOG.isDebugEnabled()) {
+    int[] currentScratchColumns=vOutContext.currentScratchColumns();
+    LOG.debug(taskName + ", " + getOperatorId()+ " VectorMapJoinCommonOperator initializeOp currentScratchColumns "+ Arrays.toString(currentScratchColumns));
+    StructObjectInspector structOutputObjectInspector=(StructObjectInspector)outputObjInspector;
+    List<? extends StructField> fields=structOutputObjectInspector.getAllStructFieldRefs();
+    int i=0;
+    for (    StructField field : fields) {
+      LOG.debug("VectorMapJoinInnerBigOnlyCommonOperator initializeOp " + i + " field "+ field.getFieldName()+ " type "+ field.getFieldObjectInspector().getTypeName());
+      i++;
+    }
+  }
+  return result;
+}

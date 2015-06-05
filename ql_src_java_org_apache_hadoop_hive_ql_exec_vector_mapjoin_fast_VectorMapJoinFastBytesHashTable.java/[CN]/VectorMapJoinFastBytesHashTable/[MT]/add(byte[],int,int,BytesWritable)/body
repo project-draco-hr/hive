@@ -1,0 +1,36 @@
+{
+  if (resizeThreshold <= keysAssigned) {
+    expandAndRehash();
+  }
+  long hashCode=VectorMapJoinFastBytesHashUtil.hashKey(keyBytes,keyStart,keyLength);
+  int intHashCode=(int)hashCode;
+  int slot=(intHashCode & logicalHashBucketMask);
+  long probeSlot=slot;
+  int i=0;
+  boolean isNewKey;
+  while (true) {
+    int tripleIndex=3 * slot;
+    if (slotTriples[tripleIndex] == 0) {
+      isNewKey=true;
+      ;
+      break;
+    }
+    if (hashCode == slotTriples[tripleIndex + 1] && keyStore.equalKey(slotTriples[tripleIndex],keyBytes,keyStart,keyLength)) {
+      isNewKey=false;
+      break;
+    }
+    ++metricPutConflict;
+    probeSlot+=(++i);
+    slot=(int)(probeSlot & logicalHashBucketMask);
+  }
+  if (largestNumberOfSteps < i) {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Probed " + i + " slots (the longest so far) to find space");
+    }
+    largestNumberOfSteps=i;
+  }
+  assignSlot(slot,keyBytes,keyStart,keyLength,hashCode,isNewKey,currentValue);
+  if (isNewKey) {
+    keysAssigned++;
+  }
+}

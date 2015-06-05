@@ -1,5 +1,11 @@
 {
-  Table tbl=db.newTable(crtTbl.getTableName());
+  Table tbl;
+  if (crtTbl.getDatabaseName() == null || (crtTbl.getTableName().contains("."))) {
+    tbl=db.newTable(crtTbl.getTableName());
+  }
+ else {
+    tbl=new Table(crtTbl.getDatabaseName(),crtTbl.getTableName());
+  }
   if (crtTbl.getTblProps() != null) {
     tbl.getTTable().getParameters().putAll(crtTbl.getTblProps());
   }
@@ -117,7 +123,17 @@
       }
     }
   }
-  db.createTable(tbl,crtTbl.getIfNotExists());
+  if (crtTbl.getReplaceMode()) {
+    try {
+      db.alterTable(tbl.getDbName() + "." + tbl.getTableName(),tbl);
+    }
+ catch (    InvalidOperationException e) {
+      throw new HiveException("Unable to alter table. " + e.getMessage(),e);
+    }
+  }
+ else {
+    db.createTable(tbl,crtTbl.getIfNotExists());
+  }
   work.getOutputs().add(new WriteEntity(tbl,WriteEntity.WriteType.DDL_NO_LOCK));
   return 0;
 }

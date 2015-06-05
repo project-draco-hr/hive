@@ -1,0 +1,27 @@
+{
+  if (newNumRows < 0) {
+    LOG.info("STATS-" + jop.toString() + ": Overflow in number of rows."+ newNumRows+ " rows will be set to Long.MAX_VALUE");
+  }
+  if (newNumRows == 0) {
+    LOG.info("STATS-" + jop.toString() + ": Equals 0 in number of rows."+ newNumRows+ " rows will be set to 1");
+    newNumRows=1;
+  }
+  newNumRows=StatsUtils.getMaxIfOverflow(newNumRows);
+  stats.setNumRows(newNumRows);
+  List<ColStatistics> colStats=stats.getColumnStats();
+  for (  ColStatistics cs : colStats) {
+    int pos=jop.getConf().getReversedExprs().get(cs.getColumnName());
+    long oldRowCount=rowCountParents.get(pos);
+    double ratio=(double)newNumRows / (double)oldRowCount;
+    long oldDV=cs.getCountDistint();
+    long newDV=oldDV;
+    if (ratio <= 1.0) {
+      newDV=(long)Math.ceil(ratio * oldDV);
+    }
+    cs.setNumNulls(0);
+    cs.setCountDistint(newDV);
+  }
+  stats.setColumnStats(colStats);
+  long newDataSize=StatsUtils.getDataSizeFromColumnStats(newNumRows,colStats);
+  stats.setDataSize(StatsUtils.getMaxIfOverflow(newDataSize));
+}

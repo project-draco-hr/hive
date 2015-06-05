@@ -1,0 +1,75 @@
+{
+  if (spillCount > 0) {
+    spillHashMapBatch(batch,(VectorMapJoinHashTableResult[])hashMapResults,spills,spillHashMapResultIndices,spillCount);
+  }
+  int noMatchCount=0;
+  if (spillCount > 0) {
+    int nonSpillCount=subtractFromInputSelected(inputSelectedInUse,inputLogicalSize,spills,spillCount,nonSpills);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("finishOuter spillCount > 0" + " nonSpills " + intArrayToRangesString(nonSpills,nonSpillCount));
+    }
+    if (bigTableValueExpressions != null) {
+      doValueExpr(batch,nonSpills,nonSpillCount);
+    }
+    if (atLeastOneNonMatch) {
+      noMatchCount=subtract(nonSpills,nonSpillCount,allMatchs,allMatchCount,noMatchs);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("finishOuter spillCount > 0" + " noMatchs " + intArrayToRangesString(noMatchs,noMatchCount));
+      }
+    }
+  }
+ else {
+    doValueExprOnInputSelected(batch,inputSelectedInUse,inputLogicalSize);
+    if (atLeastOneNonMatch) {
+      noMatchCount=subtractFromInputSelected(inputSelectedInUse,inputLogicalSize,allMatchs,allMatchCount,noMatchs);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("finishOuter spillCount == 0" + " noMatchs " + intArrayToRangesString(noMatchs,noMatchCount));
+      }
+    }
+  }
+  if (allMatchCount > 0) {
+    int numSel=0;
+    for (int i=0; i < equalKeySeriesCount; i++) {
+      int hashMapResultIndex=equalKeySeriesHashMapResultIndices[i];
+      VectorMapJoinHashMapResult hashMapResult=hashMapResults[hashMapResultIndex];
+      int allMatchesIndex=equalKeySeriesAllMatchIndices[i];
+      boolean isSingleValue=equalKeySeriesIsSingleValue[i];
+      int duplicateCount=equalKeySeriesDuplicateCounts[i];
+      if (isSingleValue) {
+        numSel=generateHashMapResultSingleValue(batch,hashMapResult,allMatchs,allMatchesIndex,duplicateCount,numSel);
+      }
+ else {
+        generateHashMapResultMultiValue(batch,hashMapResult,allMatchs,allMatchesIndex,duplicateCount);
+      }
+    }
+    batch.size=numSel;
+    batch.selectedInUse=true;
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("finishOuter allMatchCount > 0" + " batch.selected " + intArrayToRangesString(batch.selected,batch.size));
+    }
+  }
+ else {
+    batch.size=0;
+  }
+  if (noMatchCount > 0) {
+    if (batch.size > 0) {
+      generateOuterNulls(batch,noMatchs,noMatchCount);
+      int mergeCount=sortMerge(noMatchs,noMatchCount,batch.selected,batch.size,merged);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("finishOuter noMatchCount > 0 && batch.size > 0" + " merged " + intArrayToRangesString(merged,mergeCount));
+      }
+      System.arraycopy(merged,0,batch.selected,0,mergeCount);
+      batch.size=mergeCount;
+      batch.selectedInUse=true;
+    }
+ else {
+      generateOuterNullsRepeatedAll(batch);
+      System.arraycopy(noMatchs,0,batch.selected,0,noMatchCount);
+      batch.size=noMatchCount;
+      batch.selectedInUse=true;
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("finishOuter noMatchCount > 0 && batch.size == 0" + " batch.selected " + intArrayToRangesString(batch.selected,batch.size));
+      }
+    }
+  }
+}

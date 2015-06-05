@@ -1,0 +1,97 @@
+{
+  Task dr=null;
+  WriteEntity.WriteType lockType=WriteEntity.WriteType.DDL_NO_LOCK;
+  if ((table != null) && (isPartitioned(tblDesc) != table.isPartitioned())) {
+    if (replicationSpec.allowReplacementInto(table)) {
+      dr=dropTableTask(table);
+      lockType=WriteEntity.WriteType.DDL_EXCLUSIVE;
+      table=null;
+    }
+ else {
+      return;
+    }
+  }
+  Database parentDb=db.getDatabase(tblDesc.getDatabaseName());
+  if (parentDb == null) {
+    throw new SemanticException(ErrorMsg.DATABASE_NOT_EXISTS.getMsg(tblDesc.getDatabaseName()));
+  }
+  if (tblDesc.getLocation() == null) {
+    tblDesc.setLocation(wh.getTablePath(parentDb,tblDesc.getTableName()).toString());
+  }
+  if (table == null) {
+    if (lockType == WriteEntity.WriteType.DDL_NO_LOCK) {
+      lockType=WriteEntity.WriteType.DDL_SHARED;
+    }
+    Task t=createTableTask(tblDesc);
+    table=new Table(tblDesc.getDatabaseName(),tblDesc.getTableName());
+    if (!replicationSpec.isMetadataOnly()) {
+      if (isPartitioned(tblDesc)) {
+        for (        AddPartitionDesc addPartitionDesc : partitionDescs) {
+          t.addDependentTask(addSinglePartition(fromURI,fs,tblDesc,table,wh,addPartitionDesc,replicationSpec));
+        }
+      }
+ else {
+        LOG.debug("adding dependent CopyWork/MoveWork for table");
+        t.addDependentTask(loadTable(fromURI,table,true));
+      }
+    }
+    if (dr == null) {
+      rootTasks.add(t);
+    }
+ else {
+      dr.addDependentTask(t);
+      rootTasks.add(dr);
+    }
+  }
+ else {
+    if (table.isPartitioned()) {
+      LOG.debug("table partitioned");
+      for (      AddPartitionDesc addPartitionDesc : partitionDescs) {
+        Map<String,String> partSpec=addPartitionDesc.getPartition(0).getPartSpec();
+        org.apache.hadoop.hive.ql.metadata.Partition ptn=null;
+        if ((ptn=db.getPartition(table,partSpec,false)) == null) {
+          if (!replicationSpec.isMetadataOnly()) {
+            rootTasks.add(addSinglePartition(fromURI,fs,tblDesc,table,wh,addPartitionDesc,replicationSpec));
+          }
+        }
+ else {
+          if (replicationSpec.allowReplacementInto(ptn)) {
+            if (!replicationSpec.isMetadataOnly()) {
+              rootTasks.add(addSinglePartition(fromURI,fs,tblDesc,table,wh,addPartitionDesc,replicationSpec));
+            }
+ else {
+              rootTasks.add(alterSinglePartition(fromURI,fs,tblDesc,table,wh,addPartitionDesc,replicationSpec,ptn));
+            }
+            if (lockType == WriteEntity.WriteType.DDL_NO_LOCK) {
+              lockType=WriteEntity.WriteType.DDL_SHARED;
+            }
+          }
+ else {
+          }
+        }
+      }
+      if (replicationSpec.isMetadataOnly() && partitionDescs.isEmpty()) {
+        rootTasks.add(alterTableTask(tblDesc));
+        if (lockType == WriteEntity.WriteType.DDL_NO_LOCK) {
+          lockType=WriteEntity.WriteType.DDL_SHARED;
+        }
+      }
+    }
+ else {
+      LOG.debug("table non-partitioned");
+      if (!replicationSpec.allowReplacementInto(table)) {
+        return;
+      }
+      if (!replicationSpec.isMetadataOnly()) {
+        loadTable(fromURI,table,true);
+      }
+ else {
+        rootTasks.add(alterTableTask(tblDesc));
+      }
+      if (lockType == WriteEntity.WriteType.DDL_NO_LOCK) {
+        lockType=WriteEntity.WriteType.DDL_SHARED;
+      }
+    }
+  }
+  outputs.add(new WriteEntity(table,lockType));
+}

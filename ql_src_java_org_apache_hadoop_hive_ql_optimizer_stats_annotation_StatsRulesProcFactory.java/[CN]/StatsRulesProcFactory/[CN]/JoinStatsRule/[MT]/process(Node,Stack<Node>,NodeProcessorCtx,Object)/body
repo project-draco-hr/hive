@@ -18,31 +18,24 @@
     }
     if (allSatisfyPreCondition) {
       Statistics stats=new Statistics();
-      Map<String,Long> rowCountParents=new HashMap<String,Long>();
       List<Long> distinctVals=Lists.newArrayList();
       int numParent=parents.size();
-      Map<String,ColStatistics> joinedColStats=Maps.newHashMap();
+      Map<Integer,Long> rowCountParents=Maps.newHashMap();
+      Map<Integer,Statistics> joinStats=Maps.newHashMap();
       Map<Integer,List<String>> joinKeys=Maps.newHashMap();
       List<Long> rowCounts=Lists.newArrayList();
       ReduceSinkOperator rsOp=(ReduceSinkOperator)jop.getParentOperators().get(0);
-      List<String> keyExprs=rsOp.getConf().getOutputKeyColumnNames();
+      List<String> keyExprs=StatsUtils.getQualifedReducerKeyNames(rsOp.getConf().getOutputKeyColumnNames());
       numAttr=keyExprs.size();
-      pkfkInferred=false;
       inferPKFKRelationship();
       for (int pos=0; pos < parents.size(); pos++) {
         ReduceSinkOperator parent=(ReduceSinkOperator)jop.getParentOperators().get(pos);
         Statistics parentStats=parent.getStatistics();
-        keyExprs=parent.getConf().getOutputKeyColumnNames();
-        Set<String> tableAliases=StatsUtils.getAllTableAlias(parent.getColumnExprMap());
-        for (        String tabAlias : tableAliases) {
-          rowCountParents.put(tabAlias,parentStats.getNumRows());
-        }
+        keyExprs=StatsUtils.getQualifedReducerKeyNames(parent.getConf().getOutputKeyColumnNames());
+        rowCountParents.put(pos,parentStats.getNumRows());
         rowCounts.add(parentStats.getNumRows());
-        List<String> fqCols=StatsUtils.getFullyQualifedReducerKeyNames(keyExprs,parent.getColumnExprMap());
-        joinKeys.put(pos,fqCols);
-        for (        ColStatistics cs : parentStats.getColumnStats()) {
-          joinedColStats.put(cs.getFullyQualifiedColName(),cs);
-        }
+        joinKeys.put(pos,keyExprs);
+        joinStats.put(pos,parentStats);
         stats.updateColumnStatsState(parentStats.getColumnStatsState());
       }
       long denom=1;
@@ -51,7 +44,7 @@
         for (int idx=0; idx < numAttr; idx++) {
           for (          Integer i : joinKeys.keySet()) {
             String col=joinKeys.get(i).get(idx);
-            ColStatistics cs=joinedColStats.get(col);
+            ColStatistics cs=joinStats.get(i).getColumnStatisticsFromColName(col);
             if (cs != null) {
               perAttrDVs.add(cs.getCountDistint());
             }
@@ -69,9 +62,10 @@
         }
       }
  else {
-        for (        List<String> jkeys : joinKeys.values()) {
-          for (          String jk : jkeys) {
-            ColStatistics cs=joinedColStats.get(jk);
+        if (numAttr == 1) {
+          for (          Integer i : joinKeys.keySet()) {
+            String col=joinKeys.get(i).get(0);
+            ColStatistics cs=joinStats.get(i).getColumnStatisticsFromColName(col);
             if (cs != null) {
               distinctVals.add(cs.getCountDistint());
             }
@@ -79,32 +73,27 @@
         }
         denom=getDenominator(distinctVals);
       }
-      updateJoinColumnsNDV(joinKeys,joinedColStats,numAttr);
+      updateJoinColumnsNDV(joinKeys,joinStats,numAttr);
       Map<String,ExprNodeDesc> colExprMap=jop.getColumnExprMap();
       RowSchema rs=jop.getSchema();
       List<ColStatistics> outColStats=Lists.newArrayList();
-      Map<String,String> outInTabAlias=new HashMap<String,String>();
       for (      ColumnInfo ci : rs.getSignature()) {
         String key=ci.getInternalName();
         ExprNodeDesc end=colExprMap.get(key);
         if (end instanceof ExprNodeColumnDesc) {
           String colName=((ExprNodeColumnDesc)end).getColumn();
-          String tabAlias=((ExprNodeColumnDesc)end).getTabAlias();
-          String fqColName=StatsUtils.getFullyQualifiedColumnName(tabAlias,colName);
-          ColStatistics cs=joinedColStats.get(fqColName);
+          int pos=jop.getConf().getReversedExprs().get(key);
+          ColStatistics cs=joinStats.get(pos).getColumnStatisticsFromColName(colName);
           String outColName=key;
-          String outTabAlias=ci.getTabAlias();
-          outInTabAlias.put(outTabAlias,tabAlias);
           if (cs != null) {
             cs.setColumnName(outColName);
-            cs.setTableAlias(outTabAlias);
           }
           outColStats.add(cs);
         }
       }
       stats.setColumnStats(outColStats);
       long newRowCount=pkfkInferred ? newNumRows : computeNewRowCount(rowCounts,denom);
-      updateStatsForJoinType(stats,newRowCount,jop,rowCountParents,outInTabAlias);
+      updateStatsForJoinType(stats,newRowCount,jop,rowCountParents);
       jop.setStatistics(stats);
       if (isDebugEnabled) {
         LOG.debug("[0] STATS-" + jop.toString() + ": "+ stats.extendedToString());

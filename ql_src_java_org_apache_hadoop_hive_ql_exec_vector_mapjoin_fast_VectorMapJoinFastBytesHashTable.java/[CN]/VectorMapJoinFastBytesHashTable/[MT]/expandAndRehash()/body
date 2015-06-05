@@ -1,0 +1,47 @@
+{
+  int newLogicalHashBucketCount=logicalHashBucketCount * 2;
+  int newLogicalHashBucketMask=newLogicalHashBucketCount - 1;
+  int newMetricPutConflict=0;
+  int newLargestNumberOfSteps=0;
+  int newSlotTripleArraySize=newLogicalHashBucketCount * 3;
+  long[] newSlotTriples=new long[newSlotTripleArraySize];
+  for (int slot=0; slot < logicalHashBucketCount; slot++) {
+    int tripleIndex=slot * 3;
+    long keyRef=slotTriples[tripleIndex];
+    if (keyRef != 0) {
+      long hashCode=slotTriples[tripleIndex + 1];
+      long valueRef=slotTriples[tripleIndex + 2];
+      int intHashCode=(int)hashCode;
+      int newSlot=intHashCode & newLogicalHashBucketMask;
+      long newProbeSlot=newSlot;
+      int newTripleIndex;
+      int i=0;
+      while (true) {
+        newTripleIndex=newSlot * 3;
+        long newKeyRef=newSlotTriples[newTripleIndex];
+        if (newKeyRef == 0) {
+          break;
+        }
+        ++newMetricPutConflict;
+        newProbeSlot+=(++i);
+        newSlot=(int)(newProbeSlot & newLogicalHashBucketMask);
+      }
+      if (newLargestNumberOfSteps < i) {
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("Probed " + i + " slots (the longest so far) to find space");
+        }
+        newLargestNumberOfSteps=i;
+      }
+      newSlotTriples[newTripleIndex]=keyRef;
+      newSlotTriples[newTripleIndex + 1]=hashCode;
+      newSlotTriples[newTripleIndex + 2]=valueRef;
+    }
+  }
+  slotTriples=newSlotTriples;
+  logicalHashBucketCount=newLogicalHashBucketCount;
+  logicalHashBucketMask=newLogicalHashBucketMask;
+  metricPutConflict=newMetricPutConflict;
+  largestNumberOfSteps=newLargestNumberOfSteps;
+  resizeThreshold=(int)(logicalHashBucketCount * loadFactor);
+  metricExpands++;
+}

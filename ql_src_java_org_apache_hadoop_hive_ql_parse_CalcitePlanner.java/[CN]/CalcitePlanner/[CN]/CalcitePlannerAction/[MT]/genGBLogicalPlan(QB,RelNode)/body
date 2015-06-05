@@ -15,6 +15,22 @@
   HashMap<String,ASTNode> aggregationTrees=qbp.getAggregationExprsForClause(detsClauseName);
   boolean hasGrpByAstExprs=(grpByAstExprs != null && !grpByAstExprs.isEmpty()) ? true : false;
   boolean hasAggregationTrees=(aggregationTrees != null && !aggregationTrees.isEmpty()) ? true : false;
+  final boolean cubeRollupGrpSetPresent=(!qbp.getDestRollups().isEmpty() || !qbp.getDestGroupingSets().isEmpty() || !qbp.getDestCubes().isEmpty());
+  if (conf.getBoolVar(HiveConf.ConfVars.HIVEGROUPBYSKEW) && qbp.getDistinctFuncExprsForClause(detsClauseName).size() > 1) {
+    throw new SemanticException(ErrorMsg.UNSUPPORTED_MULTIPLE_DISTINCTS.getMsg());
+  }
+  if (cubeRollupGrpSetPresent) {
+    if (!HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVEMAPSIDEAGGREGATE)) {
+      throw new SemanticException(ErrorMsg.HIVE_GROUPING_SETS_AGGR_NOMAPAGGR.getMsg());
+    }
+    if (conf.getBoolVar(HiveConf.ConfVars.HIVEGROUPBYSKEW)) {
+      checkExpressionsForGroupingSet(grpByAstExprs,qb.getParseInfo().getDistinctFuncExprsForClause(detsClauseName),aggregationTrees,this.relToHiveRR.get(srcRel));
+      if (qbp.getDestGroupingSets().size() > conf.getIntVar(HiveConf.ConfVars.HIVE_NEW_JOB_GROUPING_SET_CARDINALITY)) {
+        String errorMsg="The number of rows per input row due to grouping sets is " + qbp.getDestGroupingSets().size();
+        throw new SemanticException(ErrorMsg.HIVE_GROUPING_SETS_THRESHOLD_NOT_ALLOWED_WITH_SKEW.getMsg(errorMsg));
+      }
+    }
+  }
   if (hasGrpByAstExprs || hasAggregationTrees) {
     ArrayList<ExprNodeDesc> gbExprNDescLst=new ArrayList<ExprNodeDesc>();
     ArrayList<String> outputColumnNames=new ArrayList<String>();
@@ -32,7 +48,7 @@
     }
     int groupingColsSize=gbExprNDescLst.size();
     List<Integer> groupingSets=null;
-    if (!qbp.getDestRollups().isEmpty() || !qbp.getDestGroupingSets().isEmpty() || !qbp.getDestCubes().isEmpty()) {
+    if (cubeRollupGrpSetPresent) {
       if (qbp.getDestRollups().contains(detsClauseName)) {
         groupingSets=getGroupingSetsForRollup(grpByAstExprs.size());
       }
