@@ -9,7 +9,16 @@
       server=new HiveServer2();
       server.init(hiveConf);
       server.start();
-      ShimLoader.getHadoopShims().startPauseMonitor(hiveConf);
+      if (hiveConf.getBoolVar(ConfVars.HIVE_SERVER2_METRICS_ENABLED)) {
+        MetricsFactory.getMetricsInstance().init(hiveConf);
+      }
+      try {
+        JvmPauseMonitor pauseMonitor=new JvmPauseMonitor(hiveConf);
+        pauseMonitor.start();
+      }
+ catch (      Throwable t) {
+        LOG.warn("Could not initiate the JvmPauseMonitor thread." + " GCs and Pauses may not be " + "warned upon.",t);
+      }
       if (hiveConf.getBoolVar(ConfVars.HIVE_SERVER2_SUPPORT_DYNAMIC_SERVICE_DISCOVERY)) {
         server.addServerInstanceToZooKeeper(hiveConf);
       }

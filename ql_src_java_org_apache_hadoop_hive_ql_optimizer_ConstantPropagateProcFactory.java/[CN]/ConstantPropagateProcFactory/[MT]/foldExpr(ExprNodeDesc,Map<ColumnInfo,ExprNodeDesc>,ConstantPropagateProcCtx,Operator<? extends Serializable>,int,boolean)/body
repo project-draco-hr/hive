@@ -2,30 +2,33 @@
   if (desc instanceof ExprNodeGenericFuncDesc) {
     ExprNodeGenericFuncDesc funcDesc=(ExprNodeGenericFuncDesc)desc;
     GenericUDF udf=funcDesc.getGenericUDF();
-    if (!isDeterministicUdf(udf)) {
-      LOG.debug("Function " + udf.getClass() + " undeterministic, quit folding.");
-      return desc;
-    }
     boolean propagateNext=propagate && propagatableUdfs.contains(udf.getClass());
     List<ExprNodeDesc> newExprs=new ArrayList<ExprNodeDesc>();
     for (    ExprNodeDesc childExpr : desc.getChildren()) {
       newExprs.add(foldExpr(childExpr,constants,cppCtx,op,tag,propagateNext));
     }
-    ExprNodeDesc constant=evaluateFunction(udf,newExprs,desc.getChildren());
-    if (constant != null) {
-      LOG.debug("Folding expression:" + desc + " -> "+ constant);
-      return constant;
+    if (!isDeterministicUdf(udf)) {
+      LOG.debug("Function " + udf.getClass() + " is undeterministic. Don't evalulating immediately.");
+      ((ExprNodeGenericFuncDesc)desc).setChildren(newExprs);
+      return desc;
     }
  else {
-      ExprNodeDesc shortcut=shortcutFunction(udf,newExprs,op);
-      if (shortcut != null) {
-        LOG.debug("Folding expression:" + desc + " -> "+ shortcut);
-        return shortcut;
+      ExprNodeDesc constant=evaluateFunction(udf,newExprs,desc.getChildren());
+      if (constant != null) {
+        LOG.debug("Folding expression:" + desc + " -> "+ constant);
+        return constant;
       }
-      ((ExprNodeGenericFuncDesc)desc).setChildren(newExprs);
-    }
-    if (propagate) {
-      propagate(udf,newExprs,op.getSchema(),constants);
+ else {
+        ExprNodeDesc shortcut=shortcutFunction(udf,newExprs,op);
+        if (shortcut != null) {
+          LOG.debug("Folding expression:" + desc + " -> "+ shortcut);
+          return shortcut;
+        }
+        ((ExprNodeGenericFuncDesc)desc).setChildren(newExprs);
+      }
+      if (propagate) {
+        propagate(udf,newExprs,op.getSchema(),constants);
+      }
     }
     return desc;
   }
