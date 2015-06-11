@@ -1,6 +1,6 @@
 {
   Configuration conf=context.getConfiguration();
-  Process proc=startJob(context,conf.get("user.name"),conf.get(OVERRIDE_CLASSPATH));
+  LauncherDelegator.JobType jobType=LauncherDelegator.JobType.valueOf(conf.get(JOB_TYPE));
   String statusdir=conf.get(STATUSDIR_NAME);
   if (statusdir != null) {
     try {
@@ -12,8 +12,11 @@
       throw new IOException(msg,e);
     }
   }
-  Boolean enablelog=Boolean.parseBoolean(conf.get(ENABLE_LOG));
-  LauncherDelegator.JobType jobType=LauncherDelegator.JobType.valueOf(conf.get(JOB_TYPE));
+  if (tryReconnectToRunningJob(conf,context,jobType,statusdir)) {
+    return;
+  }
+  killLauncherChildJobs(conf,context.getJobID().toString());
+  Process proc=startJob(conf,context.getJobID().toString(),conf.get("user.name"),conf.get(OVERRIDE_CLASSPATH));
   ExecutorService pool=Executors.newCachedThreadPool();
   executeWatcher(pool,conf,context.getJobID(),proc.getInputStream(),statusdir,STDOUT_FNAME);
   executeWatcher(pool,conf,context.getJobID(),proc.getErrorStream(),statusdir,STDERR_FNAME);
@@ -24,20 +27,11 @@
   if (!pool.awaitTermination(WATCHER_TIMEOUT_SECS,TimeUnit.SECONDS)) {
     pool.shutdownNow();
   }
-  writeExitValue(conf,proc.exitValue(),statusdir);
-  JobState state=new JobState(context.getJobID().toString(),conf);
-  state.setExitValue(proc.exitValue());
-  state.setCompleteStatus("done");
-  state.close();
+  updateJobStateToDoneAndWriteExitValue(conf,statusdir,context.getJobID().toString(),proc.exitValue());
+  Boolean enablelog=Boolean.parseBoolean(conf.get(ENABLE_LOG));
   if (enablelog && TempletonUtils.isset(statusdir)) {
     LOG.info("templeton: collecting logs for " + context.getJobID().toString() + " to "+ statusdir+ "/logs");
     LogRetriever logRetriever=new LogRetriever(statusdir,jobType,conf);
     logRetriever.run();
-  }
-  if (proc.exitValue() != 0) {
-    LOG.info("templeton: job failed with exit code " + proc.exitValue());
-  }
- else {
-    LOG.info("templeton: job completed with exit code 0");
   }
 }
