@@ -20,4 +20,28 @@
  catch (  IOException e) {
     log.error("Could not add necessary dependencies for " + serDeParams.getRowIdFactory().getClass(),e);
   }
+  if (connectionParams.useSasl()) {
+    try {
+      Connector conn=connectionParams.getConnector();
+      AuthenticationToken token=helper.getDelegationToken(conn);
+      try {
+        InputConfigurator.setConnectorInfo(AccumuloInputFormat.class,jobConf,connectionParams.getAccumuloUserName(),token);
+      }
+ catch (      IllegalStateException e) {
+        log.debug("Ignoring IllegalArgumentException about re-setting connector information");
+      }
+      try {
+        OutputConfigurator.setConnectorInfo(AccumuloOutputFormat.class,jobConf,connectionParams.getAccumuloUserName(),token);
+      }
+ catch (      IllegalStateException e) {
+        log.debug("Ignoring IllegalArgumentException about re-setting connector information");
+      }
+      Token<? extends TokenIdentifier> accumuloToken=helper.getHadoopToken(token);
+      log.info("Adding Hadoop Token for Accumulo to Job's Credentials");
+      helper.mergeTokenIntoJobConf(jobConf,accumuloToken);
+    }
+ catch (    Exception e) {
+      throw new RuntimeException("Failed to obtain DelegationToken for " + connectionParams.getAccumuloUserName(),e);
+    }
+  }
 }

@@ -1,0 +1,38 @@
+{
+  this.conf=conf;
+  timers=CacheBuilder.newBuilder().build(new CacheLoader<String,com.codahale.metrics.Timer>(){
+    @Override public com.codahale.metrics.Timer load(    String key) throws Exception {
+      Timer timer=new Timer(new ExponentiallyDecayingReservoir());
+      metricRegistry.register(key,timer);
+      return timer;
+    }
+  }
+);
+  counters=CacheBuilder.newBuilder().build(new CacheLoader<String,Counter>(){
+    @Override public Counter load(    String key) throws Exception {
+      Counter counter=new Counter();
+      metricRegistry.register(key,counter);
+      return counter;
+    }
+  }
+);
+  registerAll("gc",new GarbageCollectorMetricSet());
+  registerAll("buffers",new BufferPoolMetricSet(ManagementFactory.getPlatformMBeanServer()));
+  registerAll("memory",new MemoryUsageGaugeSet());
+  registerAll("threads",new ThreadStatesGaugeSet());
+  registerAll("classLoading",new ClassLoadingGaugeSet());
+  Set<MetricsReporting> finalReporterList=new HashSet<MetricsReporting>();
+  List<String> metricsReporterNames=Lists.newArrayList(Splitter.on(",").trimResults().omitEmptyStrings().split(conf.getVar(HiveConf.ConfVars.HIVE_METRICS_REPORTER)));
+  if (metricsReporterNames != null) {
+    for (    String metricsReportingName : metricsReporterNames) {
+      try {
+        MetricsReporting reporter=MetricsReporting.valueOf(metricsReportingName.trim().toUpperCase());
+        finalReporterList.add(reporter);
+      }
+ catch (      IllegalArgumentException e) {
+        LOGGER.warn("Metrics reporter skipped due to invalid configured reporter: " + metricsReportingName);
+      }
+    }
+  }
+  initReporting(finalReporterList);
+}

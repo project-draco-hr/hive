@@ -3,12 +3,36 @@
   final String tableName=job.get(AccumuloSerDeParameters.TABLE_NAME);
   Preconditions.checkNotNull(tableName,"Expected Accumulo table name to be provided in job configuration");
   try {
-    setAccumuloConnectorInfo(job,cnxnParams.getAccumuloUserName(),new PasswordToken(cnxnParams.getAccumuloPassword()));
     if (cnxnParams.useMockInstance()) {
       setAccumuloMockInstance(job,cnxnParams.getAccumuloInstanceName());
     }
  else {
-      setAccumuloZooKeeperInstance(job,cnxnParams.getAccumuloInstanceName(),cnxnParams.getZooKeepers());
+      setAccumuloZooKeeperInstance(job,cnxnParams.getAccumuloInstanceName(),cnxnParams.getZooKeepers(),cnxnParams.useSasl());
+    }
+    if (cnxnParams.useSasl()) {
+      UserGroupInformation ugi=UserGroupInformation.getCurrentUser();
+      if (!ugi.hasKerberosCredentials()) {
+        helper.addTokenFromUserToJobConf(ugi,job);
+      }
+ else {
+        try {
+          Connector connector=cnxnParams.getConnector();
+          AuthenticationToken token=helper.getDelegationToken(connector);
+          setConnectorInfo(job,cnxnParams.getAccumuloUserName(),token);
+          Token<? extends TokenIdentifier> accumuloToken=helper.getHadoopToken(token);
+          log.info("Adding Hadoop Token for Accumulo to Job's Credentials");
+          helper.mergeTokenIntoJobConf(job,accumuloToken);
+          if (!ugi.addToken(accumuloToken)) {
+            throw new IOException("Failed to add Accumulo Token to UGI");
+          }
+        }
+ catch (        AccumuloException|AccumuloSecurityException e) {
+          throw new IOException("Failed to acquire Accumulo DelegationToken",e);
+        }
+      }
+    }
+ else {
+      setAccumuloConnectorInfo(job,cnxnParams.getAccumuloUserName(),new PasswordToken(cnxnParams.getAccumuloPassword()));
     }
     setDefaultAccumuloTableName(job,tableName);
   }

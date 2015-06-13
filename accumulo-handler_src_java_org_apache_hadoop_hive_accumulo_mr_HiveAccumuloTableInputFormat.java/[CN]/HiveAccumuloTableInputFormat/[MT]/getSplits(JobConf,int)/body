@@ -11,7 +11,16 @@
   JobContext context=ShimLoader.getHadoopShims().newJobContext(Job.getInstance(jobConf));
   Path[] tablePaths=FileInputFormat.getInputPaths(context);
   try {
-    final Connector connector=accumuloParams.getConnector(instance);
+    UserGroupInformation ugi=UserGroupInformation.getCurrentUser();
+    final Connector connector;
+    if (accumuloParams.useSasl() && !ugi.hasKerberosCredentials()) {
+      AuthenticationToken token=ConfiguratorBase.getAuthenticationToken(AccumuloInputFormat.class,jobConf);
+      token=helper.unwrapAuthenticationToken(jobConf,token);
+      connector=instance.getConnector(accumuloParams.getAccumuloUserName(),token);
+    }
+ else {
+      connector=accumuloParams.getConnector(instance);
+    }
     final List<ColumnMapping> columnMappings=columnMapper.getColumnMappings();
     final List<IteratorSetting> iterators=predicateHandler.getIterators(jobConf,columnMapper);
     final Collection<Range> ranges=predicateHandler.getRanges(jobConf,columnMapper);
