@@ -1,9 +1,12 @@
 {
   while (!isShutdown.get() && !Thread.currentThread().isInterrupted()) {
     try {
-      AMNodeInfo amNodeInfo=pendingHeartbeatQueeu.take();
-      if (amNodeInfo.getTaskCount() == 0) {
+      final AMNodeInfo amNodeInfo=pendingHeartbeatQueeu.take();
+      if (amNodeInfo.getTaskCount() == 0 || amNodeInfo.hasAmFailed()) {
 synchronized (knownAppMasters) {
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Removing am {} with last associated dag{} from heartbeat with taskCount={}, amFailed={}",amNodeInfo.amNodeId,amNodeInfo.getCurrentDagName(),amNodeInfo.getTaskCount(),amNodeInfo.hasAmFailed(),amNodeInfo);
+          }
           knownAppMasters.remove(amNodeInfo.amNodeId);
         }
         amNodeInfo.stopUmbilical();
@@ -12,7 +15,18 @@ synchronized (knownAppMasters) {
         long next=System.currentTimeMillis() + heartbeatInterval;
         amNodeInfo.setNextHeartbeatTime(next);
         pendingHeartbeatQueeu.add(amNodeInfo);
-        executor.submit(new AMHeartbeatCallable(amNodeInfo));
+        ListenableFuture<Void> future=executor.submit(new AMHeartbeatCallable(amNodeInfo));
+        Futures.addCallback(future,new FutureCallback<Void>(){
+          @Override public void onSuccess(          Void result){
+          }
+          @Override public void onFailure(          Throwable t){
+            String currentDagName=amNodeInfo.getCurrentDagName();
+            amNodeInfo.setAmFailed(true);
+            LOG.warn("Heartbeat failed to AM {}. Killing all other tasks for the query={}",amNodeInfo.amNodeId,currentDagName,t);
+            queryFailedHandler.queryFailed(null,currentDagName);
+          }
+        }
+);
       }
     }
  catch (    InterruptedException e) {
