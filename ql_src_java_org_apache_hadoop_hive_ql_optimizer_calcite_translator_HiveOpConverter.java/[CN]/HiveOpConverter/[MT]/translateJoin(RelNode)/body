@@ -1,9 +1,12 @@
 {
+  String[] baseSrc=new String[joinRel.getInputs().size()];
+  String tabAlias=getHiveDerivedTableAlias();
   OpAttr[] inputs=new OpAttr[joinRel.getInputs().size()];
   List<Operator<?>> children=new ArrayList<Operator<?>>(joinRel.getInputs().size());
   for (int i=0; i < inputs.length; i++) {
     inputs[i]=dispatch(joinRel.getInput(i));
     children.add(inputs[i].inputs.get(0));
+    baseSrc[i]=inputs[i].tabAlias;
   }
   if (LOG.isDebugEnabled()) {
     LOG.debug("Translating operator rel#" + joinRel.getId() + ":"+ joinRel.getRelTypeName()+ " with row type: ["+ joinRel.getRowType()+ "]");
@@ -23,7 +26,7 @@
     ReduceSinkOperator reduceSinkOp=(ReduceSinkOperator)children.get(tag);
     reduceSinkOp.getConf().setTag(tag);
   }
-  JoinOperator joinOp=genJoin(joinRel,joinPredInfo,children,joinExpressions);
+  JoinOperator joinOp=genJoin(joinRel,joinPredInfo,children,joinExpressions,baseSrc,tabAlias);
   Set<Integer> newVcolsInCalcite=new HashSet<Integer>();
   newVcolsInCalcite.addAll(inputs[0].vcolsInCalcite);
   if (joinRel instanceof MultiJoin || extractJoinType((HiveJoin)joinRel) != JoinType.LEFTSEMI) {
@@ -33,5 +36,5 @@
       shift+=inputs[i].inputs.get(0).getSchema().getSignature().size();
     }
   }
-  return new OpAttr(null,newVcolsInCalcite,joinOp);
+  return new OpAttr(tabAlias,newVcolsInCalcite,joinOp);
 }
