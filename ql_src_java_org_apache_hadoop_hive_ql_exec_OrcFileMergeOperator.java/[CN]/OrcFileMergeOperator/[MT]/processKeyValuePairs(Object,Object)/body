@@ -9,6 +9,11 @@
  else {
       k=(OrcFileKeyWrapper)key;
     }
+    if (k.isIncompatFile()) {
+      LOG.warn("Incompatible ORC file merge! Stripe statistics is missing. " + k.getInputPath());
+      incompatFileSet.add(k.getInputPath());
+      return;
+    }
     filePath=k.getInputPath().toUri().getPath();
     fixTmpPath(k.getInputPath().getParent());
     v=(OrcFileValueWrapper)value;
@@ -42,7 +47,7 @@
     fdis.readFully(v.getStripeInformation().getOffset(),buffer,0,(int)v.getStripeInformation().getLength());
     outWriter.appendStripe(buffer,0,buffer.length,v.getStripeInformation(),v.getStripeStatistics());
     if (isLogInfoEnabled) {
-      LOG.info("Merged stripe from file " + k.getInputPath() + " [ offset : "+ v.getStripeInformation().getOffset()+ " length: "+ v.getStripeInformation().getLength()+ " ]");
+      LOG.info("Merged stripe from file " + k.getInputPath() + " [ offset : "+ v.getStripeInformation().getOffset()+ " length: "+ v.getStripeInformation().getLength()+ " row: "+ v.getStripeStatistics().getColStats(0).getNumberOfValues()+ " ]");
     }
     if (v.isLastStripeInFile()) {
       outWriter.appendUserMetadata(v.getUserMetadata());
@@ -50,10 +55,13 @@
   }
  catch (  Throwable e) {
     this.exception=true;
-    closeOp(true);
+    LOG.error("Closing operator..Exception: " + ExceptionUtils.getStackTrace(e));
     throw new HiveException(e);
   }
  finally {
+    if (exception) {
+      closeOp(true);
+    }
     if (fdis != null) {
       try {
         fdis.close();
