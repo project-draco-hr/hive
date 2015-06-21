@@ -1,0 +1,49 @@
+{
+  if (!reconnectToRunningJobEnabledAndSupported(conf,jobType)) {
+    return false;
+  }
+  long startTime=getTempletonLaunchTime(conf);
+  UserGroupInformation ugi=UserGroupInformation.getCurrentUser();
+  WebHCatJTShim tracker=ShimLoader.getHadoopShims().getWebHCatShim(conf,ugi);
+  try {
+    Set<String> childJobs=tracker.getJobs(context.getJobID().toString(),startTime);
+    if (childJobs.size() == 0) {
+      LOG.info("No child jobs found to reconnect with");
+      return false;
+    }
+    if (childJobs.size() > 1) {
+      LOG.warn(String.format("Found more than one child job to reconnect with: %s, skipping reconnect",Arrays.toString(childJobs.toArray())));
+      return false;
+    }
+    String childJobIdString=childJobs.iterator().next();
+    org.apache.hadoop.mapred.JobID childJobId=org.apache.hadoop.mapred.JobID.forName(childJobIdString);
+    LOG.info(String.format("Reconnecting to an existing job %s",childJobIdString));
+    updateJobStatePercentAndChildId(conf,context.getJobID().toString(),null,childJobIdString);
+    do {
+      org.apache.hadoop.mapred.JobStatus jobStatus=tracker.getJobStatus(childJobId);
+      if (jobStatus.isJobComplete()) {
+        LOG.info(String.format("Child job %s completed",childJobIdString));
+        int exitCode=0;
+        if (jobStatus.getRunState() != org.apache.hadoop.mapred.JobStatus.SUCCEEDED) {
+          exitCode=1;
+        }
+        updateJobStateToDoneAndWriteExitValue(conf,statusdir,context.getJobID().toString(),exitCode);
+        break;
+      }
+      String percent=String.format("map %s%%, reduce %s%%",jobStatus.mapProgress() * 100,jobStatus.reduceProgress() * 100);
+      updateJobStatePercentAndChildId(conf,context.getJobID().toString(),percent,null);
+      LOG.info("KeepAlive Heart beat");
+      context.progress();
+      Thread.sleep(POLL_JOBPROGRESS_MSEC);
+    }
+ while (true);
+    return true;
+  }
+ catch (  IOException ex) {
+    LOG.error("Exception encountered in tryReconnectToRunningJob",ex);
+    throw ex;
+  }
+ finally {
+    tracker.close();
+  }
+}
