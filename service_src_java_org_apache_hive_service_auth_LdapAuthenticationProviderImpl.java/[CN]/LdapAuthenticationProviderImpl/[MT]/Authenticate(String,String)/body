@@ -8,21 +8,95 @@
   if (password == null || password.isEmpty() || password.getBytes()[0] == 0) {
     throw new AuthenticationException("Error validating LDAP user:" + " a null or blank password has been provided");
   }
-  String bindDN;
-  if (baseDN == null) {
-    bindDN=user;
-  }
- else {
-    bindDN="uid=" + user + ","+ baseDN;
-  }
   env.put(Context.SECURITY_AUTHENTICATION,"simple");
-  env.put(Context.SECURITY_PRINCIPAL,bindDN);
+  env.put(Context.SECURITY_PRINCIPAL,user);
   env.put(Context.SECURITY_CREDENTIALS,password);
+  LOG.debug("Connecting using principal=" + user + " at url="+ ldapURL);
+  DirContext ctx=null;
+  String userDN=null;
   try {
-    Context ctx=new InitialDirContext(env);
-    ctx.close();
+    ctx=new InitialDirContext(env);
+    if (userFilter == null && groupFilter == null && customQuery == null) {
+      userDN=findUserDNByPattern(ctx,user);
+      if (userDN == null) {
+        userDN=findUserDNByName(ctx,baseDN,user);
+      }
+      if (userDN == null) {
+        throw new AuthenticationException("Authentication failed: User search failed");
+      }
+      return;
+    }
+    if (customQuery != null) {
+      List<String> resultList=executeLDAPQuery(ctx,customQuery,baseDN);
+      if (resultList != null) {
+        for (        String matchedDN : resultList) {
+          if (matchedDN.split(",",2)[0].split("=",2)[1].equalsIgnoreCase(user)) {
+            LOG.info("Authentication succeeded based on result set from LDAP query");
+            return;
+          }
+        }
+      }
+      throw new AuthenticationException("Authentication failed: LDAP query " + "from property returned no data");
+    }
+    if (userFilter != null && userFilter.size() > 0) {
+      LOG.info("Authenticating user " + user + " using user filter");
+      boolean success=false;
+      for (      String filteredUser : userFilter) {
+        if (filteredUser.equalsIgnoreCase(user)) {
+          LOG.debug("User filter partially satisfied");
+          success=true;
+          break;
+        }
+      }
+      if (!success) {
+        LOG.info("Authentication failed based on user membership");
+        throw new AuthenticationException("Authentication failed: User not a member " + "of specified list");
+      }
+      userDN=findUserDNByPattern(ctx,user);
+      if (userDN != null) {
+        LOG.info("User filter entirely satisfied");
+      }
+ else {
+        LOG.info("User " + user + " could not be found in the configured UserBaseDN,"+ "authentication failed");
+        throw new AuthenticationException("Authentication failed: UserDN could not be " + "found in specified User base(s)");
+      }
+    }
+    if (groupFilter != null && groupFilter.size() > 0) {
+      LOG.debug("Authenticating user " + user + " using group membership:");
+      if (userDN == null) {
+        userDN=findUserDNByName(ctx,baseDN,user);
+      }
+      List<String> userGroups=getGroupsForUser(ctx,userDN);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("User member of :");
+        prettyPrint(userGroups);
+      }
+      if (userGroups != null) {
+        for (        String elem : userGroups) {
+          String shortName=((elem.split(","))[0].split("="))[1];
+          String groupDN=elem.split(",",2)[1];
+          LOG.debug("Checking group:DN=" + elem + ",shortName="+ shortName+ ",groupDN="+ groupDN);
+          if (groupFilter.contains(shortName)) {
+            LOG.info("Authentication succeeded based on group membership");
+            return;
+          }
+        }
+      }
+      throw new AuthenticationException("Authentication failed: User not a member of " + "listed groups");
+    }
+    LOG.info("Simple password authentication succeeded");
   }
  catch (  NamingException e) {
-    throw new AuthenticationException("Error validating LDAP user",e);
+    throw new AuthenticationException("LDAP Authentication failed for user",e);
+  }
+ finally {
+    try {
+      if (ctx != null) {
+        ctx.close();
+      }
+    }
+ catch (    Exception e) {
+      LOG.warn("Exception when closing LDAP context:" + e.getMessage());
+    }
   }
 }
