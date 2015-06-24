@@ -14,38 +14,43 @@
     LOG.info("Cannot vectorize groupby key expression");
     return false;
   }
-  ret=validateAggregationDesc(desc.getAggregators(),isReduce);
-  if (!ret) {
-    LOG.info("Cannot vectorize groupby aggregate expression");
-    return false;
+  boolean isMergePartial=(desc.getMode() != GroupByDesc.Mode.HASH);
+  if (!isReduce) {
+    ret=validateHashAggregationDesc(desc.getAggregators());
+    if (!ret) {
+      return false;
+    }
   }
-  if (isReduce) {
-    if (desc.isDistinct()) {
-      LOG.info("Distinct not supported in reduce vector mode");
-      return false;
-    }
-    if (desc.getMode() != GroupByDesc.Mode.COMPLETE && desc.getMode() != GroupByDesc.Mode.PARTIAL1 && desc.getMode() != GroupByDesc.Mode.PARTIAL2 && desc.getMode() != GroupByDesc.Mode.MERGEPARTIAL) {
-      LOG.info("Reduce vector mode not supported when input for GROUP BY not sorted");
-      return false;
-    }
-    LOG.info("Reduce GROUP BY mode is " + desc.getMode().name());
-    if (!aggregatorsOutputIsPrimitive(desc.getAggregators(),isReduce)) {
-      LOG.info("Reduce vector mode only supported when aggregate outputs are primitive types");
-      return false;
-    }
-    if (desc.getKeys().size() > 0) {
-      if (op.getParentOperators().size() > 0) {
-        LOG.info("Reduce vector mode can only handle a key group GROUP BY operator when it is fed by reduce-shuffle");
+ else {
+    if (isMergePartial) {
+      if (desc.isDistinct()) {
+        LOG.info("Vectorized Reduce MergePartial GROUP BY does not support DISTINCT");
         return false;
       }
-      LOG.info("Reduce-side GROUP BY will process key groups");
-      vectorDesc.setVectorGroupBatches(true);
+      boolean hasKeys=(desc.getKeys().size() > 0);
+      ret=validateReduceMergePartialAggregationDesc(desc.getAggregators(),hasKeys);
+      if (!ret) {
+        return false;
+      }
+      if (hasKeys) {
+        if (op.getParentOperators().size() > 0) {
+          LOG.info("Vectorized Reduce MergePartial GROUP BY keys can only handle a key group when it is fed by reduce-shuffle");
+          return false;
+        }
+        LOG.info("Vectorized Reduce MergePartial GROUP BY will process key groups");
+        vectorDesc.setVectorOutput(true);
+      }
+ else {
+        LOG.info("Vectorized Reduce MergePartial GROUP BY will do global aggregation");
+      }
+      vectorDesc.setIsReduceMergePartial(true);
     }
  else {
-      LOG.info("Reduce-side GROUP BY will do global aggregation");
+      ret=validateHashAggregationDesc(desc.getAggregators());
+      if (!ret) {
+        return false;
+      }
     }
-    vectorDesc.setVectorOutput(true);
-    vectorDesc.setIsReduce(true);
   }
   return true;
 }
