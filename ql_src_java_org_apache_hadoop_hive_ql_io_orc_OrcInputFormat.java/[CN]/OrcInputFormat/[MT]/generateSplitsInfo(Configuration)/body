@@ -1,3 +1,45 @@
 {
-  return generateSplitsInfo(conf,-1);
+  Context context=new Context(conf);
+  List<OrcSplit> splits=Lists.newArrayList();
+  List<Future<?>> pathFutures=Lists.newArrayList();
+  List<Future<?>> splitFutures=Lists.newArrayList();
+  for (  Path dir : getInputPaths(conf)) {
+    FileSystem fs=dir.getFileSystem(conf);
+    FileGenerator fileGenerator=new FileGenerator(context,fs,dir);
+    pathFutures.add(context.threadPool.submit(fileGenerator));
+  }
+  try {
+    for (    Future<?> pathFuture : pathFutures) {
+      SplitStrategy splitStrategy=(SplitStrategy)pathFuture.get();
+      if (isDebugEnabled) {
+        LOG.debug(splitStrategy);
+      }
+      if (splitStrategy instanceof ETLSplitStrategy) {
+        List<SplitInfo> splitInfos=splitStrategy.getSplits();
+        for (        SplitInfo splitInfo : splitInfos) {
+          splitFutures.add(context.threadPool.submit(new SplitGenerator(splitInfo)));
+        }
+      }
+ else {
+        splits.addAll(splitStrategy.getSplits());
+      }
+    }
+    for (    Future<?> splitFuture : splitFutures) {
+      splits.addAll((Collection<? extends OrcSplit>)splitFuture.get());
+    }
+  }
+ catch (  Exception e) {
+    cancelFutures(pathFutures);
+    cancelFutures(splitFutures);
+    throw new RuntimeException("serious problem",e);
+  }
+  if (context.cacheStripeDetails) {
+    LOG.info("FooterCacheHitRatio: " + context.cacheHitCounter.get() + "/"+ context.numFilesCounter.get());
+  }
+  if (isDebugEnabled) {
+    for (    OrcSplit split : splits) {
+      LOG.debug(split + " projected_columns_uncompressed_size: " + split.getProjectedColumnsUncompressedSize());
+    }
+  }
+  return splits;
 }
