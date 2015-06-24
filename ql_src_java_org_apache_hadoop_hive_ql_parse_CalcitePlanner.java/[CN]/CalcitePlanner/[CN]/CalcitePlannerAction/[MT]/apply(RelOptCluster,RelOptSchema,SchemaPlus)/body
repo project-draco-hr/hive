@@ -56,11 +56,14 @@
   if (HiveConf.getBoolVar(conf,ConfVars.HIVE_CBO_RETPATH_HIVEOP)) {
     hepPgmBldr=new HepProgramBuilder().addMatchOrder(HepMatchOrder.BOTTOM_UP);
     hepPgmBldr.addRuleInstance(HiveJoinToMultiJoinRule.INSTANCE);
+    hepPgmBldr=hepPgmBldr.addRuleCollection(ImmutableList.of(HiveJoinProjectTransposeRule.BOTH_PROJECT,HiveJoinToMultiJoinRule.INSTANCE,HiveProjectMergeRule.INSTANCE));
     hepPlanner=new HepPlanner(hepPgmBldr.build());
     hepPlanner.registerMetadataProviders(list);
     cluster.setMetadataProvider(new CachingRelMetadataProvider(chainedProvider,hepPlanner));
     hepPlanner.setRoot(calciteOptimizedPlan);
     calciteOptimizedPlan=hepPlanner.findBestExp();
+    HiveRelFieldTrimmer fieldTrimmer=new HiveRelFieldTrimmer(null,HiveProject.DEFAULT_PROJECT_FACTORY,HiveFilter.DEFAULT_FILTER_FACTORY,HiveJoin.HIVE_JOIN_FACTORY,HiveSemiJoin.HIVE_SEMIJOIN_FACTORY,HiveSort.HIVE_SORT_REL_FACTORY,HiveAggregate.HIVE_AGGR_REL_FACTORY,HiveUnion.UNION_REL_FACTORY);
+    calciteOptimizedPlan=fieldTrimmer.trim(calciteOptimizedPlan);
     hepPgmBldr=new HepProgramBuilder().addMatchOrder(HepMatchOrder.BOTTOM_UP);
     hepPgmBldr.addRuleInstance(HiveInsertExchange4JoinRule.EXCHANGE_BELOW_JOIN);
     hepPgmBldr.addRuleInstance(HiveInsertExchange4JoinRule.EXCHANGE_BELOW_MULTIJOIN);
