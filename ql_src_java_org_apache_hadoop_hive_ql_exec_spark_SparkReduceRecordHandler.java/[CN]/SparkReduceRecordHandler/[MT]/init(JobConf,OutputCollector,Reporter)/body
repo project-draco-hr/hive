@@ -32,23 +32,13 @@
       ArrayList<ObjectInspector> ois=new ArrayList<ObjectInspector>();
       if (vectorized) {
         valueStructInspectors[tag]=(StructObjectInspector)valueObjectInspector[tag];
-        batches[tag]=VectorizedBatchUtil.constructVectorizedRowBatch(keyStructInspector,valueStructInspectors[tag]);
+        ObjectPair<VectorizedRowBatch,StandardStructObjectInspector> pair=VectorizedBatchUtil.constructVectorizedRowBatch(keyStructInspector,valueStructInspectors[tag],gWork.getVectorScratchColumnTypeMap());
+        batches[tag]=pair.getFirst();
         final int totalColumns=keysColumnOffset + valueStructInspectors[tag].getAllStructFieldRefs().size();
         valueStringWriters[tag]=new ArrayList<VectorExpressionWriter>(totalColumns);
         valueStringWriters[tag].addAll(Arrays.asList(VectorExpressionWriterFactory.genVectorStructExpressionWritables(keyStructInspector)));
         valueStringWriters[tag].addAll(Arrays.asList(VectorExpressionWriterFactory.genVectorStructExpressionWritables(valueStructInspectors[tag])));
-        ArrayList<String> colNames=new ArrayList<String>();
-        List<? extends StructField> fields=keyStructInspector.getAllStructFieldRefs();
-        for (        StructField field : fields) {
-          colNames.add(Utilities.ReduceField.KEY.toString() + "." + field.getFieldName());
-          ois.add(field.getFieldObjectInspector());
-        }
-        fields=valueStructInspectors[tag].getAllStructFieldRefs();
-        for (        StructField field : fields) {
-          colNames.add(Utilities.ReduceField.VALUE.toString() + "." + field.getFieldName());
-          ois.add(field.getFieldObjectInspector());
-        }
-        rowObjectInspector[tag]=ObjectInspectorFactory.getStandardStructObjectInspector(colNames,ois);
+        rowObjectInspector[tag]=pair.getSecond();
       }
  else {
         ois.add(keyObjectInspector);
