@@ -1,0 +1,28 @@
+{
+  Stopwatch sw=new Stopwatch();
+  Map<String,GcTimes> gcTimesBeforeSleep=getGcTimes();
+  while (shouldRun) {
+    sw.reset().start();
+    try {
+      Thread.sleep(SLEEP_INTERVAL_MS);
+    }
+ catch (    InterruptedException ie) {
+      return;
+    }
+    long extraSleepTime=sw.elapsedMillis() - SLEEP_INTERVAL_MS;
+    Map<String,GcTimes> gcTimesAfterSleep=getGcTimes();
+    if (extraSleepTime > warnThresholdMs) {
+      ++numGcWarnThresholdExceeded;
+      LOG.warn(formatMessage(extraSleepTime,gcTimesAfterSleep,gcTimesBeforeSleep));
+      incrementMetricsCounter("jvm.pause.warn-threshold",1);
+    }
+ else     if (extraSleepTime > infoThresholdMs) {
+      ++numGcInfoThresholdExceeded;
+      LOG.info(formatMessage(extraSleepTime,gcTimesAfterSleep,gcTimesBeforeSleep));
+      incrementMetricsCounter("jvm.pause.info-threshold",1);
+    }
+    incrementMetricsCounter("jvm.pause.extraSleepTime",extraSleepTime);
+    totalGcExtraSleepTime+=extraSleepTime;
+    gcTimesBeforeSleep=gcTimesAfterSleep;
+  }
+}

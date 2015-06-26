@@ -4,6 +4,7 @@
   Path tblPath=null;
   List<Path> partPaths=null;
   Table tbl=null;
+  boolean ifPurge=false;
   try {
     ms.openTransaction();
     tbl=get_table_core(dbname,name);
@@ -13,6 +14,7 @@
     if (tbl.getSd() == null) {
       throw new MetaException("Table metadata is corrupted");
     }
+    ifPurge=isMustPurge(envContext,tbl);
     firePreEvent(new PreDropTableEvent(tbl,deleteData,this));
     boolean isIndexTable=isIndexTable(tbl);
     if (indexName == null && isIndexTable) {
@@ -40,6 +42,7 @@
         throw new MetaException(target + " metadata not deleted since " + tblPath.getParent()+ " is not writable by "+ hiveConf.getUser());
       }
     }
+    checkTrashPurgeCombination(tblPath,dbname + "." + name,ifPurge);
     partPaths=dropPartitionsAndGetLocations(ms,dbname,name,tblPath,tbl.getPartitionKeys(),deleteData && !isExternal);
     if (!ms.dropTable(dbname,name)) {
       String tableName=dbname + "." + name;
@@ -52,7 +55,6 @@
       ms.rollbackTransaction();
     }
  else     if (deleteData && !isExternal) {
-      boolean ifPurge=((envContext != null) && Boolean.parseBoolean(envContext.getProperties().get("ifPurge"))) || (tbl.isSetParameters() && "true".equalsIgnoreCase(tbl.getParameters().get("auto.purge")));
       deletePartitionData(partPaths,ifPurge);
       deleteTableData(tblPath,ifPurge);
     }

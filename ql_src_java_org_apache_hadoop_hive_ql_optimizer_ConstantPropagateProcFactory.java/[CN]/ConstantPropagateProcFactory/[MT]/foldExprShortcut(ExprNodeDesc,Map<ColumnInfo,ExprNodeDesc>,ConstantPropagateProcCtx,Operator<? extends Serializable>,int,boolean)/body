@@ -1,0 +1,23 @@
+{
+  if (desc instanceof ExprNodeGenericFuncDesc) {
+    ExprNodeGenericFuncDesc funcDesc=(ExprNodeGenericFuncDesc)desc;
+    GenericUDF udf=funcDesc.getGenericUDF();
+    boolean propagateNext=propagate && propagatableUdfs.contains(udf.getClass());
+    List<ExprNodeDesc> newExprs=new ArrayList<ExprNodeDesc>();
+    for (    ExprNodeDesc childExpr : desc.getChildren()) {
+      newExprs.add(foldExpr(childExpr,constants,cppCtx,op,tag,propagateNext));
+    }
+    if (!isDeterministicUdf(udf)) {
+      LOG.debug("Function " + udf.getClass() + " is undeterministic. Don't evalulating immediately.");
+      ((ExprNodeGenericFuncDesc)desc).setChildren(newExprs);
+      return desc;
+    }
+    ExprNodeDesc shortcut=shortcutFunction(udf,newExprs,op);
+    if (shortcut != null) {
+      LOG.debug("Folding expression:" + desc + " -> "+ shortcut);
+      return shortcut;
+    }
+    ((ExprNodeGenericFuncDesc)desc).setChildren(newExprs);
+  }
+  return desc;
+}
