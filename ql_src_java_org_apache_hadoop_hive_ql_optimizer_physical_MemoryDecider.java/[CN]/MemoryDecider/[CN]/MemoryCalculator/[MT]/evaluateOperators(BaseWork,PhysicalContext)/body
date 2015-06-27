@@ -1,0 +1,97 @@
+{
+  Dispatcher disp=null;
+  final Set<MapJoinOperator> mapJoins=new LinkedHashSet<MapJoinOperator>();
+  Map<Rule,NodeProcessor> rules=new HashMap<Rule,NodeProcessor>();
+  rules.put(new RuleRegExp("Map join memory estimator",MapJoinOperator.getOperatorName() + "%"),new NodeProcessor(){
+    @Override public Object process(    Node nd,    Stack<Node> stack,    NodeProcessorCtx procCtx,    Object... nodeOutputs){
+      mapJoins.add((MapJoinOperator)nd);
+      return null;
+    }
+  }
+);
+  disp=new DefaultRuleDispatcher(null,rules,null);
+  GraphWalker ogw=new DefaultGraphWalker(disp);
+  ArrayList<Node> topNodes=new ArrayList<Node>();
+  topNodes.addAll(w.getAllRootOperators());
+  LinkedHashMap<Node,Object> nodeOutput=new LinkedHashMap<Node,Object>();
+  ogw.startWalking(topNodes,nodeOutput);
+  if (mapJoins.size() == 0) {
+    return;
+  }
+  try {
+    long total=0;
+    final Map<MapJoinOperator,Long> sizes=new HashMap<MapJoinOperator,Long>();
+    final Map<MapJoinOperator,Integer> positions=new HashMap<MapJoinOperator,Integer>();
+    int i=0;
+    for (    MapJoinOperator mj : mapJoins) {
+      long size=computeSizeToFitInMem(mj);
+      sizes.put(mj,size);
+      positions.put(mj,i++);
+      total+=size;
+    }
+    Comparator<MapJoinOperator> comp=new Comparator<MapJoinOperator>(){
+      public int compare(      MapJoinOperator mj1,      MapJoinOperator mj2){
+        if (mj1 == null || mj2 == null) {
+          throw new NullPointerException();
+        }
+        int res=Long.compare(sizes.get(mj1),sizes.get(mj2));
+        if (res == 0) {
+          res=Integer.compare(positions.get(mj1),positions.get(mj2));
+        }
+        return res;
+      }
+    }
+;
+    SortedSet<MapJoinOperator> sortedMapJoins=new TreeSet<MapJoinOperator>(comp);
+    sortedMapJoins.addAll(mapJoins);
+    long remainingSize=totalAvailableMemory / 2;
+    Iterator<MapJoinOperator> it=sortedMapJoins.iterator();
+    long totalLargeJoins=0;
+    while (it.hasNext()) {
+      MapJoinOperator mj=it.next();
+      long size=sizes.get(mj);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("MapJoin: " + mj + ", size: "+ size+ ", remaining: "+ remainingSize);
+      }
+      if (size < remainingSize) {
+        if (LOG.isInfoEnabled()) {
+          LOG.info("Setting " + size + " bytes needed for "+ mj+ " (in-mem)");
+        }
+        mj.getConf().setMemoryNeeded(size);
+        remainingSize-=size;
+        it.remove();
+      }
+ else {
+        totalLargeJoins+=sizes.get(mj);
+      }
+    }
+    if (sortedMapJoins.isEmpty()) {
+      sortedMapJoins.addAll(mapJoins);
+      totalLargeJoins=total;
+      if (totalLargeJoins > totalAvailableMemory) {
+        throw new HiveException();
+      }
+      remainingSize=totalAvailableMemory / 2;
+    }
+    double weight=(remainingSize + totalAvailableMemory / 2) / (double)totalLargeJoins;
+    for (    MapJoinOperator mj : sortedMapJoins) {
+      long size=(long)(weight * sizes.get(mj));
+      if (LOG.isInfoEnabled()) {
+        LOG.info("Setting " + size + " bytes needed for "+ mj+ " (spills)");
+      }
+      mj.getConf().setMemoryNeeded(size);
+    }
+  }
+ catch (  HiveException e) {
+    long size=totalAvailableMemory / mapJoins.size();
+    if (LOG.isInfoEnabled()) {
+      LOG.info("Scaling mapjoin memory w/o stats");
+    }
+    for (    MapJoinOperator mj : mapJoins) {
+      if (LOG.isInfoEnabled()) {
+        LOG.info("Setting " + size + " bytes needed for "+ mj+ " (fallback)");
+      }
+      mj.getConf().setMemoryNeeded(size);
+    }
+  }
+}
