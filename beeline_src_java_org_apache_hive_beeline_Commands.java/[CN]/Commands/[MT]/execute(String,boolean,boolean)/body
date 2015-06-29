@@ -3,29 +3,7 @@
     return false;
   }
   try {
-    while (beeLine.getConsoleReader() != null && !(line.trim().endsWith(";")) && beeLine.getOpts().isAllowMultiLineCommand()) {
-      if (!beeLine.getOpts().isSilent()) {
-        StringBuilder prompt=new StringBuilder(beeLine.getPrompt());
-        for (int i=0; i < prompt.length() - 1; i++) {
-          if (prompt.charAt(i) != '>') {
-            prompt.setCharAt(i,i % 2 == 0 ? '.' : ' ');
-          }
-        }
-      }
-      String extra=null;
-      if (beeLine.getOpts().isSilent() && beeLine.getOpts().getScriptFile() != null) {
-        extra=beeLine.getConsoleReader().readLine(null,jline.console.ConsoleReader.NULL_MASK);
-      }
- else {
-        extra=beeLine.getConsoleReader().readLine(beeLine.getPrompt());
-      }
-      if (extra == null) {
-        break;
-      }
-      if (!beeLine.isComment(extra)) {
-        line+="\n" + extra;
-      }
-    }
+    line=handleMultiLineCmd(line);
   }
  catch (  Exception e) {
     beeLine.handleException(e);
@@ -45,87 +23,20 @@
   for (int i=0; i < cmds.length; i++) {
     String sql=cmds[i].trim();
     if (sql.length() != 0) {
-      if (beeLine.isComment(sql)) {
-        break;
+      if (!beeLine.isBeeLine()) {
+        sql=cliToBeelineCmd(sql);
+        if (sql.equalsIgnoreCase("quit") || sql.equalsIgnoreCase("exit")) {
+          beeLine.setExit(true);
+          return true;
+        }
       }
-      if (sql.startsWith(BeeLine.COMMAND_PREFIX)) {
-        sql=sql.substring(1);
-      }
-      String prefix=call ? "call" : "sql";
-      if (sql.startsWith(prefix)) {
-        sql=sql.substring(prefix.length());
-      }
-      if (beeLine.getBatch() != null) {
-        beeLine.getBatch().add(sql);
+      if (isSourceCMD(sql)) {
+        sourceFile(sql);
         continue;
       }
-      try {
-        Statement stmnt=null;
-        boolean hasResults;
-        Thread logThread=null;
-        try {
-          long start=System.currentTimeMillis();
-          if (call) {
-            stmnt=beeLine.getDatabaseConnection().getConnection().prepareCall(sql);
-            hasResults=((CallableStatement)stmnt).execute();
-          }
- else {
-            stmnt=beeLine.createStatement();
-            if (beeLine.getOpts().isSilent()) {
-              hasResults=stmnt.execute(sql);
-            }
- else {
-              logThread=new Thread(createLogRunnable(stmnt));
-              logThread.setDaemon(true);
-              logThread.start();
-              hasResults=stmnt.execute(sql);
-              logThread.interrupt();
-              logThread.join(DEFAULT_QUERY_PROGRESS_THREAD_TIMEOUT);
-            }
-          }
-          beeLine.showWarnings();
-          if (hasResults) {
-            do {
-              ResultSet rs=stmnt.getResultSet();
-              try {
-                int count=beeLine.print(rs);
-                long end=System.currentTimeMillis();
-                beeLine.info(beeLine.loc("rows-selected",count) + " " + beeLine.locElapsedTime(end - start));
-              }
-  finally {
-                if (logThread != null) {
-                  logThread.join(DEFAULT_QUERY_PROGRESS_THREAD_TIMEOUT);
-                  showRemainingLogsIfAny(stmnt);
-                  logThread=null;
-                }
-                rs.close();
-              }
-            }
- while (BeeLine.getMoreResults(stmnt));
-          }
- else {
-            int count=stmnt.getUpdateCount();
-            long end=System.currentTimeMillis();
-            beeLine.info(beeLine.loc("rows-affected",count) + " " + beeLine.locElapsedTime(end - start));
-          }
-        }
-  finally {
-          if (logThread != null) {
-            if (!logThread.isInterrupted()) {
-              logThread.interrupt();
-            }
-            logThread.join(DEFAULT_QUERY_PROGRESS_THREAD_TIMEOUT);
-            showRemainingLogsIfAny(stmnt);
-          }
-          if (stmnt != null) {
-            stmnt.close();
-          }
-        }
+      if (!executeInternal(sql,call)) {
+        return false;
       }
- catch (      Exception e) {
-        return beeLine.error(e);
-      }
-      beeLine.showWarnings();
     }
   }
   return true;
