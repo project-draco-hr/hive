@@ -1,29 +1,44 @@
 {
   JoinLeafPredicateInfo jlpi=null;
   List<Integer> filterNulls=new ArrayList<Integer>();
-  List<List<RexNode>> joinKeyExprs=new ArrayList<List<RexNode>>();
+  List<List<RexNode>> joinExprs=new ArrayList<List<RexNode>>();
   for (int i=0; i < inputs.size(); i++) {
-    joinKeyExprs.add(new ArrayList<RexNode>());
+    joinExprs.add(new ArrayList<RexNode>());
   }
-  RelOptUtil.splitJoinCondition(systemFieldList,inputs,pe,joinKeyExprs,filterNulls,null);
-  List<Set<Integer>> projsJoinKeysInChildSchema=new ArrayList<Set<Integer>>();
-  for (int i=0; i < inputs.size(); i++) {
-    ImmutableSet.Builder<Integer> projsFromInputJoinKeysInChildSchema=ImmutableSet.builder();
-    InputReferencedVisitor irvLeft=new InputReferencedVisitor();
-    irvLeft.apply(joinKeyExprs.get(i));
-    projsFromInputJoinKeysInChildSchema.addAll(irvLeft.inputPosReferenced);
-    projsJoinKeysInChildSchema.add(projsFromInputJoinKeysInChildSchema.build());
-  }
-  List<Set<Integer>> projsJoinKeysInJoinSchema=new ArrayList<Set<Integer>>();
-  projsJoinKeysInJoinSchema.add(projsJoinKeysInChildSchema.get(0));
-  for (int i=1; i < inputs.size(); i++) {
-    int offSet=inputs.get(i - 1).getRowType().getFieldCount();
-    ImmutableSet.Builder<Integer> projsFromInputJoinKeysInJoinSchema=ImmutableSet.builder();
-    for (    Integer indx : projsJoinKeysInChildSchema.get(i)) {
-      projsFromInputJoinKeysInJoinSchema.add(indx + offSet);
+  RexNode otherConditions=HiveRelOptUtil.splitJoinCondition(systemFieldList,inputs,pe,joinExprs,filterNulls,null);
+  if (otherConditions.isAlwaysTrue()) {
+    List<Set<Integer>> projsJoinKeysInChildSchema=new ArrayList<Set<Integer>>();
+    for (int i=0; i < inputs.size(); i++) {
+      ImmutableSet.Builder<Integer> projsFromInputJoinKeysInChildSchema=ImmutableSet.builder();
+      InputReferencedVisitor irvLeft=new InputReferencedVisitor();
+      irvLeft.apply(joinExprs.get(i));
+      projsFromInputJoinKeysInChildSchema.addAll(irvLeft.inputPosReferenced);
+      projsJoinKeysInChildSchema.add(projsFromInputJoinKeysInChildSchema.build());
     }
-    projsJoinKeysInJoinSchema.add(projsFromInputJoinKeysInJoinSchema.build());
+    List<Set<Integer>> projsJoinKeysInJoinSchema=new ArrayList<Set<Integer>>();
+    projsJoinKeysInJoinSchema.add(projsJoinKeysInChildSchema.get(0));
+    for (int i=1; i < inputs.size(); i++) {
+      int offSet=inputs.get(i - 1).getRowType().getFieldCount();
+      ImmutableSet.Builder<Integer> projsFromInputJoinKeysInJoinSchema=ImmutableSet.builder();
+      for (      Integer indx : projsJoinKeysInChildSchema.get(i)) {
+        projsFromInputJoinKeysInJoinSchema.add(indx + offSet);
+      }
+      projsJoinKeysInJoinSchema.add(projsFromInputJoinKeysInJoinSchema.build());
+    }
+    jlpi=new JoinLeafPredicateInfo(pe.getKind(),joinExprs,projsJoinKeysInChildSchema,projsJoinKeysInJoinSchema);
   }
-  jlpi=new JoinLeafPredicateInfo(pe.getKind(),joinKeyExprs,projsJoinKeysInChildSchema,projsJoinKeysInJoinSchema);
+ else {
+    ImmutableBitSet refCols=InputFinder.bits(pe);
+    int count=0;
+    for (int i=0; i < inputs.size(); i++) {
+      final int length=inputs.get(i).getRowType().getFieldCount();
+      ImmutableBitSet inputRange=ImmutableBitSet.range(count,count + length);
+      if (inputRange.contains(refCols)) {
+        joinExprs.get(i).add(pe);
+      }
+      count+=length;
+    }
+    jlpi=new JoinLeafPredicateInfo(SqlKind.OTHER,joinExprs,new ArrayList<Set<Integer>>(),new ArrayList<Set<Integer>>());
+  }
   return jlpi;
 }
