@@ -1,0 +1,32 @@
+{
+  DataOutputStream data=null;
+  ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+  try {
+    data=new DataOutputStream(bytes);
+    data.writeUTF(table.getDatabaseName());
+    data.writeUTF(table.getTableName());
+    data.writeBoolean(table.createPartitions());
+    if (table.getTransactionId() <= 0) {
+      LOG.warn("Transaction ID <= 0. The recipient is probably expecting a transaction ID.");
+    }
+    data.writeLong(table.getTransactionId());
+    data.writeByte(table.getTableType().getId());
+    Table metaTable=table.getTable();
+    if (metaTable != null) {
+      byte[] thrift=new TSerializer(new TCompactProtocol.Factory()).serialize(metaTable);
+      data.writeInt(thrift.length);
+      data.write(thrift);
+    }
+ else {
+      LOG.warn("Meta store table is null. The recipient is probably expecting an instance.");
+      data.writeInt(0);
+    }
+  }
+ catch (  TException e) {
+    throw new IOException("Error serializing meta store table.",e);
+  }
+ finally {
+    data.close();
+  }
+  return PROLOG_V1 + new String(Base64.encodeBase64(bytes.toByteArray()),Charset.forName("UTF-8"));
+}

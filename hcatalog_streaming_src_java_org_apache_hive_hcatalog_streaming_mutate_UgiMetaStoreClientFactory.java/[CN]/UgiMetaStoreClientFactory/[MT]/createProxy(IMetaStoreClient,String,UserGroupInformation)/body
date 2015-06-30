@@ -1,0 +1,30 @@
+{
+  InvocationHandler handler=new AbstractInvocationHandler(){
+    @Override protected Object handleInvocation(    Object proxy,    final Method method,    final Object[] args) throws Throwable {
+      try {
+        if (!I_META_STORE_CLIENT_METHODS.contains(method) || authenticatedUser == null) {
+          return method.invoke(delegate,args);
+        }
+        try {
+          return authenticatedUser.doAs(new PrivilegedExceptionAction<Object>(){
+            @Override public Object run() throws Exception {
+              return method.invoke(delegate,args);
+            }
+          }
+);
+        }
+ catch (        IOException|InterruptedException e) {
+          throw new TException("PrivilegedExceptionAction failed as user '" + user + "'.",e);
+        }
+      }
+ catch (      UndeclaredThrowableException|InvocationTargetException e) {
+        throw e.getCause();
+      }
+    }
+  }
+;
+  ClassLoader classLoader=IMetaStoreClient.class.getClassLoader();
+  Class<?>[] interfaces=new Class<?>[]{IMetaStoreClient.class};
+  Object proxy=Proxy.newProxyInstance(classLoader,interfaces,handler);
+  return IMetaStoreClient.class.cast(proxy);
+}
