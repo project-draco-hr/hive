@@ -1,0 +1,34 @@
+{
+  String managedName=null;
+  String sql=null;
+  String columns=exec.getFormattedText(colCtx);
+  if (conf.tempTables == Conf.TempTables.NATIVE) {
+    sql="CREATE TEMPORARY TABLE " + name + "\n("+ columns+ "\n)";
+  }
+ else   if (conf.tempTables == Conf.TempTables.MANAGED) {
+    managedName=name + "_" + UUID.randomUUID().toString().replace("-","");
+    if (!conf.tempTablesSchema.isEmpty()) {
+      managedName=conf.tempTablesSchema + "." + managedName;
+    }
+    sql="CREATE TABLE " + managedName + "\n("+ columns+ "\n)";
+    if (!conf.tempTablesLocation.isEmpty()) {
+      sql+="\nLOCATION '" + conf.tempTablesLocation + "/"+ managedName+ "'";
+    }
+    if (trace) {
+      trace(ctx,"Managed table name: " + managedName);
+    }
+  }
+  if (sql != null) {
+    Query query=exec.executeSql(ctx,sql,exec.conf.defaultConnection);
+    if (query.error()) {
+      exec.signal(query);
+      return 1;
+    }
+    if (managedName != null) {
+      exec.addManagedTable(name,managedName);
+    }
+    exec.setSqlSuccess();
+    exec.closeQuery(query,exec.conf.defaultConnection);
+  }
+  return 0;
+}

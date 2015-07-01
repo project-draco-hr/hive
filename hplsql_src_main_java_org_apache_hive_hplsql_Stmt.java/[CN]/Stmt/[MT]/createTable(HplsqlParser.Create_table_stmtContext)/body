@@ -1,0 +1,33 @@
+{
+  trace(ctx,"CREATE TABLE");
+  StringBuilder sql=new StringBuilder();
+  sql.append(exec.getText(ctx,ctx.T_CREATE().getSymbol(),ctx.T_OPEN_P().getSymbol()));
+  int cnt=ctx.create_table_columns().create_table_columns_item().size();
+  int cols=0;
+  for (int i=0; i < cnt; i++) {
+    Create_table_columns_itemContext col=ctx.create_table_columns().create_table_columns_item(i);
+    if (col.create_table_column_cons() != null) {
+      continue;
+    }
+    if (cols > 0) {
+      sql.append(",\n");
+    }
+    sql.append(col.ident().getText());
+    sql.append(" ");
+    sql.append(exec.evalPop(col.dtype(),col.dtype_len()));
+    cols++;
+  }
+  sql.append("\n)");
+  if (ctx.create_table_options() != null) {
+    sql.append(" " + evalPop(ctx.create_table_options()).toString());
+  }
+  trace(ctx,sql.toString());
+  Query query=exec.executeSql(ctx,sql.toString(),exec.conf.defaultConnection);
+  if (query.error()) {
+    exec.signal(query);
+    return 1;
+  }
+  exec.setSqlSuccess();
+  exec.closeQuery(query,exec.conf.defaultConnection);
+  return 0;
+}

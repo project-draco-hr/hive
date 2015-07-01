@@ -1,0 +1,101 @@
+{
+  if (ctx.parent instanceof HplsqlParser.StmtContext) {
+    exec.stmtConnList.clear();
+    trace(ctx,"SELECT");
+  }
+  boolean oldBuildSql=exec.buildSql;
+  exec.buildSql=true;
+  StringBuilder sql=new StringBuilder();
+  if (ctx.cte_select_stmt() != null) {
+    sql.append(evalPop(ctx.cte_select_stmt()).toString());
+    sql.append("\n");
+  }
+  sql.append(evalPop(ctx.fullselect_stmt()).toString());
+  exec.buildSql=oldBuildSql;
+  if (!(ctx.parent instanceof HplsqlParser.StmtContext)) {
+    exec.stackPush(sql);
+    return 0;
+  }
+  if (trace && ctx.parent instanceof HplsqlParser.StmtContext) {
+    trace(ctx,sql.toString());
+  }
+  if (exec.getOffline()) {
+    trace(ctx,"Not executed - offline mode set");
+    return 0;
+  }
+  String conn=exec.getStatementConnection();
+  Query query=exec.executeQuery(ctx,sql.toString(),conn);
+  if (query.error()) {
+    exec.signal(query);
+    return 1;
+  }
+  trace(ctx,"SELECT completed successfully");
+  exec.setSqlSuccess();
+  try {
+    ResultSet rs=query.getResultSet();
+    ResultSetMetaData rm=null;
+    if (rs != null) {
+      rm=rs.getMetaData();
+    }
+    HplsqlParser.Into_clauseContext into=getIntoClause(ctx);
+    if (into != null) {
+      trace(ctx,"SELECT INTO statement executed");
+      int cols=into.ident().size();
+      if (rs.next()) {
+        for (int i=1; i <= cols; i++) {
+          Var var=exec.findVariable(into.ident(i - 1).getText());
+          if (var != null) {
+            var.setValue(rs,rm,i);
+            if (trace) {
+              trace(ctx,"COLUMN: " + rm.getColumnName(i) + ", "+ rm.getColumnTypeName(i));
+              trace(ctx,"SET " + var.getName() + " = "+ var.toString());
+            }
+          }
+ else           if (trace) {
+            trace(ctx,"Variable not found: " + into.ident(i - 1).getText());
+          }
+        }
+        exec.incRowCount();
+        exec.setSqlSuccess();
+      }
+ else {
+        exec.setSqlCode(100);
+        exec.signal(Signal.Type.NOTFOUND);
+      }
+    }
+ else     if (ctx.parent instanceof HplsqlParser.StmtContext) {
+      int cols=rm.getColumnCount();
+      if (trace) {
+        trace(ctx,"Standalone SELECT executed: " + cols + " columns in the result set");
+      }
+      while (rs.next()) {
+        for (int i=1; i <= cols; i++) {
+          if (i > 1) {
+            System.out.print("\t");
+          }
+          System.out.print(rs.getString(i));
+        }
+        System.out.println("");
+        exec.incRowCount();
+      }
+    }
+ else {
+      trace(ctx,"Scalar subquery executed, first row and first column fetched only");
+      if (rs.next()) {
+        exec.stackPush(new Var().setValue(rs,rm,1));
+        exec.setSqlSuccess();
+      }
+ else {
+        evalNull();
+        exec.setSqlCode(100);
+      }
+    }
+  }
+ catch (  SQLException e) {
+    exec.signal(query);
+    exec.closeQuery(query,exec.conf.defaultConnection);
+    return 1;
+  }
+  exec.closeQuery(query,exec.conf.defaultConnection);
+  return 0;
+}

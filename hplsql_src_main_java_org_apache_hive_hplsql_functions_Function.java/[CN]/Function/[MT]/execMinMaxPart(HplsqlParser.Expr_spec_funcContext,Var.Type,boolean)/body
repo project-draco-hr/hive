@@ -1,0 +1,86 @@
+{
+  String tabname=evalPop(ctx.expr(0)).toString();
+  String sql="SHOW PARTITIONS " + tabname;
+  String colname=null;
+  int colnum=-1;
+  int exprnum=ctx.expr().size();
+  if (ctx.expr(1) != null) {
+    colname=evalPop(ctx.expr(1)).toString();
+  }
+ else {
+    colnum=0;
+  }
+  if (exprnum >= 4) {
+    sql+=" PARTITION (";
+    int i=2;
+    while (i + 1 < exprnum) {
+      String fcol=evalPop(ctx.expr(i)).toString();
+      String fval=evalPop(ctx.expr(i + 1)).toSqlString();
+      if (i > 2) {
+        sql+=", ";
+      }
+      sql+=fcol + "=" + fval;
+      i+=2;
+    }
+    sql+=")";
+  }
+  if (trace) {
+    trace(ctx,"Query: " + sql);
+  }
+  if (exec.getOffline()) {
+    evalNull();
+    return;
+  }
+  Query query=exec.executeQuery(ctx,sql,exec.conf.defaultConnection);
+  if (query.error()) {
+    evalNullClose(query,exec.conf.defaultConnection);
+    return;
+  }
+  ResultSet rs=query.getResultSet();
+  try {
+    String resultString=null;
+    Long resultInt=null;
+    Date resultDate=null;
+    while (rs.next()) {
+      String[] parts=rs.getString(1).split("/");
+      if (colnum == -1) {
+        for (int i=0; i < parts.length; i++) {
+          String[] name=parts[i].split("=");
+          if (name[0].equalsIgnoreCase(colname)) {
+            colnum=i;
+            break;
+          }
+        }
+        if (colnum == -1) {
+          evalNullClose(query,exec.conf.defaultConnection);
+          return;
+        }
+      }
+      String[] pair=parts[colnum].split("=");
+      if (type == Var.Type.STRING) {
+        resultString=Utils.minMaxString(resultString,pair[1],max);
+      }
+ else       if (type == Var.Type.BIGINT) {
+        resultInt=Utils.minMaxInt(resultInt,pair[1],max);
+      }
+ else       if (type == Var.Type.DATE) {
+        resultDate=Utils.minMaxDate(resultDate,pair[1],max);
+      }
+    }
+    if (resultString != null) {
+      evalString(resultString);
+    }
+ else     if (resultInt != null) {
+      evalInt(resultInt);
+    }
+ else     if (resultDate != null) {
+      evalDate(resultDate);
+    }
+ else {
+      evalNull();
+    }
+  }
+ catch (  SQLException e) {
+  }
+  exec.closeQuery(query,exec.conf.defaultConnection);
+}
