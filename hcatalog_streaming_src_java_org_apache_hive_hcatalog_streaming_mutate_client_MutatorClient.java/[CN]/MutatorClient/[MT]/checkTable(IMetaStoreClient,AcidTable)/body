@@ -1,0 +1,27 @@
+{
+  try {
+    LOG.debug("Checking table {}.",acidTable.getQualifiedName());
+    Table metaStoreTable=metaStoreClient.getTable(acidTable.getDatabaseName(),acidTable.getTableName());
+    if (acidTable.getTableType() == TableType.SINK) {
+      Map<String,String> parameters=metaStoreTable.getParameters();
+      if (!Boolean.parseBoolean(parameters.get(TRANSACTIONAL_PARAM_KEY))) {
+        throw new ConnectionException("Cannot stream to table that is not transactional: '" + acidTable.getQualifiedName() + "'.");
+      }
+      int totalBuckets=metaStoreTable.getSd().getNumBuckets();
+      LOG.debug("Table {} has {} buckets.",acidTable.getQualifiedName(),totalBuckets);
+      if (totalBuckets <= 0) {
+        throw new ConnectionException("Cannot stream to table that has not been bucketed: '" + acidTable.getQualifiedName() + "'.");
+      }
+      String outputFormat=metaStoreTable.getSd().getOutputFormat();
+      LOG.debug("Table {} has {} OutputFormat.",acidTable.getQualifiedName(),outputFormat);
+      acidTable.setTable(metaStoreTable);
+    }
+  }
+ catch (  NoSuchObjectException e) {
+    throw new ConnectionException("Invalid table '" + acidTable.getQualifiedName() + "'",e);
+  }
+catch (  TException e) {
+    throw new ConnectionException("Error communicating with the meta store",e);
+  }
+  LOG.debug("Table {} OK.",acidTable.getQualifiedName());
+}

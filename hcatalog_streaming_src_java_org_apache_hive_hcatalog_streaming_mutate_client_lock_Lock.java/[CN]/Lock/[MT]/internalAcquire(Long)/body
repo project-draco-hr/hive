@@ -1,0 +1,33 @@
+{
+  int attempts=0;
+  LockRequest request=buildSharedLockRequest(transactionId);
+  do {
+    LockResponse response=null;
+    try {
+      response=metaStoreClient.lock(request);
+    }
+ catch (    TException e) {
+      throw new LockException("Unable to acquire lock for tables: [" + join(tableDescriptors) + "]",e);
+    }
+    if (response != null) {
+      LockState state=response.getState();
+      if (state == LockState.NOT_ACQUIRED || state == LockState.ABORT) {
+        break;
+      }
+      if (state == LockState.ACQUIRED) {
+        LOG.debug("Acquired lock {}",response.getLockid());
+        return response.getLockid();
+      }
+      if (state == LockState.WAITING) {
+        try {
+          Thread.sleep(TimeUnit.SECONDS.toMillis(retryWaitSeconds));
+        }
+ catch (        InterruptedException e) {
+        }
+      }
+    }
+    attempts++;
+  }
+ while (attempts < lockRetries);
+  throw new LockException("Could not acquire lock on tables: [" + join(tableDescriptors) + "]");
+}

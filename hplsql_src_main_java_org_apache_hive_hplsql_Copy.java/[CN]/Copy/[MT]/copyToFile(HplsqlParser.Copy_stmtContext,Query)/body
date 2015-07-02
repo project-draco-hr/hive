@@ -1,0 +1,67 @@
+{
+  ResultSet rs=query.getResultSet();
+  if (rs == null) {
+    return;
+  }
+  ResultSetMetaData rm=rs.getMetaData();
+  String filename=null;
+  if (ctx.copy_target().expr() != null) {
+    filename=evalPop(ctx.copy_target().expr()).toString();
+  }
+ else {
+    filename=ctx.copy_target().getText();
+  }
+  byte[] del=delimiter.getBytes();
+  byte[] rowdel="\n".getBytes();
+  byte[] nullstr="NULL".getBytes();
+  int cols=rm.getColumnCount();
+  int rows=0;
+  if (trace) {
+    trace(ctx,"SELECT executed: " + cols + " columns, output file: "+ filename);
+  }
+  java.io.File file=new java.io.File(filename);
+  FileOutputStream out=null;
+  try {
+    if (!file.exists()) {
+      file.createNewFile();
+    }
+    out=new FileOutputStream(file,false);
+    String col;
+    String sql="";
+    if (sqlInsert) {
+      sql="INSERT INTO " + sqlInsertName + " VALUES (";
+      rowdel=");\n".getBytes();
+    }
+    while (rs.next()) {
+      if (sqlInsert) {
+        out.write(sql.getBytes());
+      }
+      for (int i=1; i <= cols; i++) {
+        if (i > 1) {
+          out.write(del);
+        }
+        col=rs.getString(i);
+        if (col != null) {
+          if (sqlInsert) {
+            col=Utils.quoteString(col);
+          }
+          out.write(col.getBytes());
+        }
+ else         if (sqlInsert) {
+          out.write(nullstr);
+        }
+      }
+      out.write(rowdel);
+      rows++;
+    }
+    exec.setRowCount(rows);
+  }
+  finally {
+    if (out != null) {
+      out.close();
+    }
+  }
+  if (trace) {
+    trace(ctx,"COPY rows: " + rows);
+  }
+}
