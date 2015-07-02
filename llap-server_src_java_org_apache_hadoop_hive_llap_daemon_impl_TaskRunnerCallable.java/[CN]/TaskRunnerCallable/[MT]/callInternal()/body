@@ -31,27 +31,34 @@ synchronized (this) {
   }
 );
   taskReporter=new LlapTaskReporter(umbilical,confParams.amHeartbeatIntervalMsMax,confParams.amCounterHeartbeatInterval,confParams.amMaxEventsPerHeartbeat,new AtomicLong(0),request.getContainerIdString());
-synchronized (this) {
-    if (shouldRunTask) {
-      taskRunner=new TezTaskRunner2(conf,taskUgi,fragmentInfo.getLocalDirs(),taskSpec,request.getAppAttemptNumber(),serviceConsumerMetadata,envMap,startedInputsMap,taskReporter,executor,objectRegistry,pid,executionContext,memoryAvailable);
-    }
-  }
-  if (taskRunner == null) {
-    LOG.info("Not starting task {} since it was killed earlier",taskSpec.getTaskAttemptID());
-    return new TaskRunner2Result(EndReason.KILL_REQUESTED,null,false);
-  }
+  String attemptId=fragmentInfo.getFragmentIdentifierString();
+  IOContextMap.setThreadAttemptId(attemptId);
   try {
-    TaskRunner2Result result=taskRunner.run();
-    if (result.isContainerShutdownRequested()) {
-      LOG.warn("Unexpected container shutdown requested while running task. Ignoring");
+synchronized (this) {
+      if (shouldRunTask) {
+        taskRunner=new TezTaskRunner2(conf,taskUgi,fragmentInfo.getLocalDirs(),taskSpec,request.getAppAttemptNumber(),serviceConsumerMetadata,envMap,startedInputsMap,taskReporter,executor,objectRegistry,pid,executionContext,memoryAvailable);
+      }
     }
-    isCompleted.set(true);
-    return result;
+    if (taskRunner == null) {
+      LOG.info("Not starting task {} since it was killed earlier",taskSpec.getTaskAttemptID());
+      return new TaskRunner2Result(EndReason.KILL_REQUESTED,null,false);
+    }
+    try {
+      TaskRunner2Result result=taskRunner.run();
+      if (result.isContainerShutdownRequested()) {
+        LOG.warn("Unexpected container shutdown requested while running task. Ignoring");
+      }
+      isCompleted.set(true);
+      return result;
+    }
+  finally {
+      LOG.info("ExecutionTime for Container: " + request.getContainerIdString() + "="+ runtimeWatch.stop().elapsedMillis());
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("canFinish post completion: " + taskSpec.getTaskAttemptID() + ": "+ canFinish());
+      }
+    }
   }
   finally {
-    LOG.info("ExecutionTime for Container: " + request.getContainerIdString() + "="+ runtimeWatch.stop().elapsedMillis());
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("canFinish post completion: " + taskSpec.getTaskAttemptID() + ": "+ canFinish());
-    }
+    IOContextMap.clearThreadAttempt(attemptId);
   }
 }

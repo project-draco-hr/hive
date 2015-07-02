@@ -1,0 +1,29 @@
+{
+  if (HiveConf.getVar(conf,HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("spark")) {
+    return sparkThreadLocal.get();
+  }
+  String inputName=conf.get(Utilities.INPUT_NAME);
+  if (inputName == null) {
+    inputName=DEFAULT_CONTEXT;
+  }
+  String attemptId=threadAttemptId.get();
+  ConcurrentHashMap<String,IOContext> map;
+  if (attemptId == null) {
+    map=globalMap;
+  }
+ else {
+    map=attemptMap.get(attemptId);
+    if (map == null) {
+      map=new ConcurrentHashMap<>();
+      ConcurrentHashMap<String,IOContext> oldMap=attemptMap.putIfAbsent(attemptId,map);
+      if (oldMap != null) {
+        map=oldMap;
+      }
+    }
+  }
+  IOContext ioContext=map.get(inputName);
+  if (ioContext != null)   return ioContext;
+  ioContext=new IOContext();
+  IOContext oldContext=map.putIfAbsent(inputName,ioContext);
+  return (oldContext == null) ? ioContext : oldContext;
+}
