@@ -1,0 +1,32 @@
+{
+  Dispatcher disp=null;
+  final Set<TableScanOperator> tableScans=new LinkedHashSet<TableScanOperator>();
+  Map<Rule,NodeProcessor> rules=new HashMap<Rule,NodeProcessor>();
+  rules.put(new RuleRegExp("TS finder",TableScanOperator.getOperatorName() + "%"),new NodeProcessor(){
+    @Override public Object process(    Node nd,    Stack<Node> stack,    NodeProcessorCtx procCtx,    Object... nodeOutputs){
+      tableScans.add((TableScanOperator)nd);
+      return null;
+    }
+  }
+);
+  disp=new DefaultRuleDispatcher(null,rules,null);
+  GraphWalker ogw=new DefaultGraphWalker(disp);
+  ArrayList<Node> topNodes=new ArrayList<Node>();
+  topNodes.addAll(w.getAllRootOperators());
+  LinkedHashMap<Node,Object> nodeOutput=new LinkedHashMap<Node,Object>();
+  ogw.startWalking(topNodes,nodeOutput);
+  for (  TableScanOperator ts : tableScans) {
+    if (ts.getConf() != null && ts.getConf().getFilterExpr() != null) {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Serializing: " + ts.getConf().getFilterExpr().getExprString());
+      }
+      ts.getConf().setSerializedFilterExpr(Utilities.serializeExpression(ts.getConf().getFilterExpr()));
+    }
+    if (ts.getConf() != null && ts.getConf().getFilterObject() != null) {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Serializing: " + ts.getConf().getFilterObject());
+      }
+      ts.getConf().setSerializedFilterObject(Utilities.serializeObject(ts.getConf().getFilterObject()));
+    }
+  }
+}
