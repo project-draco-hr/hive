@@ -1,0 +1,61 @@
+{
+  List<FieldSchema> fieldSchemas=plan.getResultSchema().getFieldSchemas();
+  int fields=fieldSchemas == null ? 0 : fieldSchemas.size();
+  SelectOperator finalSelOp=index.getFinalSelectOp();
+  List<Edge> edges=new ArrayList<Edge>();
+  if (finalSelOp != null && fields > 0) {
+    Map<ColumnInfo,Dependency> colMap=index.getDependencies(finalSelOp);
+    List<Dependency> dependencies=colMap != null ? Lists.newArrayList(colMap.values()) : null;
+    if (dependencies == null || dependencies.size() != fields) {
+      log("Result schema has " + fields + " fields, but we don't get as many dependencies");
+    }
+ else {
+      String destTableName=null;
+      List<String> colNames=null;
+      for (      WriteEntity output : plan.getOutputs()) {
+        if (output.getType() == Entity.Type.TABLE) {
+          org.apache.hadoop.hive.ql.metadata.Table t=output.getTable();
+          destTableName=t.getDbName() + "." + t.getTableName();
+          List<FieldSchema> cols=t.getCols();
+          if (cols != null && !cols.isEmpty()) {
+            colNames=Utilities.getColumnNamesFromFieldSchema(cols);
+          }
+          break;
+        }
+      }
+      Set<Vertex> allTargets=new LinkedHashSet<Vertex>();
+      Map<String,Vertex> allSources=new LinkedHashMap<String,Vertex>();
+      for (int i=0; i < fields; i++) {
+        Vertex target=new Vertex(getTargetFieldName(i,destTableName,colNames,fieldSchemas));
+        allTargets.add(target);
+        Dependency dep=dependencies.get(i);
+        String expr=dep.getExpr();
+        Set<Vertex> sources=createSourceVertices(allSources,dep.getBaseCols());
+        Edge edge=findSimilarEdgeBySources(edges,sources,expr,Edge.Type.PROJECTION);
+        if (edge == null) {
+          Set<Vertex> targets=new LinkedHashSet<Vertex>();
+          targets.add(target);
+          edges.add(new Edge(sources,targets,expr,Edge.Type.PROJECTION));
+        }
+ else {
+          edge.targets.add(target);
+        }
+      }
+      Set<Predicate> conds=index.getPredicates(finalSelOp);
+      if (conds != null && !conds.isEmpty()) {
+        for (        Predicate cond : conds) {
+          String expr=cond.getExpr();
+          Set<Vertex> sources=createSourceVertices(allSources,cond.getBaseCols());
+          Edge edge=findSimilarEdgeByTargets(edges,allTargets,expr,Edge.Type.PREDICATE);
+          if (edge == null) {
+            edges.add(new Edge(sources,allTargets,expr,Edge.Type.PREDICATE));
+          }
+ else {
+            edge.sources.addAll(sources);
+          }
+        }
+      }
+    }
+  }
+  return edges;
+}
