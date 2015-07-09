@@ -11,7 +11,8 @@
     SerDe valueSerDe=valueContext.getSerDe();
     Writable keyContainer=keySerDe.getSerializedClass().newInstance();
     Writable valueContainer=valueSerDe.getSerializedClass().newInstance();
-    MapJoinPersistableTableContainer tableContainer=null;
+    MapJoinTableContainer tableContainer=null;
+    boolean useOptimizedContainer=HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVEMAPJOINUSEOPTIMIZEDTABLE);
     for (    FileStatus fileStatus : fileStatuses) {
       Path filePath=fileStatus.getPath();
       if (ShimLoader.getHadoopShims().isDirectory(fileStatus)) {
@@ -25,18 +26,13 @@
         String name=in.readUTF();
         Map<String,String> metaData=(Map<String,String>)in.readObject();
         if (tableContainer == null) {
-          tableContainer=create(name,metaData);
+          tableContainer=useOptimizedContainer ? new MapJoinBytesTableContainer(hconf,valueContext,-1,0) : create(name,metaData);
         }
-        int numKeys=in.readInt();
-        for (int keyIndex=0; keyIndex < numKeys; keyIndex++) {
-          MapJoinKeyObject key=new MapJoinKeyObject();
-          key.read(keyContext,in,keyContainer);
-          if (tableContainer.get(key) == null) {
-            tableContainer.put(key,new MapJoinEagerRowContainer());
-          }
-          MapJoinEagerRowContainer values=(MapJoinEagerRowContainer)tableContainer.get(key);
-          values.read(valueContext,in,valueContainer);
-          tableContainer.put(key,values);
+        if (useOptimizedContainer) {
+          loadOptimized((MapJoinBytesTableContainer)tableContainer,in,keyContainer,valueContainer);
+        }
+ else {
+          loadNormal((MapJoinPersistableTableContainer)tableContainer,in,keyContainer,valueContainer);
         }
       }
   finally {
@@ -47,6 +43,9 @@
           is.close();
         }
       }
+    }
+    if (tableContainer != null) {
+      tableContainer.seal();
     }
     return tableContainer;
   }

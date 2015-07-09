@@ -12,10 +12,27 @@
     }
     FileSystem fs=FileSystem.get(baseDir.toUri(),hconf);
     BucketMapJoinContext mapJoinCtx=localWork.getBucketMapjoinContext();
+    boolean firstContainer=true;
+    boolean useOptimizedContainer=HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVEMAPJOINUSEOPTIMIZEDTABLE);
     for (int pos=0; pos < mapJoinTables.length; pos++) {
       if (pos == desc.getPosBigTable() || mapJoinTables[pos] != null) {
         continue;
       }
+      if (useOptimizedContainer) {
+        MapJoinObjectSerDeContext keyCtx=mapJoinTableSerdes[pos].getKeyContext();
+        ObjectInspector keyOI=keyCtx.getSerDe().getObjectInspector();
+        if (!MapJoinBytesTableContainer.isSupportedKey(keyOI)) {
+          if (firstContainer) {
+            LOG.warn("Not using optimized table container." + "Only a subset of mapjoin keys is supported.");
+            useOptimizedContainer=false;
+            HiveConf.setBoolVar(hconf,HiveConf.ConfVars.HIVEMAPJOINUSEOPTIMIZEDTABLE,false);
+          }
+ else {
+            throw new HiveException("Only a subset of mapjoin keys is supported.");
+          }
+        }
+      }
+      firstContainer=false;
       String bigInputPath=currentInputPath;
       if (currentInputPath != null && mapJoinCtx != null) {
         if (!desc.isBucketMapJoin()) {
