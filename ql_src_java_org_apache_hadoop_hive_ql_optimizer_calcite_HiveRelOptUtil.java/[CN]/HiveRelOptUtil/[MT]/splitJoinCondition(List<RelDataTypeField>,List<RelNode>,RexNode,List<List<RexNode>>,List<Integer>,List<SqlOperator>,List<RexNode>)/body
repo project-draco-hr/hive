@@ -2,7 +2,6 @@
   final int sysFieldCount=sysFieldList.size();
   final RelOptCluster cluster=inputs.get(0).getCluster();
   final RexBuilder rexBuilder=cluster.getRexBuilder();
-  final RelDataTypeFactory typeFactory=cluster.getTypeFactory();
   final ImmutableBitSet[] inputsRange=new ImmutableBitSet[inputs.size()];
   int totalFieldCount=0;
   for (int i=0; i < inputs.size(); i++) {
@@ -75,14 +74,17 @@
         RelDataType leftKeyType=leftKey.getType();
         RelDataType rightKeyType=rightKey.getType();
         if (leftKeyType != rightKeyType) {
-          RelDataType targetKeyType=typeFactory.leastRestrictive(ImmutableList.of(leftKeyType,rightKeyType));
-          if (targetKeyType == null) {
-            throw Util.newInternal("Cannot find common type for join keys " + leftKey + " (type "+ leftKeyType+ ") and "+ rightKey+ " (type "+ rightKeyType+ ")");
+          TypeInfo rType=TypeConverter.convert(rightKeyType);
+          TypeInfo lType=TypeConverter.convert(leftKeyType);
+          TypeInfo tgtType=FunctionRegistry.getCommonClassForComparison(lType,rType);
+          if (tgtType == null) {
+            throw new CalciteSemanticException("Cannot find common type for join keys " + leftKey + " (type "+ leftKeyType+ ") and "+ rightKey+ " (type "+ rightKeyType+ ")");
           }
-          if (leftKeyType != targetKeyType) {
+          RelDataType targetKeyType=TypeConverter.convert(tgtType,rexBuilder.getTypeFactory());
+          if (leftKeyType != targetKeyType && TypeInfoUtils.isConversionRequiredForComparison(tgtType,lType)) {
             leftKey=rexBuilder.makeCast(targetKeyType,leftKey);
           }
-          if (rightKeyType != targetKeyType) {
+          if (rightKeyType != targetKeyType && TypeInfoUtils.isConversionRequiredForComparison(tgtType,rType)) {
             rightKey=rexBuilder.makeCast(targetKeyType,rightKey);
           }
         }

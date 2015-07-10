@@ -20,7 +20,14 @@
       leftJoinInputs=hmj.getJoinInputs();
       leftJoinTypes=hmj.getJoinTypes();
     }
-    boolean combinable=isCombinablePredicate(join,join.getCondition(),leftCondition);
+    boolean combinable;
+    try {
+      combinable=isCombinablePredicate(join,join.getCondition(),leftCondition);
+    }
+ catch (    CalciteSemanticException e) {
+      LOG.trace("Failed to merge joins",e);
+      combinable=false;
+    }
     if (combinable) {
       newJoinFilters.add(leftCondition);
       for (int i=0; i < leftJoinInputs.size(); i++) {
@@ -46,7 +53,14 @@
   for (int i=0; i < newInputs.size(); i++) {
     joinKeyExprs.add(new ArrayList<RexNode>());
   }
-  RexNode otherCondition=HiveRelOptUtil.splitJoinCondition(systemFieldList,newInputs,join.getCondition(),joinKeyExprs,filterNulls,null);
+  RexNode otherCondition;
+  try {
+    otherCondition=HiveRelOptUtil.splitHiveJoinCondition(systemFieldList,newInputs,join.getCondition(),joinKeyExprs,filterNulls,null);
+  }
+ catch (  CalciteSemanticException e) {
+    LOG.trace("Failed to merge joins",e);
+    return null;
+  }
   if (!otherCondition.isAlwaysTrue()) {
     return null;
   }
