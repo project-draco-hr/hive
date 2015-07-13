@@ -57,15 +57,40 @@
     exprMap.put(tag,new ArrayList<ExprNodeDesc>(descriptors.values()));
     colExprMap.putAll(descriptors);
     childOps[pos]=inputRS;
-    List<ExprNodeDesc> filtersForInput=new ArrayList<ExprNodeDesc>();
-    for (    ExprNodeDesc expr : filterExpressions[pos]) {
-      updateExprNode(expr,colExprMap);
-      filtersForInput.add(expr);
+  }
+  List<List<ExprNodeDesc>> filtersPerInput=Lists.newArrayList();
+  int[][] filterMap=new int[children.size()][];
+  for (int i=0; i < children.size(); i++) {
+    filtersPerInput.add(new ArrayList<ExprNodeDesc>());
+  }
+  for (int i=0; i < filterExpressions.size(); i++) {
+    int leftPos=joinCondns[i].getLeft();
+    int rightPos=joinCondns[i].getRight();
+    for (    ExprNodeDesc expr : filterExpressions.get(i)) {
+      int inputPos=updateExprNode(expr,reversedExprs,colExprMap);
+      if (inputPos == -1) {
+        inputPos=leftPos;
+      }
+      filtersPerInput.get(inputPos).add(expr);
+      if (joinCondns[i].getType() == JoinDesc.FULL_OUTER_JOIN || joinCondns[i].getType() == JoinDesc.LEFT_OUTER_JOIN || joinCondns[i].getType() == JoinDesc.RIGHT_OUTER_JOIN) {
+        if (inputPos == leftPos) {
+          updateFilterMap(filterMap,leftPos,rightPos);
+        }
+ else {
+          updateFilterMap(filterMap,rightPos,leftPos);
+        }
+      }
     }
-    filters.put(tag,filtersForInput);
+  }
+  for (int pos=0; pos < children.size(); pos++) {
+    ReduceSinkOperator inputRS=(ReduceSinkOperator)children.get(pos);
+    ReduceSinkDesc rsDesc=inputRS.getConf();
+    Byte tag=(byte)rsDesc.getTag();
+    filters.put(tag,filtersPerInput.get(pos));
   }
   JoinDesc desc=new JoinDesc(exprMap,outputColumnNames,noOuterJoin,joinCondns,filters,joinExpressions);
   desc.setReversedExprs(reversedExprs);
+  desc.setFilterMap(filterMap);
   JoinOperator joinOp=(JoinOperator)OperatorFactory.getAndMakeChild(desc,new RowSchema(outputColumns),childOps);
   joinOp.setColumnExprMap(colExprMap);
   joinOp.setPosToAliasMap(posToAliasMap);

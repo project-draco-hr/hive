@@ -1,24 +1,28 @@
 {
   final RexBuilder rexBuilder=join.getCluster().getRexBuilder();
   final List<RelNode> newInputs=Lists.newArrayList();
-  final List<RexNode> newJoinFilters=Lists.newArrayList();
-  newJoinFilters.add(join.getCondition());
-  final List<Pair<Pair<Integer,Integer>,JoinRelType>> joinSpecs=Lists.newArrayList();
-  if (left instanceof Join || left instanceof HiveMultiJoin) {
+  final List<RexNode> newJoinCondition=Lists.newArrayList();
+  final List<Pair<Integer,Integer>> joinInputs=Lists.newArrayList();
+  final List<JoinRelType> joinTypes=Lists.newArrayList();
+  final List<RexNode> joinFilters=Lists.newArrayList();
+  if (left instanceof HiveJoin || left instanceof HiveMultiJoin) {
     final RexNode leftCondition;
     final List<Pair<Integer,Integer>> leftJoinInputs;
     final List<JoinRelType> leftJoinTypes;
-    if (left instanceof Join) {
-      Join hj=(Join)left;
+    final List<RexNode> leftJoinFilters;
+    if (left instanceof HiveJoin) {
+      HiveJoin hj=(HiveJoin)left;
       leftCondition=hj.getCondition();
       leftJoinInputs=ImmutableList.of(Pair.of(0,1));
       leftJoinTypes=ImmutableList.of(hj.getJoinType());
+      leftJoinFilters=ImmutableList.of(hj.getJoinFilter());
     }
  else {
       HiveMultiJoin hmj=(HiveMultiJoin)left;
       leftCondition=hmj.getCondition();
       leftJoinInputs=hmj.getJoinInputs();
       leftJoinTypes=hmj.getJoinTypes();
+      leftJoinFilters=hmj.getJoinFilters();
     }
     boolean combinable;
     try {
@@ -29,9 +33,11 @@
       combinable=false;
     }
     if (combinable) {
-      newJoinFilters.add(leftCondition);
+      newJoinCondition.add(leftCondition);
       for (int i=0; i < leftJoinInputs.size(); i++) {
-        joinSpecs.add(Pair.of(leftJoinInputs.get(i),leftJoinTypes.get(i)));
+        joinInputs.add(leftJoinInputs.get(i));
+        joinTypes.add(leftJoinTypes.get(i));
+        joinFilters.add(leftJoinFilters.get(i));
       }
       newInputs.addAll(left.getInputs());
     }
@@ -44,7 +50,8 @@
   }
   final int numberLeftInputs=newInputs.size();
   newInputs.add(right);
-  if (newJoinFilters.size() == 1) {
+  newJoinCondition.add(join.getCondition());
+  if (newJoinCondition.size() == 1) {
     return null;
   }
   final List<RelDataTypeField> systemFieldList=ImmutableList.of();
@@ -53,15 +60,12 @@
   for (int i=0; i < newInputs.size(); i++) {
     joinKeyExprs.add(new ArrayList<RexNode>());
   }
-  RexNode otherCondition;
+  RexNode filters;
   try {
-    otherCondition=HiveRelOptUtil.splitHiveJoinCondition(systemFieldList,newInputs,join.getCondition(),joinKeyExprs,filterNulls,null);
+    filters=HiveRelOptUtil.splitHiveJoinCondition(systemFieldList,newInputs,join.getCondition(),joinKeyExprs,filterNulls,null);
   }
  catch (  CalciteSemanticException e) {
     LOG.trace("Failed to merge joins",e);
-    return null;
-  }
-  if (!otherCondition.isAlwaysTrue()) {
     return null;
   }
   ImmutableBitSet.Builder keysInInputsBuilder=ImmutableBitSet.builder();
@@ -80,15 +84,19 @@
   if (join.getJoinType() != JoinRelType.INNER) {
     int leftInput=keysInInputs.nextSetBit(0);
     int rightInput=keysInInputs.nextSetBit(numberLeftInputs);
-    joinSpecs.add(Pair.of(Pair.of(leftInput,rightInput),join.getJoinType()));
+    joinInputs.add(Pair.of(leftInput,rightInput));
+    joinTypes.add(join.getJoinType());
+    joinFilters.add(filters);
   }
  else {
     for (    int i : leftReferencedInputs) {
       for (      int j : rightReferencedInputs) {
-        joinSpecs.add(Pair.of(Pair.of(i,j),join.getJoinType()));
+        joinInputs.add(Pair.of(i,j));
+        joinTypes.add(join.getJoinType());
+        joinFilters.add(filters);
       }
     }
   }
-  RexNode newCondition=RexUtil.flatten(rexBuilder,RexUtil.composeConjunction(rexBuilder,newJoinFilters,false));
-  return new HiveMultiJoin(join.getCluster(),newInputs,newCondition,join.getRowType(),Pair.left(joinSpecs),Pair.right(joinSpecs));
+  RexNode newCondition=RexUtil.flatten(rexBuilder,RexUtil.composeConjunction(rexBuilder,newJoinCondition,false));
+  return new HiveMultiJoin(join.getCluster(),newInputs,newCondition,join.getRowType(),joinInputs,joinTypes,joinFilters);
 }
