@@ -1,15 +1,30 @@
 {
-  List<Table> tables=null;
-  startMultiTableFunction("get_multi_table",dbname,names);
+  List<Table> tables=new ArrayList<Table>();
+  startMultiTableFunction("get_multi_table",dbName,tableNames);
   Exception ex=null;
+  int tableBatchSize=HiveConf.getIntVar(hiveConf,ConfVars.METASTORE_BATCH_RETRIEVE_MAX);
   try {
-    if (dbname == null || dbname.isEmpty()) {
+    if (dbName == null || dbName.isEmpty()) {
       throw new UnknownDBException("DB name is null or empty");
     }
-    if (names == null) {
-      throw new InvalidOperationException(dbname + " cannot find null tables");
+    if (tableNames == null) {
+      throw new InvalidOperationException(dbName + " cannot find null tables");
     }
-    tables=getMS().getTableObjectsByName(dbname,names);
+    List<String> distinctTableNames=tableNames;
+    if (distinctTableNames.size() > tableBatchSize) {
+      List<String> lowercaseTableNames=new ArrayList<String>();
+      for (      String tableName : tableNames) {
+        lowercaseTableNames.add(HiveStringUtils.normalizeIdentifier(tableName));
+      }
+      distinctTableNames=new ArrayList<String>(new HashSet<String>(lowercaseTableNames));
+    }
+    RawStore ms=getMS();
+    int startIndex=0;
+    while (startIndex < distinctTableNames.size()) {
+      int endIndex=Math.min(startIndex + tableBatchSize,distinctTableNames.size());
+      tables.addAll(ms.getTableObjectsByName(dbName,distinctTableNames.subList(startIndex,endIndex)));
+      startIndex=endIndex;
+    }
   }
  catch (  Exception e) {
     ex=e;
@@ -27,7 +42,7 @@
     }
   }
  finally {
-    endFunction("get_multi_table",tables != null,ex,join(names,","));
+    endFunction("get_multi_table",tables != null,ex,join(tableNames,","));
   }
   return tables;
 }
