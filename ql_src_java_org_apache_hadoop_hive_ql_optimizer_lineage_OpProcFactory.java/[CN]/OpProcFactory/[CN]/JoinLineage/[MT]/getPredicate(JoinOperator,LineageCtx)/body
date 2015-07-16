@@ -1,0 +1,46 @@
+{
+  List<Operator<? extends OperatorDesc>> parentOperators=jop.getParentOperators();
+  JoinDesc jd=jop.getConf();
+  ExprNodeDesc[][] joinKeys=jd.getJoinKeys();
+  if (joinKeys == null || parentOperators == null || parentOperators.size() < 2) {
+    return null;
+  }
+  LineageCtx.Index index=lctx.getIndex();
+  for (  Operator<? extends OperatorDesc> op : parentOperators) {
+    if (index.getDependencies(op) == null) {
+      return null;
+    }
+  }
+  Predicate cond=new Predicate();
+  JoinCondDesc[] conds=jd.getConds();
+  int parents=parentOperators.size();
+  StringBuilder sb=new StringBuilder("(");
+  for (int i=0; i < conds.length; i++) {
+    if (i != 0) {
+      sb.append(" AND ");
+    }
+    int left=conds[i].getLeft();
+    int right=conds[i].getRight();
+    if (joinKeys.length < left || joinKeys[left].length == 0 || joinKeys.length < right || joinKeys[right].length == 0 || parents < left || parents < right) {
+      return null;
+    }
+    ExprNodeDesc expr=joinKeys[left][0];
+    Operator<? extends OperatorDesc> op=parentOperators.get(left);
+    List<Operator<? extends OperatorDesc>> p=op.getParentOperators();
+    if (p == null || p.isEmpty()) {
+      return null;
+    }
+    sb.append(ExprProcFactory.getExprString(op.getSchema(),expr,lctx,p.get(0),cond));
+    sb.append(" = ");
+    expr=joinKeys[right][0];
+    op=parentOperators.get(right);
+    p=op.getParentOperators();
+    if (p == null || p.isEmpty()) {
+      return null;
+    }
+    sb.append(ExprProcFactory.getExprString(op.getSchema(),expr,lctx,p.get(0),cond));
+  }
+  sb.append(")");
+  cond.setExpr(sb.toString());
+  return cond;
+}

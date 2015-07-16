@@ -1,10 +1,12 @@
 {
   List<Table> tables=new ArrayList<Table>();
   boolean committed=false;
+  Query dbExistsQuery=null;
+  Query query=null;
   try {
     openTransaction();
     db=HiveStringUtils.normalizeIdentifier(db);
-    Query dbExistsQuery=pm.newQuery(MDatabase.class,"name == db");
+    dbExistsQuery=pm.newQuery(MDatabase.class,"name == db");
     dbExistsQuery.declareParameters("java.lang.String db");
     dbExistsQuery.setUnique(true);
     dbExistsQuery.setResult("name");
@@ -16,7 +18,7 @@
     for (    String t : tbl_names) {
       lowered_tbl_names.add(HiveStringUtils.normalizeIdentifier(t));
     }
-    Query query=pm.newQuery(MTable.class);
+    query=pm.newQuery(MTable.class);
     query.setFilter("database.name == db && tbl_names.contains(tableName)");
     query.declareParameters("java.lang.String db, java.util.Collection tbl_names");
     Collection mtables=(Collection)query.execute(db,lowered_tbl_names);
@@ -28,6 +30,12 @@
   finally {
     if (!committed) {
       rollbackTransaction();
+    }
+    if (dbExistsQuery != null) {
+      dbExistsQuery.closeAll();
+    }
+    if (query != null) {
+      query.closeAll();
     }
   }
   return tables;

@@ -1,0 +1,60 @@
+{
+  trace(ctx,"INSERT VALUES");
+  String table=evalPop(ctx.table_name()).toString();
+  String conn=exec.getObjectConnection(ctx.table_name().getText());
+  Conn.Type type=exec.getConnectionType(conn);
+  StringBuilder sql=new StringBuilder();
+  if (type == Conn.Type.HIVE) {
+    sql.append("INSERT INTO TABLE " + table + " ");
+    if (conf.insertValues == Conf.InsertValues.NATIVE) {
+      sql.append("VALUES\n(");
+    }
+  }
+ else {
+    sql.append("INSERT INTO " + table);
+    if (ctx.insert_stmt_cols() != null) {
+      sql.append(" " + exec.getFormattedText(ctx.insert_stmt_cols()));
+    }
+    sql.append(" VALUES\n(");
+  }
+  int rows=ctx.insert_stmt_rows().insert_stmt_row().size();
+  for (int i=0; i < rows; i++) {
+    HplsqlParser.Insert_stmt_rowContext row=ctx.insert_stmt_rows().insert_stmt_row(i);
+    int cols=row.expr().size();
+    for (int j=0; j < cols; j++) {
+      String value=evalPop(row.expr(j)).toSqlString();
+      if (j == 0 && type == Conn.Type.HIVE && conf.insertValues == Conf.InsertValues.SELECT) {
+        sql.append("SELECT ");
+      }
+      sql.append(value);
+      if (j + 1 != cols) {
+        sql.append(", ");
+      }
+    }
+    if (type != Conn.Type.HIVE || conf.insertValues == Conf.InsertValues.NATIVE) {
+      if (i + 1 == rows) {
+        sql.append(")");
+      }
+ else {
+        sql.append("),\n(");
+      }
+    }
+ else     if (type == Conn.Type.HIVE && conf.insertValues == Conf.InsertValues.SELECT) {
+      sql.append(" FROM " + conf.dualTable);
+      if (i + 1 < rows) {
+        sql.append("\nUNION ALL\n");
+      }
+    }
+  }
+  if (trace) {
+    trace(ctx,sql.toString());
+  }
+  Query query=exec.executeSql(ctx,sql.toString(),conn);
+  if (query.error()) {
+    exec.signal(query);
+    return 1;
+  }
+  exec.setSqlSuccess();
+  exec.closeQuery(query,exec.conf.defaultConnection);
+  return 0;
+}

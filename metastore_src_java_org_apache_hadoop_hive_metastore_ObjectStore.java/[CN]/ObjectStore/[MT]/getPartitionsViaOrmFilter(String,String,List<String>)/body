@@ -2,15 +2,15 @@
   if (partNames.isEmpty()) {
     return new ArrayList<Partition>();
   }
-  Out<Query> query=new Out<Query>();
-  List<MPartition> mparts=null;
-  try {
-    mparts=getMPartitionsViaOrmFilter(dbName,tblName,partNames,query);
-    return convertToParts(dbName,tblName,mparts);
+  ObjectPair<Query,Map<String,String>> queryWithParams=getPartQueryWithParams(dbName,tblName,partNames);
+  Query query=queryWithParams.getFirst();
+  query.setResultClass(MPartition.class);
+  query.setClass(MPartition.class);
+  query.setOrdering("partitionName ascending");
+  @SuppressWarnings("unchecked") List<MPartition> mparts=(List<MPartition>)query.executeWithMap(queryWithParams.getSecond());
+  List<Partition> partitions=convertToParts(dbName,tblName,mparts);
+  if (query != null) {
+    query.closeAll();
   }
-  finally {
-    if (query.val != null) {
-      query.val.closeAll();
-    }
-  }
+  return partitions;
 }

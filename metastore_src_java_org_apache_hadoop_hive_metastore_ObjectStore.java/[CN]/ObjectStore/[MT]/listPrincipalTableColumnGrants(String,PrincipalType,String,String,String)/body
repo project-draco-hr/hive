@@ -1,24 +1,28 @@
 {
   boolean success=false;
+  Query query=null;
   tableName=HiveStringUtils.normalizeIdentifier(tableName);
   dbName=HiveStringUtils.normalizeIdentifier(dbName);
   columnName=HiveStringUtils.normalizeIdentifier(columnName);
-  List<MTableColumnPrivilege> mSecurityColList=null;
+  List<MTableColumnPrivilege> mSecurityColList=new ArrayList<MTableColumnPrivilege>();
   try {
-    openTransaction();
     LOG.debug("Executing listPrincipalTableColumnGrants");
+    openTransaction();
     String queryStr="principalName == t1 && principalType == t2 && " + "table.tableName == t3 && table.database.name == t4 &&  columnName == t5 ";
-    Query query=pm.newQuery(MTableColumnPrivilege.class,queryStr);
+    query=pm.newQuery(MTableColumnPrivilege.class,queryStr);
     query.declareParameters("java.lang.String t1, java.lang.String t2, java.lang.String t3, " + "java.lang.String t4, java.lang.String t5");
-    mSecurityColList=(List<MTableColumnPrivilege>)query.executeWithArray(principalName,principalType.toString(),tableName,dbName,columnName);
-    LOG.debug("Done executing query for listPrincipalTableColumnGrants");
-    pm.retrieveAll(mSecurityColList);
+    List<MTableColumnPrivilege> mPrivs=(List<MTableColumnPrivilege>)query.executeWithArray(principalName,principalType.toString(),tableName,dbName,columnName);
+    pm.retrieveAll(mPrivs);
     success=commitTransaction();
+    mSecurityColList.addAll(mPrivs);
     LOG.debug("Done retrieving all objects for listPrincipalTableColumnGrants");
   }
   finally {
     if (!success) {
       rollbackTransaction();
+    }
+    if (query != null) {
+      query.closeAll();
     }
   }
   return mSecurityColList;

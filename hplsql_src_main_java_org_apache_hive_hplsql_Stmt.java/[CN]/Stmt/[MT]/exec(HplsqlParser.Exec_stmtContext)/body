@@ -1,0 +1,57 @@
+{
+  if (trace) {
+    trace(ctx,"EXECUTE");
+  }
+  Var vsql=evalPop(ctx.expr());
+  String sql=vsql.toString();
+  if (trace) {
+    trace(ctx,"Query: " + sql);
+  }
+  Query query=exec.executeSql(ctx,sql,exec.conf.defaultConnection);
+  if (query.error()) {
+    exec.signal(query);
+    return 1;
+  }
+  ResultSet rs=query.getResultSet();
+  if (rs != null) {
+    try {
+      ResultSetMetaData rsm=rs.getMetaData();
+      if (ctx.T_INTO() != null) {
+        int cols=ctx.L_ID().size();
+        if (rs.next()) {
+          for (int i=0; i < cols; i++) {
+            Var var=exec.findVariable(ctx.L_ID(i).getText());
+            if (var != null) {
+              var.setValue(rs,rsm,i + 1);
+              if (trace) {
+                trace(ctx,"COLUMN: " + rsm.getColumnName(i + 1) + ", "+ rsm.getColumnTypeName(i + 1));
+                trace(ctx,"SET " + var.getName() + " = "+ var.toString());
+              }
+            }
+ else             if (trace) {
+              trace(ctx,"Variable not found: " + ctx.L_ID(i).getText());
+            }
+          }
+          exec.setSqlCode(0);
+        }
+      }
+ else {
+        int cols=rsm.getColumnCount();
+        while (rs.next()) {
+          for (int i=1; i <= cols; i++) {
+            if (i > 1) {
+              System.out.print("\t");
+            }
+            System.out.print(rs.getString(i));
+          }
+          System.out.println("");
+        }
+      }
+    }
+ catch (    SQLException e) {
+      exec.setSqlCode(e);
+    }
+  }
+  exec.closeQuery(query,exec.conf.defaultConnection);
+  return 0;
+}

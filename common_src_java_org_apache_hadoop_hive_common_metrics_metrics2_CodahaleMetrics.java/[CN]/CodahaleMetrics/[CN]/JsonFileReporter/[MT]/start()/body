@@ -9,11 +9,19 @@
       try {
         String json=jsonMapper.writerWithDefaultPrettyPrinter().writeValueAsString(metricRegistry);
         Path tmpPath=new Path(pathString + ".tmp");
-        FileSystem fs=FileSystem.get(conf);
+        URI tmpPathURI=tmpPath.toUri();
+        FileSystem fs=null;
+        if (tmpPathURI.getScheme() == null && tmpPathURI.getAuthority() == null) {
+          fs=FileSystem.getLocal(conf);
+        }
+ else {
+          fs=FileSystem.get(tmpPathURI,conf);
+        }
         fs.delete(tmpPath,true);
         bw=new BufferedWriter(new OutputStreamWriter(fs.create(tmpPath,true)));
         bw.write(json);
         bw.close();
+        fs.setPermission(tmpPath,FsPermission.createImmutable((short)0644));
         Path path=new Path(pathString);
         fs.rename(tmpPath,path);
         fs.setPermission(path,FsPermission.createImmutable((short)0644));

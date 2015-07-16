@@ -24,31 +24,27 @@
   if (LOG.isDebugEnabled()) {
     LOG.debug("Translating operator rel#" + joinRel.getId() + ":"+ joinRel.getRelTypeName()+ " with row type: ["+ joinRel.getRowType()+ "]");
   }
-  JoinPredicateInfo joinPredInfo;
-  if (joinRel instanceof HiveJoin) {
-    joinPredInfo=((HiveJoin)joinRel).getJoinPredicateInfo();
-  }
- else {
-    joinPredInfo=((HiveMultiJoin)joinRel).getJoinPredicateInfo();
-  }
   ExprNodeDesc[][] joinExpressions=new ExprNodeDesc[inputs.length][];
   for (int i=0; i < inputs.length; i++) {
     joinExpressions[i]=((HiveSortExchange)joinRel.getInput(i)).getJoinExpressions();
   }
-  ExprNodeDesc[][] filterExpressions=new ExprNodeDesc[inputs.length][];
-  for (int i=0; i < inputs.length; i++) {
+  List<RexNode> joinFilters;
+  if (joinRel instanceof HiveJoin) {
+    joinFilters=ImmutableList.of(((HiveJoin)joinRel).getJoinFilter());
+  }
+ else {
+    joinFilters=((HiveMultiJoin)joinRel).getJoinFilters();
+  }
+  List<List<ExprNodeDesc>> filterExpressions=Lists.newArrayList();
+  for (int i=0; i < joinFilters.size(); i++) {
     List<ExprNodeDesc> filterExpressionsForInput=new ArrayList<ExprNodeDesc>();
-    Set<String> keySet=new HashSet<String>();
-    for (int j=0; j < joinPredInfo.getNonEquiJoinPredicateElements().size(); j++) {
-      JoinLeafPredicateInfo joinLeafPredInfo=joinPredInfo.getNonEquiJoinPredicateElements().get(j);
-      for (      RexNode joinExprNode : joinLeafPredInfo.getJoinExprs(i)) {
-        if (keySet.add(joinExprNode.toString())) {
-          ExprNodeDesc expr=convertToExprNode(joinExprNode,joinRel,null,newVcolsInCalcite);
-          filterExpressionsForInput.add(expr);
-        }
+    if (joinFilters.get(i) != null) {
+      for (      RexNode conj : RelOptUtil.conjunctions(joinFilters.get(i))) {
+        ExprNodeDesc expr=convertToExprNode(conj,joinRel,null,newVcolsInCalcite);
+        filterExpressionsForInput.add(expr);
       }
     }
-    filterExpressions[i]=filterExpressionsForInput.toArray(new ExprNodeDesc[filterExpressionsForInput.size()]);
+    filterExpressions.add(filterExpressionsForInput);
   }
   JoinOperator joinOp=genJoin(joinRel,joinExpressions,filterExpressions,children,baseSrc,tabAlias);
   return new OpAttr(tabAlias,newVcolsInCalcite,joinOp);

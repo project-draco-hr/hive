@@ -1,7 +1,8 @@
 {
   LineageCtx lCtx=(LineageCtx)procCtx;
-  Operator<? extends OperatorDesc> op=(Operator<? extends OperatorDesc>)nd;
+  @SuppressWarnings("unchecked") Operator<? extends OperatorDesc> op=(Operator<? extends OperatorDesc>)nd;
   Operator<? extends OperatorDesc> inpOp=getParent(stack);
+  lCtx.getIndex().copyPredicates(inpOp,op);
   Dependency dep=new Dependency();
   DependencyType new_type=LineageInfo.DependencyType.SCRIPT;
   dep.setType(LineageInfo.DependencyType.SCRIPT);
@@ -11,13 +12,23 @@
     Dependency d=lCtx.getIndex().getDependency(inpOp,ci);
     if (d != null) {
       new_type=LineageCtx.getNewDependencyType(d.getType(),new_type);
-      col_set.addAll(d.getBaseCols());
+      if (!ci.isHiddenVirtualCol()) {
+        col_set.addAll(d.getBaseCols());
+      }
     }
   }
   dep.setType(new_type);
   dep.setBaseCols(new ArrayList<BaseColumnInfo>(col_set));
+  boolean isScript=op instanceof ScriptOperator;
   for (  ColumnInfo ci : op.getSchema().getSignature()) {
-    lCtx.getIndex().putDependency(op,ci,dep);
+    Dependency d=dep;
+    if (!isScript) {
+      Dependency dep_ci=lCtx.getIndex().getDependency(inpOp,ci);
+      if (dep_ci != null) {
+        d=dep_ci;
+      }
+    }
+    lCtx.getIndex().putDependency(op,ci,d);
   }
   return null;
 }

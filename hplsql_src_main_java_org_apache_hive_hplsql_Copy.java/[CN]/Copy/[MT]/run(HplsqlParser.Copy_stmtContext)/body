@@ -1,0 +1,41 @@
+{
+  trace(ctx,"COPY");
+  initOptions(ctx);
+  StringBuilder sql=new StringBuilder();
+  String conn=null;
+  if (ctx.table_name() != null) {
+    String table=evalPop(ctx.table_name()).toString();
+    conn=exec.getObjectConnection(ctx.table_name().getText());
+    sql.append("SELECT * FROM ");
+    sql.append(table);
+  }
+ else {
+    sql.append(evalPop(ctx.select_stmt()).toString());
+    conn=exec.getStatementConnection();
+    if (trace) {
+      trace(ctx,"Statement:\n" + sql);
+    }
+  }
+  Query query=exec.executeQuery(ctx,sql.toString(),conn);
+  if (query.error()) {
+    exec.signal(query);
+    return 1;
+  }
+  exec.setSqlSuccess();
+  try {
+    if (targetConn != null) {
+      copyToTable(ctx,query);
+    }
+ else {
+      copyToFile(ctx,query);
+    }
+  }
+ catch (  Exception e) {
+    exec.signal(e);
+    return 1;
+  }
+ finally {
+    exec.closeQuery(query,conn);
+  }
+  return 0;
+}

@@ -4,12 +4,15 @@
   boolean useOptimizedTables=HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVEMAPJOINUSEOPTIMIZEDTABLE);
   boolean useHybridGraceHashJoin=desc.isHybridHashJoin();
   boolean isFirstKey=true;
-  long noConditionalTaskThreshold=HiveConf.getLongVar(hconf,HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASKTHRESHOLD);
+  long totalMapJoinMemory=desc.getMemoryNeeded();
+  if (totalMapJoinMemory <= 0) {
+    totalMapJoinMemory=HiveConf.getLongVar(hconf,HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASKTHRESHOLD);
+  }
   long processMaxMemory=ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getMax();
-  if (noConditionalTaskThreshold > processMaxMemory) {
+  if (totalMapJoinMemory > processMaxMemory) {
     float hashtableMemoryUsage=HiveConf.getFloatVar(hconf,HiveConf.ConfVars.HIVEHASHTABLEFOLLOWBYGBYMAXMEMORYUSAGE);
-    LOG.warn("noConditionalTaskThreshold value of " + noConditionalTaskThreshold + " is greater than the max memory size of "+ processMaxMemory);
-    noConditionalTaskThreshold=(long)(processMaxMemory * hashtableMemoryUsage);
+    LOG.warn("totalMapJoinMemory value of " + totalMapJoinMemory + " is greater than the max memory size of "+ processMaxMemory);
+    totalMapJoinMemory=(long)(processMaxMemory * hashtableMemoryUsage);
   }
   HybridHashTableConf nwayConf=null;
   long totalSize=0;
@@ -29,7 +32,7 @@
         biggest=pos;
       }
     }
-    tableMemorySizes=divideHybridHashTableMemory(mapJoinTables,desc,totalSize,noConditionalTaskThreshold);
+    tableMemorySizes=divideHybridHashTableMemory(mapJoinTables,desc,totalSize,totalMapJoinMemory);
     long memory=tableMemorySizes.get(biggest);
     int numPartitions=0;
     try {
@@ -77,7 +80,7 @@
           memory=tableMemorySizes.get(pos);
         }
  else {
-          memory=noConditionalTaskThreshold;
+          memory=totalMapJoinMemory;
         }
       }
       MapJoinTableContainer tableContainer=useOptimizedTables ? (useHybridGraceHashJoin ? new HybridHashTableContainer(hconf,keyCount,memory,desc.getParentDataSizes().get(pos),nwayConf) : new MapJoinBytesTableContainer(hconf,valCtx,keyCount,0)) : new HashMapWrapper(hconf,keyCount);

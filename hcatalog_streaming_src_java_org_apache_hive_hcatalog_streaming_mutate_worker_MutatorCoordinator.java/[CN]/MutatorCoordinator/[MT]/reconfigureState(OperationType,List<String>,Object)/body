@@ -1,0 +1,25 @@
+{
+  RecordIdentifier newRecordIdentifier=extractRecordIdentifier(operationType,newPartitionValues,record);
+  int newBucketId=newRecordIdentifier.getBucketId();
+  if (newPartitionValues == null) {
+    newPartitionValues=Collections.emptyList();
+  }
+  try {
+    if (partitionHasChanged(newPartitionValues)) {
+      if (table.createPartitions()) {
+        partitionHelper.createPartitionIfNotExists(newPartitionValues);
+      }
+      Path newPartitionPath=partitionHelper.getPathForPartition(newPartitionValues);
+      resetMutator(newBucketId,newPartitionValues,newPartitionPath);
+    }
+ else     if (bucketIdHasChanged(newBucketId)) {
+      resetMutator(newBucketId,partitionValues,partitionPath);
+    }
+ else {
+      validateRecordSequence(operationType,newRecordIdentifier);
+    }
+  }
+ catch (  IOException e) {
+    throw new WorkerException("Failed to reset mutator when performing " + operationType + " of record: "+ record,e);
+  }
+}
