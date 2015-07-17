@@ -1,27 +1,30 @@
 {
   TaskWrapper taskWrapper=new TaskWrapper(task,this);
-  knownTasks.put(taskWrapper.getRequestId(),taskWrapper);
-  boolean canFinish=taskWrapper.getTaskRunnerCallable().canFinish();
-  taskWrapper.maybeRegisterForFinishedStateNotifications(canFinish);
   TaskWrapper evictedTask;
-  try {
 synchronized (lock) {
-      evictedTask=waitQueue.offer(taskWrapper);
+    evictedTask=waitQueue.offer(taskWrapper);
+    if (evictedTask != taskWrapper) {
+      knownTasks.put(taskWrapper.getRequestId(),taskWrapper);
       taskWrapper.setIsInWaitQueue(true);
+      if (isInfoEnabled) {
+        LOG.info("{} added to wait queue. Current wait queue size={}",task.getRequestId(),waitQueue.size());
+      }
+    }
+ else {
+      if (isInfoEnabled) {
+        LOG.info("wait queue full, size={}. {} not added",waitQueue.size(),task.getRequestId());
+      }
+      evictedTask.getTaskRunnerCallable().killTask();
+      throw new RejectedExecutionException("Wait queue full");
     }
   }
- catch (  RejectedExecutionException e) {
-    knownTasks.remove(taskWrapper.getRequestId());
-    taskWrapper.maybeUnregisterForFinishedStateNotifications();
-    throw e;
-  }
-  if (isInfoEnabled) {
-    LOG.info("{} added to wait queue. Current wait queue size={}",task.getRequestId(),waitQueue.size());
-  }
+  boolean canFinish=taskWrapper.getTaskRunnerCallable().canFinish();
+  taskWrapper.maybeRegisterForFinishedStateNotifications(canFinish);
   if (isDebugEnabled) {
     LOG.debug("Wait Queue: {}",waitQueue);
   }
   if (evictedTask != null) {
+    knownTasks.remove(evictedTask.getRequestId());
     evictedTask.maybeUnregisterForFinishedStateNotifications();
     evictedTask.setIsInWaitQueue(false);
     evictedTask.getTaskRunnerCallable().killTask();
