@@ -1,0 +1,25 @@
+{
+  MockRequest r1=createMockRequest(1,1,100,false,5000l);
+  MockRequest r2=createMockRequest(2,1,100,true,1000l);
+  TaskExecutorServiceForTest taskExecutorService=new TaskExecutorServiceForTest(1,2,false,true);
+  taskExecutorService.init(conf);
+  taskExecutorService.start();
+  try {
+    taskExecutorService.schedule(r1);
+    r1.awaitStart();
+    taskExecutorService.schedule(r2);
+    r2.awaitStart();
+    assertTrue(r1.wasPreempted());
+    assertTrue(r1.hasFinished());
+    r2.complete();
+    r2.awaitEnd();
+    TaskExecutorServiceForTest.InternalCompletionListenerForTest icl1=taskExecutorService.getInternalCompletionListenerForTest(r1.getRequestId());
+    TaskExecutorServiceForTest.InternalCompletionListenerForTest icl2=taskExecutorService.getInternalCompletionListenerForTest(r2.getRequestId());
+    icl1.awaitCompletion();
+    icl2.awaitCompletion();
+    assertEquals(0,taskExecutorService.knownTasks.size());
+  }
+  finally {
+    taskExecutorService.shutDown(false);
+  }
+}

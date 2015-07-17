@@ -1,12 +1,18 @@
 {
   TaskWrapper taskWrapper=new TaskWrapper(task,this);
   knownTasks.put(taskWrapper.getRequestId(),taskWrapper);
+  boolean canFinish=taskWrapper.getTaskRunnerCallable().canFinish();
+  taskWrapper.maybeRegisterForFinishedStateNotifications(canFinish);
   TaskWrapper evictedTask;
   try {
-    evictedTask=waitQueue.offer(taskWrapper);
+synchronized (lock) {
+      evictedTask=waitQueue.offer(taskWrapper);
+      taskWrapper.setIsInWaitQueue(true);
+    }
   }
  catch (  RejectedExecutionException e) {
     knownTasks.remove(taskWrapper.getRequestId());
+    taskWrapper.maybeUnregisterForFinishedStateNotifications();
     throw e;
   }
   if (isInfoEnabled) {
@@ -17,6 +23,7 @@
   }
   if (evictedTask != null) {
     evictedTask.maybeUnregisterForFinishedStateNotifications();
+    evictedTask.setIsInWaitQueue(false);
     evictedTask.getTaskRunnerCallable().killTask();
     if (isInfoEnabled) {
       LOG.info("{} evicted from wait queue in favor of {} because of lower priority",evictedTask.getRequestId(),task.getRequestId());

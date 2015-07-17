@@ -1,10 +1,40 @@
 {
-  System.out.println(super.getRequestId() + " is executing..");
   try {
-    Thread.sleep(workTime);
+    logInfo(super.getRequestId() + " is executing..",null);
+    lock.lock();
+    try {
+      isStarted.set(true);
+      startedCondition.signal();
+    }
+  finally {
+      lock.unlock();
+    }
+    lock.lock();
+    try {
+      sleepCondition.await(workTime,TimeUnit.MILLISECONDS);
+    }
+ catch (    InterruptedException e) {
+      wasInterrupted.set(true);
+      return new TaskRunner2Result(EndReason.KILL_REQUESTED,null,false);
+    }
+ finally {
+      lock.unlock();
+    }
+    if (wasKilled.get()) {
+      return new TaskRunner2Result(EndReason.KILL_REQUESTED,null,false);
+    }
+ else {
+      return new TaskRunner2Result(EndReason.SUCCESS,null,false);
+    }
   }
- catch (  InterruptedException e) {
-    return new TaskRunner2Result(EndReason.KILL_REQUESTED,null,false);
+  finally {
+    lock.lock();
+    try {
+      isFinished.set(true);
+      finishedCondition.signal();
+    }
+  finally {
+      lock.unlock();
+    }
   }
-  return new TaskRunner2Result(EndReason.SUCCESS,null,false);
 }
