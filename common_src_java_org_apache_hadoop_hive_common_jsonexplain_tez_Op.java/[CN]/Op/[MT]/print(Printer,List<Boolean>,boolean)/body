@@ -1,0 +1,74 @@
+{
+  if (parser.printSet.contains(this)) {
+    printer.println(TezJsonParser.prefixString(indentFlag) + " Please refer to the previous " + this.getNameWithOpId());
+    return;
+  }
+  parser.printSet.add(this);
+  if (!branchOfJoinOp) {
+    printer.println(TezJsonParser.prefixString(indentFlag) + this.getNameWithOpId());
+  }
+ else {
+    printer.println(TezJsonParser.prefixString(indentFlag,"|<-") + this.getNameWithOpId());
+  }
+  branchOfJoinOp=false;
+  if (this.name.equals("Map Join Operator") || this.name.equals("Merge Join Operator")) {
+    inlineJoinOp();
+    branchOfJoinOp=true;
+  }
+  List<Connection> noninlined=new ArrayList<>();
+  if (this.parent == null) {
+    if (this.vertex != null) {
+      for (      Connection connection : this.vertex.parentConnections) {
+        if (!parser.isInline(connection.from)) {
+          noninlined.add(connection);
+        }
+      }
+    }
+  }
+  List<Boolean> attFlag=new ArrayList<>();
+  attFlag.addAll(indentFlag);
+  if (branchOfJoinOp || (this.parent == null && !noninlined.isEmpty())) {
+    attFlag.add(true);
+  }
+ else {
+    attFlag.add(false);
+  }
+  Collections.sort(attrs);
+  for (  Attr attr : attrs) {
+    printer.println(TezJsonParser.prefixString(attFlag) + attr.toString());
+  }
+  if (parser.inlineMap.containsKey(this)) {
+    for (int index=0; index < parser.inlineMap.get(this).size(); index++) {
+      Connection connection=parser.inlineMap.get(this).get(index);
+      List<Boolean> vertexFlag=new ArrayList<>();
+      vertexFlag.addAll(indentFlag);
+      if (branchOfJoinOp) {
+        vertexFlag.add(true);
+      }
+ else {
+        vertexFlag.add(false);
+      }
+      connection.from.print(printer,vertexFlag,connection.type,this.vertex);
+    }
+  }
+  if (this.parent != null) {
+    List<Boolean> parentFlag=new ArrayList<>();
+    parentFlag.addAll(indentFlag);
+    parentFlag.add(false);
+    this.parent.print(printer,parentFlag,branchOfJoinOp);
+  }
+ else {
+    for (int index=0; index < noninlined.size(); index++) {
+      Vertex v=noninlined.get(index).from;
+      List<Boolean> vertexFlag=new ArrayList<>();
+      vertexFlag.addAll(indentFlag);
+      if (index != noninlined.size() - 1) {
+        vertexFlag.add(true);
+      }
+ else {
+        vertexFlag.add(false);
+      }
+      v.print(printer,vertexFlag,noninlined.get(index).type,this.vertex);
+    }
+  }
+}

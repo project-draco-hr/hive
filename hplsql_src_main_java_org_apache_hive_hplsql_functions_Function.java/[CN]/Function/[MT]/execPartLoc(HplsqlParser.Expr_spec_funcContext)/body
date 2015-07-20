@@ -1,0 +1,62 @@
+{
+  String tabname=evalPop(ctx.expr(0)).toString();
+  String sql="DESCRIBE EXTENDED " + tabname;
+  int exprnum=ctx.expr().size();
+  boolean hostname=false;
+  if (exprnum > 1) {
+    sql+=" PARTITION (";
+    int i=1;
+    while (i + 1 < exprnum) {
+      String col=evalPop(ctx.expr(i)).toString();
+      String val=evalPop(ctx.expr(i + 1)).toSqlString();
+      if (i > 2) {
+        sql+=", ";
+      }
+      sql+=col + "=" + val;
+      i+=2;
+    }
+    sql+=")";
+  }
+  if (exprnum % 2 == 0 && evalPop(ctx.expr(exprnum - 1)).intValue() == 1) {
+    hostname=true;
+  }
+  if (trace) {
+    trace(ctx,"Query: " + sql);
+  }
+  if (exec.getOffline()) {
+    evalNull();
+    return;
+  }
+  Query query=exec.executeQuery(ctx,sql,exec.conf.defaultConnection);
+  if (query.error()) {
+    evalNullClose(query,exec.conf.defaultConnection);
+    return;
+  }
+  String result=null;
+  ResultSet rs=query.getResultSet();
+  try {
+    while (rs.next()) {
+      if (rs.getString(1).startsWith("Detailed Partition Information")) {
+        Matcher m=Pattern.compile(".*, location:(.*?),.*").matcher(rs.getString(2));
+        if (m.find()) {
+          result=m.group(1);
+        }
+      }
+    }
+  }
+ catch (  SQLException e) {
+  }
+  if (result != null) {
+    if (!hostname) {
+      Matcher m=Pattern.compile(".*://.*?(/.*)").matcher(result);
+      if (m.find()) {
+        result=m.group(1);
+      }
+    }
+    evalString(result);
+  }
+ else {
+    evalNull();
+  }
+  exec.closeQuery(query,exec.conf.defaultConnection);
+}

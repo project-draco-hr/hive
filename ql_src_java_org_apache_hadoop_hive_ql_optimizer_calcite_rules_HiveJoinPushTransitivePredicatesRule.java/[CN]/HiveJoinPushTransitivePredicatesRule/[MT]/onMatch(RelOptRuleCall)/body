@@ -1,0 +1,25 @@
+{
+  Join join=call.rel(0);
+  RelOptPredicateList preds=RelMetadataQuery.getPulledUpPredicates(join);
+  RexBuilder rB=join.getCluster().getRexBuilder();
+  RelNode lChild=call.rel(1);
+  RelNode rChild=call.rel(2);
+  List<RexNode> leftPreds=getValidPreds(preds.leftInferredPredicates,lChild.getRowType().getFieldList());
+  List<RexNode> rightPreds=getValidPreds(preds.rightInferredPredicates,rChild.getRowType().getFieldList());
+  if (leftPreds.isEmpty() && rightPreds.isEmpty()) {
+    return;
+  }
+  if (leftPreds.size() > 0) {
+    RelNode curr=lChild;
+    lChild=filterFactory.createFilter(lChild,RexUtil.composeConjunction(rB,leftPreds,false));
+    call.getPlanner().onCopy(curr,lChild);
+  }
+  if (rightPreds.size() > 0) {
+    RelNode curr=rChild;
+    rChild=filterFactory.createFilter(rChild,RexUtil.composeConjunction(rB,rightPreds,false));
+    call.getPlanner().onCopy(curr,rChild);
+  }
+  RelNode newRel=join.copy(join.getTraitSet(),join.getCondition(),lChild,rChild,join.getJoinType(),join.isSemiJoinDone());
+  call.getPlanner().onCopy(join,newRel);
+  call.transformTo(newRel);
+}

@@ -1,0 +1,20 @@
+{
+  assert(!stack.isEmpty());
+  LineageCtx lCtx=(LineageCtx)procCtx;
+  FilterOperator fop=(FilterOperator)nd;
+  Operator<? extends OperatorDesc> inpOp=getParent(stack);
+  lCtx.getIndex().copyPredicates(inpOp,fop);
+  FilterDesc filterDesc=fop.getConf();
+  RowSchema rs=fop.getSchema();
+  if (!filterDesc.isGenerated()) {
+    Predicate cond=new Predicate();
+    cond.setExpr(ExprProcFactory.getExprString(rs,filterDesc.getPredicate(),lCtx,inpOp,cond));
+    lCtx.getIndex().addPredicate(fop,cond);
+  }
+  ArrayList<ColumnInfo> inp_cols=inpOp.getSchema().getSignature();
+  int cnt=0;
+  for (  ColumnInfo ci : rs.getSignature()) {
+    lCtx.getIndex().putDependency(fop,ci,lCtx.getIndex().getDependency(inpOp,inp_cols.get(cnt++)));
+  }
+  return null;
+}

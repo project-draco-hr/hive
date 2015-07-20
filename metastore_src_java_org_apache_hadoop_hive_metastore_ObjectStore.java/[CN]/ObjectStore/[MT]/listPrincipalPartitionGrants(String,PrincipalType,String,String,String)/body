@@ -1,22 +1,26 @@
 {
   boolean success=false;
+  Query query=null;
   tableName=HiveStringUtils.normalizeIdentifier(tableName);
   dbName=HiveStringUtils.normalizeIdentifier(dbName);
-  List<MPartitionPrivilege> mSecurityTabPartList=null;
+  List<MPartitionPrivilege> mSecurityTabPartList=new ArrayList<MPartitionPrivilege>();
   try {
+    LOG.debug("Executing listPrincipalPartitionGrants");
     openTransaction();
-    LOG.debug("Executing listMSecurityPrincipalPartitionGrant");
-    Query query=pm.newQuery(MPartitionPrivilege.class,"principalName == t1 && principalType == t2 && partition.table.tableName == t3 " + "&& partition.table.database.name == t4 && partition.partitionName == t5");
+    query=pm.newQuery(MPartitionPrivilege.class,"principalName == t1 && principalType == t2 && partition.table.tableName == t3 " + "&& partition.table.database.name == t4 && partition.partitionName == t5");
     query.declareParameters("java.lang.String t1, java.lang.String t2, java.lang.String t3, java.lang.String t4, " + "java.lang.String t5");
-    mSecurityTabPartList=(List<MPartitionPrivilege>)query.executeWithArray(principalName,principalType.toString(),tableName,dbName,partName);
-    LOG.debug("Done executing query for listMSecurityPrincipalPartitionGrant");
-    pm.retrieveAll(mSecurityTabPartList);
+    List<MPartitionPrivilege> mPrivs=(List<MPartitionPrivilege>)query.executeWithArray(principalName,principalType.toString(),tableName,dbName,partName);
+    pm.retrieveAll(mPrivs);
     success=commitTransaction();
-    LOG.debug("Done retrieving all objects for listMSecurityPrincipalPartitionGrant");
+    mSecurityTabPartList.addAll(mPrivs);
+    LOG.debug("Done retrieving all objects for listPrincipalPartitionGrants");
   }
   finally {
     if (!success) {
       rollbackTransaction();
+    }
+    if (query != null) {
+      query.closeAll();
     }
   }
   return mSecurityTabPartList;

@@ -1,0 +1,30 @@
+{
+  List<FieldSchema> fields=new ArrayList<FieldSchema>(columnNames.size());
+  for (int i=0; i < columnNames.size(); i++) {
+    fields.add(new FieldSchema(columnNames.get(i),columnTypes.get(i),""));
+  }
+  sd.setCols(fields);
+  if (!partitionKeys.isEmpty()) {
+    List<FieldSchema> partitionFields=new ArrayList<FieldSchema>();
+    for (    String partitionKey : partitionKeys) {
+      partitionFields.add(new FieldSchema(partitionKey,serdeConstants.STRING_TYPE_NAME,""));
+    }
+    table.setPartitionKeys(partitionFields);
+  }
+  if (metaStoreClient != null) {
+    metaStoreClient.createTable(table);
+  }
+  for (  List<String> partitionValues : partitions) {
+    Partition partition=new Partition();
+    partition.setDbName(database.getName());
+    partition.setTableName(table.getTableName());
+    StorageDescriptor partitionSd=new StorageDescriptor(table.getSd());
+    partitionSd.setLocation(table.getSd().getLocation() + Path.SEPARATOR + Warehouse.makePartName(table.getPartitionKeys(),partitionValues));
+    partition.setSd(partitionSd);
+    partition.setValues(partitionValues);
+    if (metaStoreClient != null) {
+      metaStoreClient.add_partition(partition);
+    }
+  }
+  return table;
+}

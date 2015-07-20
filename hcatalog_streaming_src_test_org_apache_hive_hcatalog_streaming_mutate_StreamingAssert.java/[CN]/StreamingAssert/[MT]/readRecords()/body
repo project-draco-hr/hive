@@ -1,0 +1,24 @@
+{
+  if (currentDeltas.isEmpty()) {
+    throw new AssertionError("No data");
+  }
+  InputFormat<NullWritable,OrcStruct> inputFormat=new OrcInputFormat();
+  JobConf job=new JobConf();
+  job.set("mapred.input.dir",partitionLocation.toString());
+  job.set("bucket_count",Integer.toString(table.getSd().getNumBuckets()));
+  job.set(ValidTxnList.VALID_TXNS_KEY,txns.toString());
+  InputSplit[] splits=inputFormat.getSplits(job,1);
+  assertEquals(1,splits.length);
+  final AcidRecordReader<NullWritable,OrcStruct> recordReader=(AcidRecordReader<NullWritable,OrcStruct>)inputFormat.getRecordReader(splits[0],job,Reporter.NULL);
+  NullWritable key=recordReader.createKey();
+  OrcStruct value=recordReader.createValue();
+  List<Record> records=new ArrayList<>();
+  while (recordReader.next(key,value)) {
+    RecordIdentifier recordIdentifier=recordReader.getRecordIdentifier();
+    Record record=new Record(new RecordIdentifier(recordIdentifier.getTransactionId(),recordIdentifier.getBucketId(),recordIdentifier.getRowId()),value.toString());
+    System.out.println(record);
+    records.add(record);
+  }
+  recordReader.close();
+  return records;
+}

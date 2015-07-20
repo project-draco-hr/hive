@@ -1,24 +1,25 @@
 {
   boolean commited=false;
   List<String> databases=null;
+  Query query=null;
   try {
     openTransaction();
     String[] subpatterns=pattern.trim().split("\\|");
-    String query="select name from org.apache.hadoop.hive.metastore.model.MDatabase where (";
+    String queryStr="select name from org.apache.hadoop.hive.metastore.model.MDatabase where (";
     boolean first=true;
     for (    String subpattern : subpatterns) {
       subpattern="(?i)" + subpattern.replaceAll("\\*",".*");
       if (!first) {
-        query=query + " || ";
+        queryStr=queryStr + " || ";
       }
-      query=query + " name.matches(\"" + subpattern+ "\")";
+      queryStr=queryStr + " name.matches(\"" + subpattern+ "\")";
       first=false;
     }
-    query=query + ")";
-    Query q=pm.newQuery(query);
-    q.setResult("name");
-    q.setOrdering("name ascending");
-    Collection names=(Collection)q.execute();
+    queryStr=queryStr + ")";
+    query=pm.newQuery(queryStr);
+    query.setResult("name");
+    query.setOrdering("name ascending");
+    Collection names=(Collection)query.execute();
     databases=new ArrayList<String>();
     for (Iterator i=names.iterator(); i.hasNext(); ) {
       databases.add((String)i.next());
@@ -28,6 +29,9 @@
   finally {
     if (!commited) {
       rollbackTransaction();
+    }
+    if (query != null) {
+      query.closeAll();
     }
   }
   return databases;

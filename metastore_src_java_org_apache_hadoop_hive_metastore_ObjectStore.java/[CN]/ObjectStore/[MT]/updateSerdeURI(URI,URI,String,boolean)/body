@@ -1,11 +1,12 @@
 {
   boolean committed=false;
+  Query query=null;
   Map<String,String> updateLocations=new HashMap<String,String>();
   List<String> badRecords=new ArrayList<String>();
   UpdateSerdeURIRetVal retVal=null;
   try {
     openTransaction();
-    Query query=pm.newQuery(MSerDeInfo.class);
+    query=pm.newQuery(MSerDeInfo.class);
     List<MSerDeInfo> mSerdes=(List<MSerDeInfo>)query.execute();
     pm.retrieveAll(mSerdes);
     for (    MSerDeInfo mSerde : mSerdes) {
@@ -13,12 +14,9 @@
         String schemaLoc=mSerde.getParameters().get(serdeProp);
         URI schemaLocURI=null;
         try {
-          schemaLocURI=new URI(schemaLoc);
+          schemaLocURI=new Path(schemaLoc).toUri();
         }
- catch (        URISyntaxException e) {
-          badRecords.add(schemaLoc);
-        }
-catch (        NullPointerException e) {
+ catch (        IllegalArgumentException e) {
           badRecords.add(schemaLoc);
         }
         if (schemaLocURI == null) {
@@ -44,6 +42,9 @@ catch (        NullPointerException e) {
   finally {
     if (!committed) {
       rollbackTransaction();
+    }
+    if (query != null) {
+      query.closeAll();
     }
   }
 }

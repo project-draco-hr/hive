@@ -25,21 +25,9 @@
       valueStringWriters=new ArrayList<VectorExpressionWriter>(totalColumns);
       valueStringWriters.addAll(Arrays.asList(VectorExpressionWriterFactory.genVectorStructExpressionWritables(keyStructInspector)));
       valueStringWriters.addAll(Arrays.asList(VectorExpressionWriterFactory.genVectorStructExpressionWritables(valueStructInspectors)));
-      ArrayList<String> colNames=new ArrayList<String>();
-      List<? extends StructField> fields=keyStructInspector.getAllStructFieldRefs();
-      for (      StructField field : fields) {
-        colNames.add(Utilities.ReduceField.KEY.toString() + "." + field.getFieldName());
-        ois.add(field.getFieldObjectInspector());
-      }
-      fields=valueStructInspectors.getAllStructFieldRefs();
-      for (      StructField field : fields) {
-        colNames.add(Utilities.ReduceField.VALUE.toString() + "." + field.getFieldName());
-        ois.add(field.getFieldObjectInspector());
-      }
-      rowObjectInspector=ObjectInspectorFactory.getStandardStructObjectInspector(colNames,ois);
-      batchContext=new VectorizedRowBatchCtx();
-      batchContext.init(vectorScratchColumnTypeMap,(StructObjectInspector)rowObjectInspector);
-      batch=batchContext.createVectorizedRowBatch();
+      ObjectPair<VectorizedRowBatch,StandardStructObjectInspector> pair=VectorizedBatchUtil.constructVectorizedRowBatch(keyStructInspector,valueStructInspectors,vectorScratchColumnTypeMap);
+      rowObjectInspector=pair.getSecond();
+      batch=pair.getFirst();
       BinarySortableSerDe binarySortableSerDe=(BinarySortableSerDe)inputKeyDeserializer;
       keyBinarySortableDeserializeToRow=new VectorDeserializeRow(new BinarySortableDeserializeRead(VectorizedBatchUtil.primitiveTypeInfosFromStructObjectInspector(keyStructInspector),binarySortableSerDe.getSortOrders()));
       keyBinarySortableDeserializeToRow.init(0);

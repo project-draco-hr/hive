@@ -1,0 +1,60 @@
+{
+  ResultSet rs=query.getResultSet();
+  if (rs == null) {
+    return;
+  }
+  ResultSetMetaData rm=rs.getMetaData();
+  int cols=rm.getColumnCount();
+  int rows=0;
+  if (trace) {
+    trace(ctx,"SELECT executed: " + cols + " columns");
+  }
+  Connection conn=exec.getConnection(targetConn);
+  StringBuilder sql=new StringBuilder();
+  sql.append("INSERT INTO " + sqlInsertName + " VALUES (");
+  for (int i=0; i < cols; i++) {
+    sql.append("?");
+    if (i + 1 < cols) {
+      sql.append(",");
+    }
+  }
+  sql.append(")");
+  PreparedStatement ps=conn.prepareStatement(sql.toString());
+  long start=timer.start();
+  long prev=start;
+  boolean batchOpen=false;
+  while (rs.next()) {
+    for (int i=1; i <= cols; i++) {
+      ps.setObject(i,rs.getObject(i));
+    }
+    rows++;
+    if (batchSize > 1) {
+      ps.addBatch();
+      batchOpen=true;
+      if (rows % batchSize == 0) {
+        ps.executeBatch();
+        batchOpen=false;
+      }
+    }
+ else {
+      ps.executeUpdate();
+    }
+    if (trace && rows % 100 == 0) {
+      long cur=timer.current();
+      if (cur - prev > 10000) {
+        trace(ctx,"Copying rows: " + rows + " ("+ rows / ((cur - start) / 1000) + " rows/sec)");
+        prev=cur;
+      }
+    }
+  }
+  if (batchOpen) {
+    ps.executeBatch();
+  }
+  ps.close();
+  exec.returnConnection(targetConn,conn);
+  exec.setRowCount(rows);
+  long elapsed=timer.stop();
+  if (trace) {
+    trace(ctx,"COPY completed: " + rows + " row(s), "+ timer.format()+ ", "+ rows / (elapsed / 1000) + " rows/sec");
+  }
+}
