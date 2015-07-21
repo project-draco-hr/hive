@@ -1,0 +1,23 @@
+{
+  int numReducers=estimateNumBuckets(joinOp,false);
+  LOG.info("Try dynamic partitioned hash join with estimated " + numReducers + " reducers");
+  int bigTablePos=getMapJoinConversionPos(joinOp,context,numReducers);
+  if (bigTablePos >= 0) {
+    ReduceSinkOperator bigTableParentRS=(ReduceSinkOperator)(joinOp.getParentOperators().get(bigTablePos));
+    numReducers=bigTableParentRS.getConf().getNumReducers();
+    LOG.debug("Real big table reducers = " + numReducers);
+    MapJoinOperator mapJoinOp=convertJoinMapJoin(joinOp,context,bigTablePos,false);
+    if (mapJoinOp != null) {
+      LOG.info("Selected dynamic partitioned hash join");
+      mapJoinOp.getConf().setDynamicPartitionHashJoin(true);
+      OpTraits opTraits=new OpTraits(joinOp.getOpTraits().getBucketColNames(),numReducers,null);
+      mapJoinOp.setOpTraits(opTraits);
+      mapJoinOp.setStatistics(joinOp.getStatistics());
+      for (      Operator<? extends OperatorDesc> childOp : mapJoinOp.getChildOperators()) {
+        setAllChildrenTraits(childOp,mapJoinOp.getOpTraits());
+      }
+      return true;
+    }
+  }
+  return false;
+}
