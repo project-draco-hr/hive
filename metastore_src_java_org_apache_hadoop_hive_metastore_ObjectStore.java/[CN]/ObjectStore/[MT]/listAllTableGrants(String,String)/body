@@ -1,25 +1,30 @@
 {
   boolean success=false;
+  Query query=null;
   tableName=HiveStringUtils.normalizeIdentifier(tableName);
   dbName=HiveStringUtils.normalizeIdentifier(dbName);
-  List<MTablePrivilege> mSecurityTabList=null;
+  List<MTablePrivilege> mSecurityTabList=new ArrayList<MTablePrivilege>();
   tableName=HiveStringUtils.normalizeIdentifier(tableName);
   dbName=HiveStringUtils.normalizeIdentifier(dbName);
   try {
-    openTransaction();
     LOG.debug("Executing listAllTableGrants");
+    openTransaction();
     String queryStr="table.tableName == t1 && table.database.name == t2";
-    Query query=pm.newQuery(MTablePrivilege.class,queryStr);
+    query=pm.newQuery(MTablePrivilege.class,queryStr);
     query.declareParameters("java.lang.String t1, java.lang.String t2");
-    mSecurityTabList=(List<MTablePrivilege>)query.executeWithArray(tableName,dbName);
+    List<MTablePrivilege> mPrivs=(List<MTablePrivilege>)query.executeWithArray(tableName,dbName);
     LOG.debug("Done executing query for listAllTableGrants");
-    pm.retrieveAll(mSecurityTabList);
+    pm.retrieveAll(mPrivs);
     success=commitTransaction();
+    mSecurityTabList.addAll(mPrivs);
     LOG.debug("Done retrieving all objects for listAllTableGrants");
   }
   finally {
     if (!success) {
       rollbackTransaction();
+    }
+    if (query != null) {
+      query.closeAll();
     }
   }
   return mSecurityTabList;

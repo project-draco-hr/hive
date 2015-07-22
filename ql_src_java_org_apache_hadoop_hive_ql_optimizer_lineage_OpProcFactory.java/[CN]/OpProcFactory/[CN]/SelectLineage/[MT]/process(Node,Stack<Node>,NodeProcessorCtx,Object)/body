@@ -4,10 +4,27 @@
   if (sop.getConf().isSelStarNoCompute()) {
     return super.process(nd,stack,procCtx,nodeOutputs);
   }
-  ArrayList<ColumnInfo> col_infos=sop.getSchema().getSignature();
+  Operator<? extends OperatorDesc> inpOp=getParent(stack);
+  lctx.getIndex().copyPredicates(inpOp,sop);
+  RowSchema rs=sop.getSchema();
+  ArrayList<ColumnInfo> col_infos=rs.getSignature();
   int cnt=0;
   for (  ExprNodeDesc expr : sop.getConf().getColList()) {
-    lctx.getIndex().putDependency(sop,col_infos.get(cnt++),ExprProcFactory.getExprDependency(lctx,getParent(stack),expr));
+    Dependency dep=ExprProcFactory.getExprDependency(lctx,inpOp,expr);
+    if (dep != null && dep.getExpr() == null && (dep.getBaseCols().isEmpty() || dep.getType() != LineageInfo.DependencyType.SIMPLE)) {
+      dep.setExpr(ExprProcFactory.getExprString(rs,expr,lctx,inpOp,null));
+    }
+    lctx.getIndex().putDependency(sop,col_infos.get(cnt++),dep);
+  }
+  Operator<? extends OperatorDesc> op=null;
+  if (!sop.getChildOperators().isEmpty()) {
+    op=sop.getChildOperators().get(0);
+    if (!op.getChildOperators().isEmpty() && op instanceof LimitOperator) {
+      op=op.getChildOperators().get(0);
+    }
+  }
+  if (op == null || (op.getChildOperators().isEmpty() && op instanceof FileSinkOperator)) {
+    lctx.getIndex().setFinalSelectOp(sop);
   }
   return null;
 }

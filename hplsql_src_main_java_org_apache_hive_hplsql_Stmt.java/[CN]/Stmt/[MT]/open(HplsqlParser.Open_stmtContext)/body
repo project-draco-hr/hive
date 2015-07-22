@@ -1,0 +1,53 @@
+{
+  trace(ctx,"OPEN");
+  Query query=null;
+  Var var=null;
+  String cursor=ctx.L_ID().toString();
+  String sql=null;
+  if (ctx.T_FOR() != null) {
+    sql=evalPop(ctx.expr()).toString();
+    if (trace) {
+      trace(ctx,cursor + ": " + sql);
+    }
+    query=new Query(sql);
+    var=new Var(cursor,Type.CURSOR,query);
+    exec.addVariable(var);
+  }
+ else {
+    var=exec.findVariable(cursor);
+    if (var != null && var.type == Type.CURSOR) {
+      query=(Query)var.value;
+      if (query.sqlExpr != null) {
+        sql=evalPop(query.sqlExpr).toString();
+        query.setSql(sql);
+      }
+ else       if (query.sqlSelect != null) {
+        sql=evalPop(query.sqlSelect).toString();
+        query.setSql(sql);
+      }
+      if (trace) {
+        trace(ctx,cursor + ": " + sql);
+      }
+    }
+  }
+  if (query != null) {
+    exec.executeQuery(ctx,query,exec.conf.defaultConnection);
+    if (query.error()) {
+      exec.signal(query);
+      return 1;
+    }
+ else     if (!exec.getOffline()) {
+      exec.setSqlCode(0);
+    }
+    if (query.getWithReturn()) {
+      exec.addReturnCursor(var);
+    }
+  }
+ else {
+    trace(ctx,"Cursor not found: " + cursor);
+    exec.setSqlCode(-1);
+    exec.signal(Signal.Type.SQLEXCEPTION);
+    return 1;
+  }
+  return 0;
+}

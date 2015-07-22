@@ -1,9 +1,10 @@
 {
   boolean committed=false;
+  Query query=null;
   List<MVersionTable> mVerTables=new ArrayList<MVersionTable>();
   try {
     openTransaction();
-    Query query=pm.newQuery(MVersionTable.class);
+    query=pm.newQuery(MVersionTable.class);
     try {
       mVerTables=(List<MVersionTable>)query.execute();
       pm.retrieveAll(mVerTables);
@@ -17,21 +18,24 @@
       }
     }
     committed=commitTransaction();
+    if (mVerTables.isEmpty()) {
+      throw new NoSuchObjectException("No matching version found");
+    }
+    if (mVerTables.size() > 1) {
+      String msg="Metastore contains multiple versions (" + mVerTables.size() + ") ";
+      for (      MVersionTable version : mVerTables) {
+        msg+="[ version = " + version.getSchemaVersion() + ", comment = "+ version.getVersionComment()+ " ] ";
+      }
+      throw new MetaException(msg.trim());
+    }
+    return mVerTables.get(0);
   }
   finally {
     if (!committed) {
       rollbackTransaction();
     }
-  }
-  if (mVerTables.isEmpty()) {
-    throw new NoSuchObjectException("No matching version found");
-  }
-  if (mVerTables.size() > 1) {
-    String msg="Metastore contains multiple versions (" + mVerTables.size() + ") ";
-    for (    MVersionTable version : mVerTables) {
-      msg+="[ version = " + version.getSchemaVersion() + ", comment = "+ version.getVersionComment()+ " ] ";
+    if (query != null) {
+      query.closeAll();
     }
-    throw new MetaException(msg.trim());
   }
-  return mVerTables.get(0);
 }

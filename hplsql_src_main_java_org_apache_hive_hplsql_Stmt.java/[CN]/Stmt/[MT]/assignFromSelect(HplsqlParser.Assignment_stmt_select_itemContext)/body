@@ -1,0 +1,50 @@
+{
+  String sql=evalPop(ctx.select_stmt()).toString();
+  if (trace) {
+    trace(ctx,sql.toString());
+  }
+  String conn=exec.getStatementConnection();
+  Query query=exec.executeQuery(ctx,sql.toString(),conn);
+  if (query.error()) {
+    exec.signal(query);
+    return 1;
+  }
+  exec.setSqlSuccess();
+  try {
+    ResultSet rs=query.getResultSet();
+    ResultSetMetaData rm=null;
+    if (rs != null) {
+      rm=rs.getMetaData();
+      int cnt=ctx.ident().size();
+      if (rs.next()) {
+        for (int i=1; i <= cnt; i++) {
+          Var var=exec.findVariable(ctx.ident(i - 1).getText());
+          if (var != null) {
+            var.setValue(rs,rm,i);
+            if (trace) {
+              trace(ctx,"COLUMN: " + rm.getColumnName(i) + ", "+ rm.getColumnTypeName(i));
+              trace(ctx,"SET " + var.getName() + " = "+ var.toString());
+            }
+          }
+ else           if (trace) {
+            trace(ctx,"Variable not found: " + ctx.ident(i - 1).getText());
+          }
+        }
+        exec.incRowCount();
+        exec.setSqlSuccess();
+      }
+ else {
+        exec.setSqlCode(100);
+        exec.signal(Signal.Type.NOTFOUND);
+      }
+    }
+  }
+ catch (  SQLException e) {
+    exec.signal(query);
+    return 1;
+  }
+ finally {
+    exec.closeQuery(query,conn);
+  }
+  return 0;
+}

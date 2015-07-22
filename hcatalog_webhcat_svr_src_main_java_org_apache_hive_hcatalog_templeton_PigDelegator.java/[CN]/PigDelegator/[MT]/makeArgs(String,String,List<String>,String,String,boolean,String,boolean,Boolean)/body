@@ -1,0 +1,62 @@
+{
+  ArrayList<String> args=new ArrayList<String>();
+  boolean needsMetastoreAccess=usesHcatalog || hasPigArgUseHcat(pigArgs);
+  try {
+    ArrayList<String> allFiles=new ArrayList<String>();
+    if (TempletonUtils.isset(srcFile)) {
+      allFiles.add(TempletonUtils.hadoopFsFilename(srcFile,appConf,runAs));
+    }
+    if (TempletonUtils.isset(otherFiles)) {
+      String[] ofs=TempletonUtils.hadoopFsListAsArray(otherFiles,appConf,runAs);
+      allFiles.addAll(Arrays.asList(ofs));
+    }
+    args.addAll(makeLauncherArgs(appConf,statusdir,completedUrl,allFiles,enablelog,enableJobReconnect,JobType.PIG));
+    boolean shipPigTar=appConf.pigArchive() != null && !appConf.pigArchive().equals("");
+    boolean shipHiveTar=needsMetastoreAccess && appConf.hiveArchive() != null && !appConf.hiveArchive().equals("");
+    if (shipPigTar || shipHiveTar) {
+      args.add(ARCHIVES);
+      StringBuilder archives=new StringBuilder();
+      if (shipPigTar) {
+        archives.append(appConf.pigArchive());
+      }
+      if (shipPigTar && shipHiveTar) {
+        archives.append(",");
+      }
+      if (shipHiveTar) {
+        archives.append(appConf.hiveArchive());
+      }
+      args.add(archives.toString());
+    }
+    if (shipHiveTar) {
+      addDef(args,JobSubmissionConstants.PigConstants.HIVE_HOME,appConf.get(AppConfig.HIVE_HOME_PATH));
+      addDef(args,JobSubmissionConstants.PigConstants.HCAT_HOME,appConf.get(AppConfig.HCAT_HOME_PATH));
+      addDef(args,JobSubmissionConstants.PigConstants.PIG_OPTS,appConf.get(AppConfig.HIVE_PROPS_NAME));
+    }
+    args.add("--");
+    TempletonUtils.addCmdForWindows(args);
+    args.add(appConf.pigPath());
+    args.add("-D" + TempletonControllerJob.TOKEN_FILE_ARG_PLACEHOLDER);
+    args.add("-D" + TempletonControllerJob.MAPREDUCE_JOB_TAGS_ARG_PLACEHOLDER);
+    for (    String pigArg : pigArgs) {
+      args.add(TempletonUtils.quoteForWindows(pigArg));
+    }
+    if (needsMetastoreAccess) {
+      addHiveMetaStoreTokenArg();
+    }
+    if (TempletonUtils.isset(execute)) {
+      args.add("-execute");
+      args.add(TempletonUtils.quoteForWindows(execute));
+    }
+ else     if (TempletonUtils.isset(srcFile)) {
+      args.add("-file");
+      args.add(TempletonUtils.hadoopFsPath(srcFile,appConf,runAs).getName());
+    }
+  }
+ catch (  FileNotFoundException e) {
+    throw new BadParam(e.getMessage());
+  }
+catch (  URISyntaxException e) {
+    throw new BadParam(e.getMessage());
+  }
+  return args;
+}

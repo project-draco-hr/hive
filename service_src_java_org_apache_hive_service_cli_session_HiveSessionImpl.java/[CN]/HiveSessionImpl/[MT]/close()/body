@@ -1,10 +1,14 @@
 {
   try {
     acquire(true);
-    for (    OperationHandle opHandle : opHandleSet) {
+    List<OperationHandle> ops=null;
+synchronized (opHandleSet) {
+      ops=new ArrayList<>(opHandleSet);
+      opHandleSet.clear();
+    }
+    for (    OperationHandle opHandle : ops) {
       operationManager.closeOperation(opHandle);
     }
-    opHandleSet.clear();
     cleanupSessionLogDir();
     HiveHistory hiveHist=sessionState.getHiveHistory();
     if (null != hiveHist) {
@@ -29,6 +33,15 @@
         LOG.warn("Error closing session",t);
       }
       sessionState=null;
+    }
+    if (sessionHive != null) {
+      try {
+        Hive.closeCurrent();
+      }
+ catch (      Throwable t) {
+        LOG.warn("Error closing sessionHive",t);
+      }
+      sessionHive=null;
     }
     release(true);
   }

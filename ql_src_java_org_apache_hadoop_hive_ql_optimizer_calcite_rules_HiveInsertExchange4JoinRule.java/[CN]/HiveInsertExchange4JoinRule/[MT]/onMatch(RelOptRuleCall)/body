@@ -1,12 +1,22 @@
 {
   JoinPredicateInfo joinPredInfo;
-  if (call.rel(0) instanceof MultiJoin) {
-    MultiJoin multiJoin=call.rel(0);
-    joinPredInfo=HiveCalciteUtil.JoinPredicateInfo.constructJoinPredicateInfo(multiJoin);
+  if (call.rel(0) instanceof HiveMultiJoin) {
+    HiveMultiJoin multiJoin=call.rel(0);
+    try {
+      joinPredInfo=HiveCalciteUtil.JoinPredicateInfo.constructJoinPredicateInfo(multiJoin);
+    }
+ catch (    CalciteSemanticException e) {
+      throw new RuntimeException(e);
+    }
   }
  else   if (call.rel(0) instanceof Join) {
     Join join=call.rel(0);
-    joinPredInfo=HiveCalciteUtil.JoinPredicateInfo.constructJoinPredicateInfo(join);
+    try {
+      joinPredInfo=HiveCalciteUtil.JoinPredicateInfo.constructJoinPredicateInfo(join);
+    }
+ catch (    CalciteSemanticException e) {
+      throw new RuntimeException(e);
+    }
   }
  else {
     return;
@@ -19,11 +29,16 @@
   List<RelNode> newInputs=new ArrayList<RelNode>();
   for (int i=0; i < call.rel(0).getInputs().size(); i++) {
     List<Integer> joinKeyPositions=new ArrayList<Integer>();
-    ImmutableList.Builder<RexNode> keyListBuilder=new ImmutableList.Builder<RexNode>();
+    ImmutableList.Builder<RexNode> joinExprsBuilder=new ImmutableList.Builder<RexNode>();
+    Set<String> keySet=Sets.newHashSet();
     ImmutableList.Builder<RelFieldCollation> collationListBuilder=new ImmutableList.Builder<RelFieldCollation>();
     for (int j=0; j < joinPredInfo.getEquiJoinPredicateElements().size(); j++) {
       JoinLeafPredicateInfo joinLeafPredInfo=joinPredInfo.getEquiJoinPredicateElements().get(j);
-      keyListBuilder.add(joinLeafPredInfo.getJoinKeyExprs(i).get(0));
+      for (      RexNode joinExprNode : joinLeafPredInfo.getJoinExprs(i)) {
+        if (keySet.add(joinExprNode.toString())) {
+          joinExprsBuilder.add(joinExprNode);
+        }
+      }
       for (      int pos : joinLeafPredInfo.getProjsJoinKeysInChildSchema(i)) {
         if (!joinKeyPositions.contains(pos)) {
           joinKeyPositions.add(pos);
@@ -31,12 +46,12 @@
         }
       }
     }
-    HiveSortExchange exchange=HiveSortExchange.create(call.rel(0).getInput(i),new HiveRelDistribution(RelDistribution.Type.HASH_DISTRIBUTED,joinKeyPositions),new HiveRelCollation(collationListBuilder.build()),keyListBuilder.build());
+    HiveSortExchange exchange=HiveSortExchange.create(call.rel(0).getInput(i),new HiveRelDistribution(RelDistribution.Type.HASH_DISTRIBUTED,joinKeyPositions),new HiveRelCollation(collationListBuilder.build()),joinExprsBuilder.build());
     newInputs.add(exchange);
   }
   RelNode newOp;
-  if (call.rel(0) instanceof MultiJoin) {
-    MultiJoin multiJoin=call.rel(0);
+  if (call.rel(0) instanceof HiveMultiJoin) {
+    HiveMultiJoin multiJoin=call.rel(0);
     newOp=multiJoin.copy(multiJoin.getTraitSet(),newInputs);
   }
  else   if (call.rel(0) instanceof Join) {

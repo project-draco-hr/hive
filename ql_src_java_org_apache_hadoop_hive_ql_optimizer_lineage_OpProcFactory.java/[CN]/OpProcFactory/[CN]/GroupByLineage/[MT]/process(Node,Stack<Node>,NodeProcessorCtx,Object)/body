@@ -3,22 +3,60 @@
   GroupByOperator gop=(GroupByOperator)nd;
   ArrayList<ColumnInfo> col_infos=gop.getSchema().getSignature();
   Operator<? extends OperatorDesc> inpOp=getParent(stack);
+  lctx.getIndex().copyPredicates(inpOp,gop);
   int cnt=0;
   for (  ExprNodeDesc expr : gop.getConf().getKeys()) {
     lctx.getIndex().putDependency(gop,col_infos.get(cnt++),ExprProcFactory.getExprDependency(lctx,inpOp,expr));
   }
+  boolean reduceSideGop=(inpOp instanceof ReduceSinkOperator) && (Utils.getNthAncestor(stack,2) instanceof GroupByOperator);
+  RowSchema rs=gop.getSchema();
   for (  AggregationDesc agg : gop.getConf().getAggregators()) {
     Dependency dep=new Dependency();
     DependencyType new_type=LineageInfo.DependencyType.EXPRESSION;
-    dep.setExpr(null);
+    StringBuilder sb=new StringBuilder();
+    boolean first=true;
     LinkedHashSet<BaseColumnInfo> bci_set=new LinkedHashSet<BaseColumnInfo>();
     for (    ExprNodeDesc expr : agg.getParameters()) {
+      if (first) {
+        first=false;
+      }
+ else {
+        sb.append(", ");
+      }
       Dependency expr_dep=ExprProcFactory.getExprDependency(lctx,inpOp,expr);
-      if (expr_dep != null) {
+      if (expr_dep != null && !expr_dep.getBaseCols().isEmpty()) {
         new_type=LineageCtx.getNewDependencyType(expr_dep.getType(),new_type);
         bci_set.addAll(expr_dep.getBaseCols());
+        if (expr_dep.getType() == LineageInfo.DependencyType.SIMPLE) {
+          BaseColumnInfo col=expr_dep.getBaseCols().get(0);
+          Table t=col.getTabAlias().getTable();
+          if (t != null) {
+            sb.append(t.getDbName()).append(".").append(t.getTableName()).append(".");
+          }
+          sb.append(col.getColumn().getName());
+        }
+      }
+      if (expr_dep == null || expr_dep.getBaseCols().isEmpty() || expr_dep.getType() != LineageInfo.DependencyType.SIMPLE) {
+        sb.append(expr_dep != null && expr_dep.getExpr() != null ? expr_dep.getExpr() : ExprProcFactory.getExprString(rs,expr,lctx,inpOp,null));
       }
     }
+    String expr=sb.toString();
+    String udafName=agg.getGenericUDAFName();
+    if (!(reduceSideGop && expr.startsWith(udafName))) {
+      sb.setLength(0);
+      sb.append(udafName);
+      sb.append("(");
+      if (agg.getDistinct()) {
+        sb.append("DISTINCT ");
+      }
+      sb.append(expr);
+      if (first) {
+        sb.append("*");
+      }
+      sb.append(")");
+      expr=sb.toString();
+    }
+    dep.setExpr(expr);
     if (bci_set.isEmpty()) {
       Set<TableAliasInfo> tai_set=new LinkedHashSet<TableAliasInfo>();
       if (inpOp.getSchema() != null && inpOp.getSchema().getSignature() != null) {

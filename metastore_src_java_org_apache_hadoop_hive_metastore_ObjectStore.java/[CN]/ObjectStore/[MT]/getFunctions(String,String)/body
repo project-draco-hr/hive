@@ -1,26 +1,27 @@
 {
   boolean commited=false;
+  Query query=null;
   List<String> funcs=null;
   try {
     openTransaction();
     dbName=HiveStringUtils.normalizeIdentifier(dbName);
     String[] subpatterns=pattern.trim().split("\\|");
-    String query="select functionName from org.apache.hadoop.hive.metastore.model.MFunction " + "where database.name == dbName && (";
+    String queryStr="select functionName from org.apache.hadoop.hive.metastore.model.MFunction " + "where database.name == dbName && (";
     boolean first=true;
     for (    String subpattern : subpatterns) {
       subpattern="(?i)" + subpattern.replaceAll("\\*",".*");
       if (!first) {
-        query=query + " || ";
+        queryStr=queryStr + " || ";
       }
-      query=query + " functionName.matches(\"" + subpattern+ "\")";
+      queryStr=queryStr + " functionName.matches(\"" + subpattern+ "\")";
       first=false;
     }
-    query=query + ")";
-    Query q=pm.newQuery(query);
-    q.declareParameters("java.lang.String dbName");
-    q.setResult("functionName");
-    q.setOrdering("functionName ascending");
-    Collection names=(Collection)q.execute(dbName);
+    queryStr=queryStr + ")";
+    query=pm.newQuery(queryStr);
+    query.declareParameters("java.lang.String dbName");
+    query.setResult("functionName");
+    query.setOrdering("functionName ascending");
+    Collection names=(Collection)query.execute(dbName);
     funcs=new ArrayList<String>();
     for (Iterator i=names.iterator(); i.hasNext(); ) {
       funcs.add((String)i.next());
@@ -30,6 +31,9 @@
   finally {
     if (!commited) {
       rollbackTransaction();
+    }
+    if (query != null) {
+      query.closeAll();
     }
   }
   return funcs;

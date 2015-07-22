@@ -1,2 +1,31 @@
 {
+  GenTezProcContext context=(GenTezProcContext)procContext;
+  MapJoinOperator mapJoinOp=(MapJoinOperator)nd;
+  if (!context.mapJoinParentMap.containsKey(mapJoinOp)) {
+    List<Operator<?>> parents=new ArrayList<Operator<?>>(mapJoinOp.getParentOperators());
+    context.mapJoinParentMap.put(mapJoinOp,parents);
+  }
+  boolean isBigTable=stack.size() < 2 || !(stack.get(stack.size() - 2) instanceof ReduceSinkOperator);
+  ReduceSinkOperator parentRS=null;
+  if (!isBigTable) {
+    parentRS=(ReduceSinkOperator)stack.get(stack.size() - 2);
+    isBigTable=(mapJoinOp.getParentOperators().indexOf(parentRS) == mapJoinOp.getConf().getPosBigTable());
+  }
+  if (mapJoinOp.getConf().isDynamicPartitionHashJoin() && !context.mapJoinToUnprocessedSmallTableReduceSinks.containsKey(mapJoinOp)) {
+    Set<ReduceSinkOperator> rsSet=Sets.newIdentityHashSet();
+    for (int pos=0; pos < mapJoinOp.getParentOperators().size(); ++pos) {
+      if (pos == mapJoinOp.getConf().getPosBigTable()) {
+        continue;
+      }
+      rsSet.add((ReduceSinkOperator)mapJoinOp.getParentOperators().get(pos));
+    }
+    context.mapJoinToUnprocessedSmallTableReduceSinks.put(mapJoinOp,rsSet);
+  }
+  if (isBigTable) {
+    context.currentMapJoinOperators.add(mapJoinOp);
+    return null;
+  }
+  context.preceedingWork=null;
+  context.currentRootOperator=null;
+  return processReduceSinkToHashJoin(parentRS,mapJoinOp,context);
 }

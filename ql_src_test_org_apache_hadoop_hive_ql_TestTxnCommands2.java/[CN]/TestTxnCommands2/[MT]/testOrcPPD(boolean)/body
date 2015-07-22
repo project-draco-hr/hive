@@ -1,0 +1,23 @@
+{
+  boolean originalPpd=hiveConf.getBoolVar(HiveConf.ConfVars.HIVEOPTINDEXFILTER);
+  hiveConf.setBoolVar(HiveConf.ConfVars.HIVEOPTINDEXFILTER,enablePPD);
+  int[][] tableData={{1,2},{3,4}};
+  runStatementOnDriver("insert into " + Table.ACIDTBL + "(a,b) "+ makeValuesClause(tableData));
+  runStatementOnDriver("alter table " + Table.ACIDTBL + " compact 'MAJOR'");
+  Worker t=new Worker();
+  t.setThreadId((int)t.getId());
+  t.setHiveConf(hiveConf);
+  AtomicBoolean stop=new AtomicBoolean();
+  AtomicBoolean looped=new AtomicBoolean();
+  stop.set(true);
+  t.init(stop,looped);
+  t.run();
+  int[][] tableData2={{1,7},{5,6},{7,8},{9,10}};
+  runStatementOnDriver("insert into " + Table.ACIDTBL + "(a,b) "+ makeValuesClause(tableData2));
+  runStatementOnDriver("delete from " + Table.ACIDTBL + " where a=7 and b=8");
+  runStatementOnDriver("update " + Table.ACIDTBL + " set b = 11 where a = 9");
+  List<String> rs1=runStatementOnDriver("select a,b from " + Table.ACIDTBL + " where a > 1 order by a,b");
+  int[][] resultData={{3,4},{5,6},{9,11}};
+  Assert.assertEquals("Update failed",stringifyValues(resultData),rs1);
+  hiveConf.setBoolVar(HiveConf.ConfVars.HIVEOPTINDEXFILTER,originalPpd);
+}

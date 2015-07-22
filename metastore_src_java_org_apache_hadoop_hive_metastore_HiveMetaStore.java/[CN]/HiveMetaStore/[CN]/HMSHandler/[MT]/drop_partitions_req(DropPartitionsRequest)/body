@@ -12,8 +12,10 @@
   ms.openTransaction();
   Table tbl=null;
   List<Partition> parts=null;
+  boolean mustPurge=false;
   try {
     tbl=get_table_core(dbName,tblName);
+    mustPurge=isMustPurge(envContext,tbl);
     int minCount=0;
     RequestPartsSpec spec=request.getParts();
     List<String> partNames=null;
@@ -56,9 +58,6 @@
       }
     }
     for (    Partition part : parts) {
-      if (!ignoreProtection && !MetaStoreUtils.canDropPartition(tbl,part)) {
-        throw new MetaException("Table " + tbl.getTableName() + " Partition "+ part+ " is protected from being dropped");
-      }
       firePreEvent(new PreDropPartitionEvent(tbl,part,deleteData,this));
       if (colNames != null) {
         partNames.add(FileUtils.makePartName(colNames,part.getValues()));
@@ -66,11 +65,13 @@
       if (MetaStoreUtils.isArchived(part)) {
         Path archiveParentDir=MetaStoreUtils.getOriginalLocation(part);
         verifyIsWritablePath(archiveParentDir);
+        checkTrashPurgeCombination(archiveParentDir,dbName + "." + tblName+ "."+ part.getValues(),mustPurge);
         archToDelete.add(archiveParentDir);
       }
       if ((part.getSd() != null) && (part.getSd().getLocation() != null)) {
         Path partPath=new Path(part.getSd().getLocation());
         verifyIsWritablePath(partPath);
+        checkTrashPurgeCombination(partPath,dbName + "." + tblName+ "."+ part.getValues(),mustPurge);
         dirsToDelete.add(new PathAndPartValSize(partPath,part.getValues().size()));
       }
     }
@@ -87,7 +88,6 @@
       ms.rollbackTransaction();
     }
  else     if (deleteData && !isExternal(tbl)) {
-      boolean mustPurge=((envContext != null) && Boolean.parseBoolean(envContext.getProperties().get("ifPurge"))) || (tbl.isSetParameters() && "true".equalsIgnoreCase(tbl.getParameters().get("auto.purge")));
       LOG.info(mustPurge ? "dropPartition() will purge partition-directories directly, skipping trash." : "dropPartition() will move partition-directories to trash-directory.");
       for (      Path path : archToDelete) {
         wh.deleteDir(path,true,mustPurge);

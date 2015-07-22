@@ -1,0 +1,32 @@
+{
+  if (!encoded.startsWith(PROLOG_V1)) {
+    throw new IllegalStateException("Unsupported version.");
+  }
+  encoded=encoded.substring(PROLOG_V1.length());
+  byte[] decoded=Base64.decodeBase64(encoded);
+  AcidTable table=null;
+  try (DataInputStream in=new DataInputStream(new ByteArrayInputStream(decoded))){
+    String databaseName=in.readUTF();
+    String tableName=in.readUTF();
+    boolean createPartitions=in.readBoolean();
+    long transactionId=in.readLong();
+    TableType tableType=TableType.valueOf(in.readByte());
+    int thriftLength=in.readInt();
+    table=new AcidTable(databaseName,tableName,createPartitions,tableType);
+    table.setTransactionId(transactionId);
+    Table metaTable=null;
+    if (thriftLength > 0) {
+      metaTable=new Table();
+      try {
+        byte[] thriftEncoded=new byte[thriftLength];
+        in.readFully(thriftEncoded,0,thriftLength);
+        new TDeserializer(new TCompactProtocol.Factory()).deserialize(metaTable,thriftEncoded);
+        table.setTable(metaTable);
+      }
+ catch (      TException e) {
+        throw new IOException("Error deserializing meta store table.",e);
+      }
+    }
+  }
+   return table;
+}

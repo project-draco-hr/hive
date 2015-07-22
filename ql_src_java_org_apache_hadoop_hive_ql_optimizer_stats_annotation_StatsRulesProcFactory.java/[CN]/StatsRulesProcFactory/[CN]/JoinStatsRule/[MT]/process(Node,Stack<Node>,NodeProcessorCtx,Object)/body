@@ -1,6 +1,8 @@
 {
-  jop=(CommonJoinOperator<? extends JoinDesc>)nd;
-  parents=jop.getParentOperators();
+  long newNumRows=0;
+  CommonJoinOperator<? extends JoinDesc> jop=(CommonJoinOperator<? extends JoinDesc>)nd;
+  List<Operator<? extends OperatorDesc>> parents=jop.getParentOperators();
+  int numAttr=1;
   AnnotateStatsProcCtx aspCtx=(AnnotateStatsProcCtx)procCtx;
   HiveConf conf=aspCtx.getConf();
   boolean allStatsAvail=true;
@@ -27,7 +29,7 @@
       ReduceSinkOperator rsOp=(ReduceSinkOperator)jop.getParentOperators().get(0);
       List<String> keyExprs=StatsUtils.getQualifedReducerKeyNames(rsOp.getConf().getOutputKeyColumnNames());
       numAttr=keyExprs.size();
-      inferPKFKRelationship();
+      long inferredRowCount=inferPKFKRelationship(numAttr,parents,jop);
       for (int pos=0; pos < parents.size(); pos++) {
         ReduceSinkOperator parent=(ReduceSinkOperator)jop.getParentOperators().get(pos);
         Statistics parentStats=parent.getStatistics();
@@ -92,7 +94,7 @@
         }
       }
       stats.setColumnStats(outColStats);
-      long newRowCount=pkfkInferred ? newNumRows : computeNewRowCount(rowCounts,denom);
+      long newRowCount=inferredRowCount != -1 ? inferredRowCount : computeNewRowCount(rowCounts,denom);
       updateStatsForJoinType(stats,newRowCount,jop,rowCountParents);
       jop.setStatistics(stats);
       if (isDebugEnabled) {
@@ -119,7 +121,7 @@
         idx++;
       }
       long maxDataSize=parentSizes.get(maxRowIdx);
-      long newNumRows=StatsUtils.safeMult(StatsUtils.safeMult(maxRowCount,(numParents - 1)),joinFactor);
+      newNumRows=StatsUtils.safeMult(StatsUtils.safeMult(maxRowCount,(numParents - 1)),joinFactor);
       long newDataSize=StatsUtils.safeMult(StatsUtils.safeMult(maxDataSize,(numParents - 1)),joinFactor);
       Statistics wcStats=new Statistics();
       wcStats.setNumRows(newNumRows);

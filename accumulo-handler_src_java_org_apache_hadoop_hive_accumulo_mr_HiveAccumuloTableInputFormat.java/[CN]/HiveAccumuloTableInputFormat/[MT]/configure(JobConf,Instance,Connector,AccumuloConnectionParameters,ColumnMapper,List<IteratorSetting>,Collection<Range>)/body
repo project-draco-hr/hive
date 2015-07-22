@@ -3,9 +3,31 @@
     setMockInstance(conf,instance.getInstanceName());
   }
  else {
-    setZooKeeperInstance(conf,instance.getInstanceName(),instance.getZooKeepers());
+    setZooKeeperInstance(conf,instance.getInstanceName(),instance.getZooKeepers(),accumuloParams.useSasl());
   }
-  setConnectorInfo(conf,accumuloParams.getAccumuloUserName(),new PasswordToken(accumuloParams.getAccumuloPassword()));
+  if (accumuloParams.useSasl()) {
+    UserGroupInformation ugi=UserGroupInformation.getCurrentUser();
+    if (ugi.hasKerberosCredentials()) {
+      Connector conn=accumuloParams.getConnector();
+      AuthenticationToken token=helper.getDelegationToken(conn);
+      setConnectorInfo(conf,accumuloParams.getAccumuloUserName(),token);
+      Token<? extends TokenIdentifier> accumuloToken=helper.getHadoopToken(token);
+      log.info("Adding Hadoop Token for Accumulo to Job's Credentials");
+      helper.mergeTokenIntoJobConf(conf,accumuloToken);
+      if (!ugi.addToken(accumuloToken)) {
+        throw new IOException("Failed to add Accumulo Token to UGI");
+      }
+    }
+    try {
+      helper.addTokenFromUserToJobConf(ugi,conf);
+    }
+ catch (    IOException e) {
+      throw new IOException("Current user did not contain necessary delegation Tokens " + ugi,e);
+    }
+  }
+ else {
+    setConnectorInfo(conf,accumuloParams.getAccumuloUserName(),new PasswordToken(accumuloParams.getAccumuloPassword()));
+  }
   setInputTableName(conf,accumuloParams.getAccumuloTableName());
   Authorizations auths=AccumuloSerDeParameters.getAuthorizationsFromConf(conf);
   if (null == auths) {

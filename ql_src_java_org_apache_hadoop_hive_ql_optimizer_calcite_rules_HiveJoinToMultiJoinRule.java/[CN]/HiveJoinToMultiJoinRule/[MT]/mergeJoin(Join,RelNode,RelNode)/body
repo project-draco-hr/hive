@@ -1,0 +1,102 @@
+{
+  final RexBuilder rexBuilder=join.getCluster().getRexBuilder();
+  final List<RelNode> newInputs=Lists.newArrayList();
+  final List<RexNode> newJoinCondition=Lists.newArrayList();
+  final List<Pair<Integer,Integer>> joinInputs=Lists.newArrayList();
+  final List<JoinRelType> joinTypes=Lists.newArrayList();
+  final List<RexNode> joinFilters=Lists.newArrayList();
+  if (left instanceof HiveJoin || left instanceof HiveMultiJoin) {
+    final RexNode leftCondition;
+    final List<Pair<Integer,Integer>> leftJoinInputs;
+    final List<JoinRelType> leftJoinTypes;
+    final List<RexNode> leftJoinFilters;
+    if (left instanceof HiveJoin) {
+      HiveJoin hj=(HiveJoin)left;
+      leftCondition=hj.getCondition();
+      leftJoinInputs=ImmutableList.of(Pair.of(0,1));
+      leftJoinTypes=ImmutableList.of(hj.getJoinType());
+      leftJoinFilters=ImmutableList.of(hj.getJoinFilter());
+    }
+ else {
+      HiveMultiJoin hmj=(HiveMultiJoin)left;
+      leftCondition=hmj.getCondition();
+      leftJoinInputs=hmj.getJoinInputs();
+      leftJoinTypes=hmj.getJoinTypes();
+      leftJoinFilters=hmj.getJoinFilters();
+    }
+    boolean combinable;
+    try {
+      combinable=isCombinablePredicate(join,join.getCondition(),leftCondition);
+    }
+ catch (    CalciteSemanticException e) {
+      LOG.trace("Failed to merge joins",e);
+      combinable=false;
+    }
+    if (combinable) {
+      newJoinCondition.add(leftCondition);
+      for (int i=0; i < leftJoinInputs.size(); i++) {
+        joinInputs.add(leftJoinInputs.get(i));
+        joinTypes.add(leftJoinTypes.get(i));
+        joinFilters.add(leftJoinFilters.get(i));
+      }
+      newInputs.addAll(left.getInputs());
+    }
+ else {
+      return null;
+    }
+  }
+ else {
+    return null;
+  }
+  final int numberLeftInputs=newInputs.size();
+  newInputs.add(right);
+  newJoinCondition.add(join.getCondition());
+  if (newJoinCondition.size() == 1) {
+    return null;
+  }
+  final List<RelDataTypeField> systemFieldList=ImmutableList.of();
+  List<List<RexNode>> joinKeyExprs=new ArrayList<List<RexNode>>();
+  List<Integer> filterNulls=new ArrayList<Integer>();
+  for (int i=0; i < newInputs.size(); i++) {
+    joinKeyExprs.add(new ArrayList<RexNode>());
+  }
+  RexNode filters;
+  try {
+    filters=HiveRelOptUtil.splitHiveJoinCondition(systemFieldList,newInputs,join.getCondition(),joinKeyExprs,filterNulls,null);
+  }
+ catch (  CalciteSemanticException e) {
+    LOG.trace("Failed to merge joins",e);
+    return null;
+  }
+  ImmutableBitSet.Builder keysInInputsBuilder=ImmutableBitSet.builder();
+  for (int i=0; i < newInputs.size(); i++) {
+    List<RexNode> partialCondition=joinKeyExprs.get(i);
+    if (!partialCondition.isEmpty()) {
+      keysInInputsBuilder.set(i);
+    }
+  }
+  ImmutableBitSet keysInInputs=keysInInputsBuilder.build();
+  ImmutableBitSet leftReferencedInputs=keysInInputs.intersect(ImmutableBitSet.range(numberLeftInputs));
+  ImmutableBitSet rightReferencedInputs=keysInInputs.intersect(ImmutableBitSet.range(numberLeftInputs,newInputs.size()));
+  if (join.getJoinType() != JoinRelType.INNER && (leftReferencedInputs.cardinality() > 1 || rightReferencedInputs.cardinality() > 1)) {
+    return null;
+  }
+  if (join.getJoinType() != JoinRelType.INNER) {
+    int leftInput=keysInInputs.nextSetBit(0);
+    int rightInput=keysInInputs.nextSetBit(numberLeftInputs);
+    joinInputs.add(Pair.of(leftInput,rightInput));
+    joinTypes.add(join.getJoinType());
+    joinFilters.add(filters);
+  }
+ else {
+    for (    int i : leftReferencedInputs) {
+      for (      int j : rightReferencedInputs) {
+        joinInputs.add(Pair.of(i,j));
+        joinTypes.add(join.getJoinType());
+        joinFilters.add(filters);
+      }
+    }
+  }
+  RexNode newCondition=RexUtil.flatten(rexBuilder,RexUtil.composeConjunction(rexBuilder,newJoinCondition,false));
+  return new HiveMultiJoin(join.getCluster(),newInputs,newCondition,join.getRowType(),joinInputs,joinTypes,joinFilters);
+}
