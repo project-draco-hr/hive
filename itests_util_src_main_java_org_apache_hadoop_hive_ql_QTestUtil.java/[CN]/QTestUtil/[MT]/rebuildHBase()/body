@@ -1,0 +1,35 @@
+{
+  HBaseAdmin admin=utility.getHBaseAdmin();
+  if (!snapshotTaken) {
+    for (    String tableName : HBaseReadWrite.tableNames) {
+      List<byte[]> families=HBaseReadWrite.columnFamilies.get(tableName);
+      HTableDescriptor desc=new HTableDescriptor(TableName.valueOf(tableName));
+      for (      byte[] family : families) {
+        HColumnDescriptor columnDesc=new HColumnDescriptor(family);
+        desc.addFamily(columnDesc);
+      }
+      try {
+        admin.disableTable(tableName);
+        admin.deleteTable(tableName);
+      }
+ catch (      IOException e) {
+        System.out.println(e.getMessage());
+      }
+      admin.createTable(desc);
+    }
+  }
+ else {
+    for (    String tableName : HBaseReadWrite.tableNames) {
+      admin.disableTable(tableName);
+      admin.restoreSnapshot("snapshot_" + tableName);
+      admin.enableTable(tableName);
+    }
+    try {
+      db.createDatabase(new org.apache.hadoop.hive.metastore.api.Database(DEFAULT_DATABASE_NAME,DEFAULT_DATABASE_COMMENT,new Warehouse(conf).getDefaultDatabasePath(DEFAULT_DATABASE_NAME).toString(),null));
+    }
+ catch (    Exception e) {
+    }
+    SessionState.get().setCurrentDatabase(DEFAULT_DATABASE_NAME);
+  }
+  admin.close();
+}
