@@ -18,11 +18,11 @@
           if (isGet) {
             int[] offsets=new int[count];
             count=generateOffsets(offsetsToUse,rdm,offsets);
-            DiskRangeListCreateHelper list=new DiskRangeListCreateHelper();
+            CreateHelper list=new CreateHelper();
             for (int j=0; i < count; ++i) {
               list.addOrMerge(offsets[j],offsets[j] + 1,true,false);
             }
-            DiskRangeList iter=cache.getFileData(fileName,list.get(),0,testFactory);
+            DiskRangeList iter=cache.getFileData(fileName,list.get(),0,testFactory,null,null);
             int j=-1;
             while (iter != null) {
               ++j;
@@ -31,7 +31,7 @@
                 continue;
               }
               ++gets;
-              LlapDataBuffer result=(LlapDataBuffer)((CacheChunk)iter).buffer;
+              LlapDataBuffer result=(LlapDataBuffer)((CacheChunk)iter).getBuffer();
               assertEquals(makeFakeArenaIndex(fileIndex,offsets[j]),result.arenaIndex);
               cache.releaseBuffer(result);
               iter=iter.next;
@@ -45,13 +45,13 @@
               ranges[j]=dr(next,next + 1);
               offsets[j]=next;
             }
-            LlapMemoryBuffer[] buffers=new LlapMemoryBuffer[count];
+            MemoryBuffer[] buffers=new MemoryBuffer[count];
             for (int j=0; j < offsets.length; ++j) {
               LlapDataBuffer buf=LowLevelCacheImpl.allocateFake();
               buf.arenaIndex=makeFakeArenaIndex(fileIndex,offsets[j]);
               buffers[j]=buf;
             }
-            long[] mask=cache.putFileData(fileName,ranges,buffers,0,Priority.NORMAL);
+            long[] mask=cache.putFileData(fileName,ranges,buffers,0,Priority.NORMAL,null);
             puts+=buffers.length;
             long maskVal=0;
             if (mask != null) {
@@ -89,14 +89,14 @@
         DiskRangeList head=new DiskRangeList(0,offsetsToUse + 1);
         isFirstFile=!isFirstFile;
         long fileId=isFirstFile ? fn1 : fn2;
-        head=cache.getFileData(fileId,head,0,testFactory);
+        head=cache.getFileData(fileId,head,0,testFactory,null,null);
         DiskRange[] results=head.listToArray();
         int startIndex=rdm.nextInt(results.length), index=startIndex;
         LlapDataBuffer victim=null;
         do {
           DiskRange r=results[index];
           if (r instanceof CacheChunk) {
-            LlapDataBuffer result=(LlapDataBuffer)((CacheChunk)r).buffer;
+            LlapDataBuffer result=(LlapDataBuffer)((CacheChunk)r).getBuffer();
             cache.releaseBuffer(result);
             if (victim == null && result.invalidate()) {
               ++evictions;
