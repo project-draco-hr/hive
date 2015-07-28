@@ -43,22 +43,20 @@
   MRHelpers.updateEnvBasedOnMRAMEnv(conf,amEnv);
   TezConfiguration tezConfig=new TezConfiguration(conf);
   tezConfig.set(TezConfiguration.TEZ_AM_STAGING_DIR,tezScratchDir.toUri().toString());
+  ServicePluginsDescriptor servicePluginsDescriptor;
+  UserPayload servicePluginPayload=TezUtils.createUserPayloadFromConf(tezConfig);
   if (llapMode) {
-    tezConfig.setStrings(TezConfiguration.TEZ_AM_TASK_SCHEDULERS,DEFAULT_SERVICE,LOCAL_SERVICE,LLAP_SERVICE_SCHEDULER);
-    tezConfig.setStrings(TezConfiguration.TEZ_AM_CONTAINER_LAUNCHERS,DEFAULT_SERVICE,LOCAL_SERVICE,LLAP_SERVICE_LAUNCHER);
-    tezConfig.setStrings(TezConfiguration.TEZ_AM_TASK_COMMUNICATORS,DEFAULT_SERVICE,LOCAL_SERVICE,LLAP_SERVICE_TASK_COMMUNICATOR);
+    servicePluginsDescriptor=ServicePluginsDescriptor.create(true,new TaskSchedulerDescriptor[]{TaskSchedulerDescriptor.create(LLAP_SERVICE,LLAP_SCHEDULER).setUserPayload(servicePluginPayload)},new ContainerLauncherDescriptor[]{ContainerLauncherDescriptor.create(LLAP_SERVICE,LLAP_LAUNCHER)},new TaskCommunicatorDescriptor[]{TaskCommunicatorDescriptor.create(LLAP_SERVICE,LLAP_TASK_COMMUNICATOR).setUserPayload(servicePluginPayload)});
   }
  else {
-    tezConfig.setStrings(TezConfiguration.TEZ_AM_TASK_SCHEDULERS,DEFAULT_SERVICE,LOCAL_SERVICE);
-    tezConfig.setStrings(TezConfiguration.TEZ_AM_CONTAINER_LAUNCHERS,DEFAULT_SERVICE,LOCAL_SERVICE);
-    tezConfig.setStrings(TezConfiguration.TEZ_AM_TASK_COMMUNICATORS,DEFAULT_SERVICE,LOCAL_SERVICE);
+    servicePluginsDescriptor=ServicePluginsDescriptor.create(true);
   }
   if (HiveConf.getBoolVar(conf,ConfVars.HIVE_PREWARM_ENABLED)) {
     int n=HiveConf.getIntVar(conf,ConfVars.HIVE_PREWARM_NUM_CONTAINERS);
     n=Math.max(tezConfig.getInt(TezConfiguration.TEZ_AM_SESSION_MIN_HELD_CONTAINERS,TezConfiguration.TEZ_AM_SESSION_MIN_HELD_CONTAINERS_DEFAULT),n);
     tezConfig.setInt(TezConfiguration.TEZ_AM_SESSION_MIN_HELD_CONTAINERS,n);
   }
-  session=TezClient.create("HIVE-" + sessionId,tezConfig,true,commonLocalResources,null);
+  session=TezClient.newBuilder("HIVE-" + sessionId,tezConfig).setIsSession(true).setLocalResources(commonLocalResources).setServicePluginDescriptor(servicePluginsDescriptor).build();
   LOG.info("Opening new Tez Session (id: " + sessionId + ", scratch dir: "+ tezScratchDir+ ")");
   TezJobMonitor.initShutdownHook();
   session.start();
