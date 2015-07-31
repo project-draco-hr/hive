@@ -1,0 +1,18 @@
+{
+  Deadline.registerIfNot(1000000);
+  while (!readersFinished || partQueue.size() > 0) {
+    try {
+      PartQueueEntry entry=partQueue.poll(1,TimeUnit.SECONDS);
+      if (entry != null) {
+        LOG.info("Writing partitions " + entry.dbName + "."+ entry.tableName+ "."+ StringUtils.join(entry.partNames,':'));
+        Deadline.startTimer("hbaseimport");
+        List<Partition> parts=rdbmsStore.get().getPartitionsByNames(entry.dbName,entry.tableName,entry.partNames);
+        hbaseStore.get().addPartitions(entry.dbName,entry.tableName,parts);
+        Deadline.stopTimer();
+      }
+    }
+ catch (    InterruptedException|MetaException|InvalidObjectException|NoSuchObjectException e) {
+      throw new RuntimeException(e);
+    }
+  }
+}

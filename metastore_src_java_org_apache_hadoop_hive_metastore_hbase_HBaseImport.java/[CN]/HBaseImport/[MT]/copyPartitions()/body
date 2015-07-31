@@ -1,12 +1,15 @@
 {
   screen("Copying partitions");
-  for (  Table table : tables) {
-    System.out.print("Copying partitions for table " + table.getDbName() + "."+ table.getTableName());
-    for (    Partition part : rdbmsStore.getPartitions(table.getDbName(),table.getTableName(),-1)) {
-      LOG.info("Copying " + table.getTableName() + "."+ table.getTableName()+ "."+ StringUtils.join(part.getValues(),':'));
-      System.out.print('.');
-      hbaseStore.addPartition(part);
-    }
-    System.out.println();
+  readersFinished=false;
+  Thread[] readers=new Thread[parallel];
+  Thread[] writers=new Thread[parallel];
+  for (int i=0; i < parallel; i++) {
+    readers[i]=new PartitionReader();
+    readers[i].start();
+    writers[i]=new PartitionWriter();
+    writers[i].start();
   }
+  for (  Thread reader : readers)   reader.join();
+  readersFinished=true;
+  for (  Thread writer : writers)   writer.join();
 }
