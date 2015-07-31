@@ -22,10 +22,20 @@
   Map<String,ExprNodeDesc> colMap=new HashMap<String,ExprNodeDesc>();
   colMap.put(outputNames.get(0),groupByExpr);
   groupByOp.setColumnExprMap(colMap);
-  DynamicPruningEventDesc eventDesc=new DynamicPruningEventDesc();
-  eventDesc.setTableScan(ts);
-  eventDesc.setTable(PlanUtils.getReduceValueTableDesc(PlanUtils.getFieldSchemasFromColumnList(keyExprs,"key")));
-  eventDesc.setTargetColumnName(column);
-  eventDesc.setPartKey(partKey);
-  OperatorFactory.getAndMakeChild(eventDesc,groupByOp);
+  if (HiveConf.getVar(parseContext.getConf(),ConfVars.HIVE_EXECUTION_ENGINE).equals("tez")) {
+    DynamicPruningEventDesc eventDesc=new DynamicPruningEventDesc();
+    eventDesc.setTableScan(ts);
+    eventDesc.setTable(PlanUtils.getReduceValueTableDesc(PlanUtils.getFieldSchemasFromColumnList(keyExprs,"key")));
+    eventDesc.setTargetColumnName(column);
+    eventDesc.setPartKey(partKey);
+    OperatorFactory.getAndMakeChild(eventDesc,groupByOp);
+  }
+ else {
+    SparkPartitionPruningSinkDesc desc=new SparkPartitionPruningSinkDesc();
+    desc.setTableScan(ts);
+    desc.setTable(PlanUtils.getReduceValueTableDesc(PlanUtils.getFieldSchemasFromColumnList(keyExprs,"key")));
+    desc.setTargetColumnName(column);
+    desc.setPartKey(partKey);
+    OperatorFactory.getAndMakeChild(desc,groupByOp);
+  }
 }

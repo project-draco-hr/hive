@@ -1,0 +1,38 @@
+{
+  Path path=conf.getPath();
+  FileSystem fs=path.getFileSystem(this.getConfiguration());
+  fs.mkdirs(path);
+  while (true) {
+    path=new Path(path,String.valueOf(Utilities.randGen.nextInt()));
+    if (!fs.exists(path)) {
+      break;
+    }
+  }
+  short numOfRepl=fs.getDefaultReplication(path);
+  ObjectOutputStream out=null;
+  FSDataOutputStream fsout=null;
+  try {
+    fsout=fs.create(path,numOfRepl);
+    out=new ObjectOutputStream(new BufferedOutputStream(fsout,4096));
+    out.writeUTF(conf.getTargetColumnName());
+    buffer.writeTo(out);
+  }
+ catch (  Exception e) {
+    try {
+      fs.delete(path,false);
+    }
+ catch (    Exception ex) {
+      LOG.warn("Exception happened while trying to clean partial file.");
+    }
+    throw e;
+  }
+ finally {
+    if (out != null) {
+      LOG.info("Flushed to file: " + path);
+      out.close();
+    }
+ else     if (fsout != null) {
+      fsout.close();
+    }
+  }
+}

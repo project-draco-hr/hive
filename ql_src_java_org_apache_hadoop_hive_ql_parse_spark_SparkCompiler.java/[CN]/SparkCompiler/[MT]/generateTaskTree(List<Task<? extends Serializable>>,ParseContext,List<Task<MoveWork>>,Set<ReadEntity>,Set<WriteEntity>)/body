@@ -1,54 +1,40 @@
 {
   PERF_LOGGER.PerfLogBegin(CLASS_NAME,PerfLogger.SPARK_GENERATE_TASK_TREE);
-  GenSparkUtils.getUtils().resetSequenceNumber();
+  GenSparkUtils utils=GenSparkUtils.getUtils();
+  utils.resetSequenceNumber();
   ParseContext tempParseContext=getParseContext(pCtx,rootTasks);
-  GenSparkWork genSparkWork=new GenSparkWork(GenSparkUtils.getUtils());
   GenSparkProcContext procCtx=new GenSparkProcContext(conf,tempParseContext,mvTask,rootTasks,inputs,outputs,pCtx.getTopOps());
   Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
-  opRules.put(new RuleRegExp("Split Work - ReduceSink",ReduceSinkOperator.getOperatorName() + "%"),genSparkWork);
-  opRules.put(new TypeRule(MapJoinOperator.class),new SparkReduceSinkMapJoinProc());
-  opRules.put(new RuleRegExp("Split Work + Move/Merge - FileSink",FileSinkOperator.getOperatorName() + "%"),new CompositeProcessor(new SparkFileSinkProcessor(),genSparkWork));
-  opRules.put(new RuleRegExp("Handle Analyze Command",TableScanOperator.getOperatorName() + "%"),new SparkProcessAnalyzeTable(GenSparkUtils.getUtils()));
-  opRules.put(new RuleRegExp("Remember union",UnionOperator.getOperatorName() + "%"),new NodeProcessor(){
-    @Override public Object process(    Node n,    Stack<Node> s,    NodeProcessorCtx procCtx,    Object... os) throws SemanticException {
-      GenSparkProcContext context=(GenSparkProcContext)procCtx;
-      UnionOperator union=(UnionOperator)n;
-      context.currentUnionOperators.add(union);
-      return null;
-    }
-  }
-);
-  opRules.put(new TypeRule(SMBMapJoinOperator.class),new NodeProcessor(){
-    @Override public Object process(    Node currNode,    Stack<Node> stack,    NodeProcessorCtx procCtx,    Object... os) throws SemanticException {
-      GenSparkProcContext context=(GenSparkProcContext)procCtx;
-      SMBMapJoinOperator currSmbNode=(SMBMapJoinOperator)currNode;
-      SparkSMBMapJoinInfo smbMapJoinCtx=context.smbMapJoinCtxMap.get(currSmbNode);
-      if (smbMapJoinCtx == null) {
-        smbMapJoinCtx=new SparkSMBMapJoinInfo();
-        context.smbMapJoinCtxMap.put(currSmbNode,smbMapJoinCtx);
-      }
-      for (      Node stackNode : stack) {
-        if (stackNode instanceof DummyStoreOperator) {
-          smbMapJoinCtx.smallTableRootOps.add(context.currentRootOperator);
-          return true;
-        }
-      }
-      smbMapJoinCtx.bigTableRootOp=context.currentRootOperator;
-      return false;
-    }
-  }
-);
+  opRules.put(new RuleRegExp("Clone OP tree for PartitionPruningSink",SparkPartitionPruningSinkOperator.getOperatorName() + "%"),new SplitOpTreeForDPP());
   Dispatcher disp=new DefaultRuleDispatcher(null,opRules,procCtx);
+  GraphWalker ogw=new GenSparkWorkWalker(disp,procCtx);
   List<Node> topNodes=new ArrayList<Node>();
   topNodes.addAll(pCtx.getTopOps().values());
-  GraphWalker ogw=new GenSparkWorkWalker(disp,procCtx);
   ogw.startWalking(topNodes,null);
+  topNodes.clear();
+  topNodes.addAll(procCtx.topOps.values());
+  generateTaskTreeHelper(procCtx,topNodes);
+  if (!procCtx.clonedPruningTableScanSet.isEmpty()) {
+    SparkTask pruningTask=SparkUtilities.createSparkTask(conf);
+    SparkTask mainTask=procCtx.currentTask;
+    pruningTask.addDependentTask(procCtx.currentTask);
+    procCtx.rootTasks.remove(procCtx.currentTask);
+    procCtx.rootTasks.add(pruningTask);
+    procCtx.currentTask=pruningTask;
+    topNodes.clear();
+    topNodes.addAll(procCtx.clonedPruningTableScanSet);
+    generateTaskTreeHelper(procCtx,topNodes);
+    procCtx.currentTask=mainTask;
+  }
   for (  BaseWork w : procCtx.workWithUnionOperators) {
     GenSparkUtils.getUtils().removeUnionOperators(conf,procCtx,w);
   }
   GenSparkUtils.getUtils().annotateMapWork(procCtx);
   for (  FileSinkOperator fileSink : procCtx.fileSinkSet) {
     GenSparkUtils.getUtils().processFileSink(procCtx,fileSink);
+  }
+  for (  Operator<?> prunerSink : procCtx.pruningSinkSet) {
+    utils.processPartitionPruningSink(procCtx,(SparkPartitionPruningSinkOperator)prunerSink);
   }
   PERF_LOGGER.PerfLogEnd(CLASS_NAME,PerfLogger.SPARK_GENERATE_TASK_TREE);
 }
