@@ -1,0 +1,28 @@
+{
+  Iterator<ColumnInfo> oIter=origInputOp.getSchema().getSignature().iterator();
+  Iterator<ColumnInfo> uIter=uColumnInfo.iterator();
+  List<ExprNodeDesc> columns=new ArrayList<ExprNodeDesc>();
+  List<String> colName=new ArrayList<String>();
+  Map<String,ExprNodeDesc> columnExprMap=new HashMap<String,ExprNodeDesc>();
+  boolean needSelectOp=false;
+  while (oIter.hasNext()) {
+    ColumnInfo oInfo=oIter.next();
+    ColumnInfo uInfo=uIter.next();
+    if (!oInfo.isSameColumnForRR(uInfo)) {
+      needSelectOp=true;
+    }
+    ExprNodeDesc column=new ExprNodeColumnDesc(oInfo.getType(),oInfo.getInternalName(),oInfo.getTabAlias(),oInfo.getIsVirtualCol(),oInfo.isSkewedCol());
+    if (!oInfo.getType().equals(uInfo.getType())) {
+      column=ParseUtils.createConversionCast(column,(PrimitiveTypeInfo)uInfo.getType());
+    }
+    columns.add(column);
+    colName.add(uInfo.getInternalName());
+    columnExprMap.put(uInfo.getInternalName(),column);
+  }
+  if (needSelectOp) {
+    return OperatorFactory.getAndMakeChild(new SelectDesc(columns,colName),new RowSchema(uColumnInfo),columnExprMap,origInputOp);
+  }
+ else {
+    return origInputOp;
+  }
+}

@@ -1,17 +1,28 @@
 {
-  MRInputLegacy theMRInput=null;
-  LOG.info("VDK: the inputs are: " + inputs);
-  for (  Entry<String,LogicalInput> inp : inputs.entrySet()) {
-    if (inp.getValue() instanceof MRInputLegacy) {
-      if (theMRInput != null) {
+  LOG.info("The inputs are: " + inputs);
+  List<Input> li=Lists.newArrayList();
+  int numMRInputs=0;
+  for (  LogicalInput inp : inputs.values()) {
+    if (inp instanceof MRInputLegacy) {
+      numMRInputs++;
+      if (numMRInputs > 1) {
         throw new IllegalArgumentException("Only one MRInput is expected");
       }
-      theMRInput=(MRInputLegacy)inp.getValue();
+      inp.start();
+      li.add(inp);
     }
  else {
-      throw new IOException("Expecting only one input of type MRInputLegacy. Found type: " + inp.getClass().getCanonicalName());
+      throw new IllegalArgumentException("Expecting only one input of type MRInputLegacy." + " Found type: " + inp.getClass().getCanonicalName());
     }
   }
-  theMRInput.init();
+  processorContext.waitForAnyInputReady(li);
+  final MRInputLegacy theMRInput;
+  if (li.size() == 1) {
+    theMRInput=(MRInputLegacy)li.get(0);
+    theMRInput.init();
+  }
+ else {
+    throw new IllegalArgumentException("MRInputs count is expected to be 1");
+  }
   return theMRInput;
 }

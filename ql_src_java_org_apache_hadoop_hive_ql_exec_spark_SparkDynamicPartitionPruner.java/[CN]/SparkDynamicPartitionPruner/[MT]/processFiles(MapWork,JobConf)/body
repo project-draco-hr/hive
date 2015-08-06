@@ -1,0 +1,43 @@
+{
+  ObjectInputStream in=null;
+  try {
+    Path baseDir=work.getTmpPathForPartitionPruning();
+    FileSystem fs=FileSystem.get(baseDir.toUri(),jobConf);
+    for (    String name : sourceInfoMap.keySet()) {
+      Path sourceDir=new Path(baseDir,name);
+      for (      FileStatus fstatus : fs.listStatus(sourceDir)) {
+        LOG.info("Start processing pruning file: " + fstatus.getPath());
+        in=new ObjectInputStream(fs.open(fstatus.getPath()));
+        String columnName=in.readUTF();
+        SourceInfo info=null;
+        for (        SourceInfo si : sourceInfoMap.get(name)) {
+          if (columnName.equals(si.columnName)) {
+            info=si;
+            break;
+          }
+        }
+        Preconditions.checkArgument(info != null,"AssertionError: no source info for the column: " + columnName);
+        while (in.available() > 0) {
+          writable.readFields(in);
+          Object row=info.deserializer.deserialize(writable);
+          Object value=info.soi.getStructFieldData(row,info.field);
+          value=ObjectInspectorUtils.copyToStandardObject(value,info.fieldInspector);
+          info.values.add(value);
+        }
+      }
+    }
+  }
+ catch (  Exception e) {
+    throw new HiveException(e);
+  }
+ finally {
+    try {
+      if (in != null) {
+        in.close();
+      }
+    }
+ catch (    IOException e) {
+      throw new HiveException("error while trying to close input stream",e);
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  double pkfkSelectivity=Double.MAX_VALUE;
+  int fkInd=-1;
+  for (  Entry<Integer,ColStatistics> entry : csFKs.entrySet()) {
+    int pos=entry.getKey();
+    Operator<? extends OperatorDesc> opWithPK=ops.get(pkPos);
+    double selectivity=getSelectivitySimpleTree(opWithPK);
+    double selectivityAdjustment=StatsUtils.getScaledSelectivity(csPK,entry.getValue());
+    selectivity=selectivityAdjustment * selectivity > 1 ? selectivity : selectivityAdjustment * selectivity;
+    if (selectivity < pkfkSelectivity) {
+      pkfkSelectivity=selectivity;
+      fkInd=pos;
+    }
+  }
+  long newrows=1;
+  List<Long> rowCounts=Lists.newArrayList();
+  List<Long> distinctVals=Lists.newArrayList();
+  for (  Entry<Integer,ColStatistics> entry : csFKs.entrySet()) {
+    int pos=entry.getKey();
+    ColStatistics csFK=entry.getValue();
+    ReduceSinkOperator parent=(ReduceSinkOperator)jop.getParentOperators().get(pos);
+    Statistics parentStats=parent.getStatistics();
+    if (fkInd == pos) {
+      newrows=(long)Math.ceil(parentStats.getNumRows() * pkfkSelectivity);
+      rowCounts.add(newrows);
+      distinctVals.add(Math.min(csFK.getCountDistint(),csPK.getCountDistint()));
+    }
+ else {
+      rowCounts.add(parentStats.getNumRows());
+      distinctVals.add(csFK.getCountDistint());
+    }
+  }
+  long newNumRows;
+  if (csFKs.size() == 1) {
+    newNumRows=newrows;
+  }
+ else {
+    newNumRows=this.computeNewRowCount(rowCounts,getDenominator(distinctVals));
+  }
+  return newNumRows;
+}

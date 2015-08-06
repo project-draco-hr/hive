@@ -5,13 +5,21 @@
   String cursor=ctx.L_ID().toString();
   String sql=null;
   if (ctx.T_FOR() != null) {
-    sql=evalPop(ctx.expr()).toString();
-    if (trace) {
-      trace(ctx,cursor + ": " + sql);
+    if (ctx.expr() != null) {
+      sql=evalPop(ctx.expr()).toString();
+    }
+ else {
+      sql=evalPop(ctx.select_stmt()).toString();
     }
     query=new Query(sql);
-    var=new Var(cursor,Type.CURSOR,query);
-    exec.addVariable(var);
+    var=exec.findCursor(cursor);
+    if (var == null) {
+      var=new Var(cursor,Type.CURSOR,query);
+      exec.addVariable(var);
+    }
+ else {
+      var.setValue(query);
+    }
   }
  else {
     var=exec.findVariable(cursor);
@@ -25,12 +33,12 @@
         sql=evalPop(query.sqlSelect).toString();
         query.setSql(sql);
       }
-      if (trace) {
-        trace(ctx,cursor + ": " + sql);
-      }
     }
   }
   if (query != null) {
+    if (trace) {
+      trace(ctx,cursor + ": " + sql);
+    }
     exec.executeQuery(ctx,query,exec.conf.defaultConnection);
     if (query.error()) {
       exec.signal(query);
@@ -38,6 +46,9 @@
     }
  else     if (!exec.getOffline()) {
       exec.setSqlCode(0);
+    }
+    if (query.getWithReturn()) {
+      exec.addReturnCursor(var);
     }
   }
  else {

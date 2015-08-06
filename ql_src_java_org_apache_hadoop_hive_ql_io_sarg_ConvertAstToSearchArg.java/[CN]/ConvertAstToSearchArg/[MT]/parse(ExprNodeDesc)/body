@@ -1,0 +1,74 @@
+{
+  if (expression.getClass() != ExprNodeGenericFuncDesc.class) {
+    if (expression instanceof ExprNodeColumnDesc) {
+      ExprNodeColumnDesc columnDesc=(ExprNodeColumnDesc)expression;
+      if (columnDesc.getTypeString().equals("boolean")) {
+        builder.equals(columnDesc.getColumn(),PredicateLeaf.Type.BOOLEAN,true);
+        return;
+      }
+    }
+    builder.literal(SearchArgument.TruthValue.YES_NO_NULL);
+    return;
+  }
+  ExprNodeGenericFuncDesc expr=(ExprNodeGenericFuncDesc)expression;
+  Class<?> op=expr.getGenericUDF().getClass();
+  if (op == GenericUDFOPOr.class) {
+    builder.startOr();
+    addChildren(expr);
+    builder.end();
+  }
+ else   if (op == GenericUDFOPAnd.class) {
+    builder.startAnd();
+    addChildren(expr);
+    builder.end();
+  }
+ else   if (op == GenericUDFOPNot.class) {
+    builder.startNot();
+    addChildren(expr);
+    builder.end();
+  }
+ else   if (op == GenericUDFOPEqual.class) {
+    createLeaf(PredicateLeaf.Operator.EQUALS,expr);
+  }
+ else   if (op == GenericUDFOPNotEqual.class) {
+    builder.startNot();
+    createLeaf(PredicateLeaf.Operator.EQUALS,expr);
+    builder.end();
+  }
+ else   if (op == GenericUDFOPEqualNS.class) {
+    createLeaf(PredicateLeaf.Operator.NULL_SAFE_EQUALS,expr);
+  }
+ else   if (op == GenericUDFOPGreaterThan.class) {
+    builder.startNot();
+    createLeaf(PredicateLeaf.Operator.LESS_THAN_EQUALS,expr);
+    builder.end();
+  }
+ else   if (op == GenericUDFOPEqualOrGreaterThan.class) {
+    builder.startNot();
+    createLeaf(PredicateLeaf.Operator.LESS_THAN,expr);
+    builder.end();
+  }
+ else   if (op == GenericUDFOPLessThan.class) {
+    createLeaf(PredicateLeaf.Operator.LESS_THAN,expr);
+  }
+ else   if (op == GenericUDFOPEqualOrLessThan.class) {
+    createLeaf(PredicateLeaf.Operator.LESS_THAN_EQUALS,expr);
+  }
+ else   if (op == GenericUDFIn.class) {
+    createLeaf(PredicateLeaf.Operator.IN,expr,0);
+  }
+ else   if (op == GenericUDFBetween.class) {
+    createLeaf(PredicateLeaf.Operator.BETWEEN,expr,1);
+  }
+ else   if (op == GenericUDFOPNull.class) {
+    createLeaf(PredicateLeaf.Operator.IS_NULL,expr,0);
+  }
+ else   if (op == GenericUDFOPNotNull.class) {
+    builder.startNot();
+    createLeaf(PredicateLeaf.Operator.IS_NULL,expr,0);
+    builder.end();
+  }
+ else {
+    builder.literal(SearchArgument.TruthValue.YES_NO_NULL);
+  }
+}

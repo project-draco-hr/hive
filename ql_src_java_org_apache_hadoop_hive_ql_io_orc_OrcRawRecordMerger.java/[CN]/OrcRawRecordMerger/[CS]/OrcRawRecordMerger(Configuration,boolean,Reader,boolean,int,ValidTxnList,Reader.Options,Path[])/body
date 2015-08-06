@@ -24,7 +24,7 @@
       pair=new OriginalReaderPair(key,reader,bucket,minKey,maxKey,options);
     }
  else {
-      pair=new ReaderPair(key,reader,bucket,minKey,maxKey,eventOptions);
+      pair=new ReaderPair(key,reader,bucket,minKey,maxKey,eventOptions,0);
     }
     if (pair.nextRecord != null) {
       readers.put(key,pair);
@@ -32,16 +32,24 @@
     baseReader=pair.recordReader;
   }
   eventOptions.range(0,Long.MAX_VALUE);
-  eventOptions.searchArgument(null,null);
   if (deltaDirectory != null) {
     for (    Path delta : deltaDirectory) {
       ReaderKey key=new ReaderKey();
       Path deltaFile=AcidUtils.createBucketFile(delta,bucket);
+      AcidUtils.ParsedDelta deltaDir=AcidUtils.parsedDelta(delta);
       FileSystem fs=deltaFile.getFileSystem(conf);
       long length=getLastFlushLength(fs,deltaFile);
       if (length != -1 && fs.exists(deltaFile)) {
         Reader deltaReader=OrcFile.createReader(deltaFile,OrcFile.readerOptions(conf).maxLength(length));
-        ReaderPair deltaPair=new ReaderPair(key,deltaReader,bucket,minKey,maxKey,eventOptions);
+        Reader.Options deltaEventOptions=null;
+        if (eventOptions.getSearchArgument() != null) {
+          OrcRecordUpdater.AcidStats acidStats=OrcRecordUpdater.parseAcidStats(deltaReader);
+          if (acidStats.deletes > 0 || acidStats.updates > 0) {
+            deltaEventOptions=eventOptions.clone().searchArgument(null,null);
+          }
+        }
+        ReaderPair deltaPair;
+        deltaPair=new ReaderPair(key,deltaReader,bucket,minKey,maxKey,deltaEventOptions != null ? deltaEventOptions : eventOptions,deltaDir.getStatementId());
         if (deltaPair.nextRecord != null) {
           readers.put(key,deltaPair);
         }

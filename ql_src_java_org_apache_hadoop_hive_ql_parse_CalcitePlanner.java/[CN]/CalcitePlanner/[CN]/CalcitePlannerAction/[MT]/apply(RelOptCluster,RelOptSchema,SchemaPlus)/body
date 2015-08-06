@@ -46,39 +46,14 @@
   }
   hepPlanner.setRoot(rootRel);
   calciteOptimizedPlan=hepPlanner.findBestExp();
-  hepPgmBldr=new HepProgramBuilder().addMatchOrder(HepMatchOrder.BOTTOM_UP);
-  hepPgmBldr.addRuleInstance(HiveJoinCommuteRule.INSTANCE);
-  hepPlanner=new HepPlanner(hepPgmBldr.build());
-  hepPlanner.registerMetadataProviders(list);
-  cluster.setMetadataProvider(new CachingRelMetadataProvider(chainedProvider,hepPlanner));
-  hepPlanner.setRoot(calciteOptimizedPlan);
-  calciteOptimizedPlan=hepPlanner.findBestExp();
-  hepPgmBldr=new HepProgramBuilder().addMatchOrder(HepMatchOrder.BOTTOM_UP);
-  hepPgmBldr.addRuleInstance(HiveWindowingFixRule.INSTANCE);
-  hepPlanner=new HepPlanner(hepPgmBldr.build());
-  hepPlanner.registerMetadataProviders(list);
-  cluster.setMetadataProvider(new CachingRelMetadataProvider(chainedProvider,hepPlanner));
-  hepPlanner.setRoot(calciteOptimizedPlan);
-  calciteOptimizedPlan=hepPlanner.findBestExp();
+  calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,HiveJoinCommuteRule.INSTANCE);
+  calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,HiveWindowingFixRule.INSTANCE);
   if (HiveConf.getBoolVar(conf,ConfVars.HIVE_CBO_RETPATH_HIVEOP)) {
-    hepPgmBldr=new HepProgramBuilder().addMatchOrder(HepMatchOrder.BOTTOM_UP);
-    hepPgmBldr.addRuleInstance(HiveJoinToMultiJoinRule.INSTANCE);
-    hepPgmBldr=hepPgmBldr.addRuleCollection(ImmutableList.of(HiveJoinProjectTransposeRule.BOTH_PROJECT,HiveJoinToMultiJoinRule.INSTANCE,HiveProjectMergeRule.INSTANCE));
-    hepPlanner=new HepPlanner(hepPgmBldr.build());
-    hepPlanner.registerMetadataProviders(list);
-    cluster.setMetadataProvider(new CachingRelMetadataProvider(chainedProvider,hepPlanner));
-    hepPlanner.setRoot(calciteOptimizedPlan);
-    calciteOptimizedPlan=hepPlanner.findBestExp();
+    calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,true,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,HiveJoinProjectTransposeRule.BOTH_PROJECT,HiveJoinProjectTransposeRule.LEFT_PROJECT,HiveJoinProjectTransposeRule.RIGHT_PROJECT,HiveJoinToMultiJoinRule.INSTANCE,HiveProjectMergeRule.INSTANCE);
     HiveRelFieldTrimmer fieldTrimmer=new HiveRelFieldTrimmer(null,HiveProject.DEFAULT_PROJECT_FACTORY,HiveFilter.DEFAULT_FILTER_FACTORY,HiveJoin.HIVE_JOIN_FACTORY,HiveSemiJoin.HIVE_SEMIJOIN_FACTORY,HiveSort.HIVE_SORT_REL_FACTORY,HiveAggregate.HIVE_AGGR_REL_FACTORY,HiveUnion.UNION_REL_FACTORY);
     calciteOptimizedPlan=fieldTrimmer.trim(calciteOptimizedPlan);
-    hepPgmBldr=new HepProgramBuilder().addMatchOrder(HepMatchOrder.BOTTOM_UP);
-    hepPgmBldr.addRuleInstance(HiveInsertExchange4JoinRule.EXCHANGE_BELOW_JOIN);
-    hepPgmBldr.addRuleInstance(HiveInsertExchange4JoinRule.EXCHANGE_BELOW_MULTIJOIN);
-    hepPlanner=new HepPlanner(hepPgmBldr.build());
-    hepPlanner.registerMetadataProviders(list);
-    cluster.setMetadataProvider(new CachingRelMetadataProvider(chainedProvider,hepPlanner));
-    hepPlanner.setRoot(calciteOptimizedPlan);
-    calciteOptimizedPlan=hepPlanner.findBestExp();
+    calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,ProjectRemoveRule.INSTANCE,new ProjectMergeRule(false,HiveProject.DEFAULT_PROJECT_FACTORY));
+    calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,HiveInsertExchange4JoinRule.EXCHANGE_BELOW_JOIN,HiveInsertExchange4JoinRule.EXCHANGE_BELOW_MULTIJOIN);
   }
   if (LOG.isDebugEnabled() && !conf.getBoolVar(ConfVars.HIVE_IN_TEST)) {
     LOG.debug("CBO Planning details:\n");
