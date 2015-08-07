@@ -4,7 +4,6 @@
     return;
   }
   VectorExpression childExpr1=this.childExpressions[0];
-  VectorExpression childExpr2=this.childExpressions[1];
   boolean prevSelectInUse=batch.selectedInUse;
   int[] sel=batch.selected;
   if (batch.selectedInUse) {
@@ -33,13 +32,36 @@
       unselected[unselectedSize++]=i;
     }
   }
+  int newSize=sizeAfterFirstChild;
   batch.selected=unselected;
   batch.size=unselectedSize;
-  childExpr2.evaluate(batch);
-  int newSize=batch.size + sizeAfterFirstChild;
-  for (int i=0; i < batch.size; i++) {
-    tmp[batch.selected[i]]=1;
+  if (unselectedSize > 0) {
+    final int childrenCount=this.childExpressions.length;
+    int childIndex=1;
+    while (true) {
+      boolean isLastChild=(childIndex + 1 >= childrenCount);
+      if (!isLastChild) {
+        System.arraycopy(batch.selected,0,unselectedCopy,0,unselectedSize);
+      }
+      VectorExpression childExpr=this.childExpressions[childIndex];
+      childExpr.evaluate(batch);
+      newSize+=batch.size;
+      for (int i=0; i < batch.size; i++) {
+        tmp[batch.selected[i]]=1;
+      }
+      if (isLastChild) {
+        break;
+      }
+      unselectedSize=subtract(unselectedCopy,unselectedSize,batch.selected,batch.size,difference);
+      if (unselectedSize == 0) {
+        break;
+      }
+      System.arraycopy(difference,0,batch.selected,0,unselectedSize);
+      batch.size=unselectedSize;
+      childIndex++;
+    }
   }
+  batch.selected=selectedAfterFirstChild;
   int k=0;
   for (int j=0; j < n; j++) {
     int i=initialSelected[j];
@@ -51,5 +73,4 @@
   if (newSize == n) {
     batch.selectedInUse=prevSelectInUse;
   }
-  unselected=selectedAfterFirstChild;
 }

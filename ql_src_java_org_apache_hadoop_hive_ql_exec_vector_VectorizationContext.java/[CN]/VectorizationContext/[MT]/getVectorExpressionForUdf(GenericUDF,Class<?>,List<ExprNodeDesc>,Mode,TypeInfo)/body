@@ -1,5 +1,34 @@
 {
   int numChildren=(childExpr == null) ? 0 : childExpr.size();
+  if (numChildren > 2 && genericeUdf != null && mode == Mode.FILTER && ((genericeUdf instanceof GenericUDFOPOr) || (genericeUdf instanceof GenericUDFOPAnd))) {
+    for (int i=0; i < numChildren; i++) {
+      ExprNodeDesc child=childExpr.get(i);
+      String childTypeString=child.getTypeString();
+      if (childTypeString == null) {
+        throw new HiveException("Null child type name string");
+      }
+      TypeInfo typeInfo=TypeInfoUtils.getTypeInfoFromTypeString(childTypeString);
+      Type columnVectorType=VectorizationContext.getColumnVectorTypeFromTypeInfo(typeInfo);
+      if (columnVectorType != ColumnVector.Type.LONG) {
+        return null;
+      }
+      if (!(child instanceof ExprNodeGenericFuncDesc) && !(child instanceof ExprNodeColumnDesc)) {
+        return null;
+      }
+    }
+    Class<?> vclass;
+    if (genericeUdf instanceof GenericUDFOPOr) {
+      vclass=FilterExprOrExpr.class;
+    }
+ else     if (genericeUdf instanceof GenericUDFOPAnd) {
+      vclass=FilterExprAndExpr.class;
+    }
+ else {
+      throw new RuntimeException("Unexpected multi-child UDF");
+    }
+    Mode childrenMode=getChildrenMode(mode,udfClass);
+    return createVectorExpression(vclass,childExpr,childrenMode,returnType);
+  }
   if (numChildren > VectorExpressionDescriptor.MAX_NUM_ARGUMENTS) {
     return null;
   }
@@ -28,13 +57,13 @@
     }
   }
   VectorExpressionDescriptor.Descriptor descriptor=builder.build();
-  Class<?> vclass=this.vMap.getVectorExpressionClass(udf,descriptor);
+  Class<?> vclass=this.vMap.getVectorExpressionClass(udfClass,descriptor);
   if (vclass == null) {
     if (LOG.isDebugEnabled()) {
-      LOG.debug("No vector udf found for " + udf.getSimpleName() + ", descriptor: "+ descriptor);
+      LOG.debug("No vector udf found for " + udfClass.getSimpleName() + ", descriptor: "+ descriptor);
     }
     return null;
   }
-  Mode childrenMode=getChildrenMode(mode,udf);
+  Mode childrenMode=getChildrenMode(mode,udfClass);
   return createVectorExpression(vclass,childExpr,childrenMode,returnType);
 }
