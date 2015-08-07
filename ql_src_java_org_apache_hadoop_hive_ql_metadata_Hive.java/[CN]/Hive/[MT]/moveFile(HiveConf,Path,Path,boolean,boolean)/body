@@ -1,33 +1,51 @@
 {
   boolean success=false;
+  FileSystem srcFs, destFs;
+  try {
+    destFs=destf.getFileSystem(conf);
+  }
+ catch (  IOException e) {
+    LOG.error(e);
+    throw new HiveException(e.getMessage(),e);
+  }
+  try {
+    srcFs=srcf.getFileSystem(conf);
+  }
+ catch (  IOException e) {
+    LOG.error(e);
+    throw new HiveException(e.getMessage(),e);
+  }
   boolean inheritPerms=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_WAREHOUSE_SUBDIR_INHERIT_PERMS);
   HadoopShims shims=ShimLoader.getHadoopShims();
   HadoopShims.HdfsFileStatus destStatus=null;
-  HadoopShims.HdfsEncryptionShim hdfsEncryptionShim=SessionState.get().getHdfsEncryptionShim();
-  boolean destIsSubDir=isSubDir(srcf,destf,fs,isSrcLocal);
+  boolean destIsSubDir=isSubDir(srcf,destf,srcFs,destFs,isSrcLocal);
   try {
     if (inheritPerms || replace) {
       try {
-        destStatus=shims.getFullFileStatus(conf,fs,destf.getParent());
+        destStatus=shims.getFullFileStatus(conf,destFs,destf.getParent());
         if (replace && !destIsSubDir) {
           LOG.debug("The path " + destf.toString() + " is deleted");
-          fs.delete(destf,true);
+          destFs.delete(destf,true);
         }
       }
  catch (      FileNotFoundException ignore) {
         if (inheritPerms) {
-          destStatus=shims.getFullFileStatus(conf,fs,destf.getParent());
+          destStatus=shims.getFullFileStatus(conf,destFs,destf.getParent());
         }
       }
     }
-    if (!isSrcLocal) {
-      if (hdfsEncryptionShim != null && (hdfsEncryptionShim.isPathEncrypted(srcf) || hdfsEncryptionShim.isPathEncrypted(destf)) && !hdfsEncryptionShim.arePathsOnSameEncryptionZone(srcf,destf)) {
+    if (isSrcLocal) {
+      destFs.copyFromLocalFile(srcf,destf);
+      success=true;
+    }
+ else {
+      if (needToCopy(srcf,destf,srcFs,destFs)) {
         LOG.info("Copying source " + srcf + " to "+ destf+ " because HDFS encryption zones are different.");
         success=FileUtils.copy(srcf.getFileSystem(conf),srcf,destf.getFileSystem(conf),destf,true,replace,conf);
       }
  else {
         if (destIsSubDir) {
-          FileStatus[] srcs=fs.listStatus(srcf,FileUtils.HIDDEN_FILES_PATH_FILTER);
+          FileStatus[] srcs=destFs.listStatus(srcf,FileUtils.HIDDEN_FILES_PATH_FILTER);
           if (srcs.length == 0) {
             success=true;
           }
@@ -39,13 +57,9 @@
           }
         }
  else {
-          success=fs.rename(srcf,destf);
+          success=destFs.rename(srcf,destf);
         }
       }
-    }
- else {
-      fs.copyFromLocalFile(srcf,destf);
-      success=true;
     }
     LOG.info((replace ? "Replacing src:" : "Renaming src: ") + srcf.toString() + ", dest: "+ destf.toString()+ ", Status:"+ success);
   }
@@ -54,7 +68,7 @@
   }
   if (success && inheritPerms) {
     try {
-      ShimLoader.getHadoopShims().setFullFileStatus(conf,destStatus,fs,destf);
+      ShimLoader.getHadoopShims().setFullFileStatus(conf,destStatus,destFs,destf);
     }
  catch (    IOException e) {
       LOG.warn("Error setting permission of file " + destf + ": "+ e.getMessage(),e);
