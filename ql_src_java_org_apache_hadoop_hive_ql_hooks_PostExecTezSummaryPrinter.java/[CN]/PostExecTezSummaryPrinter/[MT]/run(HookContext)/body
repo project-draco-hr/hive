@@ -1,0 +1,29 @@
+{
+  assert(hookContext.getHookType() == HookContext.HookType.POST_EXEC_HOOK);
+  HiveConf conf=hookContext.getConf();
+  if (!"tez".equals(HiveConf.getVar(conf,HiveConf.ConfVars.HIVE_EXECUTION_ENGINE))) {
+    return;
+  }
+  LOG.info("Executing post execution hook to print tez summary..");
+  SessionState ss=SessionState.get();
+  SessionState.LogHelper console=ss.getConsole();
+  QueryPlan plan=hookContext.getQueryPlan();
+  if (plan == null) {
+    return;
+  }
+  List<TezTask> rootTasks=Utilities.getTezTasks(plan.getRootTasks());
+  for (  TezTask tezTask : rootTasks) {
+    LOG.info("Printing summary for tez task: " + tezTask.getName());
+    TezCounters counters=tezTask.getTezCounters();
+    if (counters != null) {
+      for (      CounterGroup group : counters) {
+        if ("HIVE".equals(group.getDisplayName())) {
+          console.printError(tezTask.getId() + " HIVE COUNTERS:");
+          for (          TezCounter counter : group) {
+            console.printError("   " + counter.getDisplayName() + ": "+ counter.getValue());
+          }
+        }
+      }
+    }
+  }
+}
