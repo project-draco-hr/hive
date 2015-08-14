@@ -24,60 +24,88 @@
     }
   }
  else   if (FunctionRegistry.isOpAnd(fd)) {
-    assert(nodeOutputs.length == 2);
-    NodeInfoWrapper c1=(NodeInfoWrapper)nodeOutputs[0];
-    NodeInfoWrapper c2=(NodeInfoWrapper)nodeOutputs[1];
-    if (c1.state == WalkState.FALSE) {
-      return c1;
+    boolean anyUnknown=false;
+    boolean allDivided=true;
+    List<NodeInfoWrapper> newNodeOutputsList=new ArrayList<NodeInfoWrapper>(nodeOutputs.length);
+    for (int i=0; i < nodeOutputs.length; i++) {
+      NodeInfoWrapper c=(NodeInfoWrapper)nodeOutputs[i];
+      if (c.state == WalkState.FALSE) {
+        return c;
+      }
+      if (c.state == WalkState.UNKNOWN) {
+        anyUnknown=true;
+      }
+      if (c.state != WalkState.DIVIDED) {
+        allDivided=false;
+      }
+      if (c.state != WalkState.TRUE) {
+        newNodeOutputsList.add(c);
+      }
     }
- else     if (c2.state == WalkState.FALSE) {
-      return c2;
+    if (newNodeOutputsList.size() == 0) {
+      return new NodeInfoWrapper(WalkState.TRUE,null,new ExprNodeConstantDesc(fd.getTypeInfo(),Boolean.TRUE));
     }
- else     if (c1.state == WalkState.TRUE) {
-      return c2;
+    if (newNodeOutputsList.size() == 1) {
+      return newNodeOutputsList.get(0);
     }
- else     if (c2.state == WalkState.TRUE) {
-      return c1;
+    Object[] newNodeOutputs=newNodeOutputsList.toArray();
+    if (anyUnknown) {
+      return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,newNodeOutputs));
     }
- else     if (c1.state == WalkState.UNKNOWN || c2.state == WalkState.UNKNOWN) {
-      return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,nodeOutputs));
-    }
- else     if (c1.state == WalkState.DIVIDED && c2.state == WalkState.DIVIDED) {
+    if (allDivided) {
       Boolean[] results=new Boolean[ctx.getPartList().size()];
       for (int i=0; i < ctx.getPartList().size(); i++) {
-        results[i]=opAnd(c1.ResultVector[i],c2.ResultVector[i]);
+        Boolean[] andArray=new Boolean[newNodeOutputs.length];
+        for (int j=0; j < newNodeOutputs.length; j++) {
+          andArray[j]=((NodeInfoWrapper)newNodeOutputs[j]).ResultVector[i];
+        }
+        results[i]=opAnd(andArray);
       }
-      return getResultWrapFromResults(results,fd,nodeOutputs);
+      return getResultWrapFromResults(results,fd,newNodeOutputs);
     }
-    return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,nodeOutputs));
+    return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,newNodeOutputs));
   }
  else   if (FunctionRegistry.isOpOr(fd)) {
-    assert(nodeOutputs.length == 2);
-    NodeInfoWrapper c1=(NodeInfoWrapper)nodeOutputs[0];
-    NodeInfoWrapper c2=(NodeInfoWrapper)nodeOutputs[1];
-    if (c1.state == WalkState.TRUE) {
-      return c1;
+    boolean anyUnknown=false;
+    boolean allDivided=true;
+    List<NodeInfoWrapper> newNodeOutputsList=new ArrayList<NodeInfoWrapper>(nodeOutputs.length);
+    for (int i=0; i < nodeOutputs.length; i++) {
+      NodeInfoWrapper c=(NodeInfoWrapper)nodeOutputs[i];
+      if (c.state == WalkState.TRUE) {
+        return c;
+      }
+      if (c.state == WalkState.UNKNOWN) {
+        anyUnknown=true;
+      }
+      if (c.state != WalkState.DIVIDED) {
+        allDivided=false;
+      }
+      if (c.state != WalkState.FALSE) {
+        newNodeOutputsList.add(c);
+      }
     }
- else     if (c2.state == WalkState.TRUE) {
-      return c2;
+    if (newNodeOutputsList.size() == 0) {
+      return new NodeInfoWrapper(WalkState.FALSE,null,new ExprNodeConstantDesc(fd.getTypeInfo(),Boolean.FALSE));
     }
- else     if (c1.state == WalkState.FALSE) {
-      return c2;
+    if (newNodeOutputsList.size() == 1) {
+      return newNodeOutputsList.get(0);
     }
- else     if (c2.state == WalkState.FALSE) {
-      return c1;
+    Object[] newNodeOutputs=newNodeOutputsList.toArray();
+    if (anyUnknown) {
+      return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,newNodeOutputs));
     }
- else     if (c1.state == WalkState.UNKNOWN || c2.state == WalkState.UNKNOWN) {
-      return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,nodeOutputs));
-    }
- else     if (c1.state == WalkState.DIVIDED && c2.state == WalkState.DIVIDED) {
+    if (allDivided) {
       Boolean[] results=new Boolean[ctx.getPartList().size()];
       for (int i=0; i < ctx.getPartList().size(); i++) {
-        results[i]=opOr(c1.ResultVector[i],c2.ResultVector[i]);
+        Boolean[] orArray=new Boolean[newNodeOutputs.length];
+        for (int j=0; j < newNodeOutputs.length; j++) {
+          orArray[j]=((NodeInfoWrapper)newNodeOutputs[j]).ResultVector[i];
+        }
+        results[i]=opOr(orArray);
       }
-      return getResultWrapFromResults(results,fd,nodeOutputs);
+      return getResultWrapFromResults(results,fd,newNodeOutputs);
     }
-    return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,nodeOutputs));
+    return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,newNodeOutputs));
   }
  else   if (!FunctionRegistry.isDeterministic(fd.getGenericUDF())) {
     return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,nodeOutputs));
@@ -93,7 +121,7 @@
         has_part_col=true;
       }
     }
-    if (has_part_col) {
+    if (has_part_col && fd.getTypeInfo().getCategory() == Category.PRIMITIVE) {
       if (fd.getTypeInfo().equals(TypeInfoFactory.booleanTypeInfo)) {
         Boolean[] results=new Boolean[ctx.getPartList().size()];
         for (int i=0; i < ctx.getPartList().size(); i++) {

@@ -1,0 +1,43 @@
+{
+  SparkPartitionPruningSinkOperator pruningSinkOp=(SparkPartitionPruningSinkOperator)nd;
+  GenSparkProcContext context=(GenSparkProcContext)procCtx;
+  Operator<?> filterOp=pruningSinkOp;
+  Operator<?> selOp=null;
+  while (filterOp != null) {
+    if (filterOp.getNumChild() > 1) {
+      break;
+    }
+ else {
+      selOp=filterOp;
+      filterOp=filterOp.getParentOperators().get(0);
+    }
+  }
+  for (  Operator<?> childOp : filterOp.getChildOperators()) {
+    if (childOp instanceof ReduceSinkOperator && childOp.getChildOperators().get(0) instanceof MapJoinOperator) {
+      context.pruningSinkSet.add(pruningSinkOp);
+      return null;
+    }
+  }
+  List<Operator<?>> roots=new LinkedList<Operator<?>>();
+  collectRoots(roots,pruningSinkOp);
+  List<Operator<?>> savedChildOps=filterOp.getChildOperators();
+  filterOp.setChildOperators(Utilities.makeList(selOp));
+  List<Operator<?>> newRoots=Utilities.cloneOperatorTree(context.parseContext.getConf(),roots);
+  for (int i=0; i < roots.size(); i++) {
+    TableScanOperator newTs=(TableScanOperator)newRoots.get(i);
+    TableScanOperator oldTs=(TableScanOperator)roots.get(i);
+    newTs.getConf().setTableMetadata(oldTs.getConf().getTableMetadata());
+  }
+  context.clonedPruningTableScanSet.addAll(newRoots);
+  filterOp.setChildOperators(savedChildOps);
+  filterOp.removeChild(selOp);
+  Set<Operator<?>> sinkSet=new HashSet<Operator<?>>();
+  for (  Operator<?> root : newRoots) {
+    SparkUtilities.collectOp(sinkSet,root,SparkPartitionPruningSinkOperator.class);
+  }
+  Preconditions.checkArgument(sinkSet.size() == 1,"AssertionError: expected to only contain one SparkPartitionPruningSinkOperator," + " but found " + sinkSet.size());
+  SparkPartitionPruningSinkOperator clonedPruningSinkOp=(SparkPartitionPruningSinkOperator)sinkSet.iterator().next();
+  clonedPruningSinkOp.getConf().setTableScan(pruningSinkOp.getConf().getTableScan());
+  context.pruningSinkSet.add(clonedPruningSinkOp);
+  return null;
+}

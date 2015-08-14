@@ -11,6 +11,9 @@
           return null;
         }
       }
+      if (constant.getTypeInfo().getCategory() != Category.PRIMITIVE) {
+        return null;
+      }
       Object value=constant.getValue();
       PrimitiveTypeInfo pti=(PrimitiveTypeInfo)constant.getTypeInfo();
       Object writableValue=null == value ? value : PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(pti).getPrimitiveWritableObject(value);
@@ -23,6 +26,9 @@
         return null;
       }
       ExprNodeConstantDesc constant=(ExprNodeConstantDesc)evaluatedFn;
+      if (constant.getTypeInfo().getCategory() != Category.PRIMITIVE) {
+        return null;
+      }
       Object writableValue=PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector((PrimitiveTypeInfo)constant.getTypeInfo()).getPrimitiveWritableObject(constant.getValue());
       arguments[i]=new DeferredJavaObject(writableValue);
       argois[i]=ObjectInspectorUtils.getConstantObjectInspector(constant.getWritableObjectInspector(),writableValue);
@@ -49,13 +55,18 @@
         return new ExprNodeConstantDesc(typeInfo,o);
       }
     }
- else     if (PrimitiveObjectInspectorUtils.isPrimitiveJavaClass(clz)) {
+ else     if (udf instanceof GenericUDFStruct && oi instanceof StandardConstantStructObjectInspector) {
+      ConstantObjectInspector coi=(ConstantObjectInspector)oi;
+      TypeInfo structType=TypeInfoUtils.getTypeInfoFromObjectInspector(coi);
+      return new ExprNodeConstantDesc(structType,ObjectInspectorUtils.copyToStandardJavaObject(o,coi));
     }
- else {
+ else     if (!PrimitiveObjectInspectorUtils.isPrimitiveJavaClass(clz)) {
       if (LOG.isErrorEnabled()) {
         LOG.error("Unable to evaluate " + udf + ". Return value unrecoginizable.");
       }
       return null;
+    }
+ else {
     }
     String constStr=null;
     if (arguments.length == 1 && FunctionRegistry.isOpCast(udf)) {

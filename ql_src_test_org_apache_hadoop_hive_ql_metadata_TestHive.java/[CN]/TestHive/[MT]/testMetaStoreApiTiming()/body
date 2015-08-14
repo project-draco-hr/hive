@@ -1,24 +1,29 @@
 {
-  Logger logger=Logger.getLogger("hive.ql.metadata.Hive");
-  Level origLevel=logger.getLevel();
-  logger.setLevel(Level.DEBUG);
-  StringWriter writer=new StringWriter();
-  WriterAppender appender=new WriterAppender(new PatternLayout(),writer);
+  Logger logger=LogManager.getLogger("hive.ql.metadata.Hive");
+  Level oldLevel=logger.getLevel();
+  LoggerContext ctx=(LoggerContext)LogManager.getContext(false);
+  Configuration config=ctx.getConfiguration();
+  LoggerConfig loggerConfig=config.getLoggerConfig(logger.getName());
+  loggerConfig.setLevel(Level.DEBUG);
+  ctx.updateLoggers();
+  StringAppender appender=StringAppender.createStringAppender("%m");
+  appender.addToLogger(logger.getName(),Level.DEBUG);
+  appender.start();
   try {
-    logger.addAppender(appender);
     hm.clearMetaCallTiming();
     hm.getAllDatabases();
     hm.dumpAndClearMetaCallTiming("test");
-    String logStr=writer.toString();
+    String logStr=appender.getOutput();
     String expectedString="getAllDatabases_()=";
     Assert.assertTrue(logStr + " should contain <" + expectedString,logStr.contains(expectedString));
-    writer.getBuffer().setLength(0);
+    appender.reset();
     hm.dumpAndClearMetaCallTiming("test");
-    logStr=writer.toString();
+    logStr=appender.getOutput();
     Assert.assertFalse(logStr + " should not contain <" + expectedString,logStr.contains(expectedString));
   }
   finally {
-    logger.setLevel(origLevel);
-    logger.removeAppender(appender);
+    loggerConfig.setLevel(oldLevel);
+    ctx.updateLoggers();
+    appender.removeFromLogger(logger.getName());
   }
 }

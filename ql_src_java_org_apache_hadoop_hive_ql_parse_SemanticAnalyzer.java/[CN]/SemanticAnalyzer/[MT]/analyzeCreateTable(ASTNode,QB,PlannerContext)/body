@@ -192,6 +192,30 @@ throw new SemanticException(ErrorMsg.TABLE_ALREADY_EXISTS.getMsg(dbDotTab));
  catch (HiveException e) {
 throw new SemanticException(e);
 }
+if (location != null && location.length() != 0) {
+Path locPath=new Path(location);
+FileSystem curFs=null;
+FileStatus locStats=null;
+try {
+curFs=locPath.getFileSystem(conf);
+if (curFs != null) {
+locStats=curFs.getFileStatus(locPath);
+}
+if (locStats != null && locStats.isDir()) {
+FileStatus[] lStats=curFs.listStatus(locPath);
+if (lStats != null && lStats.length != 0) {
+throw new SemanticException(ErrorMsg.CTAS_LOCATION_NONEMPTY.getMsg(location));
+}
+}
+}
+ catch (FileNotFoundException nfe) {
+}
+catch (IOException ioE) {
+if (LOG.isDebugEnabled()) {
+LOG.debug("Exception when validate folder ",ioE);
+}
+}
+}
 tblProps=addDefaultProperties(tblProps);
 tableDesc=new CreateTableDesc(qualifiedTabName[0],dbDotTab,isExt,isTemporary,cols,partCols,bucketCols,sortCols,numBuckets,rowFormatParams.fieldDelim,rowFormatParams.fieldEscape,rowFormatParams.collItemDelim,rowFormatParams.mapKeyDelim,rowFormatParams.lineDelim,comment,storageFormat.getInputFormat(),storageFormat.getOutputFormat(),location,storageFormat.getSerde(),storageFormat.getStorageHandler(),storageFormat.getSerdeProps(),tblProps,ifNotExists,skewedColNames,skewedValues);
 tableDesc.setStoredAsSubDirectories(storedAsDirs);
