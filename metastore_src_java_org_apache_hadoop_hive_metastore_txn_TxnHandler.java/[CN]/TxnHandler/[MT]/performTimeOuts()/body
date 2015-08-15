@@ -1,0 +1,49 @@
+{
+  Connection dbConn=null;
+  Statement stmt=null;
+  ResultSet rs=null;
+  try {
+    dbConn=getDbConn(Connection.TRANSACTION_SERIALIZABLE);
+    long now=getDbTime(dbConn);
+    timeOutLocks(dbConn);
+    while (true) {
+      stmt=dbConn.createStatement();
+      String s=" txn_id from TXNS where txn_state = '" + TXN_OPEN + "' and txn_last_heartbeat <  "+ (now - timeout);
+      s=addLimitClause(dbConn,2500,s);
+      LOG.debug("Going to execute query <" + s + ">");
+      rs=stmt.executeQuery(s);
+      if (!rs.next()) {
+        return;
+      }
+      List<List<Long>> timedOutTxns=new ArrayList<>();
+      List<Long> currentBatch=new ArrayList<>(TIMED_OUT_TXN_ABORT_BATCH_SIZE);
+      timedOutTxns.add(currentBatch);
+      do {
+        currentBatch.add(rs.getLong(1));
+        if (currentBatch.size() == TIMED_OUT_TXN_ABORT_BATCH_SIZE) {
+          currentBatch=new ArrayList<>(TIMED_OUT_TXN_ABORT_BATCH_SIZE);
+          timedOutTxns.add(currentBatch);
+        }
+      }
+ while (rs.next());
+      close(rs,stmt,null);
+      dbConn.commit();
+      for (      List<Long> batchToAbort : timedOutTxns) {
+        abortTxns(dbConn,batchToAbort);
+        dbConn.commit();
+        LOG.info("Aborted the following transactions due to timeout: " + timedOutTxns.toString());
+      }
+      int numTxnsAborted=(timedOutTxns.size() - 1) * TIMED_OUT_TXN_ABORT_BATCH_SIZE + timedOutTxns.get(timedOutTxns.size() - 1).size();
+      LOG.info("Aborted " + numTxnsAborted + " transactions due to timeout");
+    }
+  }
+ catch (  SQLException ex) {
+    LOG.warn("Aborting timedout transactions failed due to " + getMessage(ex),ex);
+  }
+catch (  MetaException e) {
+    LOG.warn("Aborting timedout transactions failed due to " + e.getMessage(),e);
+  }
+ finally {
+    close(rs,stmt,dbConn);
+  }
+}
