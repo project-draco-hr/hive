@@ -1,15 +1,15 @@
 {
   if (t instanceof GenericArrayType) {
     GenericArrayType at=(GenericArrayType)t;
-    return getStandardListObjectInspector(getReflectionObjectInspector(at.getGenericComponentType(),options));
+    return getStandardListObjectInspector(getReflectionObjectInspector(at.getGenericComponentType(),options,ensureInited));
   }
   if (t instanceof ParameterizedType) {
     ParameterizedType pt=(ParameterizedType)t;
     if (List.class.isAssignableFrom((Class<?>)pt.getRawType()) || Set.class.isAssignableFrom((Class<?>)pt.getRawType())) {
-      return getStandardListObjectInspector(getReflectionObjectInspector(pt.getActualTypeArguments()[0],options));
+      return getStandardListObjectInspector(getReflectionObjectInspector(pt.getActualTypeArguments()[0],options,ensureInited));
     }
     if (Map.class.isAssignableFrom((Class<?>)pt.getRawType())) {
-      return getStandardMapObjectInspector(getReflectionObjectInspector(pt.getActualTypeArguments()[0],options),getReflectionObjectInspector(pt.getActualTypeArguments()[1],options));
+      return getStandardMapObjectInspector(getReflectionObjectInspector(pt.getActualTypeArguments()[0],options,ensureInited),getReflectionObjectInspector(pt.getActualTypeArguments()[1],options,ensureInited));
     }
     t=pt.getRawType();
   }
@@ -45,7 +45,19 @@ break;
 default :
 throw new RuntimeException(ObjectInspectorFactory.class.getName() + ": internal error.");
 }
-objectInspectorCache.put(t,oi);
-oi.init(c,options);
+ReflectionStructObjectInspector prev=(ReflectionStructObjectInspector)objectInspectorCache.putIfAbsent(t,oi);
+if (prev != null) {
+oi=prev;
+}
+ else {
+try {
+oi.init(t,c,options);
+}
+  finally {
+if (!oi.inited) {
+objectInspectorCache.remove(t,oi);
+}
+}
+}
 return oi;
 }
