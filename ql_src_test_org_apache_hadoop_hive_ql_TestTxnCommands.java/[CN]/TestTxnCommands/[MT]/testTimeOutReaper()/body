@@ -1,0 +1,15 @@
+{
+  runStatementOnDriver("set autocommit false");
+  runStatementOnDriver("start transaction");
+  runStatementOnDriver("delete from " + Table.ACIDTBL + " where a = 5");
+  hiveConf.setTimeVar(HiveConf.ConfVars.HIVE_TIMEDOUT_TXN_REAPER_START,0,TimeUnit.SECONDS);
+  hiveConf.setTimeVar(HiveConf.ConfVars.HIVE_TXN_TIMEOUT,1,TimeUnit.MILLISECONDS);
+  AcidHouseKeeperService houseKeeperService=new AcidHouseKeeperService();
+  houseKeeperService.start(hiveConf);
+  while (houseKeeperService.getIsAliveCounter() <= Integer.MIN_VALUE) {
+    Thread.sleep(100);
+  }
+  houseKeeperService.stop();
+  CommandProcessorResponse cpr=runStatementOnDriverNegative("delete from " + Table.ACIDTBL + " where a = 5");
+  Assert.assertTrue("Actual: " + cpr.getErrorMessage(),cpr.getErrorMessage().contains("Transaction manager has aborted the transaction txnid:1"));
+}

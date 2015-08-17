@@ -1,20 +1,20 @@
 {
   final SplitStrategy splitStrategy;
-  AcidUtils.Directory dirInfo=AcidUtils.getAcidState(dir,context.conf,context.transactionList);
+  AcidUtils.Directory dirInfo=AcidUtils.getAcidState(dir,context.conf,context.transactionList,useFileIds);
   List<DeltaMetaData> deltas=AcidUtils.serializeDeltas(dirInfo.getCurrentDirectories());
   Path base=dirInfo.getBaseDirectory();
-  List<FileStatus> original=dirInfo.getOriginalFiles();
+  List<HdfsFileStatusWithId> original=dirInfo.getOriginalFiles();
   boolean[] covered=new boolean[context.numBuckets];
   boolean isOriginal=base == null;
   if (base != null || !original.isEmpty()) {
-    List<FileStatus> children=original;
+    List<HdfsFileStatusWithId> children=original;
     if (base != null) {
-      children=SHIMS.listLocatedStatus(fs,base,AcidUtils.hiddenFileFilter);
+      children=findBaseFiles(base,useFileIds);
     }
     long totalFileSize=0;
-    for (    FileStatus child : children) {
-      totalFileSize+=child.getLen();
-      AcidOutputFormat.Options opts=AcidUtils.parseBaseBucketFilename(child.getPath(),context.conf);
+    for (    HdfsFileStatusWithId child : children) {
+      totalFileSize+=child.getFileStatus().getLen();
+      AcidOutputFormat.Options opts=AcidUtils.parseBaseBucketFilename(child.getFileStatus().getPath(),context.conf);
       int b=opts.getBucket();
       if (b >= 0 && b < covered.length) {
         covered[b]=true;

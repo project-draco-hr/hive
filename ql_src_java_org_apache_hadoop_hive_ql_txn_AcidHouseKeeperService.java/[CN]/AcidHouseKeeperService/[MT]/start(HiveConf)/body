@@ -1,0 +1,17 @@
+{
+  HiveTxnManager mgr=TxnManagerFactory.getTxnManagerFactory().getTxnManager(hiveConf);
+  if (!mgr.supportsAcid()) {
+    LOG.info(AcidHouseKeeperService.class.getName() + " not started since " + mgr.getClass().getName()+ " does not support Acid.");
+    return;
+  }
+  pool=Executors.newScheduledThreadPool(1,new ThreadFactory(){
+    private final AtomicInteger threadCounter=new AtomicInteger();
+    @Override public Thread newThread(    Runnable r){
+      return new Thread(r,"DeadTxnReaper-" + threadCounter.getAndIncrement());
+    }
+  }
+);
+  TimeUnit tu=TimeUnit.MILLISECONDS;
+  pool.scheduleAtFixedRate(new TimedoutTxnReaper(hiveConf,this),hiveConf.getTimeVar(HiveConf.ConfVars.HIVE_TIMEDOUT_TXN_REAPER_START,tu),hiveConf.getTimeVar(HiveConf.ConfVars.HIVE_TIMEDOUT_TXN_REAPER_INTERVAL,tu),TimeUnit.MILLISECONDS);
+  LOG.info("Started " + this.getClass().getName() + " with delay/interval = "+ hiveConf.getTimeVar(HiveConf.ConfVars.HIVE_TIMEDOUT_TXN_REAPER_START,tu)+ "/"+ hiveConf.getTimeVar(HiveConf.ConfVars.HIVE_TIMEDOUT_TXN_REAPER_INTERVAL,tu)+ " "+ tu);
+}

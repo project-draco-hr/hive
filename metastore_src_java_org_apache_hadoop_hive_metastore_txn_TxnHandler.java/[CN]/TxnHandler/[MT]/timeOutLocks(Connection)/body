@@ -1,15 +1,24 @@
 {
-  long now=getDbTime(dbConn);
   Statement stmt=null;
   try {
+    long now=getDbTime(dbConn);
     stmt=dbConn.createStatement();
-    String s="delete from HIVE_LOCKS where hl_last_heartbeat < " + (now - timeout);
+    String s="delete from HIVE_LOCKS where hl_last_heartbeat < " + (now - timeout) + " and (hl_txnid = 0 or hl_txnid is NULL)";
     LOG.debug("Going to execute update <" + s + ">");
-    stmt.executeUpdate(s);
+    int deletedLocks=stmt.executeUpdate(s);
+    if (deletedLocks > 0) {
+      LOG.info("Deleted " + deletedLocks + " locks from HIVE_LOCKS due to timeout");
+    }
     LOG.debug("Going to commit");
     dbConn.commit();
   }
-  finally {
+ catch (  SQLException ex) {
+    LOG.error("Failed to purge timedout locks due to: " + getMessage(ex),ex);
+  }
+catch (  Exception ex) {
+    LOG.error("Failed to purge timedout locks due to: " + ex.getMessage(),ex);
+  }
+ finally {
     closeStmt(stmt);
   }
 }
