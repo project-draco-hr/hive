@@ -1,0 +1,25 @@
+{
+  DistributedFileSystem dfs=ensureDfs(fs);
+  DFSClient dfsc=dfs.getClient();
+  final String src=p.toUri().getPath();
+  DirectoryListing current=dfsc.listPaths(src,org.apache.hadoop.hdfs.protocol.HdfsFileStatus.EMPTY_NAME,true);
+  if (current == null) {
+    throw new FileNotFoundException("File " + p + " does not exist.");
+  }
+  final URI fsUri=fs.getUri();
+  List<HdfsFileStatusWithId> result=new ArrayList<HdfsFileStatusWithId>(current.getPartialListing().length);
+  while (current != null) {
+    org.apache.hadoop.hdfs.protocol.HdfsFileStatus[] hfss=current.getPartialListing();
+    for (int i=0; i < hfss.length; ++i) {
+      HdfsLocatedFileStatus next=(HdfsLocatedFileStatus)(hfss[i]);
+      if (filter != null) {
+        Path filterPath=next.getFullPath(p).makeQualified(fsUri,null);
+        if (!filter.accept(filterPath))         continue;
+      }
+      LocatedFileStatus lfs=next.makeQualifiedLocated(fsUri,p);
+      result.add(new HdfsFileStatusWithIdImpl(lfs,next.getFileId()));
+    }
+    current=current.hasMore() ? dfsc.listPaths(src,current.getLastName(),true) : null;
+  }
+  return result;
+}
