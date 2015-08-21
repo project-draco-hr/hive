@@ -1,9 +1,23 @@
 {
+  testLock.lock();
   try {
-    forTestAwaitSchedulerStartSignal();
+    if (controlScheduling.get()) {
+      while (!schedulingTriggered.get()) {
+        try {
+          triggerSchedulingCondition.await();
+        }
+ catch (        InterruptedException e) {
+          throw new RuntimeException(e);
+        }
+      }
+    }
+    numSchedulerRuns.incrementAndGet();
     super.schedulePendingTasks();
+    schedulingTriggered.set(false);
+    schedulingComplete.set(true);
+    schedulingCompleteCondition.signal();
   }
   finally {
-    forTestMaybeSignalSchedulerRun();
+    testLock.unlock();
   }
 }
