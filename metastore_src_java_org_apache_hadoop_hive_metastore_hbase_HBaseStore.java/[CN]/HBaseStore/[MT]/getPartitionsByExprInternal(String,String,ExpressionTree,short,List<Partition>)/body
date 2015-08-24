@@ -3,15 +3,14 @@
   if (table == null) {
     throw new NoSuchObjectException("Unable to find table " + dbName + "."+ tblName);
   }
-  String firstPartitionColumn=table.getPartitionKeys().get(0).getName();
-  PlanResult planRes=HBaseFilterPlanUtil.getFilterPlan(exprTree,firstPartitionColumn);
+  PlanResult planRes=HBaseFilterPlanUtil.getFilterPlan(exprTree,table.getPartitionKeys());
   if (LOG.isDebugEnabled()) {
     LOG.debug("Hbase Filter Plan generated : " + planRes.plan);
   }
   Map<List<String>,Partition> mergedParts=new HashMap<List<String>,Partition>();
   for (  ScanPlan splan : planRes.plan.getPlans()) {
     try {
-      List<Partition> parts=getHBase().scanPartitions(dbName,tblName,splan.getStartRowSuffix(),splan.getEndRowSuffix(),null,-1);
+      List<Partition> parts=getHBase().scanPartitions(dbName,tblName,splan.getStartRowSuffix(dbName,tblName,table.getPartitionKeys()),splan.getEndRowSuffix(dbName,tblName,table.getPartitionKeys()),splan.getFilter(table.getPartitionKeys()),-1);
       boolean reachedMax=false;
       for (      Partition part : parts) {
         mergedParts.put(part.getValues(),part);

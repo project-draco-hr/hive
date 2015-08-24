@@ -1,0 +1,58 @@
+{
+  byte[] bytes=Arrays.copyOfRange(value,offset,offset + length);
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Get key " + new String(bytes));
+  }
+  BinarySortableSerDe serDe=new BinarySortableSerDe();
+  List deserializedkeys=null;
+  try {
+    serDe.initialize(new Configuration(),serdeProps);
+    deserializedkeys=((List)serDe.deserialize(new BytesWritable(bytes))).subList(2,2 + names.split(",").length);
+  }
+ catch (  SerDeException e) {
+    return 1;
+  }
+  for (int i=0; i < ranges.size(); i++) {
+    Range range=ranges.get(i);
+    NativeRange nativeRange=nativeRanges.get(i);
+    Comparable partVal=(Comparable)deserializedkeys.get(nativeRange.pos);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Try to match range " + partVal + ", start "+ nativeRange.start+ ", end "+ nativeRange.end);
+    }
+    if (range.start == null || range.start.inclusive && partVal.compareTo(nativeRange.start) >= 0 || !range.start.inclusive && partVal.compareTo(nativeRange.start) > 0) {
+      if (range.end == null || range.end.inclusive && partVal.compareTo(nativeRange.end) <= 0 || !range.end.inclusive && partVal.compareTo(nativeRange.end) < 0) {
+        continue;
+      }
+    }
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Fail to match range " + range.keyName + "-"+ partVal+ "["+ nativeRange.start+ ","+ nativeRange.end+ "]");
+    }
+    return 1;
+  }
+  for (int i=0; i < ops.size(); i++) {
+    Operator op=ops.get(i);
+    NativeOperator nativeOp=nativeOps.get(i);
+switch (op.type) {
+case LIKE:
+      if (!deserializedkeys.get(nativeOp.pos).toString().matches(op.val)) {
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("Fail to match operator " + op.keyName + "("+ deserializedkeys.get(nativeOp.pos)+ ") LIKE "+ nativeOp.val);
+        }
+        return 1;
+      }
+    break;
+case NOTEQUALS:
+  if (nativeOp.val.equals(deserializedkeys.get(nativeOp.pos))) {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Fail to match operator " + op.keyName + "("+ deserializedkeys.get(nativeOp.pos)+ ")!="+ nativeOp.val);
+    }
+    return 1;
+  }
+break;
+}
+}
+if (LOG.isDebugEnabled()) {
+LOG.debug("All conditions satisfied:" + deserializedkeys);
+}
+return 0;
+}

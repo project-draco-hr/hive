@@ -17,40 +17,28 @@
   if (table == null) {
     throw new NoSuchObjectException("Unable to find table " + dbName + "."+ tableName);
   }
-  if (partVals.size() == table.getPartitionKeys().size()) {
-    keyPrefix=HBaseUtils.buildKey(keyElements.toArray(new String[keyElements.size()]));
-  }
- else {
-    keyPrefix=HBaseUtils.buildKeyWithTrailingSeparator(keyElements.toArray(new String[keyElements.size()]));
-  }
-  String regex=null;
+  keyPrefix=HBaseUtils.buildPartitionKey(dbName,tableName,HBaseUtils.getPartitionKeyTypes(table.getPartitionKeys().subList(0,keyElements.size() - 2)),keyElements.subList(0,keyElements.size() - 2));
+  List<PartitionKeyComparator.Range> ranges=new ArrayList<PartitionKeyComparator.Range>();
+  List<Operator> ops=new ArrayList<Operator>();
   if (!(partVals.size() == table.getPartitionKeys().size() && firstStar == -1)) {
-    StringBuilder buf=new StringBuilder(".*");
     for (int i=Math.max(0,firstStar); i < table.getPartitionKeys().size() && i < partVals.size(); i++) {
-      buf.append(HBaseUtils.KEY_SEPARATOR);
       if ("*".equals(partVals.get(i))) {
-        buf.append("[^");
-        buf.append(HBaseUtils.KEY_SEPARATOR);
-        buf.append("]+");
+        PartitionKeyComparator.Range range=new PartitionKeyComparator.Range(table.getPartitionKeys().get(i).getName(),new PartitionKeyComparator.Mark(partVals.get(i),true),new PartitionKeyComparator.Mark(partVals.get(i),true));
+        ranges.add(range);
       }
  else {
-        buf.append(partVals.get(i));
+        PartitionKeyComparator.Operator op=new PartitionKeyComparator.Operator(PartitionKeyComparator.Operator.Type.LIKE,table.getPartitionKeys().get(i).getName(),".*");
       }
     }
-    if (partVals.size() < table.getPartitionKeys().size()) {
-      buf.append(HBaseUtils.KEY_SEPARATOR);
-      buf.append(".*");
-    }
-    regex=buf.toString();
   }
   Filter filter=null;
-  if (regex != null) {
-    filter=new RowFilter(CompareFilter.CompareOp.EQUAL,new RegexStringComparator(regex));
+  if (!ranges.isEmpty() || !ops.isEmpty()) {
+    filter=new RowFilter(CompareFilter.CompareOp.EQUAL,new PartitionKeyComparator(StringUtils.join(HBaseUtils.getPartitionNames(table.getPartitionKeys()),","),StringUtils.join(HBaseUtils.getPartitionKeyTypes(table.getPartitionKeys()),","),ranges,ops));
   }
   if (LOG.isDebugEnabled()) {
-    LOG.debug("Scanning partitions with prefix <" + new String(keyPrefix) + "> and filter <"+ regex+ ">");
+    LOG.debug("Scanning partitions with prefix <" + new String(keyPrefix) + "> and filter <"+ filter+ ">");
   }
-  List<Partition> parts=scanPartitionsWithFilter(keyPrefix,HBaseUtils.getEndPrefix(keyPrefix),maxPartitions,filter);
+  List<Partition> parts=scanPartitionsWithFilter(dbName,tableName,keyPrefix,HBaseUtils.getEndPrefix(keyPrefix),maxPartitions,filter);
   partCache.put(dbName,tableName,parts,false);
   return parts;
 }
