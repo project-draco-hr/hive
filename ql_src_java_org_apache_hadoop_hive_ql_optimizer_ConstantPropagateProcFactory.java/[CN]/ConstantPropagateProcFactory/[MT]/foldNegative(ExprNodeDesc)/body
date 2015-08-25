@@ -1,0 +1,40 @@
+{
+  if (desc instanceof ExprNodeGenericFuncDesc) {
+    ExprNodeGenericFuncDesc funcDesc=(ExprNodeGenericFuncDesc)desc;
+    GenericUDF udf=funcDesc.getGenericUDF();
+    if (udf instanceof GenericUDFOPNot) {
+      ExprNodeDesc child=funcDesc.getChildren().get(0);
+      if (child instanceof ExprNodeGenericFuncDesc) {
+        ExprNodeGenericFuncDesc childDesc=(ExprNodeGenericFuncDesc)child;
+        GenericUDF childUDF=childDesc.getGenericUDF();
+        List<ExprNodeDesc> grandChildren=child.getChildren();
+        if (childUDF instanceof GenericUDFBaseCompare || childUDF instanceof GenericUDFOPNull || childUDF instanceof GenericUDFOPNotNull) {
+          List<ExprNodeDesc> newGrandChildren=new ArrayList<ExprNodeDesc>();
+          for (          ExprNodeDesc grandChild : grandChildren) {
+            newGrandChildren.add(foldNegative(grandChild));
+          }
+          return ExprNodeGenericFuncDesc.newInstance(childUDF.negative(),newGrandChildren);
+        }
+ else         if (childUDF instanceof GenericUDFOPAnd || childUDF instanceof GenericUDFOPOr) {
+          List<ExprNodeDesc> newGrandChildren=new ArrayList<ExprNodeDesc>();
+          for (          ExprNodeDesc grandChild : grandChildren) {
+            newGrandChildren.add(foldNegative(ExprNodeGenericFuncDesc.newInstance(new GenericUDFOPNot(),Arrays.asList(grandChild))));
+          }
+          return ExprNodeGenericFuncDesc.newInstance(childUDF.negative(),newGrandChildren);
+        }
+ else         if (childUDF instanceof GenericUDFOPNot) {
+          return foldNegative(child.getChildren().get(0));
+        }
+ else {
+          List<ExprNodeDesc> newGrandChildren=new ArrayList<ExprNodeDesc>();
+          for (          ExprNodeDesc grandChild : grandChildren) {
+            newGrandChildren.add(foldNegative(grandChild));
+          }
+          childDesc.setChildren(newGrandChildren);
+          return funcDesc;
+        }
+      }
+    }
+  }
+  return desc;
+}

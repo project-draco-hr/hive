@@ -1,12 +1,37 @@
 {
   HiveSession session;
   if (withImpersonation) {
-    HiveSessionImplwithUGI sessionWithUGI=new HiveSessionImplwithUGI(protocol,username,password,hiveConf,ipAddress,delegationToken);
-    session=HiveSessionProxy.getProxy(sessionWithUGI,sessionWithUGI.getSessionUgi());
-    sessionWithUGI.setProxySession(session);
+    HiveSessionImplwithUGI hiveSessionUgi;
+    if (sessionImplWithUGIclassName == null) {
+      hiveSessionUgi=new HiveSessionImplwithUGI(protocol,username,password,hiveConf,ipAddress,delegationToken);
+    }
+ else {
+      try {
+        Class<?> clazz=Class.forName(sessionImplWithUGIclassName);
+        Constructor<?> constructor=clazz.getConstructor(String.class,String.class,Map.class,String.class);
+        hiveSessionUgi=(HiveSessionImplwithUGI)constructor.newInstance(new Object[]{protocol,username,password,hiveConf,ipAddress,delegationToken});
+      }
+ catch (      Exception e) {
+        throw new HiveSQLException("Cannot initilize session class:" + sessionImplWithUGIclassName);
+      }
+    }
+    session=HiveSessionProxy.getProxy(hiveSessionUgi,hiveSessionUgi.getSessionUgi());
+    hiveSessionUgi.setProxySession(session);
   }
  else {
-    session=new HiveSessionImpl(protocol,username,password,hiveConf,ipAddress);
+    if (sessionImplclassName == null) {
+      session=new HiveSessionImpl(protocol,username,password,hiveConf,ipAddress);
+    }
+ else {
+      try {
+        Class<?> clazz=Class.forName(sessionImplclassName);
+        Constructor<?> constructor=clazz.getConstructor(String.class,String.class,Map.class);
+        session=(HiveSession)constructor.newInstance(new Object[]{protocol,username,password,hiveConf,ipAddress});
+      }
+ catch (      Exception e) {
+        throw new HiveSQLException("Cannot initilize session class:" + sessionImplclassName);
+      }
+    }
   }
   session.setSessionManager(this);
   session.setOperationManager(operationManager);
