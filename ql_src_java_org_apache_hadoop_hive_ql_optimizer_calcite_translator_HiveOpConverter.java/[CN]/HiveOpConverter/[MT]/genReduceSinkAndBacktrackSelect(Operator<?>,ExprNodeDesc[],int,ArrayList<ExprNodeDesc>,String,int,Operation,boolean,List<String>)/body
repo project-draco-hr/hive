@@ -1,8 +1,29 @@
 {
-  if (input.getSchema().getTableNames().size() != 1) {
-    throw new SemanticException("In CBO return path, genReduceSinkAndBacktrackSelect is expecting only one SelectOp but there is " + input.getSchema().getTableNames().size());
+  String tableAlias=null;
+  Set<String> tableNames=input.getSchema().getTableNames();
+  for (  String tableName : tableNames) {
+    if (tableName != null) {
+      if (tableName.length() == 0) {
+        if (tableAlias == null) {
+          tableAlias=tableName;
+        }
+      }
+ else {
+        if (tableAlias == null || tableAlias.length() == 0) {
+          tableAlias=tableName;
+        }
+ else {
+          if (!tableName.equals(tableAlias)) {
+            throw new SemanticException("In CBO return path, genReduceSinkAndBacktrackSelect is expecting only one tableAlias but there is more than one");
+          }
+        }
+      }
+    }
   }
-  ReduceSinkOperator rsOp=genReduceSink(input,input.getSchema().getTableNames().iterator().next(),keys,tag,partitionCols,order,numReducers,acidOperation,strictMode);
+  if (tableAlias == null) {
+    throw new SemanticException("In CBO return path, genReduceSinkAndBacktrackSelect is expecting only one tableAlias but there is none");
+  }
+  ReduceSinkOperator rsOp=genReduceSink(input,tableAlias,keys,tag,partitionCols,order,numReducers,acidOperation,strictMode);
   Map<String,ExprNodeDesc> descriptors=buildBacktrackFromReduceSink(keepColNames,rsOp.getConf().getOutputKeyColumnNames(),rsOp.getConf().getOutputValueColumnNames(),rsOp.getValueIndex(),input);
   SelectDesc selectDesc=new SelectDesc(new ArrayList<ExprNodeDesc>(descriptors.values()),new ArrayList<String>(descriptors.keySet()));
   ArrayList<ColumnInfo> cinfoLst=createColInfosSubset(input,keepColNames);
