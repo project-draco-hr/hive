@@ -19,8 +19,17 @@
     serDe.initialize(new Configuration(),props);
     List deserializedkeys=((List)serDe.deserialize(new BytesWritable(key))).subList(2,partitions.size() + 2);
     List<String> partitionKeys=new ArrayList<String>();
-    for (    Object deserializedKey : deserializedkeys) {
-      partitionKeys.add(deserializedKey != null ? deserializedKey.toString() : HiveConf.getVar(conf,HiveConf.ConfVars.DEFAULTPARTITIONNAME));
+    for (int i=0; i < deserializedkeys.size(); i++) {
+      Object deserializedKey=deserializedkeys.get(i);
+      if (deserializedKey == null) {
+        partitionKeys.add(HiveConf.getVar(conf,HiveConf.ConfVars.DEFAULTPARTITIONNAME));
+      }
+ else {
+        TypeInfo inputType=TypeInfoUtils.getTypeInfoFromTypeString(partitions.get(i).getType());
+        ObjectInspector inputOI=TypeInfoUtils.getStandardWritableObjectInspectorFromTypeInfo(inputType);
+        Converter converter=ObjectInspectorConverters.getConverter(inputOI,PrimitiveObjectInspectorFactory.javaStringObjectInspector);
+        partitionKeys.add((String)converter.convert(deserializedKey));
+      }
     }
     return partitionKeys;
   }

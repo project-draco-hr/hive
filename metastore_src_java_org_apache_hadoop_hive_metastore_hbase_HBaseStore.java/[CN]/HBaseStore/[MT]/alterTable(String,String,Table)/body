@@ -2,17 +2,21 @@
   boolean commit=false;
   openTransaction();
   try {
-    getHBase().replaceTable(getHBase().getTable(HiveStringUtils.normalizeIdentifier(dbname),HiveStringUtils.normalizeIdentifier(name)),newTable);
-    if (newTable.getPartitionKeys() != null && newTable.getPartitionKeys().size() > 0 && !name.equals(newTable.getTableName())) {
+    Table newTableCopy=newTable.deepCopy();
+    newTableCopy.setDbName(HiveStringUtils.normalizeIdentifier(newTableCopy.getDbName()));
+    List<String> oldPartTypes=getTable(dbName,tableName).getPartitionKeys() == null ? null : HBaseUtils.getPartitionKeyTypes(getTable(dbName,tableName).getPartitionKeys());
+    newTableCopy.setTableName(HiveStringUtils.normalizeIdentifier(newTableCopy.getTableName()));
+    getHBase().replaceTable(getHBase().getTable(HiveStringUtils.normalizeIdentifier(dbName),HiveStringUtils.normalizeIdentifier(tableName)),newTableCopy);
+    if (newTable.getPartitionKeys() != null && newTable.getPartitionKeys().size() > 0 && !tableName.equals(newTable.getTableName())) {
       try {
-        List<Partition> oldParts=getPartitions(dbname,name,-1);
+        List<Partition> oldParts=getPartitions(dbName,tableName,-1);
         List<Partition> newParts=new ArrayList<>(oldParts.size());
         for (        Partition oldPart : oldParts) {
           Partition newPart=oldPart.deepCopy();
           newPart.setTableName(newTable.getTableName());
           newParts.add(newPart);
         }
-        getHBase().replacePartitions(oldParts,newParts);
+        getHBase().replacePartitions(oldParts,newParts,oldPartTypes);
       }
  catch (      NoSuchObjectException e) {
         LOG.debug("No partitions found for old table so not worrying about it");
@@ -21,8 +25,8 @@
     commit=true;
   }
  catch (  IOException e) {
-    LOG.error("Unable to alter table " + tableNameForErrorMsg(dbname,name),e);
-    throw new MetaException("Unable to alter table " + tableNameForErrorMsg(dbname,name));
+    LOG.error("Unable to alter table " + tableNameForErrorMsg(dbName,tableName),e);
+    throw new MetaException("Unable to alter table " + tableNameForErrorMsg(dbName,tableName));
   }
  finally {
     commitOrRoleBack(commit);
