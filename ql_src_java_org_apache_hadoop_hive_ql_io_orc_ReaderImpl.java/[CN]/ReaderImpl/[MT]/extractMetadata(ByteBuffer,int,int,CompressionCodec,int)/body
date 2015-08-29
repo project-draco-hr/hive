@@ -1,0 +1,31 @@
+{
+  bb.position(metadataAbsPos);
+  bb.limit(metadataAbsPos + metadataSize);
+  InputStream instream=InStream.create("metadata",Lists.<DiskRange>newArrayList(new BufferChunk(bb,0)),metadataSize,codec,bufferSize);
+  CodedInputStream in=CodedInputStream.newInstance(instream);
+  int msgLimit=DEFAULT_PROTOBUF_MESSAGE_LIMIT;
+  OrcProto.Metadata meta=null;
+  do {
+    try {
+      in.setSizeLimit(msgLimit);
+      meta=OrcProto.Metadata.parseFrom(in);
+    }
+ catch (    InvalidProtocolBufferException e) {
+      if (e.getMessage().contains("Protocol message was too large")) {
+        LOG.warn("Metadata section is larger than " + msgLimit + " bytes. Increasing the max"+ " size of the coded input stream.");
+        msgLimit=msgLimit << 1;
+        if (msgLimit > PROTOBUF_MESSAGE_MAX_LIMIT) {
+          LOG.error("Metadata section exceeds max protobuf message size of " + PROTOBUF_MESSAGE_MAX_LIMIT + " bytes.");
+          throw e;
+        }
+        instream=InStream.create("metadata",Lists.<DiskRange>newArrayList(new BufferChunk(bb,0)),metadataSize,codec,bufferSize);
+        in=CodedInputStream.newInstance(instream);
+      }
+ else {
+        throw e;
+      }
+    }
+  }
+ while (meta == null);
+  return meta;
+}
