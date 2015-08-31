@@ -1,5 +1,17 @@
 {
-  InternalCompletionListenerForTest icl=new InternalCompletionListenerForTest(taskWrapper);
-  completionListeners.put(taskWrapper.getRequestId(),icl);
-  return icl;
+  iclCreationLock.lock();
+  try {
+    InternalCompletionListenerForTest icl=new InternalCompletionListenerForTest(taskWrapper);
+    completionListeners.put(taskWrapper.getRequestId(),icl);
+    Condition condition=iclCreationConditions.get(taskWrapper.getRequestId());
+    if (condition == null) {
+      condition=iclCreationLock.newCondition();
+      iclCreationConditions.put(taskWrapper.getRequestId(),condition);
+    }
+    condition.signalAll();
+    return icl;
+  }
+  finally {
+    iclCreationLock.unlock();
+  }
 }

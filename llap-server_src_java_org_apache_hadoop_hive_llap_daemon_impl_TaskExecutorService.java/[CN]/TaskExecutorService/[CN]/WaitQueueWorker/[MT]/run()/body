@@ -1,6 +1,7 @@
 {
   try {
     while (!isShutdown.get()) {
+      RejectedExecutionException rejectedException=null;
 synchronized (lock) {
         task=waitQueue.peek();
         if (task == null) {
@@ -29,12 +30,16 @@ synchronized (lock) {
           }
           continue;
         }
-      }
-      boolean scheduled=trySchedule(task);
-      if (scheduled) {
-synchronized (lock) {
+        try {
+          trySchedule(task);
           waitQueue.remove(task);
         }
+ catch (        RejectedExecutionException e) {
+          rejectedException=e;
+        }
+      }
+      if (rejectedException != null) {
+        handleScheduleAttemptedRejection(task);
       }
 synchronized (lock) {
         while (waitQueue.isEmpty()) {
