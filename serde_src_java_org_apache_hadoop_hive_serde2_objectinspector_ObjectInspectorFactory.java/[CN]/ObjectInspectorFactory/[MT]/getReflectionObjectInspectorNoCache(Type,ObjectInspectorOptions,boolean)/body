@@ -1,0 +1,63 @@
+{
+  if (t instanceof GenericArrayType) {
+    GenericArrayType at=(GenericArrayType)t;
+    return getStandardListObjectInspector(getReflectionObjectInspector(at.getGenericComponentType(),options,ensureInited));
+  }
+  if (t instanceof ParameterizedType) {
+    ParameterizedType pt=(ParameterizedType)t;
+    if (List.class.isAssignableFrom((Class<?>)pt.getRawType()) || Set.class.isAssignableFrom((Class<?>)pt.getRawType())) {
+      return getStandardListObjectInspector(getReflectionObjectInspector(pt.getActualTypeArguments()[0],options,ensureInited));
+    }
+    if (Map.class.isAssignableFrom((Class<?>)pt.getRawType())) {
+      return getStandardMapObjectInspector(getReflectionObjectInspector(pt.getActualTypeArguments()[0],options,ensureInited),getReflectionObjectInspector(pt.getActualTypeArguments()[1],options,ensureInited));
+    }
+    t=pt.getRawType();
+  }
+  if (!(t instanceof Class)) {
+    throw new RuntimeException(ObjectInspectorFactory.class.getName() + " internal error:" + t);
+  }
+  Class<?> c=(Class<?>)t;
+  if (PrimitiveObjectInspectorUtils.isPrimitiveJavaType(c)) {
+    return PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveObjectInspectorUtils.getTypeEntryFromPrimitiveJavaType(c).primitiveCategory);
+  }
+  if (PrimitiveObjectInspectorUtils.isPrimitiveJavaClass(c)) {
+    return PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveObjectInspectorUtils.getTypeEntryFromPrimitiveJavaClass(c).primitiveCategory);
+  }
+  if (PrimitiveObjectInspectorUtils.isPrimitiveWritableClass(c)) {
+    return PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(PrimitiveObjectInspectorUtils.getTypeEntryFromPrimitiveWritableClass(c).primitiveCategory);
+  }
+  if (Enum.class.isAssignableFrom(c)) {
+    return PrimitiveObjectInspectorFactory.getPrimitiveJavaObjectInspector(PrimitiveObjectInspector.PrimitiveCategory.STRING);
+  }
+  assert(!List.class.isAssignableFrom(c));
+  assert(!Map.class.isAssignableFrom(c));
+  ReflectionStructObjectInspector oi;
+switch (options) {
+case JAVA:
+    oi=new ReflectionStructObjectInspector();
+  break;
+case THRIFT:
+oi=TUnion.class.isAssignableFrom(c) ? new ThriftUnionObjectInspector() : new ThriftStructObjectInspector();
+break;
+case PROTOCOL_BUFFERS:
+oi=new ProtocolBuffersStructObjectInspector();
+break;
+default :
+throw new RuntimeException(ObjectInspectorFactory.class.getName() + ": internal error.");
+}
+ReflectionStructObjectInspector prev=(ReflectionStructObjectInspector)objectInspectorCache.putIfAbsent(t,oi);
+if (prev != null) {
+oi=prev;
+}
+ else {
+try {
+oi.init(t,c,options);
+}
+  finally {
+if (!oi.inited) {
+objectInspectorCache.remove(t,oi);
+}
+}
+}
+return oi;
+}

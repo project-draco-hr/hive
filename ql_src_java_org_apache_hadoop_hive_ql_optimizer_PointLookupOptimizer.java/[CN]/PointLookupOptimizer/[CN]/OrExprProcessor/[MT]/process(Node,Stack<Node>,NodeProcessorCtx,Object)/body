@@ -4,6 +4,9 @@
     return null;
   }
   List<ExprNodeDesc> children=fd.getChildren();
+  if (children.size() < minOrExpr) {
+    return null;
+  }
   ListMultimap<String,Pair<ExprNodeColumnDesc,ExprNodeConstantDesc>> columnConstantsMap=ArrayListMultimap.create();
   boolean modeAnd=false;
   for (int i=0; i < children.size(); i++) {
@@ -100,5 +103,29 @@
     newChildren.add(values);
   }
   newPredicate=new ExprNodeGenericFuncDesc(TypeInfoFactory.booleanTypeInfo,FunctionRegistry.getFunctionInfo(IN_UDF).getGenericUDF(),newChildren);
+  if (extract && columns.size() > 1) {
+    final List<ExprNodeDesc> subExpr=new ArrayList<ExprNodeDesc>(columns.size() + 1);
+    for (    String keyString : columnConstantsMap.keySet()) {
+      final Set<ExprNodeDescEqualityWrapper> valuesExpr=new HashSet<ExprNodeDescEqualityWrapper>(children.size());
+      final List<Pair<ExprNodeColumnDesc,ExprNodeConstantDesc>> partial=columnConstantsMap.get(keyString);
+      for (int i=0; i < children.size(); i++) {
+        Pair<ExprNodeColumnDesc,ExprNodeConstantDesc> columnConstant=partial.get(i);
+        valuesExpr.add(new ExprNodeDescEqualityWrapper(columnConstant.right));
+      }
+      ExprNodeColumnDesc lookupCol=partial.get(0).left;
+      if (lookupCol.getIsPartitionColOrVirtualCol() || valuesExpr.size() < children.size()) {
+        final List<ExprNodeDesc> inExpr=new ArrayList<ExprNodeDesc>();
+        inExpr.add(lookupCol);
+        for (        ExprNodeDescEqualityWrapper value : sortForTests(valuesExpr)) {
+          inExpr.add(value.getExprNodeDesc());
+        }
+        subExpr.add(new ExprNodeGenericFuncDesc(TypeInfoFactory.booleanTypeInfo,FunctionRegistry.getFunctionInfo(IN_UDF).getGenericUDF(),inExpr));
+      }
+    }
+    if (subExpr.size() > 0) {
+      subExpr.add(newPredicate);
+      newPredicate=new ExprNodeGenericFuncDesc(TypeInfoFactory.booleanTypeInfo,FunctionRegistry.getFunctionInfo(AND_UDF).getGenericUDF(),subExpr);
+    }
+  }
   return newPredicate;
 }
