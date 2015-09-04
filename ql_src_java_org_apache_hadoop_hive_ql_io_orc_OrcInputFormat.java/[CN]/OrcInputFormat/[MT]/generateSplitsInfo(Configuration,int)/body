@@ -2,31 +2,35 @@
   Context context=new Context(conf,numSplits);
   boolean useFileIds=HiveConf.getBoolVar(conf,ConfVars.HIVE_ORC_INCLUDE_FILE_ID_IN_SPLITS);
   List<OrcSplit> splits=Lists.newArrayList();
-  List<Future<?>> pathFutures=Lists.newArrayList();
-  List<Future<?>> splitFutures=Lists.newArrayList();
-  for (  Path dir : getInputPaths(conf)) {
+  List<Future<AcidDirInfo>> pathFutures=Lists.newArrayList();
+  List<Future<List<OrcSplit>>> splitFutures=Lists.newArrayList();
+  Path[] paths=getInputPaths(conf);
+  CompletionService<AcidDirInfo> ecs=new ExecutorCompletionService<>(Context.threadPool);
+  for (  Path dir : paths) {
     FileSystem fs=dir.getFileSystem(conf);
     FileGenerator fileGenerator=new FileGenerator(context,fs,dir,useFileIds);
-    pathFutures.add(context.threadPool.submit(fileGenerator));
+    pathFutures.add(ecs.submit(fileGenerator));
   }
   try {
-    for (    Future<?> pathFuture : pathFutures) {
-      SplitStrategy splitStrategy=(SplitStrategy)pathFuture.get();
+    for (int notIndex=0; notIndex < paths.length; ++notIndex) {
+      AcidDirInfo adi=ecs.take().get();
+      SplitStrategy<?> splitStrategy=determineSplitStrategy(context,adi.fs,adi.splitPath,adi.acidInfo,adi.baseOrOriginalFiles);
       if (isDebugEnabled) {
         LOG.debug(splitStrategy);
       }
       if (splitStrategy instanceof ETLSplitStrategy) {
-        List<SplitInfo> splitInfos=splitStrategy.getSplits();
+        List<SplitInfo> splitInfos=((ETLSplitStrategy)splitStrategy).getSplits();
         for (        SplitInfo splitInfo : splitInfos) {
-          splitFutures.add(context.threadPool.submit(new SplitGenerator(splitInfo)));
+          splitFutures.add(Context.threadPool.submit(new SplitGenerator(splitInfo)));
         }
       }
  else {
-        splits.addAll(splitStrategy.getSplits());
+        @SuppressWarnings("unchecked") List<OrcSplit> readySplits=(List<OrcSplit>)splitStrategy.getSplits();
+        splits.addAll(readySplits);
       }
     }
-    for (    Future<?> splitFuture : splitFutures) {
-      splits.addAll((Collection<? extends OrcSplit>)splitFuture.get());
+    for (    Future<List<OrcSplit>> splitFuture : splitFutures) {
+      splits.addAll(splitFuture.get());
     }
   }
  catch (  Exception e) {

@@ -1,0 +1,52 @@
+{
+  FilterPredicate p=null;
+switch (root.getOperator()) {
+case OR:
+    for (    ExpressionTree child : root.getChildren()) {
+      if (p == null) {
+        p=translate(child,leaves,columns,schema);
+      }
+ else {
+        FilterPredicate right=translate(child,leaves,columns,schema);
+        if (right != null) {
+          p=FilterApi.or(p,right);
+        }
+      }
+    }
+  return p;
+case AND:
+for (ExpressionTree child : root.getChildren()) {
+  if (p == null) {
+    p=translate(child,leaves,columns,schema);
+  }
+ else {
+    FilterPredicate right=translate(child,leaves,columns,schema);
+    if (right != null) {
+      p=FilterApi.and(p,right);
+    }
+  }
+}
+return p;
+case NOT:
+FilterPredicate op=translate(root.getChildren().get(0),leaves,columns,schema);
+if (op != null) {
+return FilterApi.not(op);
+}
+ else {
+return null;
+}
+case LEAF:
+PredicateLeaf leaf=leaves.get(root.getLeaf());
+if (columns.contains(leaf.getColumnName())) {
+Type parquetType=schema.getType(leaf.getColumnName());
+return buildFilterPredicateFromPredicateLeaf(leaf,parquetType);
+}
+ else {
+return null;
+}
+case CONSTANT:
+return null;
+default :
+throw new IllegalStateException("Unknown operator: " + root.getOperator());
+}
+}

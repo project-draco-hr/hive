@@ -1,9 +1,21 @@
 {
   boolean originalPpd=hiveConf.getBoolVar(HiveConf.ConfVars.HIVEOPTINDEXFILTER);
   hiveConf.setBoolVar(HiveConf.ConfVars.HIVEOPTINDEXFILTER,enablePPD);
-  int[][] tableData={{1,2},{3,4}};
-  runStatementOnDriver("insert into " + Table.ACIDTBL + "(a,b) "+ makeValuesClause(tableData));
-  List<String> rs2=runStatementOnDriver("select a,b from " + Table.ACIDTBL + " where a > 1 order by a,b");
+  runStatementOnDriver("insert into " + Table.ACIDTBL + "(a,b) "+ makeValuesClause(new int[][]{{1,2},{3,4}}));
+  List<String> explain;
+  String query="update " + Table.ACIDTBL + " set b = 5 where a = 3";
+  if (enablePPD) {
+    explain=runStatementOnDriver("explain " + query);
+    assertPredicateIsPushed("filterExpr: (a = 3)",explain);
+  }
+  runStatementOnDriver(query);
+  query="select a,b from " + Table.ACIDTBL + " where b = 4 order by a,b";
+  if (enablePPD) {
+    explain=runStatementOnDriver("explain " + query);
+    assertPredicateIsPushed("filterExpr: (b = 4)",explain);
+  }
+  List<String> rs0=runStatementOnDriver(query);
+  Assert.assertEquals("Read failed",0,rs0.size());
   runStatementOnDriver("alter table " + Table.ACIDTBL + " compact 'MAJOR'");
   Worker t=new Worker();
   t.setThreadId((int)t.getId());
@@ -15,10 +27,18 @@
   t.run();
   int[][] tableData2={{1,7},{5,6},{7,8},{9,10}};
   runStatementOnDriver("insert into " + Table.ACIDTBL + "(a,b) "+ makeValuesClause(tableData2));
+  if (enablePPD) {
+    explain=runStatementOnDriver("explain delete from " + Table.ACIDTBL + " where a=7 and b=8");
+    assertPredicateIsPushed("filterExpr: ((a = 7) and (b = 8))",explain);
+  }
   runStatementOnDriver("delete from " + Table.ACIDTBL + " where a=7 and b=8");
-  runStatementOnDriver("update " + Table.ACIDTBL + " set b = 11 where a = 9");
-  List<String> rs1=runStatementOnDriver("select a,b from " + Table.ACIDTBL + " where a > 1 order by a,b");
-  int[][] resultData={{3,4},{5,6},{9,11}};
+  query="select a,b from " + Table.ACIDTBL + " where a > 1 order by a,b";
+  if (enablePPD) {
+    explain=runStatementOnDriver("explain " + query);
+    assertPredicateIsPushed("filterExpr: (a > 1)",explain);
+  }
+  List<String> rs1=runStatementOnDriver(query);
+  int[][] resultData=new int[][]{{3,5},{5,6},{9,10}};
   Assert.assertEquals("Update failed",stringifyValues(resultData),rs1);
   hiveConf.setBoolVar(HiveConf.ConfVars.HIVEOPTINDEXFILTER,originalPpd);
 }

@@ -5,38 +5,8 @@
   this.metadataSize=metadataSize;
   int position=footerBuffer.position();
   int footerBufferSize=footerBuffer.limit() - footerBuffer.position() - metadataSize;
-  footerBuffer.limit(position + metadataSize);
-  InputStream instream=InStream.create(null,"metadata",Lists.<DiskRange>newArrayList(new BufferChunk(footerBuffer,0)),metadataSize,codec,bufferSize);
-  CodedInputStream in=CodedInputStream.newInstance(instream);
-  int msgLimit=DEFAULT_PROTOBUF_MESSAGE_LIMIT;
-  OrcProto.Metadata meta=null;
-  do {
-    try {
-      in.setSizeLimit(msgLimit);
-      meta=OrcProto.Metadata.parseFrom(in);
-    }
- catch (    InvalidProtocolBufferException e) {
-      if (e.getMessage().contains("Protocol message was too large")) {
-        LOG.warn("Metadata section is larger than " + msgLimit + " bytes. Increasing the max"+ " size of the coded input stream.");
-        msgLimit=msgLimit << 1;
-        if (msgLimit > PROTOBUF_MESSAGE_MAX_LIMIT) {
-          LOG.error("Metadata section exceeds max protobuf message size of " + PROTOBUF_MESSAGE_MAX_LIMIT + " bytes.");
-          throw e;
-        }
-        instream=InStream.create(null,"metadata",Lists.<DiskRange>newArrayList(new BufferChunk(footerBuffer,0)),metadataSize,codec,bufferSize);
-        in=CodedInputStream.newInstance(instream);
-      }
- else {
-        throw e;
-      }
-    }
-  }
- while (meta == null);
-  this.metadata=meta;
-  footerBuffer.position(position + metadataSize);
-  footerBuffer.limit(position + metadataSize + footerBufferSize);
-  instream=InStream.create(null,"footer",Lists.<DiskRange>newArrayList(new BufferChunk(footerBuffer,0)),footerBufferSize,codec,bufferSize);
-  this.footer=OrcProto.Footer.parseFrom(instream);
+  this.metadata=extractMetadata(footerBuffer,position,metadataSize,codec,bufferSize);
+  this.footer=extractFooter(footerBuffer,position + metadataSize,footerBufferSize,codec,bufferSize);
   footerBuffer.position(position);
   this.inspector=OrcStruct.createObjectInspector(0,footer.getTypesList());
 }

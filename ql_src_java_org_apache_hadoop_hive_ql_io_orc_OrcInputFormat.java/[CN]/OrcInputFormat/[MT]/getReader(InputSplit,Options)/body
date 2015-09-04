@@ -29,6 +29,19 @@
  else {
     bucket=(int)split.getStart();
     reader=null;
+    if (deltas != null && deltas.length > 0) {
+      Path bucketPath=AcidUtils.createBucketFile(deltas[0],bucket);
+      OrcFile.ReaderOptions readerOptions=OrcFile.readerOptions(conf);
+      FileSystem fs=readerOptions.getFilesystem();
+      if (fs == null) {
+        fs=path.getFileSystem(options.getConfiguration());
+      }
+      if (fs.exists(bucketPath)) {
+        final List<OrcProto.Type> types=OrcFile.createReader(bucketPath,readerOptions).getTypes();
+        readOptions.include(genIncludedColumns(types,conf,split.isOriginal()));
+        setSearchArgument(readOptions,types,conf,split.isOriginal());
+      }
+    }
   }
   String txnString=conf.get(ValidTxnList.VALID_TXNS_KEY,Long.MAX_VALUE + ":");
   ValidTxnList validTxnList=new ValidReadTxnList(txnString);
