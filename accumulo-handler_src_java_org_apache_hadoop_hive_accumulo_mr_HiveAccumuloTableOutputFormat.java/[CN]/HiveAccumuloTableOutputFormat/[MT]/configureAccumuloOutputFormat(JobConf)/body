@@ -1,27 +1,27 @@
 {
-  AccumuloConnectionParameters cnxnParams=new AccumuloConnectionParameters(job);
+  AccumuloConnectionParameters cnxnParams=getConnectionParams(job);
   final String tableName=job.get(AccumuloSerDeParameters.TABLE_NAME);
   Preconditions.checkNotNull(tableName,"Expected Accumulo table name to be provided in job configuration");
   try {
     if (cnxnParams.useMockInstance()) {
-      setAccumuloMockInstance(job,cnxnParams.getAccumuloInstanceName());
+      setMockInstanceWithErrorChecking(job,cnxnParams.getAccumuloInstanceName());
     }
  else {
-      setAccumuloZooKeeperInstance(job,cnxnParams.getAccumuloInstanceName(),cnxnParams.getZooKeepers(),cnxnParams.useSasl());
+      setZooKeeperInstanceWithErrorChecking(job,cnxnParams.getAccumuloInstanceName(),cnxnParams.getZooKeepers(),cnxnParams.useSasl());
     }
     if (cnxnParams.useSasl()) {
-      UserGroupInformation ugi=UserGroupInformation.getCurrentUser();
-      if (!ugi.hasKerberosCredentials()) {
-        helper.addTokenFromUserToJobConf(ugi,job);
+      UserGroupInformation ugi=getCurrentUser();
+      if (!hasKerberosCredentials(ugi)) {
+        getHelper().addTokenFromUserToJobConf(ugi,job);
       }
  else {
         try {
           Connector connector=cnxnParams.getConnector();
-          AuthenticationToken token=helper.getDelegationToken(connector);
-          setConnectorInfo(job,cnxnParams.getAccumuloUserName(),token);
-          Token<? extends TokenIdentifier> accumuloToken=helper.getHadoopToken(token);
+          AuthenticationToken token=getHelper().getDelegationToken(connector);
+          setConnectorInfoWithErrorChecking(job,cnxnParams.getAccumuloUserName(),token);
+          Token<? extends TokenIdentifier> accumuloToken=getHelper().getHadoopToken(token);
           log.info("Adding Hadoop Token for Accumulo to Job's Credentials");
-          helper.mergeTokenIntoJobConf(job,accumuloToken);
+          getHelper().mergeTokenIntoJobConf(job,accumuloToken);
           if (!ugi.addToken(accumuloToken)) {
             throw new IOException("Failed to add Accumulo Token to UGI");
           }
@@ -32,7 +32,7 @@
       }
     }
  else {
-      setAccumuloConnectorInfo(job,cnxnParams.getAccumuloUserName(),new PasswordToken(cnxnParams.getAccumuloPassword()));
+      setConnectorInfoWithErrorChecking(job,cnxnParams.getAccumuloUserName(),new PasswordToken(cnxnParams.getAccumuloPassword()));
     }
     setDefaultAccumuloTableName(job,tableName);
   }
