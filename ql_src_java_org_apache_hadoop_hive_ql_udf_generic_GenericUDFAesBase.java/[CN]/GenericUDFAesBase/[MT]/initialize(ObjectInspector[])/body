@@ -1,0 +1,56 @@
+{
+  checkArgsSize(arguments,2,2);
+  checkArgPrimitive(arguments,0);
+  checkArgPrimitive(arguments,1);
+  if (canParam0BeStr()) {
+    checkArgGroups(arguments,0,inputTypes,STRING_GROUP,BINARY_GROUP);
+  }
+ else {
+    checkArgGroups(arguments,0,inputTypes,BINARY_GROUP);
+  }
+  checkArgGroups(arguments,1,inputTypes,STRING_GROUP,BINARY_GROUP);
+  if (isStr0=PrimitiveObjectInspectorUtils.getPrimitiveGrouping(inputTypes[0]) == STRING_GROUP) {
+    obtainStringConverter(arguments,0,inputTypes,converters);
+  }
+ else {
+    GenericUDFParamUtils.obtainBinaryConverter(arguments,0,inputTypes,converters);
+  }
+  isKeyConstant=arguments[1] instanceof ConstantObjectInspector;
+  byte[] key=null;
+  int keyLength=0;
+  if (isStr1=PrimitiveObjectInspectorUtils.getPrimitiveGrouping(inputTypes[1]) == STRING_GROUP) {
+    if (isKeyConstant) {
+      String keyStr=getConstantStringValue(arguments,1);
+      if (keyStr != null) {
+        key=keyStr.getBytes();
+        keyLength=key.length;
+      }
+    }
+ else {
+      obtainStringConverter(arguments,1,inputTypes,converters);
+    }
+  }
+ else {
+    if (isKeyConstant) {
+      BytesWritable keyWr=GenericUDFParamUtils.getConstantBytesValue(arguments,1);
+      if (keyWr != null) {
+        key=keyWr.getBytes();
+        keyLength=keyWr.getLength();
+      }
+    }
+ else {
+      GenericUDFParamUtils.obtainBinaryConverter(arguments,1,inputTypes,converters);
+    }
+  }
+  if (key != null) {
+    secretKey=getSecretKey(key,keyLength);
+  }
+  try {
+    cipher=Cipher.getInstance("AES");
+  }
+ catch (  NoSuchPaddingException|NoSuchAlgorithmException e) {
+    throw new RuntimeException(e);
+  }
+  ObjectInspector outputOI=PrimitiveObjectInspectorFactory.writableBinaryObjectInspector;
+  return outputOI;
+}
