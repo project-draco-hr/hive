@@ -1,0 +1,16 @@
+{
+  if (!conf.getBoolVar(HiveConf.ConfVars.SPARK_DYNAMIC_PARTITION_PRUNING)) {
+    return;
+  }
+  ParseContext parseContext=procCtx.getParseContext();
+  Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
+  opRules.put(new RuleRegExp(new String("Dynamic Partition Pruning"),FilterOperator.getOperatorName() + "%"),new DynamicPartitionPruningOptimization());
+  Dispatcher disp=new DefaultRuleDispatcher(null,opRules,procCtx);
+  GraphWalker ogw=new ForwardWalker(disp);
+  List<Node> topNodes=new ArrayList<Node>();
+  topNodes.addAll(parseContext.getTopOps().values());
+  ogw.startWalking(topNodes,null);
+  if (procCtx.getConf().getBoolVar(HiveConf.ConfVars.HIVEOPTCONSTANTPROPAGATION)) {
+    new ConstantPropagate().transform(parseContext);
+  }
+}

@@ -8,29 +8,12 @@
       return retval;
     }
  else {
-      int pos=0;
-      convertJoinSMBJoin(joinOp,context,pos,0,false);
-      return null;
+      fallbackToReduceSideJoin(joinOp,context);
     }
   }
   int numBuckets=-1;
-  int estimatedBuckets=-1;
   if (context.conf.getBoolVar(HiveConf.ConfVars.HIVE_CONVERT_JOIN_BUCKET_MAPJOIN_TEZ)) {
-    for (    Operator<? extends OperatorDesc> parentOp : joinOp.getParentOperators()) {
-      if (parentOp.getOpTraits().getNumBuckets() > 0) {
-        numBuckets=(numBuckets < parentOp.getOpTraits().getNumBuckets()) ? parentOp.getOpTraits().getNumBuckets() : numBuckets;
-      }
-      if (parentOp instanceof ReduceSinkOperator) {
-        ReduceSinkOperator rs=(ReduceSinkOperator)parentOp;
-        estimatedBuckets=(estimatedBuckets < rs.getConf().getNumReducers()) ? rs.getConf().getNumReducers() : estimatedBuckets;
-      }
-    }
-    if (numBuckets <= 0) {
-      numBuckets=estimatedBuckets;
-      if (numBuckets <= 0) {
-        numBuckets=1;
-      }
-    }
+    numBuckets=estimateNumBuckets(joinOp,true);
   }
  else {
     numBuckets=1;
@@ -43,7 +26,7 @@
       return retval;
     }
  else {
-      convertJoinSMBJoin(joinOp,context,0,0,false);
+      fallbackToReduceSideJoin(joinOp,context);
       return null;
     }
   }
@@ -57,15 +40,14 @@
   LOG.info("Convert to non-bucketed map join");
   mapJoinConversionPos=getMapJoinConversionPos(joinOp,context,1);
   if (mapJoinConversionPos < 0) {
-    int pos=0;
-    convertJoinSMBJoin(joinOp,context,pos,0,false);
+    fallbackToReduceSideJoin(joinOp,context);
     return null;
   }
-  MapJoinOperator mapJoinOp=convertJoinMapJoin(joinOp,context,mapJoinConversionPos);
+  MapJoinOperator mapJoinOp=convertJoinMapJoin(joinOp,context,mapJoinConversionPos,true);
   mapJoinOp.setOpTraits(new OpTraits(null,-1,null));
   mapJoinOp.setStatistics(joinOp.getStatistics());
   for (  Operator<? extends OperatorDesc> childOp : mapJoinOp.getChildOperators()) {
-    setAllChildrenTraitsToNull(childOp);
+    setAllChildrenTraits(childOp,mapJoinOp.getOpTraits());
   }
   return null;
 }

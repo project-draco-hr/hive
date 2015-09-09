@@ -108,6 +108,15 @@
     String master=conf.get("spark.master");
     Preconditions.checkArgument(master != null,"spark.master is not defined.");
     List<String> argv=Lists.newArrayList();
+    if (hiveConf.getVar(HiveConf.ConfVars.HIVE_SERVER2_AUTHENTICATION).equalsIgnoreCase("kerberos")) {
+      argv.add("kinit");
+      String principal=SecurityUtil.getServerPrincipal(hiveConf.getVar(ConfVars.HIVE_SERVER2_KERBEROS_PRINCIPAL),"0.0.0.0");
+      String keyTabFile=hiveConf.getVar(ConfVars.HIVE_SERVER2_KERBEROS_KEYTAB);
+      argv.add(principal);
+      argv.add("-k");
+      argv.add("-t");
+      argv.add(keyTabFile + ";");
+    }
     if (sparkHome != null) {
       argv.add(new File(sparkHome,"bin/spark-submit").getAbsolutePath());
     }
@@ -189,8 +198,11 @@
       argv.add("--conf");
       argv.add(String.format("%s=%s",hiveSparkConfKey,value));
     }
-    LOG.info("Running client driver with argv: {}",Joiner.on(" ").join(argv));
-    ProcessBuilder pb=new ProcessBuilder(argv.toArray(new String[argv.size()]));
+    String cmd=Joiner.on(" ").join(argv);
+    LOG.info("Running client driver with argv: {}",cmd);
+    ProcessBuilder pb=new ProcessBuilder("sh","-c",cmd);
+    pb.environment().remove("HIVE_HOME");
+    pb.environment().remove("HIVE_CONF_DIR");
     if (isTesting != null) {
       pb.environment().put("SPARK_TESTING",isTesting);
     }

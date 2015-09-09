@@ -37,22 +37,26 @@
     if (rs != null) {
       rm=rs.getMetaData();
     }
-    HplsqlParser.Into_clauseContext into=getIntoClause(ctx);
-    if (into != null) {
+    int into_cnt=getIntoCount(ctx);
+    if (into_cnt > 0) {
       trace(ctx,"SELECT INTO statement executed");
-      int cols=into.ident().size();
       if (rs.next()) {
-        for (int i=1; i <= cols; i++) {
-          Var var=exec.findVariable(into.ident(i - 1).getText());
+        for (int i=1; i <= into_cnt; i++) {
+          String into_name=getIntoVariable(ctx,i - 1);
+          Var var=exec.findVariable(into_name);
           if (var != null) {
-            var.setValue(rs,rm,i);
+            if (var.type != Var.Type.ROW) {
+              var.setValue(rs,rm,i);
+            }
+ else {
+              var.setValues(rs,rm);
+            }
             if (trace) {
-              trace(ctx,"COLUMN: " + rm.getColumnName(i) + ", "+ rm.getColumnTypeName(i));
-              trace(ctx,"SET " + var.getName() + " = "+ var.toString());
+              trace(ctx,var,rs,rm,i);
             }
           }
- else           if (trace) {
-            trace(ctx,"Variable not found: " + into.ident(i - 1).getText());
+ else {
+            trace(ctx,"Variable not found: " + into_name);
           }
         }
         exec.incRowCount();

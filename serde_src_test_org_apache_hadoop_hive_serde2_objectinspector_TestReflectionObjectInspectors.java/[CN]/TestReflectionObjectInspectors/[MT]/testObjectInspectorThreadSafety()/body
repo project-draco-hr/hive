@@ -1,0 +1,51 @@
+{
+  final int workerCount=5;
+  final ScheduledExecutorService executorService=Executors.newScheduledThreadPool(workerCount);
+  final MutableObject exception=new MutableObject();
+  Thread runner=new Thread(new Runnable(){
+    @Override @SuppressWarnings("unchecked") public void run(){
+      Future<ObjectInspector>[] results=(Future<ObjectInspector>[])new Future[workerCount];
+      ObjectPair<Type,ObjectInspectorFactory.ObjectInspectorOptions>[] types=(ObjectPair<Type,ObjectInspectorFactory.ObjectInspectorOptions>[])new ObjectPair[]{new ObjectPair<Type,ObjectInspectorFactory.ObjectInspectorOptions>(Complex.class,ObjectInspectorFactory.ObjectInspectorOptions.THRIFT),new ObjectPair<Type,ObjectInspectorFactory.ObjectInspectorOptions>(MyStruct.class,ObjectInspectorFactory.ObjectInspectorOptions.JAVA)};
+      try {
+        for (int i=0; i < 20; i++) {
+          for (          final ObjectPair<Type,ObjectInspectorFactory.ObjectInspectorOptions> t : types) {
+            ObjectInspectorFactory.objectInspectorCache.clear();
+            for (int k=0; k < workerCount; k++) {
+              results[k]=executorService.schedule(new Callable<ObjectInspector>(){
+                @Override public ObjectInspector call() throws Exception {
+                  return ObjectInspectorFactory.getReflectionObjectInspector(t.getFirst(),t.getSecond());
+                }
+              }
+,50,TimeUnit.MILLISECONDS);
+            }
+            ObjectInspector oi=results[0].get();
+            for (int k=1; k < workerCount; k++) {
+              assertEquals(oi,results[k].get());
+            }
+          }
+        }
+      }
+ catch (      Throwable e) {
+        exception.setValue(e);
+      }
+    }
+  }
+);
+  try {
+    runner.start();
+    long endTime=System.currentTimeMillis() + 300000;
+    while (runner.isAlive()) {
+      if (System.currentTimeMillis() > endTime) {
+        runner.interrupt();
+        fail("Timed out waiting for the runner to finish");
+      }
+      runner.join(10000);
+    }
+    if (exception.getValue() != null) {
+      fail("Got exception: " + exception.getValue());
+    }
+  }
+  finally {
+    executorService.shutdownNow();
+  }
+}

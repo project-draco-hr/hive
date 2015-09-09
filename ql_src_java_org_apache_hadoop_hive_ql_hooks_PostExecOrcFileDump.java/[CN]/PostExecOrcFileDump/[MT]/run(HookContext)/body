@@ -1,0 +1,54 @@
+{
+  assert(hookContext.getHookType() == HookContext.HookType.POST_EXEC_HOOK);
+  HiveConf conf=hookContext.getConf();
+  LOG.info("Executing post execution hook to print orc file dump..");
+  QueryPlan plan=hookContext.getQueryPlan();
+  if (plan == null) {
+    return;
+  }
+  FetchTask fetchTask=plan.getFetchTask();
+  if (fetchTask != null) {
+    SessionState ss=SessionState.get();
+    SessionState.LogHelper console=ss.getConsole();
+    PrintStream old=System.out;
+    System.setOut(console.getErrStream());
+    FetchWork fetchWork=fetchTask.getWork();
+    boolean partitionedTable=fetchWork.isPartitioned();
+    List<Path> directories;
+    if (partitionedTable) {
+      LOG.info("Printing orc file dump for files from partitioned directory..");
+      directories=fetchWork.getPartDir();
+    }
+ else {
+      LOG.info("Printing orc file dump for files from table directory..");
+      directories=Lists.newArrayList();
+      directories.add(fetchWork.getTblDir());
+    }
+    for (    Path dir : directories) {
+      FileSystem fs=dir.getFileSystem(conf);
+      List<FileStatus> fileList=ShimLoader.getHadoopShims().listLocatedStatus(fs,dir,hiddenFileFilter);
+      for (      FileStatus fileStatus : fileList) {
+        LOG.info("Printing orc file dump for " + fileStatus.getPath());
+        if (fileStatus.getLen() > 0) {
+          try {
+            OrcFile.createReader(fs,fileStatus.getPath());
+            console.printError("-- BEGIN ORC FILE DUMP --");
+            FileDump.main(new String[]{fileStatus.getPath().toString(),"--rowindex=1"});
+            console.printError("-- END ORC FILE DUMP --");
+          }
+ catch (          FileFormatException e) {
+            LOG.warn("File " + fileStatus.getPath() + " is not ORC. Skip printing orc file dump");
+          }
+catch (          IOException e) {
+            LOG.warn("Skip printing orc file dump. Exception: " + e.getMessage());
+          }
+        }
+ else {
+          LOG.warn("Zero length file encountered. Skip printing orc file dump.");
+        }
+      }
+    }
+    System.out.flush();
+    System.setOut(old);
+  }
+}

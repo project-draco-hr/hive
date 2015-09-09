@@ -1,19 +1,28 @@
 {
   Transaction tx=pm.currentTransaction();
+  boolean doCommit=false;
+  if (!tx.isActive()) {
+    tx.begin();
+    doCommit=true;
+  }
   Query query=null;
   String selfTestQuery="select \"DB_ID\" from \"DBS\"";
   try {
+    doDbSpecificInitializationsBeforeQuery();
     query=pm.newQuery("javax.jdo.query.SQL",selfTestQuery);
     query.execute();
-    tx.commit();
     return true;
   }
- catch (  Exception ex) {
-    LOG.warn("Self-test query [" + selfTestQuery + "] failed; direct SQL is disabled",ex);
+ catch (  Throwable t) {
+    doCommit=false;
+    LOG.warn("Self-test query [" + selfTestQuery + "] failed; direct SQL is disabled",t);
     tx.rollback();
     return false;
   }
  finally {
+    if (doCommit) {
+      tx.commit();
+    }
     if (query != null) {
       query.closeAll();
     }

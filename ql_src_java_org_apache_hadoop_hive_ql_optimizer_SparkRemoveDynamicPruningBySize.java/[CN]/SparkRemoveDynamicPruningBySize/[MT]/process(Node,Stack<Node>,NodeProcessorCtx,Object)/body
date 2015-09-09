@@ -1,0 +1,16 @@
+{
+  OptimizeSparkProcContext context=(OptimizeSparkProcContext)procContext;
+  SparkPartitionPruningSinkOperator op=(SparkPartitionPruningSinkOperator)nd;
+  SparkPartitionPruningSinkDesc desc=op.getConf();
+  if (desc.getStatistics().getDataSize() > context.getConf().getLongVar(ConfVars.SPARK_DYNAMIC_PARTITION_PRUNING_MAX_DATA_SIZE)) {
+    Operator<?> child=op;
+    Operator<?> curr=op;
+    while (curr.getChildOperators().size() <= 1) {
+      child=curr;
+      curr=curr.getParentOperators().get(0);
+    }
+    curr.removeChild(child);
+    LOG.info("Disabling dynamic pruning for: " + desc.getTableScan().getName() + ". Expected data size is too big: "+ desc.getStatistics().getDataSize());
+  }
+  return false;
+}

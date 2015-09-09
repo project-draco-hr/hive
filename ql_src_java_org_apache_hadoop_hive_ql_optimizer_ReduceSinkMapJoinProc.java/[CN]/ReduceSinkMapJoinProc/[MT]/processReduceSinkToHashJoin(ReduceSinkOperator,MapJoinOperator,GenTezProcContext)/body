@@ -1,0 +1,161 @@
+{
+  parentRS.getConf().setSkipTag(true);
+  parentRS.setSkipTag(true);
+  if (mapJoinOp.getConf().isDynamicPartitionHashJoin()) {
+    context.mapJoinToUnprocessedSmallTableReduceSinks.get(mapJoinOp).remove(parentRS);
+  }
+  List<BaseWork> mapJoinWork=null;
+  mapJoinWork=context.mapJoinWorkMap.get(mapJoinOp);
+  BaseWork parentWork=getMapJoinParentWork(context,parentRS);
+  int pos=context.mapJoinParentMap.get(mapJoinOp).indexOf(parentRS);
+  if (pos == -1) {
+    throw new SemanticException("Cannot find position of parent in mapjoin");
+  }
+  MapJoinDesc joinConf=mapJoinOp.getConf();
+  long keyCount=Long.MAX_VALUE, rowCount=Long.MAX_VALUE, bucketCount=1;
+  long tableSize=Long.MAX_VALUE;
+  Statistics stats=parentRS.getStatistics();
+  if (stats != null) {
+    keyCount=rowCount=stats.getNumRows();
+    if (keyCount <= 0) {
+      keyCount=rowCount=Long.MAX_VALUE;
+    }
+    tableSize=stats.getDataSize();
+    ArrayList<String> keyCols=parentRS.getConf().getOutputKeyColumnNames();
+    if (keyCols != null && !keyCols.isEmpty()) {
+      long maxKeyCount=1;
+      String prefix=Utilities.ReduceField.KEY.toString();
+      for (      String keyCol : keyCols) {
+        ExprNodeDesc realCol=parentRS.getColumnExprMap().get(prefix + "." + keyCol);
+        ColStatistics cs=StatsUtils.getColStatisticsFromExpression(context.conf,stats,realCol);
+        if (cs == null || cs.getCountDistint() <= 0) {
+          maxKeyCount=Long.MAX_VALUE;
+          break;
+        }
+        maxKeyCount*=cs.getCountDistint();
+        if (maxKeyCount >= keyCount) {
+          break;
+        }
+      }
+      keyCount=Math.min(maxKeyCount,keyCount);
+    }
+    if (joinConf.isBucketMapJoin()) {
+      OpTraits opTraits=mapJoinOp.getOpTraits();
+      bucketCount=(opTraits == null) ? -1 : opTraits.getNumBuckets();
+      if (bucketCount > 0) {
+        keyCount/=bucketCount;
+        tableSize/=bucketCount;
+      }
+    }
+ else     if (joinConf.isDynamicPartitionHashJoin()) {
+      bucketCount=parentRS.getConf().getNumReducers();
+      keyCount/=bucketCount;
+      tableSize/=bucketCount;
+    }
+  }
+  LOG.info("Mapjoin " + mapJoinOp + ", pos: "+ pos+ " --> "+ parentWork.getName()+ " ("+ keyCount+ " keys estimated from "+ rowCount+ " rows, "+ bucketCount+ " buckets)");
+  joinConf.getParentToInput().put(pos,parentWork.getName());
+  if (keyCount != Long.MAX_VALUE) {
+    joinConf.getParentKeyCounts().put(pos,keyCount);
+  }
+  joinConf.getParentDataSizes().put(pos,tableSize);
+  int numBuckets=-1;
+  EdgeType edgeType=EdgeType.BROADCAST_EDGE;
+  if (joinConf.isBucketMapJoin()) {
+    parentRS.getConf().setReducerTraits(EnumSet.of(FIXED));
+    numBuckets=(Integer)joinConf.getBigTableBucketNumMapping().values().toArray()[0];
+    if (mapJoinWork == null) {
+      Operator<?> rootOp=OperatorUtils.findSingleOperatorUpstream(mapJoinOp.getParentOperators().get(joinConf.getPosBigTable()),ReduceSinkOperator.class);
+      if (rootOp == null) {
+        edgeType=EdgeType.CUSTOM_EDGE;
+      }
+ else {
+        edgeType=EdgeType.CUSTOM_SIMPLE_EDGE;
+      }
+    }
+ else {
+      Operator<?> rootOp=OperatorUtils.findSingleOperatorUpstream(mapJoinOp.getParentOperators().get(joinConf.getPosBigTable()),TableScanOperator.class);
+      if (rootOp != null) {
+        edgeType=EdgeType.CUSTOM_EDGE;
+      }
+ else {
+        edgeType=EdgeType.CUSTOM_SIMPLE_EDGE;
+      }
+    }
+  }
+ else   if (mapJoinOp.getConf().isDynamicPartitionHashJoin()) {
+    edgeType=EdgeType.CUSTOM_SIMPLE_EDGE;
+  }
+  TezEdgeProperty edgeProp=new TezEdgeProperty(null,edgeType,numBuckets);
+  if (mapJoinWork != null) {
+    for (    BaseWork myWork : mapJoinWork) {
+      TezWork tezWork=context.currentTask.getWork();
+      LOG.debug("connecting " + parentWork.getName() + " with "+ myWork.getName());
+      tezWork.connect(parentWork,myWork,edgeProp);
+      if (edgeType == EdgeType.CUSTOM_EDGE) {
+        tezWork.setVertexType(myWork,VertexType.INITIALIZED_EDGES);
+      }
+      ReduceSinkOperator r=null;
+      if (context.connectedReduceSinks.contains(parentRS)) {
+        LOG.debug("Cloning reduce sink for multi-child broadcast edge");
+        r=(ReduceSinkOperator)OperatorFactory.getAndMakeChild((ReduceSinkDesc)parentRS.getConf().clone(),new RowSchema(parentRS.getSchema()),parentRS.getParentOperators());
+        context.clonedReduceSinks.add(r);
+      }
+ else {
+        r=parentRS;
+      }
+      r.getConf().setOutputName(myWork.getName());
+      context.connectedReduceSinks.add(r);
+    }
+  }
+  Map<BaseWork,TezEdgeProperty> linkWorkMap=null;
+  if (context.linkOpWithWorkMap.containsKey(mapJoinOp)) {
+    linkWorkMap=context.linkOpWithWorkMap.get(mapJoinOp);
+  }
+ else {
+    linkWorkMap=new HashMap<BaseWork,TezEdgeProperty>();
+  }
+  linkWorkMap.put(parentWork,edgeProp);
+  context.linkOpWithWorkMap.put(mapJoinOp,linkWorkMap);
+  List<ReduceSinkOperator> reduceSinks=context.linkWorkWithReduceSinkMap.get(parentWork);
+  if (reduceSinks == null) {
+    reduceSinks=new ArrayList<ReduceSinkOperator>();
+  }
+  reduceSinks.add(parentRS);
+  context.linkWorkWithReduceSinkMap.put(parentWork,reduceSinks);
+  List<Operator<?>> dummyOperators=new ArrayList<Operator<?>>();
+  HashTableDummyDesc desc=new HashTableDummyDesc();
+  @SuppressWarnings("unchecked") HashTableDummyOperator dummyOp=(HashTableDummyOperator)OperatorFactory.get(desc);
+  TableDesc tbl;
+  RowSchema rowSchema=parentRS.getParentOperators().get(0).getSchema();
+  tbl=PlanUtils.getReduceValueTableDesc(PlanUtils.getFieldSchemasFromRowSchema(rowSchema,""));
+  dummyOp.getConf().setTbl(tbl);
+  Map<Byte,List<ExprNodeDesc>> keyExprMap=mapJoinOp.getConf().getKeys();
+  List<ExprNodeDesc> keyCols=keyExprMap.get(Byte.valueOf((byte)0));
+  StringBuilder keyOrder=new StringBuilder();
+  for (  ExprNodeDesc k : keyCols) {
+    keyOrder.append("+");
+  }
+  TableDesc keyTableDesc=PlanUtils.getReduceKeyTableDesc(PlanUtils.getFieldSchemasFromColumnList(keyCols,"mapjoinkey"),keyOrder.toString());
+  mapJoinOp.getConf().setKeyTableDesc(keyTableDesc);
+  mapJoinOp.replaceParent(parentRS,dummyOp);
+  List<Operator<? extends OperatorDesc>> dummyChildren=new ArrayList<Operator<? extends OperatorDesc>>();
+  dummyChildren.add(mapJoinOp);
+  dummyOp.setChildOperators(dummyChildren);
+  dummyOperators.add(dummyOp);
+  List<Operator<? extends OperatorDesc>> childOperators=parentRS.getChildOperators();
+  int childIndex=childOperators.indexOf(mapJoinOp);
+  childOperators.remove(childIndex);
+  if (mapJoinWork != null) {
+    for (    BaseWork myWork : mapJoinWork) {
+      myWork.addDummyOp(dummyOp);
+    }
+  }
+  if (context.linkChildOpWithDummyOp.containsKey(mapJoinOp)) {
+    for (    Operator<?> op : context.linkChildOpWithDummyOp.get(mapJoinOp)) {
+      dummyOperators.add(op);
+    }
+  }
+  context.linkChildOpWithDummyOp.put(mapJoinOp,dummyOperators);
+  return true;
+}

@@ -1,0 +1,33 @@
+{
+  SparkPartitionPruningSinkDesc desc=pruningSink.getConf();
+  TableScanOperator ts=desc.getTableScan();
+  MapWork targetWork=(MapWork)context.rootToWorkMap.get(ts);
+  Preconditions.checkArgument(targetWork != null,"No targetWork found for tablescan " + ts);
+  String targetId=SparkUtilities.getWorkId(targetWork);
+  BaseWork sourceWork=getEnclosingWork(pruningSink,context);
+  String sourceId=SparkUtilities.getWorkId(sourceWork);
+  Path tmpPath=targetWork.getTmpPathForPartitionPruning();
+  if (tmpPath == null) {
+    Path baseTmpPath=context.parseContext.getContext().getMRTmpPath();
+    tmpPath=SparkUtilities.generateTmpPathForPartitionPruning(baseTmpPath,targetId);
+    targetWork.setTmpPathForPartitionPruning(tmpPath);
+    LOG.info("Setting tmp path between source work and target work:\n" + tmpPath);
+  }
+  desc.setPath(new Path(tmpPath,sourceId));
+  desc.setTargetWork(targetWork.getName());
+  if (!targetWork.getEventSourceTableDescMap().containsKey(sourceId)) {
+    targetWork.getEventSourceTableDescMap().put(sourceId,new LinkedList<TableDesc>());
+  }
+  List<TableDesc> tables=targetWork.getEventSourceTableDescMap().get(sourceId);
+  tables.add(pruningSink.getConf().getTable());
+  if (!targetWork.getEventSourceColumnNameMap().containsKey(sourceId)) {
+    targetWork.getEventSourceColumnNameMap().put(sourceId,new LinkedList<String>());
+  }
+  List<String> columns=targetWork.getEventSourceColumnNameMap().get(sourceId);
+  columns.add(desc.getTargetColumnName());
+  if (!targetWork.getEventSourcePartKeyExprMap().containsKey(sourceId)) {
+    targetWork.getEventSourcePartKeyExprMap().put(sourceId,new LinkedList<ExprNodeDesc>());
+  }
+  List<ExprNodeDesc> keys=targetWork.getEventSourcePartKeyExprMap().get(sourceId);
+  keys.add(desc.getPartKey());
+}

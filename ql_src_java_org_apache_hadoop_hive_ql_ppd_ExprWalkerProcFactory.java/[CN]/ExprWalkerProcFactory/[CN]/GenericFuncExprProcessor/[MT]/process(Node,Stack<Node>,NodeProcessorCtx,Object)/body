@@ -3,20 +3,30 @@
   String alias=null;
   ExprNodeGenericFuncDesc expr=(ExprNodeGenericFuncDesc)nd;
   if (!FunctionRegistry.isDeterministic(expr.getGenericUDF())) {
-    ctx.setIsCandidate(expr,false);
+    ExprInfo exprInfo=ctx.addOrGetExprInfo(expr);
+    exprInfo.isCandidate=false;
     ctx.setDeterministic(false);
     return false;
   }
   boolean isCandidate=true;
   for (int i=0; i < nd.getChildren().size(); i++) {
     ExprNodeDesc ch=(ExprNodeDesc)nd.getChildren().get(i);
-    ExprNodeDesc newCh=ctx.getConvertedNode(ch);
+    ExprInfo chExprInfo=ctx.getExprInfo(ch);
+    ExprNodeDesc newCh=chExprInfo != null ? chExprInfo.convertedExpr : null;
     if (newCh != null) {
       expr.getChildren().set(i,newCh);
       ch=newCh;
+      chExprInfo=ctx.getExprInfo(ch);
     }
-    String chAlias=ctx.getAlias(ch);
-    isCandidate=isCandidate && ctx.isCandidate(ch);
+    String chAlias;
+    if (chExprInfo != null) {
+      chAlias=chExprInfo.alias;
+      isCandidate=isCandidate && chExprInfo.isCandidate;
+    }
+ else {
+      chAlias=null;
+      isCandidate=false;
+    }
     if (isCandidate && chAlias != null) {
       if (alias == null) {
         alias=chAlias;
@@ -29,7 +39,10 @@
       break;
     }
   }
-  ctx.addAlias(expr,alias);
-  ctx.setIsCandidate(expr,isCandidate);
+  ExprInfo exprInfo=ctx.addOrGetExprInfo(expr);
+  if (alias != null) {
+    exprInfo.alias=alias;
+  }
+  exprInfo.isCandidate=isCandidate;
   return isCandidate;
 }

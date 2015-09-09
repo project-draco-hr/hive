@@ -1,9 +1,10 @@
 {
   String zooKeeperEnsemble=ZooKeeperHiveHelper.getQuorumServers(hiveConf);
   String rootNamespace=hiveConf.getVar(HiveConf.ConfVars.HIVE_SERVER2_ZOOKEEPER_NAMESPACE);
-  String instanceURI=getServerInstanceURI(hiveConf);
-  byte[] znodeDataUTF8=instanceURI.getBytes(Charset.forName("UTF-8"));
+  String instanceURI=getServerInstanceURI();
   setUpZooKeeperAuth(hiveConf);
+  Map<String,String> confsToPublish=new HashMap<String,String>();
+  addConfsToPublish(hiveConf,confsToPublish);
   int sessionTimeout=(int)hiveConf.getTimeVar(HiveConf.ConfVars.HIVE_ZOOKEEPER_SESSION_TIMEOUT,TimeUnit.MILLISECONDS);
   int baseSleepTime=(int)hiveConf.getTimeVar(HiveConf.ConfVars.HIVE_ZOOKEEPER_CONNECTION_BASESLEEPTIME,TimeUnit.MILLISECONDS);
   int maxRetries=hiveConf.getIntVar(HiveConf.ConfVars.HIVE_ZOOKEEPER_CONNECTION_MAX_RETRIES);
@@ -21,6 +22,9 @@
   }
   try {
     String pathPrefix=ZooKeeperHiveHelper.ZOOKEEPER_PATH_SEPARATOR + rootNamespace + ZooKeeperHiveHelper.ZOOKEEPER_PATH_SEPARATOR+ "serverUri="+ instanceURI+ ";"+ "version="+ HiveVersionInfo.getVersion()+ ";"+ "sequence=";
+    String znodeData="";
+    znodeData=Joiner.on(';').withKeyValueSeparator("=").join(confsToPublish);
+    byte[] znodeDataUTF8=znodeData.getBytes(Charset.forName("UTF-8"));
     znode=new PersistentEphemeralNode(zooKeeperClient,PersistentEphemeralNode.Mode.EPHEMERAL_SEQUENTIAL,pathPrefix,znodeDataUTF8);
     znode.start();
     long znodeCreationTimeout=120;

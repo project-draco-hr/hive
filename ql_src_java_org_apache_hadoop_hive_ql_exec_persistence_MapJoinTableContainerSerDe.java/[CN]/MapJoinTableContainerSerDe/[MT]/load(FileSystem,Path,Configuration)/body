@@ -1,0 +1,58 @@
+{
+  try {
+    if (!fs.isDirectory(folder)) {
+      throw new HiveException("Error, not a directory: " + folder);
+    }
+    FileStatus[] fileStatuses=fs.listStatus(folder);
+    if (fileStatuses == null || fileStatuses.length == 0) {
+      return null;
+    }
+    SerDe keySerDe=keyContext.getSerDe();
+    SerDe valueSerDe=valueContext.getSerDe();
+    Writable keyContainer=keySerDe.getSerializedClass().newInstance();
+    Writable valueContainer=valueSerDe.getSerializedClass().newInstance();
+    MapJoinTableContainer tableContainer=null;
+    boolean useOptimizedContainer=HiveConf.getBoolVar(hconf,HiveConf.ConfVars.HIVEMAPJOINUSEOPTIMIZEDTABLE);
+    for (    FileStatus fileStatus : fileStatuses) {
+      Path filePath=fileStatus.getPath();
+      if (ShimLoader.getHadoopShims().isDirectory(fileStatus)) {
+        throw new HiveException("Error, not a file: " + filePath);
+      }
+      InputStream is=null;
+      ObjectInputStream in=null;
+      try {
+        is=fs.open(filePath,4096);
+        in=new ObjectInputStream(is);
+        String name=in.readUTF();
+        Map<String,String> metaData=(Map<String,String>)in.readObject();
+        if (tableContainer == null) {
+          tableContainer=useOptimizedContainer ? new MapJoinBytesTableContainer(hconf,valueContext,-1,0) : create(name,metaData);
+        }
+        if (useOptimizedContainer) {
+          loadOptimized((MapJoinBytesTableContainer)tableContainer,in,keyContainer,valueContainer);
+        }
+ else {
+          loadNormal((MapJoinPersistableTableContainer)tableContainer,in,keyContainer,valueContainer);
+        }
+      }
+  finally {
+        if (in != null) {
+          in.close();
+        }
+ else         if (is != null) {
+          is.close();
+        }
+      }
+    }
+    if (tableContainer != null) {
+      tableContainer.seal();
+    }
+    return tableContainer;
+  }
+ catch (  IOException e) {
+    throw new HiveException("IO error while trying to create table container",e);
+  }
+catch (  Exception e) {
+    throw new HiveException("Error while trying to create table container",e);
+  }
+}

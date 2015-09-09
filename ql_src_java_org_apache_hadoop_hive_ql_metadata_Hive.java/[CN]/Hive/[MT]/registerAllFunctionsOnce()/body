@@ -1,0 +1,46 @@
+{
+  boolean breakLoop=false;
+  while (!breakLoop) {
+    int val=didRegisterAllFuncs.get();
+switch (val) {
+case REG_FUNCS_NO:
+{
+        if (didRegisterAllFuncs.compareAndSet(val,REG_FUNCS_PENDING)) {
+          breakLoop=true;
+          break;
+        }
+        continue;
+      }
+case REG_FUNCS_PENDING:
+{
+synchronized (didRegisterAllFuncs) {
+        try {
+          didRegisterAllFuncs.wait(100);
+        }
+ catch (        InterruptedException e) {
+          Thread.currentThread().interrupt();
+          return;
+        }
+      }
+      continue;
+    }
+case REG_FUNCS_DONE:
+  return;
+default :
+throw new AssertionError(val);
+}
+}
+try {
+reloadFunctions();
+}
+ catch (Exception e) {
+LOG.warn("Failed to register all functions.",e);
+}
+ finally {
+boolean result=didRegisterAllFuncs.compareAndSet(REG_FUNCS_PENDING,REG_FUNCS_DONE);
+assert result;
+synchronized (didRegisterAllFuncs) {
+didRegisterAllFuncs.notifyAll();
+}
+}
+}

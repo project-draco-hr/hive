@@ -14,6 +14,7 @@
   conf.setVar(HiveConf.ConfVars.HIVEQUERYID,queryId);
   SessionState.get().setupQueryCurrentTimestamp();
   try {
+    SessionState.get().initTxnMgr(conf);
     command=new VariableSubstitution(new HiveVariableSource(){
       @Override public Map<String,String> getHiveVariable(){
         return SessionState.get().getHiveVariables();
@@ -29,12 +30,10 @@
     ASTNode tree=pd.parse(command,ctx);
     tree=ParseUtils.findRootNonNullToken(tree);
     perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.PARSE);
-    SessionState.get().initTxnMgr(conf);
-    recordValidTxns();
     perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.ANALYZE);
     BaseSemanticAnalyzer sem=SemanticAnalyzerFactory.get(conf,tree);
     List<HiveSemanticAnalyzerHook> saHooks=getHooks(HiveConf.ConfVars.SEMANTIC_ANALYZER_HOOK,HiveSemanticAnalyzerHook.class);
-    if (saHooks != null) {
+    if (saHooks != null && !saHooks.isEmpty()) {
       HiveSemanticAnalyzerHookContext hookCtx=new HiveSemanticAnalyzerHookContextImpl();
       hookCtx.setConf(conf);
       hookCtx.setUserName(userName);
@@ -57,15 +56,14 @@
     sem.validate();
     perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.ANALYZE);
     String queryStr=HookUtils.redactLogString(conf,command);
-    String operationName=ctx.getExplain() ? HiveOperation.EXPLAIN.getOperationName() : SessionState.get().getCommandType();
-    plan=new QueryPlan(queryStr,sem,perfLogger.getStartTime(PerfLogger.DRIVER_RUN),queryId,operationName,getSchema(sem,conf));
+    schema=getSchema(sem,conf);
+    plan=new QueryPlan(queryStr,sem,perfLogger.getStartTime(PerfLogger.DRIVER_RUN),queryId,SessionState.get().getHiveOperation(),schema);
     conf.setVar(HiveConf.ConfVars.HIVEQUERYSTRING,queryStr);
     conf.set("mapreduce.workflow.id","hive_" + queryId);
     conf.set("mapreduce.workflow.name",queryStr);
     if (plan.getFetchTask() != null) {
       plan.getFetchTask().initialize(conf,plan,null);
     }
-    schema=getSchema(sem,conf);
     if (!sem.skipAuthorization() && HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_AUTHORIZATION_ENABLED)) {
       try {
         perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.DO_AUTHORIZATION);
@@ -82,7 +80,7 @@
       }
     }
     if (conf.getBoolVar(ConfVars.HIVE_LOG_EXPLAIN_OUTPUT)) {
-      String explainOutput=getExplainOutput(sem,plan,tree.dump());
+      String explainOutput=getExplainOutput(sem,plan,tree);
       if (explainOutput != null) {
         LOG.info("EXPLAIN output for queryid " + queryId + " : "+ explainOutput);
       }

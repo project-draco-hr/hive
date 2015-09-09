@@ -1,0 +1,131 @@
+{
+  ExprNodeGenericFuncDesc fd=(ExprNodeGenericFuncDesc)nd;
+  if (!FunctionRegistry.isOpOr(fd)) {
+    return null;
+  }
+  List<ExprNodeDesc> children=fd.getChildren();
+  if (children.size() < minOrExpr) {
+    return null;
+  }
+  ListMultimap<String,Pair<ExprNodeColumnDesc,ExprNodeConstantDesc>> columnConstantsMap=ArrayListMultimap.create();
+  boolean modeAnd=false;
+  for (int i=0; i < children.size(); i++) {
+    ExprNodeDesc child=children.get(i);
+    final List<ExprNodeDesc> conjunctions;
+    if (FunctionRegistry.isOpAnd(child)) {
+      if (i == 0) {
+        modeAnd=true;
+      }
+ else {
+        if (!modeAnd) {
+          return null;
+        }
+      }
+      conjunctions=child.getChildren();
+    }
+ else {
+      if (i == 0) {
+        modeAnd=false;
+      }
+ else {
+        if (modeAnd) {
+          return null;
+        }
+      }
+      conjunctions=new ArrayList<ExprNodeDesc>(1);
+      conjunctions.add(child);
+    }
+    for (    ExprNodeDesc conjunction : conjunctions) {
+      if (!(conjunction instanceof ExprNodeGenericFuncDesc)) {
+        return null;
+      }
+      ExprNodeGenericFuncDesc conjCall=(ExprNodeGenericFuncDesc)conjunction;
+      Class<? extends GenericUDF> genericUdfClass=conjCall.getGenericUDF().getClass();
+      if (GenericUDFOPEqual.class == genericUdfClass) {
+        if (conjCall.getChildren().get(0) instanceof ExprNodeColumnDesc && conjCall.getChildren().get(1) instanceof ExprNodeConstantDesc) {
+          ExprNodeColumnDesc ref=(ExprNodeColumnDesc)conjCall.getChildren().get(0);
+          String refString=ref.toString();
+          columnConstantsMap.put(refString,new Pair<ExprNodeColumnDesc,ExprNodeConstantDesc>(ref,(ExprNodeConstantDesc)conjCall.getChildren().get(1)));
+          if (columnConstantsMap.get(refString).size() != i + 1) {
+            return null;
+          }
+        }
+ else         if (conjCall.getChildren().get(1) instanceof ExprNodeColumnDesc && conjCall.getChildren().get(0) instanceof ExprNodeConstantDesc) {
+          ExprNodeColumnDesc ref=(ExprNodeColumnDesc)conjCall.getChildren().get(1);
+          String refString=ref.toString();
+          columnConstantsMap.put(refString,new Pair<ExprNodeColumnDesc,ExprNodeConstantDesc>(ref,(ExprNodeConstantDesc)conjCall.getChildren().get(0)));
+          if (columnConstantsMap.get(refString).size() != i + 1) {
+            return null;
+          }
+        }
+ else {
+          return null;
+        }
+      }
+ else {
+        return null;
+      }
+    }
+  }
+  ExprNodeDesc newPredicate=null;
+  List<ExprNodeDesc> newChildren=new ArrayList<ExprNodeDesc>(children.size());
+  List<ExprNodeDesc> columns=new ArrayList<ExprNodeDesc>();
+  List<String> names=new ArrayList<String>();
+  List<TypeInfo> typeInfos=new ArrayList<TypeInfo>();
+  for (int i=0; i < children.size(); i++) {
+    List<ExprNodeDesc> constantFields=new ArrayList<ExprNodeDesc>(children.size());
+    for (    String keyString : columnConstantsMap.keySet()) {
+      Pair<ExprNodeColumnDesc,ExprNodeConstantDesc> columnConstant=columnConstantsMap.get(keyString).get(i);
+      if (i == 0) {
+        columns.add(columnConstant.left);
+        names.add(columnConstant.left.getColumn());
+        typeInfos.add(columnConstant.left.getTypeInfo());
+      }
+      constantFields.add(columnConstant.right);
+    }
+    if (i == 0) {
+      ExprNodeDesc columnsRefs;
+      if (columns.size() == 1) {
+        columnsRefs=columns.get(0);
+      }
+ else {
+        columnsRefs=new ExprNodeGenericFuncDesc(TypeInfoFactory.getStructTypeInfo(names,typeInfos),FunctionRegistry.getFunctionInfo(STRUCT_UDF).getGenericUDF(),columns);
+      }
+      newChildren.add(columnsRefs);
+    }
+    ExprNodeDesc values;
+    if (constantFields.size() == 1) {
+      values=constantFields.get(0);
+    }
+ else {
+      values=new ExprNodeGenericFuncDesc(TypeInfoFactory.getStructTypeInfo(names,typeInfos),FunctionRegistry.getFunctionInfo(STRUCT_UDF).getGenericUDF(),constantFields);
+    }
+    newChildren.add(values);
+  }
+  newPredicate=new ExprNodeGenericFuncDesc(TypeInfoFactory.booleanTypeInfo,FunctionRegistry.getFunctionInfo(IN_UDF).getGenericUDF(),newChildren);
+  if (extract && columns.size() > 1) {
+    final List<ExprNodeDesc> subExpr=new ArrayList<ExprNodeDesc>(columns.size() + 1);
+    for (    String keyString : columnConstantsMap.keySet()) {
+      final Set<ExprNodeDescEqualityWrapper> valuesExpr=new HashSet<ExprNodeDescEqualityWrapper>(children.size());
+      final List<Pair<ExprNodeColumnDesc,ExprNodeConstantDesc>> partial=columnConstantsMap.get(keyString);
+      for (int i=0; i < children.size(); i++) {
+        Pair<ExprNodeColumnDesc,ExprNodeConstantDesc> columnConstant=partial.get(i);
+        valuesExpr.add(new ExprNodeDescEqualityWrapper(columnConstant.right));
+      }
+      ExprNodeColumnDesc lookupCol=partial.get(0).left;
+      if (lookupCol.getIsPartitionColOrVirtualCol() || valuesExpr.size() < children.size()) {
+        final List<ExprNodeDesc> inExpr=new ArrayList<ExprNodeDesc>();
+        inExpr.add(lookupCol);
+        for (        ExprNodeDescEqualityWrapper value : sortForTests(valuesExpr)) {
+          inExpr.add(value.getExprNodeDesc());
+        }
+        subExpr.add(new ExprNodeGenericFuncDesc(TypeInfoFactory.booleanTypeInfo,FunctionRegistry.getFunctionInfo(IN_UDF).getGenericUDF(),inExpr));
+      }
+    }
+    if (subExpr.size() > 0) {
+      subExpr.add(newPredicate);
+      newPredicate=new ExprNodeGenericFuncDesc(TypeInfoFactory.booleanTypeInfo,FunctionRegistry.getFunctionInfo(AND_UDF).getGenericUDF(),subExpr);
+    }
+  }
+  return newPredicate;
+}

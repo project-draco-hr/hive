@@ -24,30 +24,43 @@
       throw e.getCause();
     }
 catch (    InvocationTargetException e) {
-      if ((e.getCause() instanceof TApplicationException) || (e.getCause() instanceof TProtocolException) || (e.getCause() instanceof TTransportException)) {
-        caughtException=(TException)e.getCause();
-      }
- else       if ((e.getCause() instanceof MetaException) && e.getCause().getMessage().matches("(?s).*(JDO[a-zA-Z]*|TApplication|TProtocol|TTransport)Exception.*")) {
-        caughtException=(MetaException)e.getCause();
-      }
- else {
-        throw e.getCause();
-      }
+      Throwable t=e.getCause();
+      if (t instanceof TApplicationException) {
+        TApplicationException tae=(TApplicationException)t;
+switch (tae.getType()) {
+case TApplicationException.UNSUPPORTED_CLIENT_TYPE:
+case TApplicationException.UNKNOWN_METHOD:
+case TApplicationException.WRONG_METHOD_NAME:
+case TApplicationException.INVALID_PROTOCOL:
+          throw t;
+default :
+        caughtException=tae;
     }
-catch (    MetaException e) {
-      if (e.getMessage().matches("(?s).*(IO|TTransport)Exception.*")) {
-        caughtException=e;
-      }
- else {
-        throw e;
-      }
-    }
-    if (retriesMade >= retryLimit) {
-      throw caughtException;
-    }
-    retriesMade++;
-    LOG.warn("MetaStoreClient lost connection. Attempting to reconnect.",caughtException);
-    Thread.sleep(retryDelaySeconds * 1000);
   }
-  return ret;
+ else   if ((t instanceof TProtocolException) || (t instanceof TTransportException)) {
+    caughtException=(TException)t;
+  }
+ else   if ((t instanceof MetaException) && t.getMessage().matches("(?s).*(JDO[a-zA-Z]*|TProtocol|TTransport)Exception.*")) {
+    caughtException=(MetaException)t;
+  }
+ else {
+    throw t;
+  }
+}
+catch (MetaException e) {
+  if (e.getMessage().matches("(?s).*(IO|TTransport)Exception.*")) {
+    caughtException=e;
+  }
+ else {
+    throw e;
+  }
+}
+if (retriesMade >= retryLimit) {
+  throw caughtException;
+}
+retriesMade++;
+LOG.warn("MetaStoreClient lost connection. Attempting to reconnect.",caughtException);
+Thread.sleep(retryDelaySeconds * 1000);
+}
+return ret;
 }

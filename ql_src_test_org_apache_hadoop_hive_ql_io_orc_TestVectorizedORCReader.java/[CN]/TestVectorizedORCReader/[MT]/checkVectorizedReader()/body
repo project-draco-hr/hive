@@ -11,32 +11,47 @@
       row=(OrcStruct)rr.next(row);
       for (int j=0; j < batch.cols.length; j++) {
         Object a=(row.getFieldValue(j));
-        Object b=batch.cols[j].getWritableObject(i);
-        if (a instanceof BooleanWritable) {
-          Long temp=(long)(((BooleanWritable)a).get() ? 1 : 0);
-          Assert.assertEquals(true,temp.toString().equals(b.toString()));
-          continue;
+        ColumnVector cv=batch.cols[j];
+        int rowId=cv.isRepeating ? 0 : i;
+        if (a == null) {
+          Assert.assertEquals(true,!cv.noNulls && cv.isNull[rowId]);
         }
-        if (a instanceof TimestampWritable) {
+ else         if (a instanceof BooleanWritable) {
+          Long temp=(long)(((BooleanWritable)a).get() ? 1 : 0);
+          long b=((LongColumnVector)cv).vector[rowId];
+          Assert.assertEquals(temp.toString(),Long.toString(b));
+        }
+ else         if (a instanceof TimestampWritable) {
           TimestampWritable t=((TimestampWritable)a);
           Long timeInNanoSec=(t.getTimestamp().getTime() * 1000000) + (t.getTimestamp().getNanos() % 1000000);
-          Assert.assertEquals(true,timeInNanoSec.toString().equals(b.toString()));
-          continue;
+          long b=((LongColumnVector)cv).vector[rowId];
+          Assert.assertEquals(timeInNanoSec.toString(),Long.toString(b));
         }
-        if (a instanceof DateWritable) {
+ else         if (a instanceof DateWritable) {
           DateWritable adt=(DateWritable)a;
-          Assert.assertEquals(adt.get().getTime(),DateWritable.daysToMillis((int)((LongWritable)b).get()));
-          continue;
+          long b=((LongColumnVector)cv).vector[rowId];
+          Assert.assertEquals(adt.get().getTime(),DateWritable.daysToMillis((int)b));
         }
-        if (a instanceof HiveDecimalWritable) {
+ else         if (a instanceof HiveDecimalWritable) {
           HiveDecimalWritable dec=(HiveDecimalWritable)a;
+          HiveDecimalWritable b=((DecimalColumnVector)cv).vector[i];
           Assert.assertEquals(dec,b);
         }
-        if (null == a) {
-          Assert.assertEquals(true,(b == null || (b instanceof NullWritable)));
+ else         if (a instanceof DoubleWritable) {
+          double b=((DoubleColumnVector)cv).vector[rowId];
+          assertEquals(a.toString(),Double.toString(b));
+        }
+ else         if (a instanceof Text) {
+          BytesColumnVector bcv=(BytesColumnVector)cv;
+          Text b=new Text();
+          b.set(bcv.vector[rowId],bcv.start[rowId],bcv.length[rowId]);
+          assertEquals(a,b);
+        }
+ else         if (a instanceof IntWritable || a instanceof LongWritable || a instanceof ByteWritable|| a instanceof ShortWritable) {
+          assertEquals(a.toString(),Long.toString(((LongColumnVector)cv).vector[rowId]));
         }
  else {
-          Assert.assertEquals(true,b.toString().equals(a.toString()));
+          assertEquals("huh",a.getClass().getName());
         }
       }
     }
