@@ -1,0 +1,26 @@
+{
+  Preconditions.checkArgument(!partColNames.isEmpty(),"No partition columns provided to use");
+  Preconditions.checkArgument(new HashSet<String>(partColNames).size() == partColNames.size(),"Partition columns should be unique: " + partColNames);
+  String[] partNames=properties.getProperty(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS).split("/");
+  String[] partTypes=properties.getProperty(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_PARTITION_COLUMN_TYPES).split(":");
+  Preconditions.checkArgument(partNames.length == partTypes.length,"Partition Names, " + Arrays.toString(partNames) + " don't match partition Types, "+ Arrays.toString(partTypes));
+  Map<String,String> typeMap=new HashMap();
+  for (int i=0; i < partNames.length; i++) {
+    String previousValue=typeMap.put(partNames[i],partTypes[i]);
+    Preconditions.checkArgument(previousValue == null,"Partition columns configuration is inconsistent. " + "There are duplicates in partition column names: " + partNames);
+  }
+  StringBuilder partNamesBuf=new StringBuilder();
+  StringBuilder partTypesBuf=new StringBuilder();
+  for (  String partName : partColNames) {
+    partNamesBuf.append(partName).append('/');
+    String partType=typeMap.get(partName);
+    if (partType == null) {
+      throw new RuntimeException("Type information for partition column " + partName + " is missing.");
+    }
+    partTypesBuf.append(partType).append(':');
+  }
+  partNamesBuf.setLength(partNamesBuf.length() - 1);
+  partTypesBuf.setLength(partTypesBuf.length() - 1);
+  properties.setProperty(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS,partNamesBuf.toString());
+  properties.setProperty(org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_PARTITION_COLUMN_TYPES,partTypesBuf.toString());
+}
