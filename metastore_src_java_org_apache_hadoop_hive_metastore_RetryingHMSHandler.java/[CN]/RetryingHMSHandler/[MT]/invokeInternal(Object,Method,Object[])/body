@@ -1,0 +1,85 @@
+{
+  boolean gotNewConnectUrl=false;
+  boolean reloadConf=HiveConf.getBoolVar(origConf,HiveConf.ConfVars.HMSHANDLERFORCERELOADCONF);
+  long retryInterval=HiveConf.getTimeVar(origConf,HiveConf.ConfVars.HMSHANDLERINTERVAL,TimeUnit.MILLISECONDS);
+  int retryLimit=HiveConf.getIntVar(origConf,HiveConf.ConfVars.HMSHANDLERATTEMPTS);
+  long timeout=HiveConf.getTimeVar(origConf,HiveConf.ConfVars.METASTORE_CLIENT_SOCKET_TIMEOUT,TimeUnit.MILLISECONDS);
+  Deadline.registerIfNot(timeout);
+  if (reloadConf) {
+    MetaStoreInit.updateConnectionURL(origConf,getActiveConf(),null,metaStoreInitData);
+  }
+  int retryCount=0;
+  Throwable caughtException=null;
+  while (true) {
+    try {
+      if (reloadConf || gotNewConnectUrl) {
+        baseHandler.setConf(getActiveConf());
+      }
+      Deadline.startTimer(method.getName());
+      Object object=method.invoke(baseHandler,args);
+      Deadline.stopTimer();
+      return new Result(object,retryCount);
+    }
+ catch (    javax.jdo.JDOException e) {
+      caughtException=e;
+    }
+catch (    UndeclaredThrowableException e) {
+      if (e.getCause() != null) {
+        if (e.getCause() instanceof javax.jdo.JDOException) {
+          caughtException=e.getCause();
+        }
+ else         if (e.getCause() instanceof MetaException && e.getCause().getCause() != null && e.getCause().getCause() instanceof javax.jdo.JDOException) {
+          caughtException=e.getCause().getCause();
+        }
+ else {
+          LOG.error(ExceptionUtils.getStackTrace(e.getCause()));
+          throw e.getCause();
+        }
+      }
+ else {
+        LOG.error(ExceptionUtils.getStackTrace(e));
+        throw e;
+      }
+    }
+catch (    InvocationTargetException e) {
+      if (e.getCause() instanceof javax.jdo.JDOException) {
+        caughtException=e.getCause();
+      }
+ else       if (e.getCause() instanceof NoSuchObjectException || e.getTargetException().getCause() instanceof NoSuchObjectException) {
+        String methodName=method.getName();
+        if (!methodName.startsWith("get_database") && !methodName.startsWith("get_table") && !methodName.startsWith("get_partition")&& !methodName.startsWith("get_function")) {
+          LOG.error(ExceptionUtils.getStackTrace(e.getCause()));
+        }
+        throw e.getCause();
+      }
+ else       if (e.getCause() instanceof MetaException && e.getCause().getCause() != null) {
+        if (e.getCause().getCause() instanceof javax.jdo.JDOException || e.getCause().getCause() instanceof NucleusException) {
+          caughtException=e.getCause().getCause();
+        }
+ else         if (e.getCause().getCause() instanceof DeadlineException) {
+          Deadline.clear();
+          LOG.error("Error happens in method " + method.getName() + ": "+ ExceptionUtils.getStackTrace(e.getCause()));
+          throw e.getCause();
+        }
+ else {
+          LOG.error(ExceptionUtils.getStackTrace(e.getCause()));
+          throw e.getCause();
+        }
+      }
+ else {
+        LOG.error(ExceptionUtils.getStackTrace(e.getCause()));
+        throw e.getCause();
+      }
+    }
+    if (retryCount >= retryLimit) {
+      LOG.error("HMSHandler Fatal error: " + ExceptionUtils.getStackTrace(caughtException));
+      throw new MetaException(ExceptionUtils.getStackTrace(caughtException));
+    }
+    assert(retryInterval >= 0);
+    retryCount++;
+    LOG.error(String.format("Retrying HMSHandler after %d ms (attempt %d of %d)",retryInterval,retryCount,retryLimit) + " with error: " + ExceptionUtils.getStackTrace(caughtException));
+    Thread.sleep(retryInterval);
+    String lastUrl=MetaStoreInit.getConnectionURL(getActiveConf());
+    gotNewConnectUrl=MetaStoreInit.updateConnectionURL(origConf,getActiveConf(),lastUrl,metaStoreInitData);
+  }
+}
