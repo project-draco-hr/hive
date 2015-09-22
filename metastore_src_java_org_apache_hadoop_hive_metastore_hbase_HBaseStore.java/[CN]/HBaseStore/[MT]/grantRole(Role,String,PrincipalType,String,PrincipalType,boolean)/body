@@ -1,0 +1,31 @@
+{
+  boolean commit=false;
+  openTransaction();
+  try {
+    Set<String> usersToRemap=findUsersToRemapRolesFor(role,userName,principalType);
+    HbaseMetastoreProto.RoleGrantInfo.Builder builder=HbaseMetastoreProto.RoleGrantInfo.newBuilder();
+    if (userName != null)     builder.setPrincipalName(userName);
+    if (principalType != null) {
+      builder.setPrincipalType(HBaseUtils.convertPrincipalTypes(principalType));
+    }
+    builder.setAddTime((int)(System.currentTimeMillis() / 1000));
+    if (grantor != null)     builder.setGrantor(grantor);
+    if (grantorType != null) {
+      builder.setGrantorType(HBaseUtils.convertPrincipalTypes(grantorType));
+    }
+    builder.setGrantOption(grantOption);
+    getHBase().addPrincipalToRole(role.getRoleName(),builder.build());
+    for (    String user : usersToRemap) {
+      getHBase().buildRoleMapForUser(user);
+    }
+    commit=true;
+    return true;
+  }
+ catch (  IOException e) {
+    LOG.error("Unable to grant role",e);
+    throw new MetaException("Unable to grant role " + e.getMessage());
+  }
+ finally {
+    commitOrRoleBack(commit);
+  }
+}

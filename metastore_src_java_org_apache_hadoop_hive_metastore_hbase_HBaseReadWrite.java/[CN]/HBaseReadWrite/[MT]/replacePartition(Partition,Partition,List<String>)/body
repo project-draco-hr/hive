@@ -1,0 +1,18 @@
+{
+  byte[] hash;
+  byte[] oldHash=HBaseUtils.hashStorageDescriptor(oldPart.getSd(),md);
+  byte[] newHash=HBaseUtils.hashStorageDescriptor(newPart.getSd(),md);
+  if (Arrays.equals(oldHash,newHash)) {
+    hash=oldHash;
+  }
+ else {
+    decrementStorageDescriptorRefCount(oldPart.getSd());
+    hash=putStorageDescriptor(newPart.getSd());
+  }
+  byte[][] serialized=HBaseUtils.serializePartition(newPart,HBaseUtils.getPartitionKeyTypes(getTable(newPart.getDbName(),newPart.getTableName()).getPartitionKeys()),hash);
+  store(PART_TABLE,serialized[0],CATALOG_CF,CATALOG_COL,serialized[1]);
+  partCache.put(newPart.getDbName(),newPart.getTableName(),newPart);
+  if (!oldPart.getTableName().equals(newPart.getTableName())) {
+    deletePartition(oldPart.getDbName(),oldPart.getTableName(),partTypes,oldPart.getValues());
+  }
+}

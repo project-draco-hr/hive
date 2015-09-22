@@ -14,7 +14,7 @@
   this.relOptSchema=relOptSchema;
   try {
     calciteGenPlan=genLogicalPlan(getQB(),true);
-    topLevelFieldSchema=SemanticAnalyzer.convertRowSchemaToResultSetSchema(relToHiveRR.get(calciteGenPlan),HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_RESULTSET_USE_UNIQUE_COLUMN_NAMES));
+    resultSchema=SemanticAnalyzer.convertRowSchemaToResultSetSchema(relToHiveRR.get(calciteGenPlan),HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_RESULTSET_USE_UNIQUE_COLUMN_NAMES));
   }
  catch (  SemanticException e) {
     semanticException=e;
@@ -34,6 +34,7 @@
   hepPgmBldr.addRuleInstance(ProjectRemoveRule.INSTANCE);
   hepPgmBldr.addRuleInstance(UnionMergeRule.INSTANCE);
   hepPgmBldr.addRuleInstance(new ProjectMergeRule(false,HiveProject.DEFAULT_PROJECT_FACTORY));
+  hepPgmBldr.addRuleInstance(HiveAggregateProjectMergeRule.INSTANCE);
   hepPgm=hepPgmBldr.build();
   HepPlanner hepPlanner=new HepPlanner(hepPgm);
   hepPlanner.registerMetadataProviders(list);
@@ -50,7 +51,7 @@
   calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,HiveWindowingFixRule.INSTANCE);
   if (HiveConf.getBoolVar(conf,ConfVars.HIVE_CBO_RETPATH_HIVEOP)) {
     calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,true,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,HiveJoinProjectTransposeRule.BOTH_PROJECT_INCLUDE_OUTER,HiveJoinProjectTransposeRule.LEFT_PROJECT_INCLUDE_OUTER,HiveJoinProjectTransposeRule.RIGHT_PROJECT_INCLUDE_OUTER,HiveJoinToMultiJoinRule.INSTANCE,HiveProjectMergeRule.INSTANCE);
-    HiveRelFieldTrimmer fieldTrimmer=new HiveRelFieldTrimmer(null,HiveProject.DEFAULT_PROJECT_FACTORY,HiveFilter.DEFAULT_FILTER_FACTORY,HiveJoin.HIVE_JOIN_FACTORY,HiveSemiJoin.HIVE_SEMIJOIN_FACTORY,HiveSort.HIVE_SORT_REL_FACTORY,HiveAggregate.HIVE_AGGR_REL_FACTORY,HiveUnion.UNION_REL_FACTORY);
+    HiveRelFieldTrimmer fieldTrimmer=new HiveRelFieldTrimmer(null,HiveProject.DEFAULT_PROJECT_FACTORY,HiveFilter.DEFAULT_FILTER_FACTORY,HiveJoin.HIVE_JOIN_FACTORY,HiveSemiJoin.HIVE_SEMIJOIN_FACTORY,HiveSortLimit.HIVE_SORT_REL_FACTORY,HiveAggregate.HIVE_AGGR_REL_FACTORY,HiveUnion.UNION_REL_FACTORY);
     calciteOptimizedPlan=fieldTrimmer.trim(calciteOptimizedPlan);
     calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,ProjectRemoveRule.INSTANCE,new ProjectMergeRule(false,HiveProject.DEFAULT_PROJECT_FACTORY));
     calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,HiveInsertExchange4JoinRule.EXCHANGE_BELOW_JOIN,HiveInsertExchange4JoinRule.EXCHANGE_BELOW_MULTIJOIN);

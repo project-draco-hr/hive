@@ -1,0 +1,27 @@
+{
+  if (order != null) {
+    HiveSortLimit hiveSortLimit=order;
+    if (!hiveSortLimit.getCollation().getFieldCollations().isEmpty()) {
+      ASTNode orderAst=ASTBuilder.createAST(HiveParser.TOK_ORDERBY,"TOK_ORDERBY");
+      schema=new Schema(hiveSortLimit);
+      Map<Integer,RexNode> obRefToCallMap=hiveSortLimit.getInputRefToCallMap();
+      RexNode obExpr;
+      ASTNode astCol;
+      for (      RelFieldCollation c : hiveSortLimit.getCollation().getFieldCollations()) {
+        ASTNode directionAST=c.getDirection() == RelFieldCollation.Direction.ASCENDING ? ASTBuilder.createAST(HiveParser.TOK_TABSORTCOLNAMEASC,"TOK_TABSORTCOLNAMEASC") : ASTBuilder.createAST(HiveParser.TOK_TABSORTCOLNAMEDESC,"TOK_TABSORTCOLNAMEDESC");
+        obExpr=null;
+        if (obRefToCallMap != null)         obExpr=obRefToCallMap.get(c.getFieldIndex());
+        if (obExpr != null) {
+          astCol=obExpr.accept(new RexVisitor(schema));
+        }
+ else {
+          ColumnInfo cI=schema.get(c.getFieldIndex());
+          astCol=ASTBuilder.unqualifiedName(cI.column);
+        }
+        directionAST.addChild(astCol);
+        orderAst.addChild(directionAST);
+      }
+      hiveAST.order=orderAst;
+    }
+  }
+}

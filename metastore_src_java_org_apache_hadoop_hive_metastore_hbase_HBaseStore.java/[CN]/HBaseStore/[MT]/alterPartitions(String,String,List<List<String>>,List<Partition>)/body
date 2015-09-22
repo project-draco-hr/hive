@@ -1,0 +1,26 @@
+{
+  boolean commit=false;
+  openTransaction();
+  try {
+    List<Partition> new_partsCopy=new ArrayList<Partition>();
+    for (int i=0; i < new_parts.size(); i++) {
+      Partition newPartCopy=new_parts.get(i).deepCopy();
+      newPartCopy.setDbName(HiveStringUtils.normalizeIdentifier(newPartCopy.getDbName()));
+      newPartCopy.setTableName(HiveStringUtils.normalizeIdentifier(newPartCopy.getTableName()));
+      new_partsCopy.add(i,newPartCopy);
+    }
+    List<Partition> oldParts=getHBase().getPartitions(HiveStringUtils.normalizeIdentifier(db_name),HiveStringUtils.normalizeIdentifier(tbl_name),HBaseUtils.getPartitionKeyTypes(getTable(HiveStringUtils.normalizeIdentifier(db_name),HiveStringUtils.normalizeIdentifier(tbl_name)).getPartitionKeys()),part_vals_list);
+    getHBase().replacePartitions(oldParts,new_partsCopy,HBaseUtils.getPartitionKeyTypes(getTable(db_name,tbl_name).getPartitionKeys()));
+    for (    List<String> part_vals : part_vals_list) {
+      getHBase().getStatsCache().invalidate(HiveStringUtils.normalizeIdentifier(db_name),HiveStringUtils.normalizeIdentifier(tbl_name),buildExternalPartName(db_name,tbl_name,part_vals));
+    }
+    commit=true;
+  }
+ catch (  IOException e) {
+    LOG.error("Unable to add partition",e);
+    throw new MetaException("Unable to read from or write to hbase " + e.getMessage());
+  }
+ finally {
+    commitOrRoleBack(commit);
+  }
+}

@@ -1,0 +1,63 @@
+{
+  final List<Integer> newKeys=Lists.newArrayList();
+  final Map<Integer,Integer> map=new HashMap<>();
+  for (  int key : aggregate.getGroupSet()) {
+    final RexNode rex=project.getProjects().get(key);
+    if (rex instanceof RexInputRef) {
+      final int newKey=((RexInputRef)rex).getIndex();
+      newKeys.add(newKey);
+      map.put(key,newKey);
+    }
+ else {
+      return null;
+    }
+  }
+  final ImmutableBitSet newGroupSet=aggregate.getGroupSet().permute(map);
+  ImmutableList<ImmutableBitSet> newGroupingSets=null;
+  if (aggregate.indicator) {
+    newGroupingSets=ImmutableBitSet.ORDERING.immutableSortedCopy(ImmutableBitSet.permute(aggregate.getGroupSets(),map));
+  }
+  final ImmutableList.Builder<AggregateCall> aggCalls=ImmutableList.builder();
+  for (  AggregateCall aggregateCall : aggregate.getAggCallList()) {
+    final ImmutableList.Builder<Integer> newArgs=ImmutableList.builder();
+    for (    int arg : aggregateCall.getArgList()) {
+      final RexNode rex=project.getProjects().get(arg);
+      if (rex instanceof RexInputRef) {
+        newArgs.add(((RexInputRef)rex).getIndex());
+      }
+ else {
+        return null;
+      }
+    }
+    final int newFilterArg;
+    if (aggregateCall.filterArg >= 0) {
+      final RexNode rex=project.getProjects().get(aggregateCall.filterArg);
+      if (!(rex instanceof RexInputRef)) {
+        return null;
+      }
+      newFilterArg=((RexInputRef)rex).getIndex();
+    }
+ else {
+      newFilterArg=-1;
+    }
+    aggCalls.add(aggregateCall.copy(newArgs.build(),newFilterArg));
+  }
+  final Aggregate newAggregate=aggregate.copy(aggregate.getTraitSet(),project.getInput(),aggregate.indicator,newGroupSet,newGroupingSets,aggCalls.build());
+  RelNode rel=newAggregate;
+  if (!newKeys.equals(newGroupSet.asList())) {
+    final List<Integer> posList=Lists.newArrayList();
+    for (    int newKey : newKeys) {
+      posList.add(newGroupSet.indexOf(newKey));
+    }
+    if (aggregate.indicator) {
+      for (      int newKey : newKeys) {
+        posList.add(aggregate.getGroupCount() + newGroupSet.indexOf(newKey));
+      }
+    }
+    for (int i=newAggregate.getGroupCount() + newAggregate.getIndicatorCount(); i < newAggregate.getRowType().getFieldCount(); i++) {
+      posList.add(i);
+    }
+    rel=RelOptUtil.createProject(HiveProject.DEFAULT_PROJECT_FACTORY,rel,posList);
+  }
+  return rel;
+}

@@ -4,28 +4,16 @@
   try {
     stmt=dbConn.createStatement();
     long now=getDbTime(dbConn);
-    String s="select txn_state from TXNS where txn_id = " + txnid;
-    LOG.debug("Going to execute query <" + s + ">");
-    ResultSet rs=stmt.executeQuery(s);
-    if (!rs.next()) {
-      s="select count(*) from COMPLETED_TXN_COMPONENTS where CTC_TXNID = " + txnid;
-      ResultSet rs2=stmt.executeQuery(s);
-      boolean alreadyCommitted=rs2.next() && rs2.getInt(1) > 0;
-      LOG.debug("Going to rollback");
-      dbConn.rollback();
-      if (alreadyCommitted) {
-        throw new NoSuchTxnException("Transaction " + JavaUtils.txnIdToString(txnid) + " is already committed.");
-      }
-      throw new NoSuchTxnException("No such transaction " + JavaUtils.txnIdToString(txnid));
-    }
-    if (rs.getString(1).charAt(0) == TXN_ABORTED) {
-      LOG.debug("Going to rollback");
-      dbConn.rollback();
-      throw new TxnAbortedException("Transaction " + JavaUtils.txnIdToString(txnid) + " already aborted");
-    }
-    s="update TXNS set txn_last_heartbeat = " + now + " where txn_id = "+ txnid;
+    ensureValidTxn(dbConn,txnid,stmt);
+    String s="update TXNS set txn_last_heartbeat = " + now + " where txn_id = "+ txnid+ " and txn_state = '"+ TXN_OPEN+ "'";
     LOG.debug("Going to execute update <" + s + ">");
-    stmt.executeUpdate(s);
+    int rc=stmt.executeUpdate(s);
+    if (rc < 1) {
+      ensureValidTxn(dbConn,txnid,stmt);
+      LOG.warn("Can neither heartbeat txn nor confirm it as invalid.");
+      dbConn.rollback();
+      throw new NoSuchTxnException("No such txn: " + txnid);
+    }
     LOG.debug("Going to commit");
     dbConn.commit();
   }

@@ -1,0 +1,33 @@
+{
+  while (true) {
+    long startedAt=System.currentTimeMillis();
+    List<HbaseMetastoreProto.AggrStatsInvalidatorFilter.Entry> thisRun=null;
+    lock.lock();
+    try {
+      if (entries.size() > 0) {
+        thisRun=entries;
+        entries=new ArrayList<>();
+      }
+    }
+  finally {
+      lock.unlock();
+    }
+    if (thisRun != null) {
+      try {
+        HbaseMetastoreProto.AggrStatsInvalidatorFilter filter=HbaseMetastoreProto.AggrStatsInvalidatorFilter.newBuilder().setRunEvery(runInvalidatorEvery).setMaxCacheEntryLife(maxTimeInCache).addAllToInvalidate(thisRun).build();
+        List<StatsCacheKey> keys=HBaseReadWrite.getInstance().invalidateAggregatedStats(filter);
+        cache.invalidateAll(keys);
+      }
+ catch (      IOException e) {
+        LOG.error("Caught error while invalidating entries in the cache",e);
+      }
+    }
+    invalidatorHasRun=true;
+    try {
+      sleep(runInvalidatorEvery - (System.currentTimeMillis() - startedAt));
+    }
+ catch (    InterruptedException e) {
+      LOG.warn("Interupted while sleeping",e);
+    }
+  }
+}

@@ -2,40 +2,20 @@
   String colPath=descTbl.getColumnPath();
   String tableName=descTbl.getTableName();
   Table tbl=db.getTable(tableName,false);
+  if (tbl == null) {
+    throw new HiveException(ErrorMsg.INVALID_TABLE,tableName);
+  }
   Partition part=null;
-  DataOutputStream outStream=null;
-  try {
-    Path resFile=new Path(descTbl.getResFile());
-    if (tbl == null) {
-      FileSystem fs=resFile.getFileSystem(conf);
-      outStream=fs.create(resFile);
-      outStream.close();
-      outStream=null;
-      throw new HiveException(ErrorMsg.INVALID_TABLE,tableName);
+  if (descTbl.getPartSpec() != null) {
+    part=db.getPartition(tbl,descTbl.getPartSpec(),false);
+    if (part == null) {
+      throw new HiveException(ErrorMsg.INVALID_PARTITION,StringUtils.join(descTbl.getPartSpec().keySet(),','),tableName);
     }
-    if (descTbl.getPartSpec() != null) {
-      part=db.getPartition(tbl,descTbl.getPartSpec(),false);
-      if (part == null) {
-        FileSystem fs=resFile.getFileSystem(conf);
-        outStream=fs.create(resFile);
-        outStream.close();
-        outStream=null;
-        throw new HiveException(ErrorMsg.INVALID_PARTITION,StringUtils.join(descTbl.getPartSpec().keySet(),','),tableName);
-      }
-      tbl=part.getTable();
-    }
+    tbl=part.getTable();
   }
- catch (  IOException e) {
-    throw new HiveException(e,ErrorMsg.GENERIC_ERROR,tableName);
-  }
- finally {
-    IOUtils.closeStream(outStream);
-  }
+  DataOutputStream outStream=getOutputStream(descTbl.getResFile());
   try {
     LOG.info("DDLTask: got data for " + tbl.getTableName());
-    Path resFile=new Path(descTbl.getResFile());
-    FileSystem fs=resFile.getFileSystem(conf);
-    outStream=fs.create(resFile);
     List<FieldSchema> cols=null;
     List<ColumnStatisticsObj> colStats=null;
     Deserializer deserializer=tbl.getDeserializer(true);
@@ -72,13 +52,8 @@
     boolean isOutputPadded=!SessionState.get().isHiveServerQuery();
     formatter.describeTable(outStream,colPath,tableName,tbl,part,cols,descTbl.isFormatted(),descTbl.isExt(),descTbl.isPretty(),isOutputPadded,colStats);
     LOG.info("DDLTask: written data for " + tbl.getTableName());
-    outStream.close();
-    outStream=null;
   }
  catch (  SQLException e) {
-    throw new HiveException(e,ErrorMsg.GENERIC_ERROR,tableName);
-  }
-catch (  IOException e) {
     throw new HiveException(e,ErrorMsg.GENERIC_ERROR,tableName);
   }
  finally {
