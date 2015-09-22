@@ -1,0 +1,37 @@
+{
+  boolean commit=false;
+  openTransaction();
+  try {
+    PrincipalPrivilegeSet pps=new PrincipalPrivilegeSet();
+    Database db=getHBase().getDb(dbName);
+    if (db.getPrivileges() != null) {
+      List<PrivilegeGrantInfo> pgi;
+      if (db.getPrivileges().getUserPrivileges() != null) {
+        pgi=db.getPrivileges().getUserPrivileges().get(userName);
+        if (pgi != null) {
+          pps.putToUserPrivileges(userName,pgi);
+        }
+      }
+      if (db.getPrivileges().getRolePrivileges() != null) {
+        List<String> roles=getHBase().getUserRoles(userName);
+        if (roles != null) {
+          for (          String role : roles) {
+            pgi=db.getPrivileges().getRolePrivileges().get(role);
+            if (pgi != null) {
+              pps.putToRolePrivileges(role,pgi);
+            }
+          }
+        }
+      }
+    }
+    commit=true;
+    return pps;
+  }
+ catch (  IOException e) {
+    LOG.error("Unable to get db privileges for user",e);
+    throw new MetaException("Unable to get db privileges for user, " + e.getMessage());
+  }
+ finally {
+    commitOrRoleBack(commit);
+  }
+}

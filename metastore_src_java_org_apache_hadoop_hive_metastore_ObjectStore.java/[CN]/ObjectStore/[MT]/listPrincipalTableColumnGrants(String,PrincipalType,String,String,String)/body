@@ -1,29 +1,14 @@
 {
-  boolean success=false;
-  Query query=null;
-  tableName=HiveStringUtils.normalizeIdentifier(tableName);
-  dbName=HiveStringUtils.normalizeIdentifier(dbName);
-  columnName=HiveStringUtils.normalizeIdentifier(columnName);
-  List<MTableColumnPrivilege> mSecurityColList=new ArrayList<MTableColumnPrivilege>();
-  try {
-    LOG.debug("Executing listPrincipalTableColumnGrants");
-    openTransaction();
-    String queryStr="principalName == t1 && principalType == t2 && " + "table.tableName == t3 && table.database.name == t4 &&  columnName == t5 ";
-    query=pm.newQuery(MTableColumnPrivilege.class,queryStr);
-    query.declareParameters("java.lang.String t1, java.lang.String t2, java.lang.String t3, " + "java.lang.String t4, java.lang.String t5");
-    List<MTableColumnPrivilege> mPrivs=(List<MTableColumnPrivilege>)query.executeWithArray(principalName,principalType.toString(),tableName,dbName,columnName);
-    pm.retrieveAll(mPrivs);
-    success=commitTransaction();
-    mSecurityColList.addAll(mPrivs);
-    LOG.debug("Done retrieving all objects for listPrincipalTableColumnGrants");
+  List<MTableColumnPrivilege> mTableCols=listPrincipalMTableColumnGrants(principalName,principalType,dbName,tableName,columnName);
+  if (mTableCols.isEmpty()) {
+    return Collections.emptyList();
   }
-  finally {
-    if (!success) {
-      rollbackTransaction();
-    }
-    if (query != null) {
-      query.closeAll();
-    }
+  List<HiveObjectPrivilege> result=new ArrayList<HiveObjectPrivilege>();
+  for (int i=0; i < mTableCols.size(); i++) {
+    MTableColumnPrivilege sCol=mTableCols.get(i);
+    HiveObjectRef objectRef=new HiveObjectRef(HiveObjectType.COLUMN,dbName,tableName,null,sCol.getColumnName());
+    HiveObjectPrivilege secObj=new HiveObjectPrivilege(objectRef,sCol.getPrincipalName(),principalType,new PrivilegeGrantInfo(sCol.getPrivilege(),sCol.getCreateTime(),sCol.getGrantor(),PrincipalType.valueOf(sCol.getGrantorType()),sCol.getGrantOption()));
+    result.add(secObj);
   }
-  return mSecurityColList;
+  return result;
 }

@@ -1,0 +1,33 @@
+{
+  List<Table> results=new ArrayList<>(tableNames.size());
+  ObjectPair<String,String>[] hashKeys=new ObjectPair[tableNames.size()];
+  boolean atLeastOneMissing=false;
+  for (int i=0; i < tableNames.size(); i++) {
+    hashKeys[i]=new ObjectPair<>(dbName,tableNames.get(i));
+    results.add(tableCache.get(hashKeys[i]));
+    if (results.get(i) == null)     atLeastOneMissing=true;
+  }
+  if (!atLeastOneMissing)   return results;
+  List<Get> gets=new ArrayList<>();
+  HTableInterface htab=conn.getHBaseTable(TABLE_TABLE);
+  for (int i=0; i < tableNames.size(); i++) {
+    if (results.get(i) != null)     continue;
+    byte[] key=HBaseUtils.buildKey(dbName,tableNames.get(i));
+    Get g=new Get(key);
+    g.addColumn(CATALOG_CF,CATALOG_COL);
+    gets.add(g);
+  }
+  Result[] res=htab.get(gets);
+  for (int i=0, nextGet=0; i < tableNames.size(); i++) {
+    if (results.get(i) != null)     continue;
+    byte[] serialized=res[nextGet++].getValue(CATALOG_CF,CATALOG_COL);
+    if (serialized != null) {
+      HBaseUtils.StorageDescriptorParts sdParts=HBaseUtils.deserializeTable(dbName,tableNames.get(i),serialized);
+      StorageDescriptor sd=getStorageDescriptor(sdParts.sdHash);
+      HBaseUtils.assembleStorageDescriptor(sd,sdParts);
+      tableCache.put(hashKeys[i],sdParts.containingTable);
+      results.set(i,sdParts.containingTable);
+    }
+  }
+  return results;
+}

@@ -1,0 +1,50 @@
+{
+  List<String> keyElements=new ArrayList<>();
+  keyElements.add(dbName);
+  keyElements.add(tableName);
+  int firstStar=-1;
+  for (int i=0; i < partVals.size(); i++) {
+    if ("*".equals(partVals.get(i))) {
+      firstStar=i;
+      break;
+    }
+ else {
+      if (partVals.get(i).equals("")) {
+        break;
+      }
+ else {
+        keyElements.add(partVals.get(i));
+      }
+    }
+  }
+  byte[] keyPrefix;
+  Table table=getTable(dbName,tableName);
+  if (table == null) {
+    throw new NoSuchObjectException("Unable to find table " + dbName + "."+ tableName);
+  }
+  keyPrefix=HBaseUtils.buildPartitionKey(dbName,tableName,HBaseUtils.getPartitionKeyTypes(table.getPartitionKeys().subList(0,keyElements.size() - 2)),keyElements.subList(2,keyElements.size()));
+  List<PartitionKeyComparator.Range> ranges=new ArrayList<PartitionKeyComparator.Range>();
+  List<Operator> ops=new ArrayList<Operator>();
+  if (!(partVals.size() == table.getPartitionKeys().size() && firstStar == -1)) {
+    for (int i=Math.max(0,firstStar); i < table.getPartitionKeys().size() && i < partVals.size(); i++) {
+      if ("*".equals(partVals.get(i))) {
+        PartitionKeyComparator.Operator op=new PartitionKeyComparator.Operator(PartitionKeyComparator.Operator.Type.LIKE,table.getPartitionKeys().get(i).getName(),".*");
+        ops.add(op);
+      }
+ else {
+        PartitionKeyComparator.Range range=new PartitionKeyComparator.Range(table.getPartitionKeys().get(i).getName(),new PartitionKeyComparator.Mark(partVals.get(i),true),new PartitionKeyComparator.Mark(partVals.get(i),true));
+        ranges.add(range);
+      }
+    }
+  }
+  Filter filter=null;
+  if (!ranges.isEmpty() || !ops.isEmpty()) {
+    filter=new RowFilter(CompareFilter.CompareOp.EQUAL,new PartitionKeyComparator(StringUtils.join(HBaseUtils.getPartitionNames(table.getPartitionKeys()),","),StringUtils.join(HBaseUtils.getPartitionKeyTypes(table.getPartitionKeys()),","),ranges,ops));
+  }
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Scanning partitions with prefix <" + new String(keyPrefix) + "> and filter <"+ filter+ ">");
+  }
+  List<Partition> parts=scanPartitionsWithFilter(dbName,tableName,keyPrefix,HBaseUtils.getEndPrefix(keyPrefix),maxPartitions,filter);
+  partCache.put(dbName,tableName,parts,false);
+  return parts;
+}

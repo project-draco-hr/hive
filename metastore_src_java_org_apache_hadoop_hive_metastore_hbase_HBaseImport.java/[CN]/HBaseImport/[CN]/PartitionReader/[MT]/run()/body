@@ -1,0 +1,27 @@
+{
+  while (partitionedTables.size() > 0) {
+    try {
+      Table table=partitionedTables.poll(1,TimeUnit.SECONDS);
+      if (table != null) {
+        screen("Fetching partitions for table " + table.getDbName() + "."+ table.getTableName());
+        List<String> partNames=rdbmsStore.get().listPartitionNames(table.getDbName(),table.getTableName(),(short)-1);
+        if (partNames.size() <= batchSize) {
+          LOG.debug("Adding all partition names to queue for " + table.getDbName() + "."+ table.getTableName());
+          partQueue.put(new PartQueueEntry(table.getDbName(),table.getTableName(),partNames));
+        }
+ else {
+          int goUntil=partNames.size() % batchSize == 0 ? partNames.size() / batchSize : partNames.size() / batchSize + 1;
+          for (int i=0; i < goUntil; i++) {
+            int start=i * batchSize;
+            int end=Math.min((i + 1) * batchSize,partNames.size());
+            LOG.debug("Adding partitions " + start + " to "+ end+ " for "+ table.getDbName()+ "."+ table.getTableName());
+            partQueue.put(new PartQueueEntry(table.getDbName(),table.getTableName(),partNames.subList(start,end)));
+          }
+        }
+      }
+    }
+ catch (    InterruptedException|MetaException e) {
+      throw new RuntimeException(e);
+    }
+  }
+}
