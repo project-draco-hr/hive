@@ -1,0 +1,62 @@
+{
+  HbaseMetastoreProto.StorageDescriptor.Builder builder=HbaseMetastoreProto.StorageDescriptor.newBuilder();
+  builder.addAllCols(convertFieldSchemaListToProto(sd.getCols()));
+  if (sd.getInputFormat() != null) {
+    builder.setInputFormat(sd.getInputFormat());
+  }
+  if (sd.getOutputFormat() != null) {
+    builder.setOutputFormat(sd.getOutputFormat());
+  }
+  builder.setIsCompressed(sd.isCompressed());
+  builder.setNumBuckets(sd.getNumBuckets());
+  if (sd.getSerdeInfo() != null) {
+    HbaseMetastoreProto.StorageDescriptor.SerDeInfo.Builder serdeBuilder=HbaseMetastoreProto.StorageDescriptor.SerDeInfo.newBuilder();
+    SerDeInfo serde=sd.getSerdeInfo();
+    if (serde.getName() != null) {
+      serdeBuilder.setName(serde.getName());
+    }
+    if (serde.getSerializationLib() != null) {
+      serdeBuilder.setSerializationLib(serde.getSerializationLib());
+    }
+    if (serde.getParameters() != null) {
+      serdeBuilder.setParameters(buildParameters(serde.getParameters()));
+    }
+    builder.setSerdeInfo(serdeBuilder);
+  }
+  if (sd.getBucketCols() != null) {
+    builder.addAllBucketCols(sd.getBucketCols());
+  }
+  if (sd.getSortCols() != null) {
+    List<Order> orders=sd.getSortCols();
+    List<HbaseMetastoreProto.StorageDescriptor.Order> protoList=new ArrayList<>(orders.size());
+    for (    Order order : orders) {
+      protoList.add(HbaseMetastoreProto.StorageDescriptor.Order.newBuilder().setColumnName(order.getCol()).setOrder(order.getOrder()).build());
+    }
+    builder.addAllSortCols(protoList);
+  }
+  if (sd.getSkewedInfo() != null) {
+    HbaseMetastoreProto.StorageDescriptor.SkewedInfo.Builder skewBuilder=HbaseMetastoreProto.StorageDescriptor.SkewedInfo.newBuilder();
+    SkewedInfo skewed=sd.getSkewedInfo();
+    if (skewed.getSkewedColNames() != null) {
+      skewBuilder.addAllSkewedColNames(skewed.getSkewedColNames());
+    }
+    if (skewed.getSkewedColValues() != null) {
+      for (      List<String> innerList : skewed.getSkewedColValues()) {
+        HbaseMetastoreProto.StorageDescriptor.SkewedInfo.SkewedColValueList.Builder listBuilder=HbaseMetastoreProto.StorageDescriptor.SkewedInfo.SkewedColValueList.newBuilder();
+        listBuilder.addAllSkewedColValue(innerList);
+        skewBuilder.addSkewedColValues(listBuilder);
+      }
+    }
+    if (skewed.getSkewedColValueLocationMaps() != null) {
+      for (      Map.Entry<List<String>,String> e : skewed.getSkewedColValueLocationMaps().entrySet()) {
+        HbaseMetastoreProto.StorageDescriptor.SkewedInfo.SkewedColValueLocationMap.Builder mapBuilder=HbaseMetastoreProto.StorageDescriptor.SkewedInfo.SkewedColValueLocationMap.newBuilder();
+        mapBuilder.addAllKey(e.getKey());
+        mapBuilder.setValue(e.getValue());
+        skewBuilder.addSkewedColValueLocationMaps(mapBuilder);
+      }
+    }
+    builder.setSkewedInfo(skewBuilder);
+  }
+  builder.setStoredAsSubDirectories(sd.isStoredAsSubDirectories());
+  return builder.build().toByteArray();
+}

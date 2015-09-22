@@ -1,0 +1,20 @@
+{
+  byte[] key=HBaseUtils.hashStorageDescriptor(sd,md);
+  byte[] serializedRefCnt=read(SD_TABLE,key,CATALOG_CF,REF_COUNT_COL);
+  if (serializedRefCnt == null) {
+    return;
+  }
+  int refCnt=Integer.valueOf(new String(serializedRefCnt,HBaseUtils.ENCODING));
+  HTableInterface htab=conn.getHBaseTable(SD_TABLE);
+  if (--refCnt < 1) {
+    Delete d=new Delete(key);
+    htab.delete(d);
+    sdCache.remove(new ByteArrayWrapper(key));
+  }
+ else {
+    Put p=new Put(key);
+    p.add(CATALOG_CF,REF_COUNT_COL,Integer.toString(refCnt).getBytes(HBaseUtils.ENCODING));
+    htab.put(p);
+    conn.flush(htab);
+  }
+}

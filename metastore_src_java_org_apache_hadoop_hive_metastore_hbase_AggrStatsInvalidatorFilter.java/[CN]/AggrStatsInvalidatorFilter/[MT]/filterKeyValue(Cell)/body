@@ -1,0 +1,28 @@
+{
+  if (Arrays.equals(CellUtil.cloneQualifier(cell),HBaseReadWrite.AGGR_STATS_BLOOM_COL)) {
+    HbaseMetastoreProto.AggrStatsBloomFilter fromCol=HbaseMetastoreProto.AggrStatsBloomFilter.parseFrom(CellUtil.cloneValue(cell));
+    BloomFilter bloom=null;
+    if (now - maxCacheEntryLife > fromCol.getAggregatedAt()) {
+      return ReturnCode.INCLUDE;
+    }
+ else     if (now - runEvery * 2 <= fromCol.getAggregatedAt()) {
+      return ReturnCode.NEXT_ROW;
+    }
+ else {
+      for (      HbaseMetastoreProto.AggrStatsInvalidatorFilter.Entry entry : entries) {
+        if (entry.getDbName().equals(fromCol.getDbName()) && entry.getTableName().equals(fromCol.getTableName())) {
+          if (bloom == null) {
+            bloom=new BloomFilter(fromCol.getBloomFilter().getBitsList(),fromCol.getBloomFilter().getNumBits(),fromCol.getBloomFilter().getNumFuncs());
+          }
+          if (bloom.test(entry.getPartName().toByteArray())) {
+            return ReturnCode.INCLUDE;
+          }
+        }
+      }
+    }
+    return ReturnCode.NEXT_ROW;
+  }
+ else {
+    return ReturnCode.NEXT_COL;
+  }
+}

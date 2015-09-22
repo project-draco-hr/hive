@@ -1,30 +1,12 @@
 {
-  boolean success=false;
-  Query query=null;
-  List<MRoleMap> mRoleMember=new ArrayList<MRoleMap>();
-  try {
-    LOG.debug("Executing listRoles");
-    openTransaction();
-    query=pm.newQuery(MRoleMap.class,"principalName == t1 && principalType == t2");
-    query.declareParameters("java.lang.String t1, java.lang.String t2");
-    query.setUnique(false);
-    List<MRoleMap> mRoles=(List<MRoleMap>)query.executeWithArray(principalName,principalType.toString());
-    pm.retrieveAll(mRoles);
-    success=commitTransaction();
-    mRoleMember.addAll(mRoles);
-    LOG.debug("Done retrieving all objects for listRoles");
-  }
-  finally {
-    if (!success) {
-      rollbackTransaction();
-    }
-    if (query != null) {
-      query.closeAll();
+  List<Role> result=new ArrayList<Role>();
+  List<MRoleMap> roleMaps=listMRoles(principalName,principalType);
+  if (roleMaps != null) {
+    for (    MRoleMap roleMap : roleMaps) {
+      MRole mrole=roleMap.getRole();
+      Role role=new Role(mrole.getRoleName(),mrole.getCreateTime(),mrole.getOwnerName());
+      result.add(role);
     }
   }
-  if (principalType == PrincipalType.USER) {
-    MRole publicRole=new MRole(HiveMetaStore.PUBLIC,0,HiveMetaStore.PUBLIC);
-    mRoleMember.add(new MRoleMap(principalName,principalType.toString(),publicRole,0,null,null,false));
-  }
-  return mRoleMember;
+  return result;
 }

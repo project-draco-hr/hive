@@ -1,0 +1,40 @@
+{
+  dbName=HiveStringUtils.normalizeIdentifier(dbName);
+  tblName=HiveStringUtils.normalizeIdentifier(tblName);
+  Table table=getTable(dbName,tblName);
+  if (table == null) {
+    throw new NoSuchObjectException("Unable to find table " + dbName + "."+ tblName);
+  }
+  PlanResult planRes=HBaseFilterPlanUtil.getFilterPlan(exprTree,table.getPartitionKeys());
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Hbase Filter Plan generated : " + planRes.plan);
+  }
+  Map<List<String>,Partition> mergedParts=new HashMap<List<String>,Partition>();
+  for (  ScanPlan splan : planRes.plan.getPlans()) {
+    try {
+      List<Partition> parts=getHBase().scanPartitions(dbName,tblName,splan.getStartRowSuffix(dbName,tblName,table.getPartitionKeys()),splan.getEndRowSuffix(dbName,tblName,table.getPartitionKeys()),splan.getFilter(table.getPartitionKeys()),-1);
+      boolean reachedMax=false;
+      for (      Partition part : parts) {
+        mergedParts.put(part.getValues(),part);
+        if (mergedParts.size() == maxParts) {
+          reachedMax=true;
+          break;
+        }
+      }
+      if (reachedMax) {
+        break;
+      }
+    }
+ catch (    IOException e) {
+      LOG.error("Unable to get partitions",e);
+      throw new MetaException("Error scanning partitions" + tableNameForErrorMsg(dbName,tblName) + ": "+ e);
+    }
+  }
+  for (  Entry<List<String>,Partition> mp : mergedParts.entrySet()) {
+    result.add(mp.getValue());
+  }
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Matched partitions " + result);
+  }
+  return !planRes.hasUnsupportedCondition;
+}

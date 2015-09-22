@@ -1,0 +1,29 @@
+{
+  int majorPartsCount=getMajorPartsCount(parts);
+  Set<String> majorKeys=new HashSet<String>();
+  for (int i=0; i < majorPartsCount; i++) {
+    majorKeys.add(parts.get(i).getName());
+  }
+  List<String> names=HBaseUtils.getPartitionNames(parts);
+  List<PartitionKeyComparator.Range> ranges=new ArrayList<PartitionKeyComparator.Range>();
+  for (  Map.Entry<String,ScanMarkerPair> entry : markers.entrySet()) {
+    if (names.contains(entry.getKey()) && !majorKeys.contains(entry.getKey())) {
+      PartitionKeyComparator.Mark startMark=null;
+      if (entry.getValue().startMarker != null) {
+        startMark=new PartitionKeyComparator.Mark(entry.getValue().startMarker.value,entry.getValue().startMarker.isInclusive);
+      }
+      PartitionKeyComparator.Mark endMark=null;
+      if (entry.getValue().endMarker != null) {
+        startMark=new PartitionKeyComparator.Mark(entry.getValue().endMarker.value,entry.getValue().endMarker.isInclusive);
+      }
+      PartitionKeyComparator.Range range=new PartitionKeyComparator.Range(entry.getKey(),startMark,endMark);
+      ranges.add(range);
+    }
+  }
+  if (ranges.isEmpty() && ops.isEmpty()) {
+    return null;
+  }
+ else {
+    return new RowFilter(CompareFilter.CompareOp.EQUAL,new PartitionKeyComparator(StringUtils.join(names,","),StringUtils.join(HBaseUtils.getPartitionKeyTypes(parts),","),ranges,ops));
+  }
+}

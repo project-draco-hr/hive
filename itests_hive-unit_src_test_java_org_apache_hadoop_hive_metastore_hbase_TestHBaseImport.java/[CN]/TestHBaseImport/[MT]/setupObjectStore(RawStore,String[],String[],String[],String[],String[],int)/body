@@ -1,0 +1,30 @@
+{
+  for (int i=0; i < roles.length; i++) {
+    rdbms.addRole(roles[i],"me");
+  }
+  for (int i=0; i < dbNames.length; i++) {
+    rdbms.createDatabase(new Database(dbNames[i],"no description","file:/tmp",emptyParameters));
+    List<FieldSchema> cols=new ArrayList<>();
+    cols.add(new FieldSchema("col1","int","nocomment"));
+    SerDeInfo serde=new SerDeInfo("serde","seriallib",null);
+    StorageDescriptor sd=new StorageDescriptor(cols,"file:/tmp","input","output",false,0,serde,null,null,emptyParameters);
+    rdbms.createTable(new Table(tableNames[0],dbNames[i],"me",now,now,0,sd,null,emptyParameters,null,null,null));
+    List<FieldSchema> partCols=new ArrayList<>();
+    partCols.add(new FieldSchema("region","string",""));
+    rdbms.createTable(new Table(tableNames[1],dbNames[i],"me",now,now,0,sd,partCols,emptyParameters,null,null,null));
+    for (int j=0; j < partVals.length; j++) {
+      StorageDescriptor psd=new StorageDescriptor(sd);
+      psd.setLocation("file:/tmp/region=" + partVals[j]);
+      Partition part=new Partition(Arrays.asList(partVals[j]),dbNames[i],tableNames[1],now,now,psd,emptyParameters);
+      rdbms.addPartition(part);
+    }
+    for (    String funcName : funcNames) {
+      LOG.debug("Creating new function " + dbNames[i] + "."+ funcName);
+      rdbms.createFunction(new Function(funcName,dbNames[i],"classname","ownername",PrincipalType.USER,(int)System.currentTimeMillis() / 1000,FunctionType.JAVA,Arrays.asList(new ResourceUri(ResourceType.JAR,"uri"))));
+    }
+  }
+  for (int i=0; i < tokenIds.length; i++)   rdbms.addToken(tokenIds[i],tokens[i]);
+  for (int i=0; i < masterKeys.length; i++) {
+    masterKeySeqs.add(rdbms.addMasterKey(masterKeys[i]));
+  }
+}

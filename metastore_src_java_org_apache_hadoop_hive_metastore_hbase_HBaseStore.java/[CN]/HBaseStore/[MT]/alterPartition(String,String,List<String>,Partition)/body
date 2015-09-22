@@ -1,0 +1,20 @@
+{
+  boolean commit=false;
+  openTransaction();
+  try {
+    Partition new_partCopy=new_part.deepCopy();
+    new_partCopy.setDbName(HiveStringUtils.normalizeIdentifier(new_partCopy.getDbName()));
+    new_partCopy.setTableName(HiveStringUtils.normalizeIdentifier(new_partCopy.getTableName()));
+    Partition oldPart=getHBase().getPartition(HiveStringUtils.normalizeIdentifier(db_name),HiveStringUtils.normalizeIdentifier(tbl_name),part_vals);
+    getHBase().replacePartition(oldPart,new_partCopy,HBaseUtils.getPartitionKeyTypes(getTable(db_name,tbl_name).getPartitionKeys()));
+    getHBase().getStatsCache().invalidate(HiveStringUtils.normalizeIdentifier(db_name),HiveStringUtils.normalizeIdentifier(tbl_name),buildExternalPartName(db_name,tbl_name,part_vals));
+    commit=true;
+  }
+ catch (  IOException e) {
+    LOG.error("Unable to add partition",e);
+    throw new MetaException("Unable to read from or write to hbase " + e.getMessage());
+  }
+ finally {
+    commitOrRoleBack(commit);
+  }
+}
