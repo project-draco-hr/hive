@@ -1,0 +1,78 @@
+{
+  if (query1.error()) {
+    exec.signal(query1);
+    return null;
+  }
+ else   if (query2.error()) {
+    exec.signal(query2);
+    return null;
+  }
+  ResultSet rs1=query1.getResultSet();
+  ResultSet rs2=query2.getResultSet();
+  if (rs1 == null || rs2 == null) {
+    exec.setSqlCode(-1);
+    return null;
+  }
+  boolean equal=true;
+  tests=0;
+  failedTests=0;
+  try {
+    ResultSetMetaData rm1=rs1.getMetaData();
+    ResultSetMetaData rm2=rs2.getMetaData();
+    int cnt1=rm1.getColumnCount();
+    int cnt2=rm2.getColumnCount();
+    tests=cnt1;
+    while (rs1.next() && rs2.next()) {
+      for (int i=1; i <= tests; i++) {
+        Var v1=new Var(Var.Type.DERIVED_TYPE);
+        Var v2=new Var(Var.Type.DERIVED_TYPE);
+        v1.setValue(rs1,rm1,i);
+        if (i <= cnt2) {
+          v2.setValue(rs2,rm2,i);
+        }
+        boolean e=true;
+        if (!(v1.isNull() && v2.isNull()) && !v1.equals(v2)) {
+          equal=false;
+          e=false;
+          failedTests++;
+        }
+        if (trace || info) {
+          String m=rm1.getColumnName(i) + "\t" + v1.toString()+ "\t"+ v2.toString();
+          if (!e) {
+            m+="\tNot equal";
+            BigDecimal diff=v1.percentDiff(v2);
+            if (diff != null) {
+              if (diff.compareTo(BigDecimal.ZERO) != 0) {
+                m+=", " + diff + "% difference";
+                failedTestsHighDiff++;
+              }
+ else {
+                m+=", less then 0.01% difference";
+              }
+            }
+ else {
+              failedTestsHighDiff++;
+            }
+          }
+          if (trace) {
+            trace(null,m);
+          }
+ else {
+            info(null,m);
+          }
+        }
+      }
+      if (equal) {
+        exec.setSqlSuccess();
+      }
+ else {
+        exec.setSqlCode(1);
+      }
+    }
+  }
+ catch (  Exception e) {
+    exec.signal(e);
+    return null;
+  }
+  return new Boolean(equal);
+}

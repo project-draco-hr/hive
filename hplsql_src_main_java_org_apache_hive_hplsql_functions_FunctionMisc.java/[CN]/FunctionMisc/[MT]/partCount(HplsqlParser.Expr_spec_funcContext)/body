@@ -1,0 +1,48 @@
+{
+  String tabname=evalPop(ctx.expr(0)).toString();
+  StringBuilder sql=new StringBuilder();
+  sql.append("SHOW PARTITIONS ");
+  sql.append(tabname);
+  int cnt=ctx.expr().size();
+  if (cnt > 1) {
+    sql.append(" PARTITION (");
+    int i=1;
+    while (i + 1 < cnt) {
+      String col=evalPop(ctx.expr(i)).toString();
+      String val=evalPop(ctx.expr(i + 1)).toSqlString();
+      if (i > 2) {
+        sql.append(", ");
+      }
+      sql.append(col);
+      sql.append("=");
+      sql.append(val);
+      i+=2;
+    }
+    sql.append(")");
+  }
+  if (trace) {
+    trace(ctx,"Query: " + sql);
+  }
+  if (exec.getOffline()) {
+    evalNull();
+    return;
+  }
+  Query query=exec.executeQuery(ctx,sql.toString(),exec.conf.defaultConnection);
+  if (query.error()) {
+    evalNullClose(query,exec.conf.defaultConnection);
+    return;
+  }
+  int result=0;
+  ResultSet rs=query.getResultSet();
+  try {
+    while (rs.next()) {
+      result++;
+    }
+  }
+ catch (  SQLException e) {
+    evalNullClose(query,exec.conf.defaultConnection);
+    return;
+  }
+  evalInt(result);
+  exec.closeQuery(query,exec.conf.defaultConnection);
+}
