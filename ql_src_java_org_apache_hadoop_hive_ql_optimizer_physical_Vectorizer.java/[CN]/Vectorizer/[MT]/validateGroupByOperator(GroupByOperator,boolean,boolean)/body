@@ -14,7 +14,6 @@
     LOG.info("Cannot vectorize groupby key expression");
     return false;
   }
-  boolean isMergePartial=(desc.getMode() != GroupByDesc.Mode.HASH);
   if (!isReduce) {
     ret=validateHashAggregationDesc(desc.getAggregators());
     if (!ret) {
@@ -22,7 +21,8 @@
     }
   }
  else {
-    if (isMergePartial) {
+    boolean isComplete=desc.getMode() == GroupByDesc.Mode.COMPLETE;
+    if (desc.getMode() != GroupByDesc.Mode.HASH) {
       if (desc.isDistinct()) {
         LOG.info("Vectorized Reduce MergePartial GROUP BY does not support DISTINCT");
         return false;
@@ -33,7 +33,7 @@
         return false;
       }
       if (hasKeys) {
-        if (op.getParentOperators().size() > 0) {
+        if (op.getParentOperators().size() > 0 && !isComplete) {
           LOG.info("Vectorized Reduce MergePartial GROUP BY keys can only handle a key group when it is fed by reduce-shuffle");
           return false;
         }
@@ -43,7 +43,12 @@
  else {
         LOG.info("Vectorized Reduce MergePartial GROUP BY will do global aggregation");
       }
-      vectorDesc.setIsReduceMergePartial(true);
+      if (!isComplete) {
+        vectorDesc.setIsReduceMergePartial(true);
+      }
+ else {
+        vectorDesc.setIsReduceStreaming(true);
+      }
     }
  else {
       ret=validateHashAggregationDesc(desc.getAggregators());

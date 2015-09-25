@@ -2,7 +2,23 @@
   String schemaString=properties.getProperty(AvroTableProperties.SCHEMA_LITERAL.getPropName());
   if (schemaString != null && !schemaString.equals(SCHEMA_NONE))   return AvroSerdeUtils.getSchemaFor(schemaString);
   schemaString=properties.getProperty(AvroTableProperties.SCHEMA_URL.getPropName());
-  if (schemaString == null || schemaString.equals(SCHEMA_NONE))   throw new AvroSerdeException(EXCEPTION_MESSAGE);
+  if (schemaString == null) {
+    final String columnNameProperty=properties.getProperty(serdeConstants.LIST_COLUMNS);
+    final String columnTypeProperty=properties.getProperty(serdeConstants.LIST_COLUMN_TYPES);
+    final String columnCommentProperty=properties.getProperty(AvroSerDe.LIST_COLUMN_COMMENTS);
+    if (columnNameProperty == null || columnNameProperty.isEmpty() || columnTypeProperty == null || columnTypeProperty.isEmpty()) {
+      throw new AvroSerdeException(EXCEPTION_MESSAGE);
+    }
+    List<String> columnNames=Arrays.asList(columnNameProperty.split(","));
+    List<TypeInfo> columnTypes=TypeInfoUtils.getTypeInfosFromTypeString(columnTypeProperty);
+    Schema schema=AvroSerDe.getSchemaFromCols(properties,columnNames,columnTypes,columnCommentProperty);
+    properties.setProperty(AvroTableProperties.SCHEMA_LITERAL.getPropName(),schema.toString());
+    if (conf != null)     conf.set(AvroTableProperties.AVRO_SERDE_SCHEMA.getPropName(),schema.toString(false));
+    return schema;
+  }
+ else   if (schemaString.equals(SCHEMA_NONE)) {
+    throw new AvroSerdeException(EXCEPTION_MESSAGE);
+  }
   try {
     Schema s=getSchemaFromFS(schemaString,conf);
     if (s == null) {

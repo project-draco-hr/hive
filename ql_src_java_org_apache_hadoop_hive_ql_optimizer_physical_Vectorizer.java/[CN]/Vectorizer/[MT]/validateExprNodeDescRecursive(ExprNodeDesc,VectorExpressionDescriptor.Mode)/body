@@ -12,6 +12,7 @@
     LOG.info("Cannot vectorize " + desc.toString() + " of type "+ typeName);
     return false;
   }
+  boolean isInExpression=false;
   if (desc instanceof ExprNodeGenericFuncDesc) {
     ExprNodeGenericFuncDesc d=(ExprNodeGenericFuncDesc)desc;
     boolean r=validateGenericUdf(d);
@@ -19,12 +20,20 @@
       LOG.info("Cannot vectorize UDF " + d);
       return false;
     }
+    GenericUDF genericUDF=d.getGenericUDF();
+    isInExpression=(genericUDF instanceof GenericUDFIn);
   }
   if (desc.getChildren() != null) {
-    for (    ExprNodeDesc d : desc.getChildren()) {
-      boolean r=validateExprNodeDescRecursive(d,VectorExpressionDescriptor.Mode.FILTER);
-      if (!r) {
+    if (isInExpression && desc.getChildren().get(0).getTypeInfo().getCategory() == Category.STRUCT) {
+      if (!validateStructInExpression(desc,VectorExpressionDescriptor.Mode.FILTER)) {
         return false;
+      }
+    }
+ else {
+      for (      ExprNodeDesc d : desc.getChildren()) {
+        if (!validateExprNodeDescRecursive(d,VectorExpressionDescriptor.Mode.FILTER)) {
+          return false;
+        }
       }
     }
   }
