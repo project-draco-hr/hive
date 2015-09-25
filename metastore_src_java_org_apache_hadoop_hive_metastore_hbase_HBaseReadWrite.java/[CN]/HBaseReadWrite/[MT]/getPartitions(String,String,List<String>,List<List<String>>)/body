@@ -1,0 +1,19 @@
+{
+  List<Partition> parts=new ArrayList<>(partValLists.size());
+  List<Get> gets=new ArrayList<>(partValLists.size());
+  for (  List<String> partVals : partValLists) {
+    byte[] key=HBaseUtils.buildPartitionKey(dbName,tableName,partTypes,partVals);
+    Get get=new Get(key);
+    get.addColumn(CATALOG_CF,CATALOG_COL);
+    gets.add(get);
+  }
+  HTableInterface htab=conn.getHBaseTable(PART_TABLE);
+  Result[] results=htab.get(gets);
+  for (int i=0; i < results.length; i++) {
+    HBaseUtils.StorageDescriptorParts sdParts=HBaseUtils.deserializePartition(dbName,tableName,partValLists.get(i),results[i].getValue(CATALOG_CF,CATALOG_COL));
+    StorageDescriptor sd=getStorageDescriptor(sdParts.sdHash);
+    HBaseUtils.assembleStorageDescriptor(sd,sdParts);
+    parts.add(sdParts.containingPartition);
+  }
+  return parts;
+}

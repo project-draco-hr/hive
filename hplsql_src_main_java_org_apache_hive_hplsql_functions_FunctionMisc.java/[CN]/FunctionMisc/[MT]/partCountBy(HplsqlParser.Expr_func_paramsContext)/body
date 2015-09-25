@@ -1,0 +1,59 @@
+{
+  int cnt=ctx.func_param().size();
+  if (cnt < 1 || exec.getOffline()) {
+    return;
+  }
+  String tabname=evalPop(ctx.func_param(0).expr()).toString();
+  ArrayList<String> keys=null;
+  if (cnt > 1) {
+    keys=new ArrayList<String>();
+    for (int i=1; i < cnt; i++) {
+      keys.add(evalPop(ctx.func_param(i).expr()).toString().toUpperCase());
+    }
+  }
+  String sql="SHOW PARTITIONS " + tabname;
+  Query query=exec.executeQuery(ctx,sql,exec.conf.defaultConnection);
+  if (query.error()) {
+    exec.closeQuery(query,exec.conf.defaultConnection);
+    return;
+  }
+  ResultSet rs=query.getResultSet();
+  HashMap<String,Integer> group=new HashMap<String,Integer>();
+  try {
+    while (rs.next()) {
+      String part=rs.getString(1);
+      String[] parts=part.split("/");
+      String key=parts[0];
+      if (cnt > 1) {
+        StringBuilder k=new StringBuilder();
+        for (int i=0; i < parts.length; i++) {
+          if (keys.contains(parts[i].split("=")[0].toUpperCase())) {
+            if (k.length() > 0) {
+              k.append("/");
+            }
+            k.append(parts[i]);
+          }
+        }
+        key=k.toString();
+      }
+      Integer count=group.get(key);
+      if (count == null) {
+        count=new Integer(0);
+      }
+      group.put(key,count + 1);
+    }
+  }
+ catch (  SQLException e) {
+    exec.closeQuery(query,exec.conf.defaultConnection);
+    return;
+  }
+  if (cnt == 1) {
+    evalInt(group.size());
+  }
+ else {
+    for (    Map.Entry<String,Integer> i : group.entrySet()) {
+      System.out.println(i.getKey() + '\t' + i.getValue());
+    }
+  }
+  exec.closeQuery(query,exec.conf.defaultConnection);
+}

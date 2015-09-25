@@ -8,10 +8,21 @@
   String msUri=conf.getVar(HiveConf.ConfVars.METASTOREURIS);
   localMetaStore=HiveConfUtil.isEmbeddedMetaStore(msUri);
   if (localMetaStore) {
-    client=HiveMetaStore.newRetryingHMSHandler("hive client",conf,true);
+    if (conf.getBoolVar(ConfVars.METASTORE_FASTPATH)) {
+      client=new HiveMetaStore.HMSHandler("hive client",conf,true);
+      fastpath=true;
+    }
+ else {
+      client=HiveMetaStore.newRetryingHMSHandler("hive client",conf,true);
+    }
     isConnected=true;
     snapshotActiveConf();
     return;
+  }
+ else {
+    if (conf.getBoolVar(ConfVars.METASTORE_FASTPATH)) {
+      throw new RuntimeException("You can't set hive.metastore.fastpath to true when you're " + "talking to the thrift metastore service.  You must run the metastore locally.");
+    }
   }
   retries=HiveConf.getIntVar(conf,HiveConf.ConfVars.METASTORETHRIFTCONNECTIONRETRIES);
   retryDelaySeconds=conf.getTimeVar(ConfVars.METASTORE_CLIENT_CONNECT_RETRY_DELAY,TimeUnit.SECONDS);

@@ -1,0 +1,17 @@
+{
+  super.connect();
+  if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_IN_TEST)) {
+    LOG.debug("Using an in memory client transaction system for testing");
+    TransactionManager txnMgr=new TransactionManager(conf);
+    txnMgr.startAndWait();
+    txnClient=new InMemoryTxSystemClient(txnMgr);
+  }
+ else {
+    LOG.debug("Using real client transaction system for production");
+    txnClient=new TransactionServiceClient(conf,new ThreadLocalClientProvider(conf,new InMemoryDiscoveryService()));
+  }
+  for (  String tableName : HBaseReadWrite.tableNames) {
+    txnTables.put(tableName,new TransactionAwareHTable(super.getHBaseTable(tableName,true)));
+  }
+  txn=new TransactionContext(txnClient,txnTables.values());
+}

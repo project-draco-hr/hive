@@ -1,27 +1,14 @@
 {
-  tableName=HiveStringUtils.normalizeIdentifier(tableName);
-  dbName=HiveStringUtils.normalizeIdentifier(dbName);
-  boolean success=false;
-  Query query=null;
-  List<MTablePrivilege> mSecurityTabPartList=new ArrayList<MTablePrivilege>();
-  try {
-    openTransaction();
-    LOG.debug("Executing listAllTableGrants");
-    query=pm.newQuery(MTablePrivilege.class,"principalName == t1 && principalType == t2 && table.tableName == t3 && table.database.name == t4");
-    query.declareParameters("java.lang.String t1, java.lang.String t2, java.lang.String t3, java.lang.String t4");
-    List<MTablePrivilege> mPrivs=(List<MTablePrivilege>)query.executeWithArray(principalName,principalType.toString(),tableName,dbName);
-    pm.retrieveAll(mPrivs);
-    success=commitTransaction();
-    mSecurityTabPartList.addAll(mPrivs);
-    LOG.debug("Done retrieving all objects for listAllTableGrants");
+  List<MTablePrivilege> mTbls=listAllMTableGrants(principalName,principalType,dbName,tableName);
+  if (mTbls.isEmpty()) {
+    return Collections.<HiveObjectPrivilege>emptyList();
   }
-  finally {
-    if (!success) {
-      rollbackTransaction();
-    }
-    if (query != null) {
-      query.closeAll();
-    }
+  List<HiveObjectPrivilege> result=new ArrayList<HiveObjectPrivilege>();
+  for (int i=0; i < mTbls.size(); i++) {
+    MTablePrivilege sTbl=mTbls.get(i);
+    HiveObjectRef objectRef=new HiveObjectRef(HiveObjectType.TABLE,dbName,tableName,null,null);
+    HiveObjectPrivilege secObj=new HiveObjectPrivilege(objectRef,sTbl.getPrincipalName(),principalType,new PrivilegeGrantInfo(sTbl.getPrivilege(),sTbl.getCreateTime(),sTbl.getGrantor(),PrincipalType.valueOf(sTbl.getGrantorType()),sTbl.getGrantOption()));
+    result.add(secObj);
   }
-  return mSecurityTabPartList;
+  return result;
 }

@@ -1,28 +1,14 @@
 {
-  boolean commited=false;
-  Query query=null;
-  List<MGlobalPrivilege> userNameDbPriv=new ArrayList<MGlobalPrivilege>();
-  try {
-    List<MGlobalPrivilege> mPrivs=null;
-    openTransaction();
-    if (principalName != null) {
-      query=pm.newQuery(MGlobalPrivilege.class,"principalName == t1 && principalType == t2 ");
-      query.declareParameters("java.lang.String t1, java.lang.String t2");
-      mPrivs=(List<MGlobalPrivilege>)query.executeWithArray(principalName,principalType.toString());
-      pm.retrieveAll(mPrivs);
-    }
-    commited=commitTransaction();
-    if (mPrivs != null) {
-      userNameDbPriv.addAll(mPrivs);
-    }
+  List<MGlobalPrivilege> mUsers=listPrincipalMGlobalGrants(principalName,principalType);
+  if (mUsers.isEmpty()) {
+    return Collections.<HiveObjectPrivilege>emptyList();
   }
-  finally {
-    if (!commited) {
-      rollbackTransaction();
-    }
-    if (query != null) {
-      query.closeAll();
-    }
+  List<HiveObjectPrivilege> result=new ArrayList<HiveObjectPrivilege>();
+  for (int i=0; i < mUsers.size(); i++) {
+    MGlobalPrivilege sUsr=mUsers.get(i);
+    HiveObjectRef objectRef=new HiveObjectRef(HiveObjectType.GLOBAL,null,null,null,null);
+    HiveObjectPrivilege secUser=new HiveObjectPrivilege(objectRef,sUsr.getPrincipalName(),principalType,new PrivilegeGrantInfo(sUsr.getPrivilege(),sUsr.getCreateTime(),sUsr.getGrantor(),PrincipalType.valueOf(sUsr.getGrantorType()),sUsr.getGrantOption()));
+    result.add(secUser);
   }
-  return userNameDbPriv;
+  return result;
 }

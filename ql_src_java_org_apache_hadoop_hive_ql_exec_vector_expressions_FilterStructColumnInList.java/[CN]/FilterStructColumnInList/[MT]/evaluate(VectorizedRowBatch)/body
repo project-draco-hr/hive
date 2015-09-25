@@ -1,0 +1,59 @@
+{
+  final int logicalSize=batch.size;
+  if (logicalSize == 0) {
+    return;
+  }
+  if (buffer == null) {
+    buffer=new Output();
+    binarySortableSerializeWrite=new BinarySortableSerializeWrite(structColumnMap.length);
+  }
+  for (  VectorExpression ve : structExpressions) {
+    ve.evaluate(batch);
+  }
+  BytesColumnVector scratchBytesColumnVector=(BytesColumnVector)batch.cols[scratchBytesColumn];
+  try {
+    boolean selectedInUse=batch.selectedInUse;
+    int[] selected=batch.selected;
+    for (int logical=0; logical < logicalSize; logical++) {
+      int batchIndex=(selectedInUse ? selected[logical] : logical);
+      binarySortableSerializeWrite.set(buffer);
+      for (int f=0; f < structColumnMap.length; f++) {
+        int fieldColumn=structColumnMap[f];
+        ColumnVector colVec=batch.cols[fieldColumn];
+        int adjustedIndex=(colVec.isRepeating ? 0 : batchIndex);
+        if (colVec.noNulls || !colVec.isNull[adjustedIndex]) {
+switch (fieldVectorColumnTypes[f]) {
+case BYTES:
+{
+              BytesColumnVector bytesColVec=(BytesColumnVector)colVec;
+              byte[] bytes=bytesColVec.vector[adjustedIndex];
+              int start=bytesColVec.start[adjustedIndex];
+              int length=bytesColVec.length[adjustedIndex];
+              binarySortableSerializeWrite.writeString(bytes,start,length);
+            }
+          break;
+case LONG:
+        binarySortableSerializeWrite.writeLong(((LongColumnVector)colVec).vector[adjustedIndex]);
+      break;
+case DOUBLE:
+    binarySortableSerializeWrite.writeDouble(((DoubleColumnVector)colVec).vector[adjustedIndex]);
+  break;
+case DECIMAL:
+binarySortableSerializeWrite.writeHiveDecimal(((DecimalColumnVector)colVec).vector[adjustedIndex].getHiveDecimal());
+break;
+default :
+throw new RuntimeException("Unexpected vector column type " + fieldVectorColumnTypes[f].name());
+}
+}
+ else {
+binarySortableSerializeWrite.writeNull();
+}
+}
+scratchBytesColumnVector.setVal(batchIndex,buffer.getData(),0,buffer.getLength());
+}
+super.evaluate(batch);
+}
+ catch (Exception e) {
+throw new RuntimeException(e);
+}
+}

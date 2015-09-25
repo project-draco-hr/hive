@@ -1,0 +1,103 @@
+{
+  ((HiveConf)conf).setVar(ConfVars.METASTORE_EXPRESSION_PROXY_CLASS,NOOPProxy.class.getName());
+  Mockito.when(htable.get(Mockito.any(Get.class))).thenAnswer(new Answer<Result>(){
+    @Override public Result answer(    InvocationOnMock invocation) throws Throwable {
+      Get get=(Get)invocation.getArguments()[0];
+      Cell cell=rows.get(new String(get.getRow()));
+      if (cell == null) {
+        return new Result();
+      }
+ else {
+        return Result.create(new Cell[]{cell});
+      }
+    }
+  }
+);
+  Mockito.when(htable.get(Mockito.anyListOf(Get.class))).thenAnswer(new Answer<Result[]>(){
+    @Override public Result[] answer(    InvocationOnMock invocation) throws Throwable {
+      @SuppressWarnings("unchecked") List<Get> gets=(List<Get>)invocation.getArguments()[0];
+      Result[] results=new Result[gets.size()];
+      for (int i=0; i < gets.size(); i++) {
+        Cell cell=rows.get(new String(gets.get(i).getRow()));
+        Result result;
+        if (cell == null) {
+          result=new Result();
+        }
+ else {
+          result=Result.create(new Cell[]{cell});
+        }
+        results[i]=result;
+      }
+      return results;
+    }
+  }
+);
+  Mockito.when(htable.getScanner(Mockito.any(Scan.class))).thenAnswer(new Answer<ResultScanner>(){
+    @Override public ResultScanner answer(    InvocationOnMock invocation) throws Throwable {
+      Scan scan=(Scan)invocation.getArguments()[0];
+      List<Result> results=new ArrayList<Result>();
+      String start=new String(scan.getStartRow());
+      String stop=new String(scan.getStopRow());
+      SortedMap<String,Cell> sub=rows.subMap(start,stop);
+      for (      Map.Entry<String,Cell> e : sub.entrySet()) {
+        results.add(Result.create(new Cell[]{e.getValue()}));
+      }
+      final Iterator<Result> iter=results.iterator();
+      return new ResultScanner(){
+        @Override public Result next() throws IOException {
+          return null;
+        }
+        @Override public Result[] next(        int nbRows) throws IOException {
+          return new Result[0];
+        }
+        @Override public void close(){
+        }
+        @Override public Iterator<Result> iterator(){
+          return iter;
+        }
+      }
+;
+    }
+  }
+);
+  Mockito.doAnswer(new Answer<Void>(){
+    @Override public Void answer(    InvocationOnMock invocation) throws Throwable {
+      Put put=(Put)invocation.getArguments()[0];
+      rows.put(new String(put.getRow()),put.getFamilyCellMap().firstEntry().getValue().get(0));
+      return null;
+    }
+  }
+).when(htable).put(Mockito.any(Put.class));
+  Mockito.when(htable.checkAndPut(Mockito.any(byte[].class),Mockito.any(byte[].class),Mockito.any(byte[].class),Mockito.any(byte[].class),Mockito.any(Put.class))).thenAnswer(new Answer<Boolean>(){
+    @Override public Boolean answer(    InvocationOnMock invocation) throws Throwable {
+      Put put=(Put)invocation.getArguments()[4];
+      rows.put(new String(put.getRow()),put.getFamilyCellMap().firstEntry().getValue().get(0));
+      return true;
+    }
+  }
+);
+  Mockito.doAnswer(new Answer<Void>(){
+    @Override public Void answer(    InvocationOnMock invocation) throws Throwable {
+      Delete del=(Delete)invocation.getArguments()[0];
+      rows.remove(new String(del.getRow()));
+      return null;
+    }
+  }
+).when(htable).delete(Mockito.any(Delete.class));
+  Mockito.when(htable.checkAndDelete(Mockito.any(byte[].class),Mockito.any(byte[].class),Mockito.any(byte[].class),Mockito.any(byte[].class),Mockito.any(Delete.class))).thenAnswer(new Answer<Boolean>(){
+    @Override public Boolean answer(    InvocationOnMock invocation) throws Throwable {
+      Delete del=(Delete)invocation.getArguments()[4];
+      rows.remove(new String(del.getRow()));
+      return true;
+    }
+  }
+);
+  HBaseConnection hconn=Mockito.mock(HBaseConnection.class);
+  Mockito.when(hconn.getHBaseTable(Mockito.anyString())).thenReturn(htable);
+  HiveConf.setVar(conf,HiveConf.ConfVars.METASTORE_HBASE_CONNECTION_CLASS,HBaseReadWrite.TEST_CONN);
+  HBaseReadWrite.setTestConnection(hconn);
+  HBaseReadWrite hbase=HBaseReadWrite.getInstance(conf);
+  HBaseStore store=new HBaseStore();
+  store.setConf(conf);
+  return store;
+}
