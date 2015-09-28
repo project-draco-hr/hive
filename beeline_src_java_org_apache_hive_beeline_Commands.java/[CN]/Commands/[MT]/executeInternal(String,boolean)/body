@@ -1,0 +1,103 @@
+{
+  if (!beeLine.isBeeLine()) {
+    sql=cliToBeelineCmd(sql);
+  }
+  if (sql == null || sql.length() == 0) {
+    return true;
+  }
+  if (beeLine.isComment(sql)) {
+    return true;
+  }
+  if (isSourceCMD(sql)) {
+    return sourceFile(sql);
+  }
+  if (sql.startsWith(BeeLine.COMMAND_PREFIX)) {
+    return beeLine.execCommandWithPrefix(sql);
+  }
+  String prefix=call ? "call" : "sql";
+  if (sql.startsWith(prefix)) {
+    sql=sql.substring(prefix.length());
+  }
+  if (beeLine.getBatch() != null) {
+    beeLine.getBatch().add(sql);
+    return true;
+  }
+  if (!(beeLine.assertConnection())) {
+    return false;
+  }
+  ClientHook hook=null;
+  if (!beeLine.isBeeLine()) {
+    hook=ClientCommandHookFactory.get().getHook(sql);
+  }
+  try {
+    Statement stmnt=null;
+    boolean hasResults;
+    Thread logThread=null;
+    try {
+      long start=System.currentTimeMillis();
+      if (call) {
+        stmnt=beeLine.getDatabaseConnection().getConnection().prepareCall(sql);
+        hasResults=((CallableStatement)stmnt).execute();
+      }
+ else {
+        stmnt=beeLine.createStatement();
+        if (beeLine.getOpts().isSilent()) {
+          hasResults=stmnt.execute(sql);
+        }
+ else {
+          logThread=new Thread(createLogRunnable(stmnt));
+          logThread.setDaemon(true);
+          logThread.start();
+          hasResults=stmnt.execute(sql);
+          logThread.interrupt();
+          logThread.join(DEFAULT_QUERY_PROGRESS_THREAD_TIMEOUT);
+        }
+      }
+      beeLine.showWarnings();
+      if (hasResults) {
+        do {
+          ResultSet rs=stmnt.getResultSet();
+          try {
+            int count=beeLine.print(rs);
+            long end=System.currentTimeMillis();
+            beeLine.info(beeLine.loc("rows-selected",count) + " " + beeLine.locElapsedTime(end - start));
+          }
+  finally {
+            if (logThread != null) {
+              logThread.join(DEFAULT_QUERY_PROGRESS_THREAD_TIMEOUT);
+              showRemainingLogsIfAny(stmnt);
+              logThread=null;
+            }
+            rs.close();
+          }
+        }
+ while (BeeLine.getMoreResults(stmnt));
+      }
+ else {
+        int count=stmnt.getUpdateCount();
+        long end=System.currentTimeMillis();
+        beeLine.info(beeLine.loc("rows-affected",count) + " " + beeLine.locElapsedTime(end - start));
+      }
+    }
+  finally {
+      if (logThread != null) {
+        if (!logThread.isInterrupted()) {
+          logThread.interrupt();
+        }
+        logThread.join(DEFAULT_QUERY_PROGRESS_THREAD_TIMEOUT);
+        showRemainingLogsIfAny(stmnt);
+      }
+      if (stmnt != null) {
+        stmnt.close();
+      }
+    }
+  }
+ catch (  Exception e) {
+    return beeLine.error(e);
+  }
+  beeLine.showWarnings();
+  if (hook != null) {
+    hook.postHook(beeLine);
+  }
+  return true;
+}
