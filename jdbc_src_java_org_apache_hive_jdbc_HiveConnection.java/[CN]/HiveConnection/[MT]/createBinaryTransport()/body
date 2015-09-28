@@ -1,5 +1,6 @@
 {
   try {
+    TTransport socketTransport=createUnderlyingTransport();
     if (!JdbcConnectionParams.AUTH_SIMPLE.equals(sessConfMap.get(JdbcConnectionParams.AUTH_TYPE))) {
       Map<String,String> saslProps=new HashMap<String,String>();
       SaslQOP saslQOP=SaslQOP.AUTH;
@@ -17,35 +18,22 @@
       }
       saslProps.put(Sasl.SERVER_AUTH,"true");
       if (sessConfMap.containsKey(JdbcConnectionParams.AUTH_PRINCIPAL)) {
-        transport=KerberosSaslHelper.getKerberosTransport(sessConfMap.get(JdbcConnectionParams.AUTH_PRINCIPAL),host,HiveAuthFactory.getSocketTransport(host,port,loginTimeout),saslProps,assumeSubject);
+        transport=KerberosSaslHelper.getKerberosTransport(sessConfMap.get(JdbcConnectionParams.AUTH_PRINCIPAL),host,socketTransport,saslProps,assumeSubject);
       }
  else {
         String tokenStr=getClientDelegationToken(sessConfMap);
         if (tokenStr != null) {
-          transport=KerberosSaslHelper.getTokenTransport(tokenStr,host,HiveAuthFactory.getSocketTransport(host,port,loginTimeout),saslProps);
+          transport=KerberosSaslHelper.getTokenTransport(tokenStr,host,socketTransport,saslProps);
         }
  else {
           String userName=getUserName();
           String passwd=getPassword();
-          if (isSslConnection()) {
-            String sslTrustStore=sessConfMap.get(JdbcConnectionParams.SSL_TRUST_STORE);
-            String sslTrustStorePassword=sessConfMap.get(JdbcConnectionParams.SSL_TRUST_STORE_PASSWORD);
-            if (sslTrustStore == null || sslTrustStore.isEmpty()) {
-              transport=HiveAuthFactory.getSSLSocket(host,port,loginTimeout);
-            }
- else {
-              transport=HiveAuthFactory.getSSLSocket(host,port,loginTimeout,sslTrustStore,sslTrustStorePassword);
-            }
-          }
- else {
-            transport=HiveAuthFactory.getSocketTransport(host,port,loginTimeout);
-          }
-          transport=PlainSaslHelper.getPlainTransport(userName,passwd,transport);
+          transport=PlainSaslHelper.getPlainTransport(userName,passwd,socketTransport);
         }
       }
     }
  else {
-      transport=HiveAuthFactory.getSocketTransport(host,port,loginTimeout);
+      transport=socketTransport;
     }
   }
  catch (  SaslException e) {
