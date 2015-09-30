@@ -1,5 +1,6 @@
 {
   ZooKeeperHiveLock zLock=(ZooKeeperHiveLock)hiveLock;
+  HiveLockMode lMode=hiveLock.getHiveLockMode();
   HiveLockObject obj=zLock.getHiveLockObject();
   String name=getLastObjectName(parent,obj);
   try {
@@ -8,15 +9,34 @@
     if (children == null || children.isEmpty()) {
       curatorFramework.delete().forPath(name);
     }
-  }
- catch (  KeeperException.NoNodeException nne) {
-    LOG.debug("Node " + zLock.getPath() + " or its parent has already been deleted.");
-  }
-catch (  KeeperException.NotEmptyException nee) {
-    LOG.debug("Node " + name + " to be deleted is not empty.");
-  }
-catch (  Exception e) {
-    LOG.error("Failed to release ZooKeeper lock: ",e);
-    throw new LockException(e);
-  }
+    Metrics metrics=MetricsFactory.getInstance();
+    if (metrics != null) {
+      try {
+switch (lMode) {
+case EXCLUSIVE:
+          metrics.decrementCounter(MetricsConstant.ZOOKEEPER_HIVE_EXCLUSIVELOCKS);
+        break;
+case SEMI_SHARED:
+      metrics.decrementCounter(MetricsConstant.ZOOKEEPER_HIVE_SEMISHAREDLOCKS);
+    break;
+default :
+  metrics.decrementCounter(MetricsConstant.ZOOKEEPER_HIVE_SHAREDLOCKS);
+break;
+}
+}
+ catch (Exception e) {
+LOG.warn("Error Reporting hive client zookeeper unlock operation to Metrics system",e);
+}
+}
+}
+ catch (KeeperException.NoNodeException nne) {
+LOG.debug("Node " + zLock.getPath() + " or its parent has already been deleted.");
+}
+catch (KeeperException.NotEmptyException nee) {
+LOG.debug("Node " + name + " to be deleted is not empty.");
+}
+catch (Exception e) {
+LOG.error("Failed to release ZooKeeper lock: ",e);
+throw new LockException(e);
+}
 }
