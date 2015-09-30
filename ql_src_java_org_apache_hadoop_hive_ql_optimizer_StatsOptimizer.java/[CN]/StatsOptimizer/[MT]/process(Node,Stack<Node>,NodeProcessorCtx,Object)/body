@@ -24,10 +24,22 @@
       return null;
     }
     Operator<?> last=(Operator<?>)stack.get(5);
+    SelectOperator cselOp=null;
+    Map<Integer,Object> posToConstant=new HashMap<>();
     if (last instanceof SelectOperator) {
-      SelectOperator cselOp=(SelectOperator)last;
+      cselOp=(SelectOperator)last;
       if (!cselOp.isIdentitySelect()) {
-        return null;
+        for (int pos=0; pos < cselOp.getConf().getColList().size(); pos++) {
+          ExprNodeDesc desc=cselOp.getConf().getColList().get(pos);
+          if (desc instanceof ExprNodeConstantDesc) {
+            posToConstant.put(pos,((ExprNodeConstantDesc)desc).getValue());
+          }
+ else {
+            if (!(desc instanceof ExprNodeColumnDesc)) {
+              return null;
+            }
+          }
+        }
       }
       last=(Operator<?>)stack.get(6);
     }
@@ -364,12 +376,30 @@ return null;
 }
 }
 List<List<Object>> allRows=new ArrayList<List<Object>>();
-allRows.add(oneRow);
 List<String> colNames=new ArrayList<String>();
 List<ObjectInspector> ois=new ArrayList<ObjectInspector>();
+if (cselOp == null) {
+allRows.add(oneRow);
 for (ColumnInfo colInfo : cgbyOp.getSchema().getSignature()) {
 colNames.add(colInfo.getInternalName());
 ois.add(TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(colInfo.getType()));
+}
+}
+ else {
+int aggrPos=0;
+List<Object> oneRowWithConstant=new ArrayList<>();
+for (int pos=0; pos < cselOp.getSchema().getSignature().size(); pos++) {
+if (posToConstant.containsKey(pos)) {
+oneRowWithConstant.add(posToConstant.get(pos));
+}
+ else {
+oneRowWithConstant.add(oneRow.get(aggrPos++));
+}
+ColumnInfo colInfo=cselOp.getSchema().getSignature().get(pos);
+colNames.add(colInfo.getInternalName());
+ois.add(TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(colInfo.getType()));
+}
+allRows.add(oneRowWithConstant);
 }
 StandardStructObjectInspector sOI=ObjectInspectorFactory.getStandardStructObjectInspector(colNames,ois);
 FetchWork fWork=new FetchWork(allRows,sOI);
