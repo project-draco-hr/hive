@@ -1,12 +1,23 @@
 {
-  List<SplitInfo> result=Lists.newArrayList();
-  for (  HdfsFileStatusWithId file : files) {
-    FileInfo info=null;
-    if (context.cacheStripeDetails) {
-      info=verifyCachedFileInfo(file.getFileStatus());
+  List<SplitInfo> result=new ArrayList<>(files.size());
+  if (context.cacheStripeDetails) {
+    FileInfo[] infos=Context.footerCache.getAndValidate(files);
+    for (int i=0; i < files.size(); ++i) {
+      FileInfo info=infos[i];
+      if (info != null) {
+        context.cacheHitCounter.incrementAndGet();
+      }
+      HdfsFileStatusWithId file=files.get(i);
+      if (file.getFileStatus().getLen() > 0) {
+        result.add(new SplitInfo(context,fs,file,info,isOriginal,deltas,true,dir,covered));
+      }
     }
-    if (file.getFileStatus().getLen() > 0) {
-      result.add(new SplitInfo(context,fs,file,info,isOriginal,deltas,true,dir,covered));
+  }
+ else {
+    for (    HdfsFileStatusWithId file : files) {
+      if (file.getFileStatus().getLen() > 0) {
+        result.add(new SplitInfo(context,fs,file,null,isOriginal,deltas,true,dir,covered));
+      }
     }
   }
   return result;
