@@ -1,40 +1,46 @@
 {
-  if (dbProduct == null && conn != null) {
-    determineDatabaseProduct(conn);
-  }
-  if (e instanceof SQLTransactionRollbackException || ((dbProduct == DatabaseProduct.MYSQL || dbProduct == DatabaseProduct.POSTGRES || dbProduct == DatabaseProduct.SQLSERVER) && e.getSQLState().equals("40001")) || (dbProduct == DatabaseProduct.POSTGRES && e.getSQLState().equals("40P01"))|| (dbProduct == DatabaseProduct.ORACLE && (e.getMessage().contains("deadlock detected") || e.getMessage().contains("can't serialize access for this transaction")))) {
-    if (deadlockCnt++ < ALLOWED_REPEATED_DEADLOCKS) {
-      long waitInterval=deadlockRetryInterval * deadlockCnt;
-      LOG.warn("Deadlock detected in " + caller + ". Will wait "+ waitInterval+ "ms try again up to "+ (ALLOWED_REPEATED_DEADLOCKS - deadlockCnt + 1)+ " times.");
-      try {
-        Thread.sleep(waitInterval);
-      }
- catch (      InterruptedException ie) {
-      }
-      throw new RetryException();
+  boolean sendRetrySignal=false;
+  try {
+    if (dbProduct == null && conn != null) {
+      determineDatabaseProduct(conn);
     }
+    if (e instanceof SQLTransactionRollbackException || ((dbProduct == DatabaseProduct.MYSQL || dbProduct == DatabaseProduct.POSTGRES || dbProduct == DatabaseProduct.SQLSERVER) && e.getSQLState().equals("40001")) || (dbProduct == DatabaseProduct.POSTGRES && e.getSQLState().equals("40P01"))|| (dbProduct == DatabaseProduct.ORACLE && (e.getMessage().contains("deadlock detected") || e.getMessage().contains("can't serialize access for this transaction")))) {
+      if (deadlockCnt++ < ALLOWED_REPEATED_DEADLOCKS) {
+        long waitInterval=deadlockRetryInterval * deadlockCnt;
+        LOG.warn("Deadlock detected in " + caller + ". Will wait "+ waitInterval+ "ms try again up to "+ (ALLOWED_REPEATED_DEADLOCKS - deadlockCnt + 1)+ " times.");
+        try {
+          Thread.sleep(waitInterval);
+        }
+ catch (        InterruptedException ie) {
+        }
+        sendRetrySignal=true;
+      }
  else {
-      LOG.error("Too many repeated deadlocks in " + caller + ", giving up.");
+        LOG.error("Too many repeated deadlocks in " + caller + ", giving up.");
+      }
+    }
+ else     if (isRetryable(e)) {
+      if (retryNum++ < retryLimit) {
+        LOG.warn("Retryable error detected in " + caller + ".  Will wait "+ retryInterval+ "ms and retry up to "+ (retryLimit - retryNum + 1)+ " times.  Error: "+ getMessage(e));
+        try {
+          Thread.sleep(retryInterval);
+        }
+ catch (        InterruptedException ex) {
+        }
+        sendRetrySignal=true;
+      }
+ else {
+        LOG.error("Fatal error. Retry limit (" + retryLimit + ") reached. Last error: "+ getMessage(e));
+      }
+    }
+  }
+  finally {
+    if (!sendRetrySignal) {
       deadlockCnt=0;
-    }
-  }
- else   if (isRetryable(e)) {
-    if (retryNum++ < retryLimit) {
-      LOG.warn("Retryable error detected in " + caller + ".  Will wait "+ retryInterval+ "ms and retry up to "+ (retryLimit - retryNum + 1)+ " times.  Error: "+ getMessage(e));
-      try {
-        Thread.sleep(retryInterval);
-      }
- catch (      InterruptedException ex) {
-      }
-      throw new RetryException();
-    }
- else {
-      LOG.error("Fatal error. Retry limit (" + retryLimit + ") reached. Last error: "+ getMessage(e));
       retryNum=0;
     }
   }
- else {
-    deadlockCnt=0;
-    retryNum=0;
+  if (sendRetrySignal) {
+    throw new RetryException();
   }
 }

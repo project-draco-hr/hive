@@ -1,0 +1,45 @@
+{
+  this.fs=fs;
+  this.path=path;
+  this.conf=conf;
+  this.callback=callback;
+  this.schema=schema;
+  if (callback != null) {
+    callbackContext=new OrcFile.WriterContext(){
+      @Override public Writer getWriter(){
+        return WriterImpl.this;
+      }
+    }
+;
+  }
+ else {
+    callbackContext=null;
+  }
+  this.adjustedStripeSize=stripeSize;
+  this.defaultStripeSize=stripeSize;
+  this.version=version;
+  this.encodingStrategy=encodingStrategy;
+  this.compressionStrategy=compressionStrategy;
+  this.addBlockPadding=addBlockPadding;
+  this.blockSize=blockSizeValue;
+  this.paddingTolerance=paddingTolerance;
+  this.compress=compress;
+  this.rowIndexStride=rowIndexStride;
+  this.memoryManager=memoryManager;
+  buildIndex=rowIndexStride > 0;
+  codec=createCodec(compress);
+  int numColumns=schema.getMaximumId() + 1;
+  this.bufferSize=getEstimatedBufferSize(getMemoryAvailableForORC(),codec != null,numColumns,bufferSize);
+  if (version == OrcFile.Version.V_0_11) {
+    this.bloomFilterColumns=new boolean[schema.getMaximumId() + 1];
+  }
+ else {
+    this.bloomFilterColumns=OrcUtils.includeColumns(bloomFilterColumnNames,schema);
+  }
+  this.bloomFilterFpp=bloomFilterFpp;
+  treeWriter=createTreeWriter(inspector,schema,streamFactory,false);
+  if (buildIndex && rowIndexStride < MIN_ROW_INDEX_STRIDE) {
+    throw new IllegalArgumentException("Row stride must be at least " + MIN_ROW_INDEX_STRIDE);
+  }
+  memoryManager.addWriter(path,stripeSize,this);
+}
