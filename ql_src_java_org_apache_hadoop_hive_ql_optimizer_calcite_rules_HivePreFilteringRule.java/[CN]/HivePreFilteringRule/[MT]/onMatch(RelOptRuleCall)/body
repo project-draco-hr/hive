@@ -1,8 +1,8 @@
 {
   final Filter filter=call.rel(0);
-  final RelNode filterChild=call.rel(1);
-  if (filterChild instanceof TableScan) {
-    return;
+  HiveRulesRegistry registry=call.getPlanner().getContext().unwrap(HiveRulesRegistry.class);
+  if (registry != null) {
+    registry.registerVisited(this,filter);
   }
   final RexBuilder rexBuilder=filter.getCluster().getRexBuilder();
   final RexNode condition=RexUtil.pullFactors(rexBuilder,filter.getCondition());
@@ -25,7 +25,7 @@ return;
 if (commonOperands.isEmpty()) {
 return;
 }
-final RelOptPredicateList predicates=RelMetadataQuery.getPulledUpPredicates(filter);
+final RelOptPredicateList predicates=RelMetadataQuery.getPulledUpPredicates(filter.getInput());
 final List<RexNode> newConjuncts=new ArrayList<>();
 for (RexNode commonOperand : commonOperands) {
 boolean found=false;
@@ -43,7 +43,11 @@ if (newConjuncts.isEmpty()) {
 return;
 }
 final RexNode newCondition=RexUtil.pullFactors(rexBuilder,RexUtil.composeConjunction(rexBuilder,newConjuncts,false));
-RelNode newFilter=filterFactory.createFilter(filterChild,newCondition);
+RelNode newFilter=filterFactory.createFilter(filter.getInput(),newCondition);
 RelNode newTopFilter=filterFactory.createFilter(newFilter,condition);
+if (registry != null) {
+registry.registerVisited(this,newFilter);
+registry.registerVisited(this,newTopFilter);
+}
 call.transformTo(newTopFilter);
 }
