@@ -1,0 +1,50 @@
+{
+  this.conf=conf;
+  this.queueName=conf.get("tez.queue.name");
+  this.doAsEnabled=conf.getBoolVar(HiveConf.ConfVars.HIVE_SERVER2_ENABLE_DOAS);
+  UserGroupInformation ugi=Utils.getUGI();
+  user=ugi.getShortUserName();
+  LOG.info("User of session id " + sessionId + " is "+ user);
+  tezScratchDir=createTezDir(sessionId);
+  additionalFilesNotFromConf.clear();
+  if (additionalFiles != null) {
+    for (    String originalFile : additionalFiles) {
+      additionalFilesNotFromConf.add(originalFile);
+    }
+  }
+  refreshLocalResourcesFromConf(conf);
+  appJarLr=createJarLocalResource(utils.getExecJarPathLocal());
+  final Map<String,LocalResource> commonLocalResources=new HashMap<String,LocalResource>();
+  commonLocalResources.put(utils.getBaseName(appJarLr),appJarLr);
+  for (  LocalResource lr : localizedResources) {
+    commonLocalResources.put(utils.getBaseName(lr),lr);
+  }
+  Map<String,String> amEnv=new HashMap<String,String>();
+  MRHelpers.updateEnvBasedOnMRAMEnv(conf,amEnv);
+  final TezConfiguration tezConfig=new TezConfiguration(conf);
+  tezConfig.set(TezConfiguration.TEZ_AM_STAGING_DIR,tezScratchDir.toUri().toString());
+  Utilities.stripHivePasswordDetails(tezConfig);
+  if (HiveConf.getBoolVar(conf,ConfVars.HIVE_PREWARM_ENABLED)) {
+    int n=HiveConf.getIntVar(conf,ConfVars.HIVE_PREWARM_NUM_CONTAINERS);
+    n=Math.max(tezConfig.getInt(TezConfiguration.TEZ_AM_SESSION_MIN_HELD_CONTAINERS,TezConfiguration.TEZ_AM_SESSION_MIN_HELD_CONTAINERS_DEFAULT),n);
+    tezConfig.setInt(TezConfiguration.TEZ_AM_SESSION_MIN_HELD_CONTAINERS,n);
+  }
+  final TezClient session=TezClient.create("HIVE-" + sessionId,tezConfig,true,commonLocalResources,null);
+  LOG.info("Opening new Tez Session (id: " + sessionId + ", scratch dir: "+ tezScratchDir+ ")");
+  TezJobMonitor.initShutdownHook();
+  if (!isAsync) {
+    startSessionAndContainers(session,conf,commonLocalResources,tezConfig,false);
+    this.session=session;
+  }
+ else {
+    FutureTask<TezClient> sessionFuture=new FutureTask<>(new Callable<TezClient>(){
+      @Override public TezClient call() throws Exception {
+        return startSessionAndContainers(session,conf,commonLocalResources,tezConfig,true);
+      }
+    }
+);
+    new Thread(sessionFuture,"Tez session start thread").start();
+    this.console=console;
+    this.sessionFuture=sessionFuture;
+  }
+}
