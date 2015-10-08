@@ -32,7 +32,7 @@
   String inpFormat=HiveConf.getVar(job,HiveConf.ConfVars.HIVEINPUTFORMAT);
   LOG.info("Using " + inpFormat);
   try {
-    job.setInputFormat((Class<? extends InputFormat>)JavaUtils.loadClass(inpFormat));
+    job.setInputFormat(JavaUtils.loadClass(inpFormat));
   }
  catch (  ClassNotFoundException e) {
     throw new RuntimeException(e.getMessage(),e);
@@ -51,6 +51,7 @@
     HiveConf.setVar(job,HiveConf.ConfVars.HADOOPJOBNAME,jobName != null ? jobName : "JOB" + Utilities.randGen.nextInt());
   }
   HiveConf.setVar(job,HiveConf.ConfVars.HIVE_STATS_KEY_PREFIX,work.getAggKey());
+  job.set(StatsSetupConst.STATS_TMP_LOC,work.getStatsTmpDir());
   try {
     addInputPaths(job,work);
     MapredWork mrWork=new MapredWork();
@@ -71,7 +72,9 @@
       StatsFactory factory=StatsFactory.newFactory(job);
       if (factory != null) {
         statsPublisher=factory.getStatsPublisher();
-        if (!statsPublisher.init(job)) {
+        StatsCollectionContext sc=new StatsCollectionContext(job);
+        sc.setStatsTmpDir(work.getStatsTmpDir());
+        if (!statsPublisher.init(sc)) {
           if (HiveConf.getBoolVar(job,HiveConf.ConfVars.HIVE_STATS_RELIABLE)) {
             throw new HiveException(ErrorMsg.STATSPUBLISHER_INITIALIZATION_ERROR.getErrorCodedMsg());
           }
