@@ -1,0 +1,37 @@
+{
+  session.start();
+  boolean isSuccessful=false;
+  try {
+    if (HiveConf.getBoolVar(conf,ConfVars.HIVE_PREWARM_ENABLED)) {
+      int n=HiveConf.getIntVar(conf,ConfVars.HIVE_PREWARM_NUM_CONTAINERS);
+      LOG.info("Prewarming " + n + " containers  (id: "+ sessionId+ ", scratch dir: "+ tezScratchDir+ ")");
+      PreWarmVertex prewarmVertex=utils.createPreWarmVertex(tezConfig,n,commonLocalResources);
+      try {
+        session.preWarm(prewarmVertex);
+      }
+ catch (      IOException ie) {
+        if (!isOnThread && ie.getMessage().contains("Interrupted while waiting")) {
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Hive Prewarm threw an exception ",ie);
+          }
+        }
+ else {
+          throw ie;
+        }
+      }
+    }
+    try {
+      session.waitTillReady();
+    }
+ catch (    InterruptedException ie) {
+      if (isOnThread)       throw new IOException(ie);
+    }
+    isSuccessful=true;
+    return session;
+  }
+  finally {
+    if (isOnThread && !isSuccessful) {
+      closeAndIgnoreExceptions(session);
+    }
+  }
+}

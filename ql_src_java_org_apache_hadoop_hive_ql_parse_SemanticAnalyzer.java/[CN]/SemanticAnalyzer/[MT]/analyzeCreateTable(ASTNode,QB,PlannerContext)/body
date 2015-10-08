@@ -183,6 +183,19 @@ SessionState.get().setCommandType(HiveOperation.CREATETABLE);
 rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),crtTblLikeDesc),conf));
 break;
 case CTAS:
+if (isTemporary) {
+String dbName=qualifiedTabName[0];
+String tblName=qualifiedTabName[1];
+SessionState ss=SessionState.get();
+if (ss == null) {
+throw new SemanticException("No current SessionState, cannot create temporary table " + dbName + "."+ tblName);
+}
+Map<String,Table> tables=SessionHiveMetaStoreClient.getTempTablesForDatabase(dbName);
+if (tables != null && tables.containsKey(tblName)) {
+throw new SemanticException("Temporary table " + dbName + "."+ tblName+ " already exists");
+}
+}
+ else {
 try {
 Table dumpTable=db.newTable(dbDotTab);
 if (null != db.getTable(dumpTable.getDbName(),dumpTable.getTableName(),false)) {
@@ -191,6 +204,7 @@ throw new SemanticException(ErrorMsg.TABLE_ALREADY_EXISTS.getMsg(dbDotTab));
 }
  catch (HiveException e) {
 throw new SemanticException(e);
+}
 }
 if (location != null && location.length() != 0) {
 Path locPath=new Path(location);

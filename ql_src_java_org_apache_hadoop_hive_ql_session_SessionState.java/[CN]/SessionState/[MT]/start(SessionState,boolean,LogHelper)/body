@@ -1,0 +1,61 @@
+{
+  setCurrentSessionState(startSs);
+  if (startSs.hiveHist == null) {
+    if (startSs.getConf().getBoolVar(HiveConf.ConfVars.HIVE_SESSION_HISTORY_ENABLED)) {
+      startSs.hiveHist=new HiveHistoryImpl(startSs);
+    }
+ else {
+      startSs.hiveHist=HiveHistoryProxyHandler.getNoOpHiveHistoryProxy();
+    }
+  }
+  try {
+    Hive.get(new HiveConf(startSs.conf)).getMSC();
+    UserGroupInformation sessionUGI=Utils.getUGI();
+    FileSystem.get(startSs.conf);
+    startSs.createSessionDirs(sessionUGI.getShortUserName());
+    if (startSs.getTmpOutputFile() == null) {
+      try {
+        startSs.setTmpOutputFile(createTempFile(startSs.getConf()));
+      }
+ catch (      IOException e) {
+        throw new RuntimeException(e);
+      }
+    }
+    if (startSs.getTmpErrOutputFile() == null) {
+      try {
+        startSs.setTmpErrOutputFile(createTempFile(startSs.getConf()));
+      }
+ catch (      IOException e) {
+        throw new RuntimeException(e);
+      }
+    }
+  }
+ catch (  Exception e) {
+    throw new RuntimeException(e);
+  }
+  String engine=HiveConf.getVar(startSs.getConf(),HiveConf.ConfVars.HIVE_EXECUTION_ENGINE);
+  if (!engine.equals("tez") || startSs.isHiveServerQuery)   return;
+  try {
+    if (startSs.tezSessionState == null) {
+      startSs.tezSessionState=new TezSessionState(startSs.getSessionId());
+    }
+    if (startSs.tezSessionState.isOpen()) {
+      return;
+    }
+    if (startSs.tezSessionState.isOpening()) {
+      if (!isAsync) {
+        startSs.tezSessionState.endOpen();
+      }
+      return;
+    }
+    if (!isAsync) {
+      startSs.tezSessionState.open(startSs.conf);
+    }
+ else {
+      startSs.tezSessionState.beginOpen(startSs.conf,null,console);
+    }
+  }
+ catch (  Exception e) {
+    throw new RuntimeException(e);
+  }
+}
