@@ -1,14 +1,22 @@
 {
-  LOG.debug("Heartbeating lock and transaction " + JavaUtils.txnIdToString(txnId));
-  List<HiveLock> locks=lockMgr.getLocks(false,false);
-  if (locks.size() == 0) {
-    if (!isTxnOpen()) {
-      return;
-    }
+  List<HiveLock> locks;
+  if (isTxnOpen()) {
+    DbLockManager.DbHiveLock dummyLock=new DbLockManager.DbHiveLock(0L);
+    locks=new ArrayList<>(1);
+    locks.add(dummyLock);
+  }
  else {
-      DbLockManager.DbHiveLock dummyLock=new DbLockManager.DbHiveLock(0L);
-      locks.add(dummyLock);
+    locks=lockMgr.getLocks(false,false);
+  }
+  if (LOG.isInfoEnabled()) {
+    StringBuilder sb=new StringBuilder("Sending heartbeat for ").append(JavaUtils.txnIdToString(txnId)).append(" and");
+    for (    HiveLock lock : locks) {
+      sb.append(" ").append(lock.toString());
     }
+    LOG.info(sb.toString());
+  }
+  if (!isTxnOpen() && locks.isEmpty()) {
+    return;
   }
   for (  HiveLock lock : locks) {
     long lockId=((DbLockManager.DbHiveLock)lock).lockId;
@@ -28,7 +36,7 @@ catch (    TxnAbortedException e) {
       throw new LockException(e,ErrorMsg.TXN_ABORTED,JavaUtils.txnIdToString(txnId));
     }
 catch (    TException e) {
-      throw new LockException(ErrorMsg.METASTORE_COMMUNICATION_FAILED.getMsg(),e);
+      throw new LockException(ErrorMsg.METASTORE_COMMUNICATION_FAILED.getMsg() + "(" + JavaUtils.txnIdToString(txnId)+ ","+ lock.toString()+ ")",e);
     }
   }
 }
