@@ -1,16 +1,12 @@
 {
-  final Context ctx=driverContext.getCtx();
-  final HiveConf hiveConf=(HiveConf)ctx.getConf();
-  refreshLocalResources(sparkWork,hiveConf);
-  final JobConf jobConf=new JobConf(hiveConf);
-  final Path emptyScratchDir=ctx.getMRTmpPath();
-  FileSystem fs=emptyScratchDir.getFileSystem(jobConf);
-  fs.mkdirs(emptyScratchDir);
-  byte[] jobConfBytes=KryoSerializer.serializeJobConf(jobConf);
-  byte[] scratchDirBytes=KryoSerializer.serialize(emptyScratchDir);
-  byte[] sparkWorkBytes=KryoSerializer.serialize(sparkWork);
-  JobStatusJob job=new JobStatusJob(jobConfBytes,scratchDirBytes,sparkWorkBytes);
-  JobHandle<Serializable> jobHandle=remoteClient.submit(job);
-  RemoteSparkJobStatus sparkJobStatus=new RemoteSparkJobStatus(remoteClient,jobHandle,sparkClientTimtout);
-  return new RemoteSparkJobRef(hiveConf,jobHandle,sparkJobStatus);
+  if (hiveConf.get("spark.master").startsWith("yarn-") && !remoteClient.isActive()) {
+    close();
+    createRemoteClient();
+  }
+  try {
+    return submit(driverContext,sparkWork);
+  }
+ catch (  Throwable cause) {
+    throw new Exception("Failed to submit Spark work, please retry later",cause);
+  }
 }

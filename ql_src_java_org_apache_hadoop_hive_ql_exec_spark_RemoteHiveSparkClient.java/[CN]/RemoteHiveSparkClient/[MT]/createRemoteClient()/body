@@ -1,0 +1,22 @@
+{
+  remoteClient=SparkClientFactory.createClient(conf,hiveConf);
+  if (HiveConf.getBoolVar(hiveConf,ConfVars.HIVE_PREWARM_ENABLED) && hiveConf.get("spark.master").startsWith("yarn-")) {
+    int minExecutors=getExecutorsToWarm();
+    if (minExecutors <= 0) {
+      return;
+    }
+    LOG.info("Prewarm Spark executors. The minimum number of executors to warm is " + minExecutors);
+    int curExecutors=0;
+    long ts=System.currentTimeMillis();
+    do {
+      curExecutors=getExecutorCount();
+      if (curExecutors >= minExecutors) {
+        LOG.info("Finished prewarming Spark executors. The current number of executors is " + curExecutors);
+        return;
+      }
+      Thread.sleep(1000);
+    }
+ while (System.currentTimeMillis() - ts < MAX_PREWARM_TIME);
+    LOG.info("Timeout (60s) occurred while prewarming executors. The current number of executors is " + curExecutors);
+  }
+}
