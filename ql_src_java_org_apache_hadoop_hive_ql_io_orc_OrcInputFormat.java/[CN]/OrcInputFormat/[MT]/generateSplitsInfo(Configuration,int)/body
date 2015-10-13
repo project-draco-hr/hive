@@ -6,7 +6,8 @@
   boolean useFileIds=HiveConf.getBoolVar(conf,ConfVars.HIVE_ORC_INCLUDE_FILE_ID_IN_SPLITS);
   List<OrcSplit> splits=Lists.newArrayList();
   List<Future<AcidDirInfo>> pathFutures=Lists.newArrayList();
-  List<Future<List<OrcSplit>>> splitFutures=Lists.newArrayList();
+  List<Future<Void>> strategyFutures=Lists.newArrayList();
+  final List<Future<List<OrcSplit>>> splitFutures=Lists.newArrayList();
   Path[] paths=getInputPaths(conf);
   CompletionService<AcidDirInfo> ecs=new ExecutorCompletionService<>(Context.threadPool);
   for (  Path dir : paths) {
@@ -22,9 +23,9 @@
         LOG.debug(splitStrategy);
       }
       if (splitStrategy instanceof ETLSplitStrategy) {
-        List<SplitInfo> splitInfos=((ETLSplitStrategy)splitStrategy).getSplits();
-        for (        SplitInfo splitInfo : splitInfos) {
-          splitFutures.add(Context.threadPool.submit(new SplitGenerator(splitInfo)));
+        Future<Void> ssFuture=((ETLSplitStrategy)splitStrategy).generateSplitWork(context,splitFutures);
+        if (ssFuture != null) {
+          strategyFutures.add(ssFuture);
         }
       }
  else {
@@ -32,12 +33,16 @@
         splits.addAll(readySplits);
       }
     }
+    for (    Future<Void> ssFuture : strategyFutures) {
+      ssFuture.get();
+    }
     for (    Future<List<OrcSplit>> splitFuture : splitFutures) {
       splits.addAll(splitFuture.get());
     }
   }
  catch (  Exception e) {
     cancelFutures(pathFutures);
+    cancelFutures(strategyFutures);
     cancelFutures(splitFutures);
     throw new RuntimeException("ORC split generation failed with exception: " + e.getMessage(),e);
   }
