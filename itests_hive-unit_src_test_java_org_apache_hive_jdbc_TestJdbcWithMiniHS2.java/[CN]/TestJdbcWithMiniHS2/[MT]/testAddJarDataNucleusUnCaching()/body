@@ -1,0 +1,24 @@
+{
+  Path jarFilePath=new Path(dataFileDir,"identity_udf.jar");
+  Connection conn=getConnection(miniHS2.getJdbcURL(),"foo","bar");
+  String tableName="testAddJar";
+  Statement stmt=conn.createStatement();
+  stmt.execute("SET hive.support.concurrency = false");
+  stmt.execute("DROP TABLE IF EXISTS " + tableName);
+  stmt.execute("CREATE TABLE " + tableName + " (key INT, value STRING)");
+  stmt.execute("LOAD DATA LOCAL INPATH '" + kvDataFilePath.toString() + "' INTO TABLE "+ tableName);
+  ResultSet res=stmt.executeQuery("SELECT * FROM " + tableName);
+  assertTrue(res.next());
+  int mapSizeBeforeClose;
+  int mapSizeAfterClose;
+  stmt.execute("ADD JAR " + jarFilePath.toString());
+  stmt.execute("CREATE TEMPORARY FUNCTION func AS 'IdentityStringUDF'");
+  stmt.execute("SELECT func(value) from " + tableName);
+  mapSizeBeforeClose=getNucleusClassLoaderResolverMapSize();
+  System.out.println("classLoaderResolverMap size before connection close: " + mapSizeBeforeClose);
+  Assert.assertTrue(mapSizeBeforeClose > 0);
+  conn.close();
+  mapSizeAfterClose=getNucleusClassLoaderResolverMapSize();
+  System.out.println("classLoaderResolverMap size after connection close: " + mapSizeAfterClose);
+  Assert.assertTrue("Failed; NucleusContext classLoaderResolverMap size: " + mapSizeAfterClose,mapSizeAfterClose == 0);
+}
