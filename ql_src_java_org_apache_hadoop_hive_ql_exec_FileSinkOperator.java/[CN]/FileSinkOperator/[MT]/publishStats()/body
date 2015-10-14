@@ -20,7 +20,6 @@
   String taskID=Utilities.getTaskIdFromFilename(Utilities.getTaskId(hconf));
   String spSpec=conf.getStaticSpec();
   int maxKeyLength=conf.getMaxStatsKeyPrefixLength();
-  boolean taskIndependent=statsPublisher instanceof StatsCollectionTaskIndependent;
   for (  Map.Entry<String,FSPaths> entry : valToPaths.entrySet()) {
     String fspKey=entry.getKey();
     FSPaths fspValue=entry.getValue();
@@ -30,24 +29,14 @@
     }
     String[] split=splitKey(fspKey);
     String dpSpec=split[0];
-    String lbSpec=split[1];
-    String prefix;
-    String postfix=null;
-    if (taskIndependent) {
-      prefix=conf.getTableInfo().getTableName().toLowerCase();
-    }
- else {
-      prefix=conf.getStatsAggPrefix();
-      postfix=Utilities.join(lbSpec,taskID);
-    }
+    String prefix=conf.getTableInfo().getTableName().toLowerCase();
     prefix=Utilities.join(prefix,spSpec,dpSpec);
     prefix=Utilities.getHashedStatsPrefix(prefix,maxKeyLength);
-    String key=Utilities.join(prefix,postfix);
     Map<String,String> statsToPublish=new HashMap<String,String>();
     for (    String statType : fspValue.stat.getStoredStats()) {
       statsToPublish.put(statType,Long.toString(fspValue.stat.getStat(statType)));
     }
-    if (!statsPublisher.publishStat(key,statsToPublish)) {
+    if (!statsPublisher.publishStat(prefix,statsToPublish)) {
       if (isStatsReliable) {
         throw new HiveException(ErrorMsg.STATSPUBLISHER_PUBLISHING_ERROR.getErrorCodedMsg());
       }
