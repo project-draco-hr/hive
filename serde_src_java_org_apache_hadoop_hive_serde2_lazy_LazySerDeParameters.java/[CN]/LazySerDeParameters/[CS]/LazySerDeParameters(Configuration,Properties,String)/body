@@ -1,7 +1,7 @@
 {
   this.tableProperties=tbl;
   this.serdeName=serdeName;
-  nullString=tbl.getProperty(serdeConstants.SERIALIZATION_NULL_FORMAT,"\\N");
+  String nullString=tbl.getProperty(serdeConstants.SERIALIZATION_NULL_FORMAT,"\\N");
   nullSequence=new Text(nullString);
   String lastColumnTakesRestString=tbl.getProperty(serdeConstants.SERIALIZATION_LAST_COLUMN_TAKES_REST);
   lastColumnTakesRest=(lastColumnTakesRestString != null && lastColumnTakesRestString.equalsIgnoreCase("true"));
@@ -16,10 +16,19 @@
     for (    byte b : separators) {
       needsEscape[b & 0xFF]=true;
     }
+    if (needsEscape['\r'] || needsEscape['\n']) {
+      throw new SerDeException("\\r and \\n cannot be used as escaping characters or separators");
+    }
+    boolean isEscapeCRLF=Boolean.valueOf(tbl.getProperty(serdeConstants.SERIALIZATION_ESCAPE_CRLF));
+    if (isEscapeCRLF) {
+      needsEscape['\r']=true;
+      needsEscape['\n']=true;
+    }
   }
   extendedBooleanLiteral=(job == null ? false : job.getBoolean(ConfVars.HIVE_LAZYSIMPLE_EXTENDED_BOOLEAN_LITERAL.varname,false));
   String[] timestampFormatsArray=HiveStringUtils.splitAndUnEscape(tbl.getProperty(serdeConstants.TIMESTAMP_FORMATS));
   if (timestampFormatsArray != null) {
     timestampFormats=Arrays.asList(timestampFormatsArray);
   }
+  LOG.debug(serdeName + " initialized with: columnNames=" + columnNames+ " columnTypes="+ columnTypes+ " separator="+ Arrays.asList(separators)+ " nullstring="+ nullString+ " lastColumnTakesRest="+ lastColumnTakesRest+ " timestampFormats="+ timestampFormats);
 }
