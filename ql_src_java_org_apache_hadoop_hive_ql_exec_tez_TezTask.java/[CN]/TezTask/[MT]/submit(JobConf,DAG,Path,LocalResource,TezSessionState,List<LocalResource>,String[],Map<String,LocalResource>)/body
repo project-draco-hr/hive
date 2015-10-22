@@ -10,14 +10,27 @@
     }
   }
   try {
-    sessionState.getSession().addAppMasterLocalFiles(resourceMap);
-    dagClient=sessionState.getSession().submitDAG(dag);
+    try {
+      sessionState.getSession().addAppMasterLocalFiles(resourceMap);
+      dagClient=sessionState.getSession().submitDAG(dag);
+    }
+ catch (    SessionNotRunning nr) {
+      console.printInfo("Tez session was closed. Reopening...");
+      TezSessionPoolManager.getInstance().closeAndOpen(sessionState,this.conf,inputOutputJars,true);
+      console.printInfo("Session re-established.");
+      dagClient=sessionState.getSession().submitDAG(dag);
+    }
   }
- catch (  SessionNotRunning nr) {
-    console.printInfo("Tez session was closed. Reopening...");
-    TezSessionPoolManager.getInstance().closeAndOpen(sessionState,this.conf,inputOutputJars,true);
-    console.printInfo("Session re-established.");
-    dagClient=sessionState.getSession().submitDAG(dag);
+ catch (  Exception e) {
+    try {
+      TezSessionPoolManager.getInstance().closeAndOpen(sessionState,this.conf,inputOutputJars,true);
+      console.printInfo("Dag submit failed due to " + e.getMessage() + " stack trace: "+ Arrays.toString(e.getStackTrace())+ " retrying...");
+      dagClient=sessionState.getSession().submitDAG(dag);
+    }
+ catch (    Exception retryException) {
+      TezSessionPoolManager.getInstance().destroySession(sessionState);
+      throw retryException;
+    }
   }
   perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.TEZ_SUBMIT_DAG);
   return dagClient;
