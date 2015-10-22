@@ -24,45 +24,47 @@ return -1;
 Set<Integer> bigTableCandidateSet=MapJoinProcessor.getBigTableCandidates(joinOp.getConf().getConds());
 long maxSize=context.conf.getLongVar(HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASKTHRESHOLD);
 int bigTablePosition=-1;
+int bigInputNumberCostlyOps=-1;
 Statistics bigInputStat=null;
+boolean foundInputNotFittingInMemory=false;
 long totalSize=0;
-int pos=0;
-boolean bigTableFound=false;
-for (Operator<? extends OperatorDesc> parentOp : joinOp.getParentOperators()) {
+for (int pos=0; pos < joinOp.getParentOperators().size(); pos++) {
+Operator<? extends OperatorDesc> parentOp=joinOp.getParentOperators().get(pos);
 Statistics currInputStat=parentOp.getStatistics();
 if (currInputStat == null) {
 LOG.warn("Couldn't get statistics from: " + parentOp);
 return -1;
 }
 long inputSize=currInputStat.getDataSize();
+boolean currentInputNotFittingInMemory=false;
 if ((bigInputStat == null) || ((bigInputStat != null) && (inputSize > bigInputStat.getDataSize()))) {
-if (bigTableFound) {
+if (foundInputNotFittingInMemory) {
 return -1;
 }
 if (inputSize / buckets > maxSize) {
 if (!bigTableCandidateSet.contains(pos)) {
 return -1;
 }
-bigTableFound=true;
+currentInputNotFittingInMemory=true;
+foundInputNotFittingInMemory=true;
 }
-if (bigInputStat != null) {
+}
+int currentInputNumberCostlyOps=foundInputNotFittingInMemory ? -1 : OperatorUtils.countOperatorsUpstream(parentOp,COSTLY_OPERATORS);
+boolean selectedBigTable=bigTableCandidateSet.contains(pos) && (bigInputStat == null || currentInputNotFittingInMemory || (!foundInputNotFittingInMemory && (currentInputNumberCostlyOps > bigInputNumberCostlyOps || (currentInputNumberCostlyOps == bigInputNumberCostlyOps && inputSize > bigInputStat.getDataSize()))));
+if (bigInputStat != null && selectedBigTable) {
 totalSize+=bigInputStat.getDataSize();
 }
+ else if (!selectedBigTable) {
+totalSize+=inputSize;
+}
 if (totalSize / buckets > maxSize) {
 return -1;
 }
-if (bigTableCandidateSet.contains(pos)) {
+if (selectedBigTable) {
 bigTablePosition=pos;
+bigInputNumberCostlyOps=currentInputNumberCostlyOps;
 bigInputStat=currInputStat;
 }
-}
- else {
-totalSize+=currInputStat.getDataSize();
-if (totalSize / buckets > maxSize) {
-return -1;
-}
-}
-pos++;
 }
 return bigTablePosition;
 }
