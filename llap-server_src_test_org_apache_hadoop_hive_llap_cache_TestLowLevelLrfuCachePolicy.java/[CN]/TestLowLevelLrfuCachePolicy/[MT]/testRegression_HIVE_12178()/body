@@ -1,0 +1,35 @@
+{
+  LOG.info("Testing wrong list status after eviction");
+  EvictionTracker et=new EvictionTracker();
+  int memSize=2, lambda=1;
+  Configuration conf=createConf(1,memSize,(double)lambda);
+  final LowLevelLrfuCachePolicy lrfu=new LowLevelLrfuCachePolicy(conf);
+  Field f=LowLevelLrfuCachePolicy.class.getDeclaredField("listLock");
+  f.setAccessible(true);
+  ReentrantLock listLock=(ReentrantLock)f.get(lrfu);
+  LowLevelCacheMemoryManager mm=new LowLevelCacheMemoryManager(conf,lrfu,LlapDaemonCacheMetrics.create("test","1"));
+  lrfu.setEvictionListener(et);
+  final LlapDataBuffer buffer1=LowLevelCacheImpl.allocateFake();
+  LlapDataBuffer buffer2=LowLevelCacheImpl.allocateFake();
+  assertTrue(cache(mm,lrfu,et,buffer1));
+  assertTrue(cache(mm,lrfu,et,buffer2));
+  buffer1.incRef();
+  assertEquals(LlapCacheableBuffer.IN_LIST,buffer1.indexInHeap);
+  listLock.lock();
+  try {
+    Thread otherThread=new Thread(new Runnable(){
+      public void run(){
+        lrfu.notifyLock(buffer1);
+      }
+    }
+);
+    otherThread.start();
+    otherThread.join();
+  }
+  finally {
+    listLock.unlock();
+  }
+  mm.reserveMemory(1,false);
+  assertSame(buffer2,et.evicted.get(0));
+  unlock(lrfu,buffer1);
+}
