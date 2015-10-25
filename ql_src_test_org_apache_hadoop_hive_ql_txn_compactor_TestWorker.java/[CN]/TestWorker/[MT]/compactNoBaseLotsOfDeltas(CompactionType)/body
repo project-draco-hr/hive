@@ -1,0 +1,76 @@
+{
+  conf.setIntVar(HiveConf.ConfVars.COMPACTOR_MAX_NUM_DELTA,2);
+  Table t=newTable("default","mapwb",true);
+  Partition p=newPartition(t,"today");
+  addDeltaFile(t,p,21L,21L,2);
+  addDeltaFile(t,p,23L,23L,2);
+  addDeltaFile(t,p,25L,29L,2);
+  addDeltaFile(t,p,31L,32L,3);
+  addDeltaFile(t,p,31L,33L,5);
+  addDeltaFile(t,p,35L,35L,1);
+  burnThroughTransactions(35);
+  CompactionRequest rqst=new CompactionRequest("default","mapwb",type);
+  rqst.setPartitionname("ds=today");
+  txnHandler.compact(rqst);
+  startWorker();
+  ShowCompactResponse rsp=txnHandler.showCompact(new ShowCompactRequest());
+  List<ShowCompactResponseElement> compacts=rsp.getCompacts();
+  Assert.assertEquals(1,compacts.size());
+  Assert.assertEquals("ready for cleaning",compacts.get(0).getState());
+  FileSystem fs=FileSystem.get(conf);
+  FileStatus[] stat=fs.listStatus(new Path(p.getSd().getLocation()));
+  Assert.assertEquals(9,stat.length);
+  BitSet matchesFound=new BitSet(9);
+  for (int i=0; i < stat.length; i++) {
+    if (stat[i].getPath().getName().equals(makeDeltaDirName(21,21))) {
+      matchesFound.set(0);
+    }
+ else     if (stat[i].getPath().getName().equals(makeDeltaDirName(23,23))) {
+      matchesFound.set(1);
+    }
+ else     if (stat[i].getPath().getName().equals(makeDeltaDirNameCompacted(25,29))) {
+      matchesFound.set(2);
+    }
+ else     if (stat[i].getPath().getName().equals(makeDeltaDirNameCompacted(31,32))) {
+      matchesFound.set(3);
+    }
+ else     if (stat[i].getPath().getName().equals(makeDeltaDirNameCompacted(31,33))) {
+      matchesFound.set(4);
+    }
+ else     if (stat[i].getPath().getName().equals(makeDeltaDirName(35,35))) {
+      matchesFound.set(5);
+    }
+ else     if (stat[i].getPath().getName().equals(makeDeltaDirNameCompacted(21,23))) {
+      matchesFound.set(6);
+    }
+ else     if (stat[i].getPath().getName().equals(makeDeltaDirNameCompacted(25,33))) {
+      matchesFound.set(7);
+    }
+switch (type) {
+case MINOR:
+      if (stat[i].getPath().getName().equals(makeDeltaDirNameCompacted(21,35))) {
+        matchesFound.set(8);
+      }
+    break;
+case MAJOR:
+  if (stat[i].getPath().getName().equals(AcidUtils.baseDir(35))) {
+    matchesFound.set(8);
+  }
+break;
+default :
+throw new IllegalStateException();
+}
+}
+StringBuilder sb=null;
+for (int i=0; i < stat.length; i++) {
+if (!matchesFound.get(i)) {
+if (sb == null) {
+sb=new StringBuilder("Some files are missing at index: ");
+}
+sb.append(i).append(",");
+}
+}
+if (sb != null) {
+Assert.assertTrue(sb.toString(),false);
+}
+}

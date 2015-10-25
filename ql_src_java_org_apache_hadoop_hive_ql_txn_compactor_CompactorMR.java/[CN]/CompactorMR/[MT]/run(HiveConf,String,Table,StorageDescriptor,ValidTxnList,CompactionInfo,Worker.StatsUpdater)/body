@@ -1,0 +1,41 @@
+{
+  JobConf job=createBaseJobConf(conf,jobName,t,sd,txns);
+  AcidUtils.Directory dir=AcidUtils.getAcidState(new Path(sd.getLocation()),conf,txns,false);
+  List<AcidUtils.ParsedDelta> parsedDeltas=dir.getCurrentDirectories();
+  int maxDeltastoHandle=conf.getIntVar(HiveConf.ConfVars.COMPACTOR_MAX_NUM_DELTA);
+  if (parsedDeltas.size() > maxDeltastoHandle) {
+    LOG.warn(parsedDeltas.size() + " delta files found for " + ci.getFullPartitionName()+ " located at "+ sd.getLocation()+ "! This is likely a sign of misconfiguration, "+ "especially if this message repeats.  Check that compaction is running properly.  Check for any "+ "runaway/mis-configured process writing to ACID tables, especially using Streaming Ingest API.");
+    int numMinorCompactions=parsedDeltas.size() / maxDeltastoHandle;
+    for (int jobSubId=0; jobSubId < numMinorCompactions; jobSubId++) {
+      JobConf jobMinorCompact=createBaseJobConf(conf,jobName + "_" + jobSubId,t,sd,txns);
+      launchCompactionJob(jobMinorCompact,null,CompactionType.MINOR,null,parsedDeltas.subList(jobSubId * maxDeltastoHandle,(jobSubId + 1) * maxDeltastoHandle),maxDeltastoHandle,-1);
+    }
+    dir=AcidUtils.getAcidState(new Path(sd.getLocation()),conf,txns);
+  }
+  StringableList dirsToSearch=new StringableList();
+  Path baseDir=null;
+  if (ci.isMajorCompaction()) {
+    baseDir=dir.getBaseDirectory();
+    if (baseDir == null) {
+      List<HdfsFileStatusWithId> originalFiles=dir.getOriginalFiles();
+      if (!(originalFiles == null) && !(originalFiles.size() == 0)) {
+        for (        HdfsFileStatusWithId stat : originalFiles) {
+          Path path=stat.getFileStatus().getPath();
+          dirsToSearch.add(path);
+          LOG.debug("Adding original file " + path + " to dirs to search");
+        }
+        baseDir=new Path(sd.getLocation());
+      }
+    }
+ else {
+      LOG.debug("Adding base directory " + baseDir + " to dirs to search");
+      dirsToSearch.add(baseDir);
+    }
+  }
+  if (parsedDeltas.size() == 0) {
+    LOG.error("No delta files found to compact in " + sd.getLocation());
+    return;
+  }
+  launchCompactionJob(job,baseDir,ci.type,dirsToSearch,dir.getCurrentDirectories(),dir.getCurrentDirectories().size(),dir.getObsolete().size());
+  su.gatherStats();
+}
