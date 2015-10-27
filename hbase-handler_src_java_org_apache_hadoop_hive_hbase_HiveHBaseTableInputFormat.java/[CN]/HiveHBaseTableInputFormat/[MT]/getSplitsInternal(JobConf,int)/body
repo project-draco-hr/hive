@@ -6,43 +6,48 @@
   setHTable(new HTable(HBaseConfiguration.create(jobConf),Bytes.toBytes(hbaseTableName)));
   String hbaseColumnsMapping=jobConf.get(HBaseSerDe.HBASE_COLUMNS_MAPPING);
   boolean doColumnRegexMatching=jobConf.getBoolean(HBaseSerDe.HBASE_COLUMNS_REGEX_MATCHING,true);
-  if (hbaseColumnsMapping == null) {
-    throw new IOException(HBaseSerDe.HBASE_COLUMNS_MAPPING + " required for HBase Table.");
-  }
-  ColumnMappings columnMappings=null;
   try {
-    columnMappings=HBaseSerDe.parseColumnsMapping(hbaseColumnsMapping,doColumnRegexMatching);
-  }
- catch (  SerDeException e) {
-    throw new IOException(e);
-  }
-  int iKey=columnMappings.getKeyIndex();
-  int iTimestamp=columnMappings.getTimestampIndex();
-  ColumnMapping keyMapping=columnMappings.getKeyMapping();
-  Scan scan=createFilterScan(jobConf,iKey,iTimestamp,HiveHBaseInputFormatUtil.getStorageFormatOfKey(keyMapping.mappingSpec,jobConf.get(HBaseSerDe.HBASE_TABLE_DEFAULT_STORAGE_TYPE,"string")));
-  List<String> addedFamilies=new ArrayList<String>();
-  for (  ColumnMapping colMap : columnMappings) {
-    if (colMap.hbaseRowKey || colMap.hbaseTimestamp) {
-      continue;
+    if (hbaseColumnsMapping == null) {
+      throw new IOException(HBaseSerDe.HBASE_COLUMNS_MAPPING + " required for HBase Table.");
     }
-    if (colMap.qualifierName == null) {
-      scan.addFamily(colMap.familyNameBytes);
-      addedFamilies.add(colMap.familyName);
+    ColumnMappings columnMappings=null;
+    try {
+      columnMappings=HBaseSerDe.parseColumnsMapping(hbaseColumnsMapping,doColumnRegexMatching);
     }
+ catch (    SerDeException e) {
+      throw new IOException(e);
+    }
+    int iKey=columnMappings.getKeyIndex();
+    int iTimestamp=columnMappings.getTimestampIndex();
+    ColumnMapping keyMapping=columnMappings.getKeyMapping();
+    Scan scan=createFilterScan(jobConf,iKey,iTimestamp,HiveHBaseInputFormatUtil.getStorageFormatOfKey(keyMapping.mappingSpec,jobConf.get(HBaseSerDe.HBASE_TABLE_DEFAULT_STORAGE_TYPE,"string")));
+    List<String> addedFamilies=new ArrayList<String>();
+    for (    ColumnMapping colMap : columnMappings) {
+      if (colMap.hbaseRowKey || colMap.hbaseTimestamp) {
+        continue;
+      }
+      if (colMap.qualifierName == null) {
+        scan.addFamily(colMap.familyNameBytes);
+        addedFamilies.add(colMap.familyName);
+      }
  else {
-      if (!addedFamilies.contains(colMap.familyName)) {
-        scan.addColumn(colMap.familyNameBytes,colMap.qualifierNameBytes);
+        if (!addedFamilies.contains(colMap.familyName)) {
+          scan.addColumn(colMap.familyNameBytes,colMap.qualifierNameBytes);
+        }
       }
     }
+    setScan(scan);
+    Job job=new Job(jobConf);
+    JobContext jobContext=ShimLoader.getHadoopShims().newJobContext(job);
+    Path[] tablePaths=FileInputFormat.getInputPaths(jobContext);
+    List<org.apache.hadoop.mapreduce.InputSplit> splits=super.getSplits(jobContext);
+    InputSplit[] results=new InputSplit[splits.size()];
+    for (int i=0; i < splits.size(); i++) {
+      results[i]=new HBaseSplit((TableSplit)splits.get(i),tablePaths[0]);
+    }
+    return results;
   }
-  setScan(scan);
-  Job job=new Job(jobConf);
-  JobContext jobContext=ShimLoader.getHadoopShims().newJobContext(job);
-  Path[] tablePaths=FileInputFormat.getInputPaths(jobContext);
-  List<org.apache.hadoop.mapreduce.InputSplit> splits=super.getSplits(jobContext);
-  InputSplit[] results=new InputSplit[splits.size()];
-  for (int i=0; i < splits.size(); i++) {
-    results[i]=new HBaseSplit((TableSplit)splits.get(i),tablePaths[0]);
+  finally {
+    closeTable();
   }
-  return results;
 }
