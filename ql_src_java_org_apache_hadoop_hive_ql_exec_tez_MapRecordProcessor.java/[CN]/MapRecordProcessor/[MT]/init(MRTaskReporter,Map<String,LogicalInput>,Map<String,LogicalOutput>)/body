@@ -70,8 +70,19 @@
           l4j.info("Input name is " + mergeMapWork.getName());
           jconf.set(Utilities.INPUT_NAME,mergeMapWork.getName());
           mergeMapOp.initialize(jconf,null);
-          mergeMapOp.setChildren(jconf);
+          boolean skipRead=mergeMapOp.getConf().getPathToAliases().isEmpty();
+          if (skipRead) {
+            List<Operator<?>> children=new ArrayList<Operator<?>>();
+            children.addAll(mergeMapOp.getConf().getAliasToWork().values());
+            mergeMapOp.initEmptyInputChildren(children,jconf);
+          }
+ else {
+            mergeMapOp.setChildren(jconf);
+          }
           DummyStoreOperator dummyOp=getJoinParentOp(mergeMapOp);
+          if (dummyOp instanceof TezDummyStoreOperator) {
+            ((TezDummyStoreOperator)dummyOp).setFetchDone(skipRead);
+          }
           mapOp.setConnectedOperators(mergeMapWork.getTag(),dummyOp);
           mergeMapOp.passExecContext(new ExecMapperContext(jconf));
           mergeMapOp.initializeLocalWork(jconf);
