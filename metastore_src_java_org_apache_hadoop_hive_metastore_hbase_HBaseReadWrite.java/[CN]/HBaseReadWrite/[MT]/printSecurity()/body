@@ -1,0 +1,23 @@
+{
+  HTableInterface htab=conn.getHBaseTable(SECURITY_TABLE);
+  Scan scan=new Scan();
+  scan.addColumn(CATALOG_CF,MASTER_KEY_COL);
+  scan.addColumn(CATALOG_CF,DELEGATION_TOKEN_COL);
+  Iterator<Result> iter=htab.getScanner(scan).iterator();
+  if (!iter.hasNext())   return Arrays.asList("No security related entries");
+  List<String> lines=new ArrayList<>();
+  while (iter.hasNext()) {
+    Result result=iter.next();
+    byte[] val=result.getValue(CATALOG_CF,MASTER_KEY_COL);
+    if (val != null) {
+      int seqNo=Integer.valueOf(new String(result.getRow(),HBaseUtils.ENCODING));
+      lines.add("Master key " + seqNo + ": "+ HBaseUtils.deserializeMasterKey(val));
+    }
+ else {
+      val=result.getValue(CATALOG_CF,DELEGATION_TOKEN_COL);
+      if (val == null)       throw new RuntimeException("Huh?  No master key, no delegation token!");
+      lines.add("Delegation token " + new String(result.getRow(),HBaseUtils.ENCODING) + ": "+ HBaseUtils.deserializeDelegationToken(val));
+    }
+  }
+  return lines;
+}

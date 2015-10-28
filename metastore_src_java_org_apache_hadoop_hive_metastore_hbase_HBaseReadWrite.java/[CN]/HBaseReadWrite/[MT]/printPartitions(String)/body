@@ -1,0 +1,26 @@
+{
+  String[] partKeyParts=partKey.split("\\.");
+  if (partKeyParts.length < 2)   return noMatch(partKey,"partition");
+  List<String> partVals=partKeyParts.length == 2 ? Arrays.asList("*") : Arrays.asList(Arrays.copyOfRange(partKeyParts,2,partKeyParts.length));
+  PartitionScanInfo psi;
+  try {
+    psi=scanPartitionsInternal(partKeyParts[0],partKeyParts[1],partVals,-1);
+  }
+ catch (  NoSuchObjectException e) {
+    return noMatch(partKey,"partition");
+  }
+  @SuppressWarnings("deprecation") HTableInterface htab=conn.getHBaseTable(PART_TABLE);
+  Scan scan=new Scan();
+  scan.addColumn(CATALOG_CF,CATALOG_COL);
+  scan.addFamily(STATS_CF);
+  scan.setStartRow(psi.keyPrefix);
+  scan.setStopRow(psi.endKeyPrefix);
+  scan.setFilter(psi.filter);
+  Iterator<Result> iter=htab.getScanner(scan).iterator();
+  if (!iter.hasNext())   return noMatch(partKey,"partition");
+  List<String> lines=new ArrayList<>();
+  while (iter.hasNext()) {
+    lines.add(printOnePartition(iter.next()));
+  }
+  return lines;
+}
