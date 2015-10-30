@@ -1,29 +1,49 @@
 {
+  Var var=null;
   String name1=name;
+  String name1a=null;
+  String name2=null;
   Scope cur=exec.currentScope;
+  Package pack=null;
+  Package packCallContext=exec.getPackageCallContext();
   ArrayList<String> qualified=exec.meta.splitIdentifier(name);
   if (qualified != null) {
     name1=qualified.get(0);
-  }
-  String name2=null;
-  if (name.startsWith(":")) {
-    name2=name.substring(1);
-  }
-  while (cur != null) {
-    for (    Var v : cur.vars) {
-      if (name1.equalsIgnoreCase(v.getName()) || (name2 != null && name2.equalsIgnoreCase(v.getName()))) {
-        if (qualified != null) {
-          if (v.type == Var.Type.ROW && v.value != null) {
-            Row row=(Row)v.value;
-            return row.getValue(qualified.get(1));
-          }
-        }
- else {
-          return v;
-        }
+    name2=qualified.get(1);
+    pack=findPackage(name1);
+    if (pack != null) {
+      var=pack.findVariable(name2);
+      if (var != null) {
+        return var;
       }
     }
-    cur=cur.parent;
+  }
+  if (name1.startsWith(":")) {
+    name1a=name1.substring(1);
+  }
+  while (cur != null) {
+    var=findVariable(cur.vars,name1);
+    if (var == null && name1a != null) {
+      var=findVariable(cur.vars,name1a);
+    }
+    if (var == null && packCallContext != null) {
+      var=packCallContext.findVariable(name1);
+    }
+    if (var != null) {
+      if (qualified != null) {
+        if (var.type == Var.Type.ROW && var.value != null) {
+          Row row=(Row)var.value;
+          var=row.getValue(name2);
+        }
+      }
+      return var;
+    }
+    if (cur.type == Scope.Type.ROUTINE) {
+      cur=exec.globalScope;
+    }
+ else {
+      cur=cur.parent;
+    }
   }
   return null;
 }
