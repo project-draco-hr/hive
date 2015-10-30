@@ -4,7 +4,7 @@
     tbl.setTableName(Utilities.getTableName(alterTbl.getNewName()));
   }
  else   if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.ADDCOLS) {
-    List<FieldSchema> oldCols=(part == null ? tbl.getCols() : part.getCols());
+    List<FieldSchema> oldCols=(part == null ? tbl.getColsForMetastore() : part.getColsForMetastore());
     StorageDescriptor sd=(part == null ? tbl.getTTable().getSd() : part.getTPartition().getSd());
     List<FieldSchema> newCols=alterTbl.getNewCols();
     String serializationLib=sd.getSerdeInfo().getSerializationLib();
@@ -31,7 +31,7 @@
     }
   }
  else   if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.RENAMECOLUMN) {
-    List<FieldSchema> oldCols=(part == null ? tbl.getCols() : part.getCols());
+    List<FieldSchema> oldCols=(part == null ? tbl.getColsForMetastore() : part.getColsForMetastore());
     StorageDescriptor sd=(part == null ? tbl.getTTable().getSd() : part.getTPartition().getSd());
     List<FieldSchema> newCols=new ArrayList<FieldSchema>();
     Iterator<FieldSchema> iterOldCols=oldCols.iterator();
@@ -113,6 +113,7 @@
  else   if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.ADDSERDE) {
     StorageDescriptor sd=(part == null ? tbl.getTTable().getSd() : part.getTPartition().getSd());
     String serdeName=alterTbl.getSerdeName();
+    String oldSerdeName=sd.getSerdeInfo().getSerializationLib();
     sd.getSerdeInfo().setSerializationLib(serdeName);
     if ((alterTbl.getProps() != null) && (alterTbl.getProps().size() > 0)) {
       sd.getSerdeInfo().getParameters().putAll(alterTbl.getProps());
@@ -121,8 +122,14 @@
       part.getTPartition().getSd().setCols(part.getTPartition().getSd().getCols());
     }
  else {
-      if (!Table.hasMetastoreBasedSchema(conf,serdeName)) {
-        tbl.setFields(Hive.getFieldsFromDeserializer(tbl.getTableName(),tbl.getDeserializer()));
+      if (Table.shouldStoreFieldsInMetastore(conf,serdeName,tbl.getParameters()) && !Table.hasMetastoreBasedSchema(conf,oldSerdeName)) {
+        try {
+          Deserializer oldSerde=MetaStoreUtils.getDeserializer(conf,tbl.getTTable(),false,oldSerdeName);
+          tbl.setFields(Hive.getFieldsFromDeserializer(tbl.getTableName(),oldSerde));
+        }
+ catch (        MetaException ex) {
+          throw new HiveException(ex);
+        }
       }
     }
   }
