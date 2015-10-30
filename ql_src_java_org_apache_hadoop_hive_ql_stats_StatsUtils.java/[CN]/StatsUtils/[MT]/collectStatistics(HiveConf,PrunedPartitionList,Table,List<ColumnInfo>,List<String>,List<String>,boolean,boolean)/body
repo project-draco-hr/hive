@@ -2,33 +2,16 @@
   Statistics stats=new Statistics();
   float deserFactor=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVE_STATS_DESERIALIZATION_FACTOR);
   if (!table.isPartitioned()) {
-    long nr=getNumRows(table);
-    long ds=getRawDataSize(table);
-    if (ds <= 0) {
-      ds=getTotalSize(table);
-      if (ds <= 0) {
-        ds=getFileSizeForTable(conf,table);
-      }
-      ds=(long)(ds * deserFactor);
-    }
-    if (nr <= 0) {
-      int avgRowSize=estimateRowSizeFromSchema(conf,schema,neededColumns);
-      if (avgRowSize > 0) {
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("Estimated average row size: " + avgRowSize);
-        }
-        nr=ds / avgRowSize;
-      }
-    }
-    if (nr == 0) {
-      nr=1;
-    }
+    long ds=getDataSize(conf,table);
+    long nr=getNumRows(conf,schema,neededColumns,table,ds);
     stats.setNumRows(nr);
-    stats.setDataSize(ds);
     List<ColStatistics> colStats=Lists.newArrayList();
     if (fetchColStats) {
       colStats=getTableColumnStats(table,schema,neededColumns);
+      long betterDS=getDataSizeFromColumnStats(nr,colStats);
+      ds=betterDS < 1 ? ds : betterDS;
     }
+    stats.setDataSize(ds);
     inferAndSetPrimaryKey(stats.getNumRows(),colStats);
     stats.setColumnStatsState(deriveStatType(colStats,neededColumns));
     stats.addToColumnStats(colStats);
@@ -93,6 +76,8 @@
         }
         List<ColStatistics> columnStats=convertColStats(colStats,table.getTableName());
         addParitionColumnStats(conf,neededColumns,referencedColumns,schema,table,partList,columnStats);
+        long betterDS=getDataSizeFromColumnStats(nr,columnStats);
+        stats.setDataSize(betterDS < 1 ? ds : betterDS);
         inferAndSetPrimaryKey(stats.getNumRows(),columnStats);
         stats.addToColumnStats(columnStats);
         State colState=deriveStatType(columnStats,referencedColumns);
