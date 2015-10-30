@@ -1,0 +1,31 @@
+{
+  StringBuffer names=new StringBuffer();
+  names.append("dbName,tableName,");
+  StringBuffer types=new StringBuffer();
+  types.append("string,string,");
+  BinarySortableSerDe serDe=new BinarySortableSerDe();
+  Properties props=new Properties();
+  props.setProperty(serdeConstants.LIST_COLUMNS,names.toString());
+  props.setProperty(serdeConstants.LIST_COLUMN_TYPES,types.toString());
+  try {
+    serDe.initialize(conf,props);
+    List deserializedkeys=((List)serDe.deserialize(new BytesWritable(key))).subList(0,2);
+    List<String> keys=new ArrayList<>();
+    for (int i=0; i < deserializedkeys.size(); i++) {
+      Object deserializedKey=deserializedkeys.get(i);
+      if (deserializedKey == null) {
+        throw new RuntimeException("Can't have a null dbname or tablename");
+      }
+ else {
+        TypeInfo inputType=TypeInfoUtils.getTypeInfoFromTypeString("string");
+        ObjectInspector inputOI=TypeInfoUtils.getStandardWritableObjectInspectorFromTypeInfo(inputType);
+        Converter converter=ObjectInspectorConverters.getConverter(inputOI,PrimitiveObjectInspectorFactory.javaStringObjectInspector);
+        keys.add((String)converter.convert(deserializedKey));
+      }
+    }
+    return keys;
+  }
+ catch (  SerDeException e) {
+    throw new RuntimeException("Error when deserialize key",e);
+  }
+}
