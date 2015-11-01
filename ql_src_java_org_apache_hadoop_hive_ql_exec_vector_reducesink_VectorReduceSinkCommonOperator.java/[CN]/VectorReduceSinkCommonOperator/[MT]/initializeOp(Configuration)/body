@@ -1,0 +1,45 @@
+{
+  super.initializeOp(hconf);
+  if (LOG.isDebugEnabled()) {
+    BaseWork work=Utilities.getMapWork(hconf);
+    if (work == null) {
+      work=Utilities.getReduceWork(hconf);
+    }
+    taskName=work.getName();
+  }
+  String context=hconf.get(Operator.CONTEXT_NAME_KEY,"");
+  if (context != null && !context.isEmpty()) {
+    context="_" + context.replace(" ","_");
+  }
+  statsMap.put(Counter.RECORDS_OUT_INTERMEDIATE + context,recordCounter);
+  reduceSkipTag=conf.getSkipTag();
+  reduceTagByte=(byte)conf.getTag();
+  if (isLogInfoEnabled) {
+    LOG.info("Using tag = " + (int)reduceTagByte);
+  }
+  TableDesc keyTableDesc=conf.getKeySerializeInfo();
+  boolean[] columnSortOrder=getColumnSortOrder(keyTableDesc.getProperties(),reduceSinkKeyColumnMap.length);
+  keyBinarySortableSerializeWrite=new BinarySortableSerializeWrite(columnSortOrder);
+  try {
+    Output nullKeyOutput=new Output();
+    keyBinarySortableSerializeWrite.set(nullKeyOutput);
+    for (int i=0; i < reduceSinkKeyColumnMap.length; i++) {
+      keyBinarySortableSerializeWrite.writeNull();
+    }
+    int nullBytesLength=nullKeyOutput.getLength();
+    nullBytes=new byte[nullBytesLength];
+    System.arraycopy(nullKeyOutput.getData(),0,nullBytes,0,nullBytesLength);
+    nullKeyHashCode=HashCodeUtil.calculateBytesHashCode(nullBytes,0,nullBytesLength);
+  }
+ catch (  Exception e) {
+    throw new HiveException(e);
+  }
+  valueLazyBinarySerializeWrite=new LazyBinarySerializeWrite(reduceSinkValueColumnMap.length);
+  valueVectorSerializeRow=new VectorSerializeRow<LazyBinarySerializeWrite>(valueLazyBinarySerializeWrite);
+  valueVectorSerializeRow.init(reduceSinkValueTypeInfos,reduceSinkValueColumnMap);
+  valueOutput=new Output();
+  valueVectorSerializeRow.setOutput(valueOutput);
+  keyWritable=new HiveKey();
+  valueBytesWritable=new BytesWritable();
+  batchCounter=0;
+}

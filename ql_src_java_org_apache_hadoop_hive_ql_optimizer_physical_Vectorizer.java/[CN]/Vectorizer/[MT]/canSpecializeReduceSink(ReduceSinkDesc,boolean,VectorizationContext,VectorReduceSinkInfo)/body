@@ -1,0 +1,87 @@
+{
+  if (!HiveConf.getBoolVar(hiveConf,HiveConf.ConfVars.HIVE_VECTORIZATION_REDUCESINK_NEW_ENABLED)) {
+    return false;
+  }
+  if (!isTez) {
+    return false;
+  }
+  if (desc.getWriteType() == AcidUtils.Operation.UPDATE || desc.getWriteType() == AcidUtils.Operation.DELETE) {
+    return false;
+  }
+  if (desc.getBucketCols() != null && !desc.getBucketCols().isEmpty()) {
+    return false;
+  }
+  boolean useUniformHash=desc.getReducerTraits().contains(UNIFORM);
+  if (!useUniformHash) {
+    return false;
+  }
+  if (desc.getTopN() >= 0) {
+    return false;
+  }
+  if (desc.getDistinctColumnIndices().size() > 0) {
+    return false;
+  }
+  TableDesc keyTableDesc=desc.getKeySerializeInfo();
+  Class<? extends Deserializer> keySerializerClass=keyTableDesc.getDeserializerClass();
+  if (keySerializerClass != org.apache.hadoop.hive.serde2.binarysortable.BinarySortableSerDe.class) {
+    return false;
+  }
+  TableDesc valueTableDesc=desc.getValueSerializeInfo();
+  Class<? extends Deserializer> valueDeserializerClass=valueTableDesc.getDeserializerClass();
+  if (valueDeserializerClass != org.apache.hadoop.hive.serde2.lazybinary.LazyBinarySerDe.class) {
+    return false;
+  }
+  List<ExprNodeDesc> keysDescs=desc.getKeyCols();
+  VectorExpression[] allKeyExpressions=vContext.getVectorExpressions(keysDescs);
+  int[] reduceSinkKeyColumnMap=new int[allKeyExpressions.length];
+  TypeInfo[] reduceSinkKeyTypeInfos=new TypeInfo[allKeyExpressions.length];
+  Type[] reduceSinkKeyColumnVectorTypes=new Type[allKeyExpressions.length];
+  ArrayList<VectorExpression> groupByKeyExpressionsList=new ArrayList<VectorExpression>();
+  VectorExpression[] reduceSinkKeyExpressions;
+  for (int i=0; i < reduceSinkKeyColumnMap.length; i++) {
+    VectorExpression ve=allKeyExpressions[i];
+    reduceSinkKeyColumnMap[i]=ve.getOutputColumn();
+    reduceSinkKeyTypeInfos[i]=keysDescs.get(i).getTypeInfo();
+    reduceSinkKeyColumnVectorTypes[i]=VectorizationContext.getColumnVectorTypeFromTypeInfo(reduceSinkKeyTypeInfos[i]);
+    if (!IdentityExpression.isColumnOnly(ve)) {
+      groupByKeyExpressionsList.add(ve);
+    }
+  }
+  if (groupByKeyExpressionsList.size() == 0) {
+    reduceSinkKeyExpressions=null;
+  }
+ else {
+    reduceSinkKeyExpressions=groupByKeyExpressionsList.toArray(new VectorExpression[0]);
+  }
+  ArrayList<ExprNodeDesc> valueDescs=desc.getValueCols();
+  VectorExpression[] allValueExpressions=vContext.getVectorExpressions(valueDescs);
+  int[] reduceSinkValueColumnMap=new int[valueDescs.size()];
+  TypeInfo[] reduceSinkValueTypeInfos=new TypeInfo[valueDescs.size()];
+  Type[] reduceSinkValueColumnVectorTypes=new Type[valueDescs.size()];
+  ArrayList<VectorExpression> reduceSinkValueExpressionsList=new ArrayList<VectorExpression>();
+  VectorExpression[] reduceSinkValueExpressions;
+  for (int i=0; i < valueDescs.size(); ++i) {
+    VectorExpression ve=allValueExpressions[i];
+    reduceSinkValueColumnMap[i]=ve.getOutputColumn();
+    reduceSinkValueTypeInfos[i]=valueDescs.get(i).getTypeInfo();
+    reduceSinkValueColumnVectorTypes[i]=VectorizationContext.getColumnVectorTypeFromTypeInfo(reduceSinkValueTypeInfos[i]);
+    if (!IdentityExpression.isColumnOnly(ve)) {
+      reduceSinkValueExpressionsList.add(ve);
+    }
+  }
+  if (reduceSinkValueExpressionsList.size() == 0) {
+    reduceSinkValueExpressions=null;
+  }
+ else {
+    reduceSinkValueExpressions=reduceSinkValueExpressionsList.toArray(new VectorExpression[0]);
+  }
+  vectorReduceSinkInfo.setReduceSinkKeyColumnMap(reduceSinkKeyColumnMap);
+  vectorReduceSinkInfo.setReduceSinkKeyTypeInfos(reduceSinkKeyTypeInfos);
+  vectorReduceSinkInfo.setReduceSinkKeyColumnVectorTypes(reduceSinkKeyColumnVectorTypes);
+  vectorReduceSinkInfo.setReduceSinkKeyExpressions(reduceSinkKeyExpressions);
+  vectorReduceSinkInfo.setReduceSinkValueColumnMap(reduceSinkValueColumnMap);
+  vectorReduceSinkInfo.setReduceSinkValueTypeInfos(reduceSinkValueTypeInfos);
+  vectorReduceSinkInfo.setReduceSinkValueColumnVectorTypes(reduceSinkValueColumnVectorTypes);
+  vectorReduceSinkInfo.setReduceSinkValueExpressions(reduceSinkValueExpressions);
+  return true;
+}

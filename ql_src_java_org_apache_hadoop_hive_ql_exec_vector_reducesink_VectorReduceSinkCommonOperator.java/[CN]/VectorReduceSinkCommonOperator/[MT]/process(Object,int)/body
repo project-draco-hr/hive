@@ -1,0 +1,73 @@
+{
+  try {
+    VectorizedRowBatch batch=(VectorizedRowBatch)row;
+    batchCounter++;
+    if (batch.size == 0) {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug(CLASS_NAME + " batch #" + batchCounter+ " empty");
+      }
+      return;
+    }
+    if (reduceSinkKeyExpressions != null) {
+      for (      VectorExpression ve : reduceSinkKeyExpressions) {
+        ve.evaluate(batch);
+      }
+    }
+    if (reduceSinkValueExpressions != null) {
+      for (      VectorExpression ve : reduceSinkValueExpressions) {
+        ve.evaluate(batch);
+      }
+    }
+    serializedKeySeries.processBatch(batch);
+    boolean selectedInUse=batch.selectedInUse;
+    int[] selected=batch.selected;
+    int keyLength;
+    int logical;
+    int end;
+    int batchIndex;
+    do {
+      if (serializedKeySeries.getCurrentIsAllNull()) {
+        if (tag == -1 || reduceSkipTag) {
+          keyWritable.set(nullBytes,0,nullBytes.length);
+        }
+ else {
+          keyWritable.setSize(nullBytes.length + 1);
+          System.arraycopy(nullBytes,0,keyWritable.get(),0,nullBytes.length);
+          keyWritable.get()[nullBytes.length]=reduceTagByte;
+        }
+        keyWritable.setDistKeyLength(nullBytes.length);
+        keyWritable.setHashCode(nullKeyHashCode);
+      }
+ else {
+        keyLength=serializedKeySeries.getSerializedLength();
+        if (tag == -1 || reduceSkipTag) {
+          keyWritable.set(serializedKeySeries.getSerializedBytes(),serializedKeySeries.getSerializedStart(),keyLength);
+        }
+ else {
+          keyWritable.setSize(keyLength + 1);
+          System.arraycopy(serializedKeySeries.getSerializedBytes(),serializedKeySeries.getSerializedStart(),keyWritable.get(),0,keyLength);
+          keyWritable.get()[keyLength]=reduceTagByte;
+        }
+        keyWritable.setDistKeyLength(keyLength);
+        keyWritable.setHashCode(serializedKeySeries.getCurrentHashCode());
+      }
+      logical=serializedKeySeries.getCurrentLogical();
+      end=logical + serializedKeySeries.getCurrentDuplicateCount();
+      do {
+        batchIndex=(selectedInUse ? selected[logical] : logical);
+        valueLazyBinarySerializeWrite.reset();
+        valueVectorSerializeRow.serializeWrite(batch,batchIndex);
+        valueBytesWritable.set(valueOutput.getData(),0,valueOutput.getLength());
+        collect(keyWritable,valueBytesWritable);
+      }
+ while (++logical < end);
+      if (!serializedKeySeries.next()) {
+        break;
+      }
+    }
+ while (true);
+  }
+ catch (  Exception e) {
+    throw new HiveException(e);
+  }
+}

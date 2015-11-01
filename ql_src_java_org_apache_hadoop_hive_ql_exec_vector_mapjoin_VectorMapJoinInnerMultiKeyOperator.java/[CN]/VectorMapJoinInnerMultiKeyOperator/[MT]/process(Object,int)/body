@@ -4,8 +4,8 @@
     alias=(byte)tag;
     if (needCommonSetup) {
       commonSetup(batch);
-      keyVectorSerializeWriteNoNulls=new VectorSerializeRowNoNulls(new BinarySortableSerializeWrite(bigTableKeyColumnMap.length));
-      keyVectorSerializeWriteNoNulls.init(bigTableKeyTypeNames,bigTableKeyColumnMap);
+      keyVectorSerializeWrite=new VectorSerializeRow(new BinarySortableSerializeWrite(bigTableKeyColumnMap.length));
+      keyVectorSerializeWrite.init(bigTableKeyTypeNames,bigTableKeyColumnMap);
       currentKeyOutput=new Output();
       saveKeyOutput=new Output();
       needCommonSetup=false;
@@ -45,8 +45,11 @@
       }
     }
     if (allKeyInputColumnsRepeating) {
-      keyVectorSerializeWriteNoNulls.setOutput(currentKeyOutput);
-      keyVectorSerializeWriteNoNulls.serializeWriteNoNulls(batch,0);
+      keyVectorSerializeWrite.setOutput(currentKeyOutput);
+      keyVectorSerializeWrite.serializeWrite(batch,0);
+      if (keyVectorSerializeWrite.getHasAnyNulls()) {
+        throw new HiveException("Null key not expected in MapJoin");
+      }
       byte[] keyBytes=currentKeyOutput.getData();
       int keyLength=currentKeyOutput.getLength();
       JoinUtil.JoinResult joinResult=hashMap.lookup(keyBytes,0,keyLength,hashMapResults[0]);
@@ -70,8 +73,11 @@
       JoinUtil.JoinResult saveJoinResult=JoinUtil.JoinResult.NOMATCH;
       for (int logical=0; logical < inputLogicalSize; logical++) {
         int batchIndex=(selectedInUse ? selected[logical] : logical);
-        keyVectorSerializeWriteNoNulls.setOutput(currentKeyOutput);
-        keyVectorSerializeWriteNoNulls.serializeWriteNoNulls(batch,batchIndex);
+        keyVectorSerializeWrite.setOutput(currentKeyOutput);
+        keyVectorSerializeWrite.serializeWrite(batch,batchIndex);
+        if (keyVectorSerializeWrite.getHasAnyNulls()) {
+          throw new HiveException("Null key not expected in MapJoin");
+        }
         if (!haveSaveKey || !saveKeyOutput.arraysEquals(currentKeyOutput)) {
           if (haveSaveKey) {
 switch (saveJoinResult) {

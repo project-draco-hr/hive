@@ -1,0 +1,115 @@
+{
+  currentBatchSize=batch.size;
+  Preconditions.checkState(currentBatchSize > 0);
+  int prevKeyStart=0;
+  int prevKeyLength;
+  int currentKeyStart=0;
+  output.reset();
+  seriesCount=0;
+  boolean prevKeyIsNull;
+  duplicateCounts[0]=1;
+  if (batch.selectedInUse) {
+    int[] selected=batch.selected;
+    int index=selected[0];
+    keySerializeRow.setOutputAppend(output);
+    keySerializeRow.serializeWrite(batch,index);
+    if (keySerializeRow.getIsAllNulls()) {
+      seriesIsAllNull[0]=prevKeyIsNull=true;
+      prevKeyLength=0;
+      output.setWritePosition(0);
+      nonNullKeyCount=0;
+    }
+ else {
+      seriesIsAllNull[0]=prevKeyIsNull=false;
+      serializedKeyLengths[0]=currentKeyStart=prevKeyLength=output.getLength();
+      hasAnyNulls[0]=keySerializeRow.getHasAnyNulls();
+      nonNullKeyCount=1;
+    }
+    int keyLength;
+    for (int logical=1; logical < currentBatchSize; logical++) {
+      index=selected[logical];
+      keySerializeRow.setOutputAppend(output);
+      keySerializeRow.serializeWrite(batch,index);
+      if (keySerializeRow.getIsAllNulls()) {
+        if (prevKeyIsNull) {
+          duplicateCounts[seriesCount]++;
+        }
+ else {
+          duplicateCounts[++seriesCount]=1;
+          seriesIsAllNull[seriesCount]=prevKeyIsNull=true;
+        }
+        output.setWritePosition(currentKeyStart);
+      }
+ else {
+        keyLength=output.getLength() - currentKeyStart;
+        if (!prevKeyIsNull && StringExpr.equal(output.getData(),prevKeyStart,prevKeyLength,output.getData(),currentKeyStart,keyLength)) {
+          duplicateCounts[seriesCount]++;
+          output.setWritePosition(currentKeyStart);
+        }
+ else {
+          duplicateCounts[++seriesCount]=1;
+          seriesIsAllNull[seriesCount]=prevKeyIsNull=false;
+          prevKeyStart=currentKeyStart;
+          serializedKeyLengths[nonNullKeyCount]=prevKeyLength=keyLength;
+          currentKeyStart+=keyLength;
+          hasAnyNulls[nonNullKeyCount]=keySerializeRow.getHasAnyNulls();
+          nonNullKeyCount++;
+        }
+      }
+    }
+    seriesCount++;
+    Preconditions.checkState(seriesCount <= currentBatchSize);
+  }
+ else {
+    keySerializeRow.setOutputAppend(output);
+    keySerializeRow.serializeWrite(batch,0);
+    if (keySerializeRow.getIsAllNulls()) {
+      seriesIsAllNull[0]=prevKeyIsNull=true;
+      prevKeyLength=0;
+      output.setWritePosition(0);
+      nonNullKeyCount=0;
+    }
+ else {
+      seriesIsAllNull[0]=prevKeyIsNull=false;
+      serializedKeyLengths[0]=currentKeyStart=prevKeyLength=output.getLength();
+      hasAnyNulls[0]=keySerializeRow.getHasAnyNulls();
+      nonNullKeyCount=1;
+    }
+    int keyLength;
+    for (int index=1; index < currentBatchSize; index++) {
+      keySerializeRow.setOutputAppend(output);
+      keySerializeRow.serializeWrite(batch,index);
+      if (keySerializeRow.getIsAllNulls()) {
+        if (prevKeyIsNull) {
+          duplicateCounts[seriesCount]++;
+        }
+ else {
+          duplicateCounts[++seriesCount]=1;
+          seriesIsAllNull[seriesCount]=prevKeyIsNull=true;
+        }
+        output.setWritePosition(currentKeyStart);
+      }
+ else {
+        keyLength=output.getLength() - currentKeyStart;
+        if (!prevKeyIsNull && StringExpr.equal(output.getData(),prevKeyStart,prevKeyLength,output.getData(),currentKeyStart,keyLength)) {
+          duplicateCounts[seriesCount]++;
+          output.setWritePosition(currentKeyStart);
+        }
+ else {
+          duplicateCounts[++seriesCount]=1;
+          seriesIsAllNull[seriesCount]=prevKeyIsNull=false;
+          prevKeyStart=currentKeyStart;
+          serializedKeyLengths[nonNullKeyCount]=prevKeyLength=keyLength;
+          currentKeyStart+=keyLength;
+          hasAnyNulls[nonNullKeyCount]=keySerializeRow.getHasAnyNulls();
+          nonNullKeyCount++;
+        }
+      }
+    }
+    seriesCount++;
+    Preconditions.checkState(seriesCount <= currentBatchSize);
+  }
+  computeSerializedHashCodes();
+  positionToFirst();
+  Preconditions.checkState(validate());
+}

@@ -1,0 +1,52 @@
+{
+  Operator<? extends OperatorDesc> vectorOp=null;
+  Class<? extends Operator<?>> opClass=null;
+  Type[] reduceSinkKeyColumnVectorTypes=vectorReduceSinkInfo.getReduceSinkKeyColumnVectorTypes();
+  VectorReduceSinkDesc.ReduceSinkKeyType reduceSinkKeyType=VectorReduceSinkDesc.ReduceSinkKeyType.MULTI_KEY;
+  if (reduceSinkKeyColumnVectorTypes.length == 1) {
+    LOG.info("Vectorizer vectorizeOperator groupby typeName " + vectorReduceSinkInfo.getReduceSinkKeyTypeInfos()[0]);
+    Type columnVectorType=reduceSinkKeyColumnVectorTypes[0];
+switch (columnVectorType) {
+case LONG:
+{
+        PrimitiveCategory primitiveCategory=((PrimitiveTypeInfo)vectorReduceSinkInfo.getReduceSinkKeyTypeInfos()[0]).getPrimitiveCategory();
+switch (primitiveCategory) {
+case BOOLEAN:
+case BYTE:
+case SHORT:
+case INT:
+case LONG:
+          reduceSinkKeyType=VectorReduceSinkDesc.ReduceSinkKeyType.LONG;
+        break;
+default :
+      break;
+  }
+}
+break;
+case BYTES:
+reduceSinkKeyType=VectorReduceSinkDesc.ReduceSinkKeyType.STRING;
+default :
+break;
+}
+}
+switch (reduceSinkKeyType) {
+case LONG:
+opClass=VectorReduceSinkLongOperator.class;
+break;
+case STRING:
+opClass=VectorReduceSinkStringOperator.class;
+break;
+case MULTI_KEY:
+opClass=VectorReduceSinkMultiKeyOperator.class;
+break;
+default :
+throw new HiveException("Unknown reduce sink key type " + reduceSinkKeyType);
+}
+VectorReduceSinkDesc vectorDesc=new VectorReduceSinkDesc();
+desc.setVectorDesc(vectorDesc);
+vectorDesc.setReduceSinkKeyType(reduceSinkKeyType);
+vectorDesc.setVectorReduceSinkInfo(vectorReduceSinkInfo);
+vectorOp=OperatorFactory.getVectorOperator(opClass,op.getConf(),vContext);
+LOG.info("Vectorizer vectorizeOperator reduce sink class " + vectorOp.getClass().getSimpleName());
+return vectorOp;
+}

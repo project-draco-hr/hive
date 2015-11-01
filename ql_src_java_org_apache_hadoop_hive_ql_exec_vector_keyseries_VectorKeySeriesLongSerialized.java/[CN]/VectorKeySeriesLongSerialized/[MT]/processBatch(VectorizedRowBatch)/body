@@ -1,0 +1,167 @@
+{
+  currentBatchSize=batch.size;
+  Preconditions.checkState(currentBatchSize > 0);
+  LongColumnVector longColVector=(LongColumnVector)batch.cols[columnNum];
+  long[] vector=longColVector.vector;
+  currentKeyStart=0;
+  output.reset();
+  if (longColVector.isRepeating) {
+    duplicateCounts[0]=currentBatchSize;
+    if (longColVector.noNulls || !longColVector.isNull[0]) {
+      seriesIsAllNull[0]=false;
+      serialize(0,vector[0]);
+      nonNullKeyCount=1;
+    }
+ else {
+      seriesIsAllNull[0]=true;
+      nonNullKeyCount=0;
+    }
+    seriesCount=1;
+    Preconditions.checkState(seriesCount <= currentBatchSize);
+  }
+ else {
+    seriesCount=0;
+    nonNullKeyCount=0;
+    if (batch.selectedInUse) {
+      int[] selected=batch.selected;
+      if (longColVector.noNulls) {
+        duplicateCounts[0]=1;
+        long prevKey=vector[selected[0]];
+        serialize(0,prevKey);
+        long currentKey;
+        for (int logical=1; logical < currentBatchSize; logical++) {
+          currentKey=vector[selected[logical]];
+          if (prevKey == currentKey) {
+            duplicateCounts[seriesCount]++;
+          }
+ else {
+            duplicateCounts[++seriesCount]=1;
+            serialize(seriesCount,currentKey);
+            prevKey=currentKey;
+          }
+        }
+        Arrays.fill(seriesIsAllNull,0,++seriesCount,false);
+        nonNullKeyCount=seriesCount;
+        Preconditions.checkState(seriesCount <= currentBatchSize);
+      }
+ else {
+        boolean[] isNull=longColVector.isNull;
+        boolean prevKeyIsNull;
+        long prevKey=0;
+        duplicateCounts[0]=1;
+        int index=selected[0];
+        if (isNull[index]) {
+          seriesIsAllNull[0]=true;
+          prevKeyIsNull=true;
+          nonNullKeyCount=0;
+        }
+ else {
+          seriesIsAllNull[0]=false;
+          prevKeyIsNull=false;
+          prevKey=vector[index];
+          serialize(0,prevKey);
+          nonNullKeyCount=1;
+        }
+        long currentKey;
+        for (int logical=1; logical < currentBatchSize; logical++) {
+          index=selected[logical];
+          if (isNull[index]) {
+            if (prevKeyIsNull) {
+              duplicateCounts[seriesCount]++;
+            }
+ else {
+              duplicateCounts[++seriesCount]=1;
+              seriesIsAllNull[seriesCount]=true;
+              prevKeyIsNull=true;
+            }
+          }
+ else {
+            currentKey=vector[index];
+            if (!prevKeyIsNull && prevKey == currentKey) {
+              duplicateCounts[seriesCount]++;
+            }
+ else {
+              duplicateCounts[++seriesCount]=1;
+              seriesIsAllNull[seriesCount]=false;
+              serialize(nonNullKeyCount++,currentKey);
+              prevKeyIsNull=false;
+              prevKey=currentKey;
+            }
+          }
+        }
+        seriesCount++;
+        Preconditions.checkState(seriesCount <= currentBatchSize);
+      }
+    }
+ else {
+      if (longColVector.noNulls) {
+        duplicateCounts[0]=1;
+        long prevKey=vector[0];
+        serialize(0,prevKey);
+        long currentKey;
+        for (int index=1; index < currentBatchSize; index++) {
+          currentKey=vector[index];
+          if (prevKey == currentKey) {
+            duplicateCounts[seriesCount]++;
+          }
+ else {
+            duplicateCounts[++seriesCount]=1;
+            serialize(seriesCount,currentKey);
+            prevKey=currentKey;
+          }
+        }
+        Arrays.fill(seriesIsAllNull,0,++seriesCount,false);
+        nonNullKeyCount=seriesCount;
+        Preconditions.checkState(seriesCount <= currentBatchSize);
+      }
+ else {
+        boolean[] isNull=longColVector.isNull;
+        boolean prevKeyIsNull;
+        long prevKey=0;
+        duplicateCounts[0]=1;
+        if (isNull[0]) {
+          seriesIsAllNull[0]=true;
+          prevKeyIsNull=true;
+          nonNullKeyCount=0;
+        }
+ else {
+          seriesIsAllNull[0]=false;
+          prevKeyIsNull=false;
+          prevKey=vector[0];
+          serialize(0,prevKey);
+          nonNullKeyCount=1;
+        }
+        for (int index=1; index < currentBatchSize; index++) {
+          if (isNull[index]) {
+            if (prevKeyIsNull) {
+              duplicateCounts[seriesCount]++;
+            }
+ else {
+              duplicateCounts[++seriesCount]=1;
+              seriesIsAllNull[seriesCount]=true;
+              prevKeyIsNull=true;
+            }
+          }
+ else {
+            long currentKey=vector[index];
+            if (!prevKeyIsNull && prevKey == currentKey) {
+              duplicateCounts[seriesCount]++;
+            }
+ else {
+              duplicateCounts[++seriesCount]=1;
+              seriesIsAllNull[seriesCount]=false;
+              serialize(nonNullKeyCount++,currentKey);
+              prevKeyIsNull=false;
+              prevKey=currentKey;
+            }
+          }
+        }
+        seriesCount++;
+        Preconditions.checkState(seriesCount <= currentBatchSize);
+      }
+    }
+  }
+  computeSerializedHashCodes();
+  positionToFirst();
+  Preconditions.checkState(validate());
+}
