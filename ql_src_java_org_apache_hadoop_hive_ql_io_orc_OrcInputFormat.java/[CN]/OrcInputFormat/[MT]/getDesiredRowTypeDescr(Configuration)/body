@@ -1,0 +1,44 @@
+{
+  String columnNameProperty=null;
+  String columnTypeProperty=null;
+  ArrayList<String> schemaEvolutionColumnNames=null;
+  ArrayList<TypeDescription> schemaEvolutionTypeDescrs=null;
+  boolean haveSchemaEvolutionProperties=false;
+  if (HiveConf.getBoolVar(conf,ConfVars.HIVE_SCHEMA_EVOLUTION)) {
+    columnNameProperty=conf.get(IOConstants.SCHEMA_EVOLUTION_COLUMNS);
+    columnTypeProperty=conf.get(IOConstants.SCHEMA_EVOLUTION_COLUMNS_TYPES);
+    haveSchemaEvolutionProperties=(columnNameProperty != null && columnTypeProperty != null);
+    if (haveSchemaEvolutionProperties) {
+      schemaEvolutionColumnNames=Lists.newArrayList(columnNameProperty.split(","));
+      if (schemaEvolutionColumnNames.size() == 0) {
+        haveSchemaEvolutionProperties=false;
+      }
+ else {
+        schemaEvolutionTypeDescrs=typeDescriptionsFromHiveTypeProperty(columnTypeProperty);
+        if (schemaEvolutionTypeDescrs.size() != schemaEvolutionColumnNames.size()) {
+          haveSchemaEvolutionProperties=false;
+        }
+      }
+    }
+  }
+  if (!haveSchemaEvolutionProperties) {
+    columnNameProperty=conf.get(serdeConstants.LIST_COLUMNS);
+    columnTypeProperty=conf.get(serdeConstants.LIST_COLUMN_TYPES);
+    if (columnTypeProperty == null || columnNameProperty == null) {
+      return null;
+    }
+    schemaEvolutionColumnNames=Lists.newArrayList(columnNameProperty.split(","));
+    if (schemaEvolutionColumnNames.size() == 0) {
+      return null;
+    }
+    schemaEvolutionTypeDescrs=typeDescriptionsFromHiveTypeProperty(columnTypeProperty);
+    if (schemaEvolutionTypeDescrs.size() != schemaEvolutionColumnNames.size()) {
+      return null;
+    }
+  }
+  TypeDescription result=TypeDescription.createStruct();
+  for (int i=0; i < schemaEvolutionColumnNames.size(); i++) {
+    result.addField(schemaEvolutionColumnNames.get(i),schemaEvolutionTypeDescrs.get(i));
+  }
+  return result;
+}
