@@ -1,0 +1,85 @@
+{
+  ExprNodeGenericFuncDesc fd=getInExprNode((ExprNodeDesc)nd);
+  if (fd == null) {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Partition columns not separated for " + fd + ", is not IN operator : ");
+    }
+    return null;
+  }
+  List<ExprNodeDesc> children=fd.getChildren();
+  if (!(children.get(0) instanceof ExprNodeGenericFuncDesc) || (!(((ExprNodeGenericFuncDesc)children.get(0)).getGenericUDF() instanceof GenericUDFStruct))) {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Partition columns not separated for " + fd + ", children size "+ children.size()+ ", child expression : "+ children.get(0).getExprString());
+    }
+    return null;
+  }
+  if (!hasAtleastOneSubExprWithPartColOrVirtualColWithOneTableAlias(children.get(0))) {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Partition columns not separated for " + fd + ", there are no expression containing partition columns in struct fields");
+    }
+    return null;
+  }
+  if (hasAllSubExprWithConstOrPartColOrVirtualColWithOneTableAlias(children.get(0))) {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Partition columns not separated for " + fd + ", all fields are expressions containing constants or only partition columns"+ "coming from same table");
+    }
+    return null;
+  }
+  Map<String,TableInfo> tableAliasToInfo=new HashMap<>();
+  ExprNodeGenericFuncDesc originalStructDesc=((ExprNodeGenericFuncDesc)children.get(0));
+  List<ExprNodeDesc> originalDescChildren=originalStructDesc.getChildren();
+  for (int i=0; i < originalDescChildren.size(); i++) {
+    ExprNodeDesc en=originalDescChildren.get(i);
+    String tabAlias=null;
+    if (!exprContainsOnlyPartitionColOrVirtualColOrConstants(en) || (tabAlias=getTableAlias(en)) == null) {
+      continue;
+    }
+    TableInfo currTableInfo=null;
+    if (tableAliasToInfo.containsKey(tabAlias)) {
+      currTableInfo=tableAliasToInfo.get(tabAlias);
+    }
+ else {
+      currTableInfo=new TableInfo();
+    }
+    currTableInfo.exprNodeLHSDescriptor.add(en);
+    for (int j=1; j < children.size(); j++) {
+      ExprNodeDesc currChildStructExpr=children.get(j);
+      ExprNodeDesc newConstStructElement=null;
+      if (currChildStructExpr instanceof ExprNodeConstantDesc) {
+        List<Object> cnCols=(List<Object>)(((ExprNodeConstantDesc)(children.get(j))).getValue());
+        newConstStructElement=new ExprNodeConstantDesc(cnCols.get(i));
+      }
+ else {
+        List<ExprNodeDesc> cnChildren=((ExprNodeGenericFuncDesc)children.get(j)).getChildren();
+        newConstStructElement=new ExprNodeConstantDesc((((ExprNodeConstantDesc)(cnChildren.get(i))).getValue()));
+      }
+      if (currTableInfo.exprNodeRHSStructs.size() < j) {
+        List<ExprNodeDesc> newConstStructList=new ArrayList<ExprNodeDesc>();
+        newConstStructList.add(newConstStructElement);
+        currTableInfo.exprNodeRHSStructs.add(newConstStructList);
+      }
+ else {
+        currTableInfo.exprNodeRHSStructs.get(j - 1).add(newConstStructElement);
+      }
+    }
+    if (!tableAliasToInfo.containsKey(tabAlias)) {
+      tableAliasToInfo.put(tabAlias,currTableInfo);
+    }
+  }
+  final List<ExprNodeDesc> subExpr=new ArrayList<ExprNodeDesc>(originalDescChildren.size() + 1);
+  for (  Entry<String,TableInfo> entry : tableAliasToInfo.entrySet()) {
+    TableInfo currTableInfo=entry.getValue();
+    List<List<ExprNodeDesc>> currConstStructList=currTableInfo.exprNodeRHSStructs;
+    List<ExprNodeDesc> currInStructExprList=new ArrayList<ExprNodeDesc>();
+    currInStructExprList.add(ExprNodeGenericFuncDesc.newInstance(FunctionRegistry.getFunctionInfo(STRUCT_UDF).getGenericUDF(),STRUCT_UDF,currTableInfo.exprNodeLHSDescriptor));
+    for (int i=0; i < currConstStructList.size(); i++) {
+      List<ExprNodeDesc> currConstStruct=currConstStructList.get(i);
+      currInStructExprList.add(ExprNodeGenericFuncDesc.newInstance(FunctionRegistry.getFunctionInfo(STRUCT_UDF).getGenericUDF(),STRUCT_UDF,currConstStruct));
+    }
+    subExpr.add(new ExprNodeGenericFuncDesc(TypeInfoFactory.booleanTypeInfo,FunctionRegistry.getFunctionInfo(IN_UDF).getGenericUDF(),currInStructExprList));
+  }
+  if (subExpr.size() == 1) {
+    return subExpr.get(0);
+  }
+  return new ExprNodeGenericFuncDesc(TypeInfoFactory.booleanTypeInfo,FunctionRegistry.getFunctionInfo(AND_UDF).getGenericUDF(),subExpr);
+}
