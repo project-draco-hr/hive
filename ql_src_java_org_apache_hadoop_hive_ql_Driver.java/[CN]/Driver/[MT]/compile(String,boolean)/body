@@ -13,7 +13,18 @@
   conf.setVar(HiveConf.ConfVars.HIVEQUERYID,queryId);
   SessionState.get().setupQueryCurrentTimestamp();
   try {
-    SessionState.get().initTxnMgr(conf);
+    final HiveTxnManager txnManager=SessionState.get().initTxnMgr(conf);
+    ShutdownHookManager.addShutdownHook(new Runnable(){
+      @Override public void run(){
+        try {
+          releaseLocksAndCommitOrRollback(false,txnManager);
+        }
+ catch (        LockException e) {
+          LOG.warn("Exception when releasing locks in ShutdownHook for Driver: " + e.getMessage());
+        }
+      }
+    }
+,SHUTDOWN_HOOK_PRIORITY);
     command=new VariableSubstitution(new HiveVariableSource(){
       @Override public Map<String,String> getHiveVariable(){
         return SessionState.get().getHiveVariables();
