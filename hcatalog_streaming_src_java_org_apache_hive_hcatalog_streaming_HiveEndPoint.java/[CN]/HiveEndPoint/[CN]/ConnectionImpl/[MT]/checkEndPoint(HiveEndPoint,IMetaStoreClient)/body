@@ -1,18 +1,28 @@
 {
+  Table t;
   try {
-    Table t=msClient.getTable(endPoint.database,endPoint.table);
-    Map<String,String> params=t.getParameters();
-    if (params != null) {
-      String transactionalProp=params.get("transactional");
-      if (transactionalProp != null && transactionalProp.equalsIgnoreCase("true")) {
-        return;
-      }
-    }
-    LOG.error("'transactional' property is not set on Table " + endPoint);
-    throw new InvalidTable(endPoint.database,endPoint.table,"\'transactional\' property is not set on Table");
+    t=msClient.getTable(endPoint.database,endPoint.table);
   }
  catch (  Exception e) {
-    LOG.warn("Unable to check if Table is transactional. " + endPoint,e);
+    LOG.warn("Unable to check the endPoint: " + endPoint,e);
     throw new InvalidTable(endPoint.database,endPoint.table,e);
+  }
+  Map<String,String> params=t.getParameters();
+  if (params != null) {
+    String transactionalProp=params.get("transactional");
+    if (transactionalProp == null || !transactionalProp.equalsIgnoreCase("true")) {
+      LOG.error("'transactional' property is not set on Table " + endPoint);
+      throw new InvalidTable(endPoint.database,endPoint.table,"\'transactional\' property" + " is not set on Table");
+    }
+  }
+  if (t.getPartitionKeys() != null && !t.getPartitionKeys().isEmpty() && endPoint.partitionVals.isEmpty()) {
+    String errMsg="HiveEndPoint " + endPoint + " doesn't specify any partitions for "+ "partitioned table";
+    LOG.error(errMsg);
+    throw new ConnectionError(errMsg);
+  }
+  if ((t.getPartitionKeys() == null || t.getPartitionKeys().isEmpty()) && !endPoint.partitionVals.isEmpty()) {
+    String errMsg="HiveEndPoint" + endPoint + " specifies partitions for unpartitioned table";
+    LOG.error(errMsg);
+    throw new ConnectionError(errMsg);
   }
 }
