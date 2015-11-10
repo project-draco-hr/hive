@@ -1,0 +1,36 @@
+{
+  List<TableMeta> tableMetas=super.getTableMeta(dbPatterns,tablePatterns,tableTypes);
+  Map<String,Map<String,Table>> tmpTables=getTempTables();
+  if (tmpTables.isEmpty()) {
+    return tableMetas;
+  }
+  List<Matcher> dbPatternList=new ArrayList<>();
+  for (  String element : dbPatterns.split("\\|")) {
+    dbPatternList.add(Pattern.compile(element.replaceAll("\\*",".*")).matcher(""));
+  }
+  List<Matcher> tblPatternList=new ArrayList<>();
+  for (  String element : tablePatterns.split("\\|")) {
+    tblPatternList.add(Pattern.compile(element.replaceAll("\\*",".*")).matcher(""));
+  }
+  StringBuilder builder=new StringBuilder();
+  for (  Map.Entry<String,Map<String,Table>> outer : tmpTables.entrySet()) {
+    if (!matchesAny(outer.getKey(),dbPatternList)) {
+      continue;
+    }
+    for (    Map.Entry<String,Table> inner : outer.getValue().entrySet()) {
+      Table table=inner.getValue();
+      String tableName=table.getTableName();
+      String typeString=table.getTableType().name();
+      if (tableTypes != null && !tableTypes.contains(typeString)) {
+        continue;
+      }
+      if (!matchesAny(inner.getKey(),tblPatternList)) {
+        continue;
+      }
+      TableMeta tableMeta=new TableMeta(table.getDbName(),tableName,typeString);
+      tableMeta.setComments(table.getProperty("comment"));
+      tableMetas.add(tableMeta);
+    }
+  }
+  return tableMetas;
+}

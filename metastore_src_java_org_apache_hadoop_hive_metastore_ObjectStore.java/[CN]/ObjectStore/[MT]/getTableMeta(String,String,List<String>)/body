@@ -1,0 +1,35 @@
+{
+  boolean commited=false;
+  Query query=null;
+  List<TableMeta> metas=new ArrayList<TableMeta>();
+  try {
+    openTransaction();
+    StringBuilder builder=new StringBuilder();
+    if (dbNames != null && !dbNames.equals("*")) {
+      appendPatternCondition(builder,"database.name",dbNames);
+    }
+    if (tableNames != null && !tableNames.equals("*")) {
+      appendPatternCondition(builder,"tableName",tableNames);
+    }
+    if (tableTypes != null && !tableTypes.isEmpty()) {
+      appendSimpleCondition(builder,"tableType",tableTypes.toArray(new String[0]));
+    }
+    query=pm.newQuery(MTable.class,builder.toString());
+    Collection<MTable> tables=(Collection<MTable>)query.execute();
+    for (    MTable table : tables) {
+      TableMeta metaData=new TableMeta(table.getDatabase().getName(),table.getTableName(),table.getTableType());
+      metaData.setComments(table.getParameters().get("comment"));
+      metas.add(metaData);
+    }
+    commited=commitTransaction();
+  }
+  finally {
+    if (!commited) {
+      rollbackTransaction();
+    }
+    if (query != null) {
+      query.closeAll();
+    }
+  }
+  return metas;
+}
