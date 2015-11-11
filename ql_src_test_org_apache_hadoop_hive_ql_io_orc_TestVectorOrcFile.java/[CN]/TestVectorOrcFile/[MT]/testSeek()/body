@@ -1,0 +1,96 @@
+{
+  TypeDescription schema=createBigRowSchema();
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).setSchema(schema).stripeSize(200000).bufferSize(65536).rowIndexStride(1000));
+  VectorizedRowBatch batch=schema.createRowBatch();
+  Random rand=new Random(42);
+  final int COUNT=32768;
+  long[] intValues=new long[COUNT];
+  double[] doubleValues=new double[COUNT];
+  String[] stringValues=new String[COUNT];
+  BytesWritable[] byteValues=new BytesWritable[COUNT];
+  String[] words=new String[128];
+  for (int i=0; i < words.length; ++i) {
+    words[i]=Integer.toHexString(rand.nextInt());
+  }
+  for (int i=0; i < COUNT / 2; ++i) {
+    intValues[2 * i]=rand.nextLong();
+    intValues[2 * i + 1]=intValues[2 * i];
+    stringValues[2 * i]=words[rand.nextInt(words.length)];
+    stringValues[2 * i + 1]=stringValues[2 * i];
+  }
+  for (int i=0; i < COUNT; ++i) {
+    doubleValues[i]=rand.nextDouble();
+    byte[] buf=new byte[20];
+    rand.nextBytes(buf);
+    byteValues[i]=new BytesWritable(buf);
+  }
+  for (int i=0; i < COUNT; ++i) {
+    appendRandomRow(batch,intValues,doubleValues,stringValues,byteValues,words,i);
+    if (batch.size == 1024) {
+      writer.addRowBatch(batch);
+      batch.reset();
+    }
+  }
+  if (batch.size != 0) {
+    writer.addRowBatch(batch);
+  }
+  writer.close();
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf).filesystem(fs));
+  assertEquals(COUNT,reader.getNumberOfRows());
+  RecordReader rows=reader.rows();
+  MetadataReader meta=((RecordReaderImpl)rows).getMetadataReader();
+  RecordReaderImpl.Index index=meta.readRowIndex(reader.getStripes().get(0),null,null,null,null,null);
+  for (int c=1; c < 9; ++c) {
+    OrcProto.RowIndex colIndex=index.getRowGroupIndex()[c];
+    assertEquals(1000,colIndex.getEntry(0).getStatistics().getNumberOfValues());
+  }
+  OrcStruct row=null;
+  for (int i=COUNT - 1; i >= 0; --i) {
+    rows.seekToRow(i);
+    row=(OrcStruct)rows.next(row);
+    BigRow expected=createRandomRow(intValues,doubleValues,stringValues,byteValues,words,i);
+    assertEquals(expected.boolean1.booleanValue(),((BooleanWritable)row.getFieldValue(0)).get());
+    assertEquals(expected.byte1.byteValue(),((ByteWritable)row.getFieldValue(1)).get());
+    assertEquals(expected.short1.shortValue(),((ShortWritable)row.getFieldValue(2)).get());
+    assertEquals(expected.int1.intValue(),((IntWritable)row.getFieldValue(3)).get());
+    assertEquals(expected.long1.longValue(),((LongWritable)row.getFieldValue(4)).get());
+    assertEquals(expected.float1,((FloatWritable)row.getFieldValue(5)).get(),0.0001);
+    assertEquals(expected.double1,((DoubleWritable)row.getFieldValue(6)).get(),0.0001);
+    assertEquals(expected.bytes1,row.getFieldValue(7));
+    assertEquals(expected.string1,row.getFieldValue(8));
+    List<InnerStruct> expectedList=expected.middle.list;
+    List<OrcStruct> actualList=(List<OrcStruct>)((OrcStruct)row.getFieldValue(9)).getFieldValue(0);
+    compareList(expectedList,actualList,"middle list " + i);
+    compareList(expected.list,(List<OrcStruct>)row.getFieldValue(10),"list " + i);
+  }
+  rows.close();
+  Iterator<StripeInformation> stripeIterator=reader.getStripes().iterator();
+  long offsetOfStripe2=0;
+  long offsetOfStripe4=0;
+  long lastRowOfStripe2=0;
+  for (int i=0; i < 5; ++i) {
+    StripeInformation stripe=stripeIterator.next();
+    if (i < 2) {
+      lastRowOfStripe2+=stripe.getNumberOfRows();
+    }
+ else     if (i == 2) {
+      offsetOfStripe2=stripe.getOffset();
+      lastRowOfStripe2+=stripe.getNumberOfRows() - 1;
+    }
+ else     if (i == 4) {
+      offsetOfStripe4=stripe.getOffset();
+    }
+  }
+  boolean[] columns=new boolean[reader.getStatistics().length];
+  columns[5]=true;
+  columns[9]=true;
+  rows=reader.rowsOptions(new Reader.Options().range(offsetOfStripe2,offsetOfStripe4 - offsetOfStripe2).include(columns));
+  rows.seekToRow(lastRowOfStripe2);
+  for (int i=0; i < 2; ++i) {
+    row=(OrcStruct)rows.next(row);
+    BigRow expected=createRandomRow(intValues,doubleValues,stringValues,byteValues,words,(int)(lastRowOfStripe2 + i));
+    assertEquals(expected.long1.longValue(),((LongWritable)row.getFieldValue(4)).get());
+    assertEquals(expected.string1,row.getFieldValue(8));
+  }
+  rows.close();
+}

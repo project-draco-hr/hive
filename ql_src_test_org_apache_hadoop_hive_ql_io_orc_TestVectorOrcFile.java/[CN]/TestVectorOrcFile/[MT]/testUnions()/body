@@ -1,0 +1,65 @@
+{
+  TypeDescription schema=TypeDescription.createStruct().addField("outer",TypeDescription.createUnion().addUnionChild(TypeDescription.createInt()).addUnionChild(TypeDescription.createLong()));
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).setSchema(schema));
+  VectorizedRowBatch batch=schema.createRowBatch();
+  batch.size=1024;
+  UnionColumnVector outer=(UnionColumnVector)batch.cols[0];
+  batch.cols[0].noNulls=false;
+  for (int r=0; r < 1024; ++r) {
+    if (r < 200) {
+      outer.isNull[r]=true;
+    }
+ else     if (r < 300) {
+      outer.tags[r]=0;
+    }
+ else     if (r < 400) {
+      outer.tags[r]=1;
+    }
+ else     if (r < 600) {
+      outer.isNull[r]=true;
+    }
+ else     if (r < 800) {
+      outer.tags[r]=1;
+    }
+ else     if (r < 1000) {
+      outer.isNull[r]=true;
+    }
+ else {
+      outer.tags[r]=1;
+    }
+    ((LongColumnVector)outer.fields[0]).vector[r]=r;
+    ((LongColumnVector)outer.fields[1]).vector[r]=-r;
+  }
+  writer.addRowBatch(batch);
+  writer.close();
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf));
+  RecordReader rows=reader.rows();
+  OrcStruct row=null;
+  for (int r=0; r < 1024; ++r) {
+    assertEquals(true,rows.hasNext());
+    row=(OrcStruct)rows.next(row);
+    OrcUnion inner=(OrcUnion)row.getFieldValue(0);
+    if (r < 200) {
+      assertEquals("row " + r,null,inner);
+    }
+ else     if (r < 300) {
+      assertEquals("row " + r,"union(0, " + r + ")",inner.toString());
+    }
+ else     if (r < 400) {
+      assertEquals("row " + r,"union(1, " + -r + ")",inner.toString());
+    }
+ else     if (r < 600) {
+      assertEquals("row " + r,null,inner);
+    }
+ else     if (r < 800) {
+      assertEquals("row " + r,"union(1, " + -r + ")",inner.toString());
+    }
+ else     if (r < 1000) {
+      assertEquals("row " + r,null,inner);
+    }
+ else {
+      assertEquals("row " + r,"union(1, " + -r + ")",inner.toString());
+    }
+  }
+  assertEquals(false,rows.hasNext());
+}

@@ -1,0 +1,30 @@
+{
+  super.writeBatch(vector,offset,length);
+  DecimalColumnVector vec=(DecimalColumnVector)vector;
+  if (vector.isRepeating) {
+    if (vector.noNulls || !vector.isNull[0]) {
+      HiveDecimal value=vec.vector[0].getHiveDecimal();
+      indexStatistics.updateDecimal(value);
+      if (createBloomFilter) {
+        bloomFilter.addString(value.toString());
+      }
+      for (int i=0; i < length; ++i) {
+        SerializationUtils.writeBigInteger(valueStream,value.unscaledValue());
+        scaleStream.write(value.scale());
+      }
+    }
+  }
+ else {
+    for (int i=0; i < length; ++i) {
+      if (vec.noNulls || !vec.isNull[i + offset]) {
+        HiveDecimal value=vec.vector[i + offset].getHiveDecimal();
+        SerializationUtils.writeBigInteger(valueStream,value.unscaledValue());
+        scaleStream.write(value.scale());
+        indexStatistics.updateDecimal(value);
+        if (createBloomFilter) {
+          bloomFilter.addString(value.toString());
+        }
+      }
+    }
+  }
+}

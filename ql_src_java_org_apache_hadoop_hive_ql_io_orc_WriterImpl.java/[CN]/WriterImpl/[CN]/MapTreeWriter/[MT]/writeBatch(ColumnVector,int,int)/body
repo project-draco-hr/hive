@@ -1,0 +1,46 @@
+{
+  super.writeBatch(vector,offset,length);
+  MapColumnVector vec=(MapColumnVector)vector;
+  if (vector.isRepeating) {
+    if (vector.noNulls || !vector.isNull[0]) {
+      int childOffset=(int)vec.offsets[0];
+      int childLength=(int)vec.lengths[0];
+      for (int i=0; i < length; ++i) {
+        lengths.write(childLength);
+        childrenWriters[0].writeBatch(vec.keys,childOffset,childLength);
+        childrenWriters[1].writeBatch(vec.values,childOffset,childLength);
+      }
+      if (createBloomFilter) {
+        bloomFilter.addLong(childLength);
+      }
+    }
+  }
+ else {
+    int currentOffset=0;
+    int currentLength=0;
+    for (int i=0; i < length; ++i) {
+      if (!vec.isNull[i + offset]) {
+        int nextLength=(int)vec.lengths[offset + i];
+        int nextOffset=(int)vec.offsets[offset + i];
+        lengths.write(nextLength);
+        if (currentLength == 0) {
+          currentOffset=nextOffset;
+          currentLength=nextLength;
+        }
+ else         if (currentOffset + currentLength != nextOffset) {
+          childrenWriters[0].writeBatch(vec.keys,currentOffset,currentLength);
+          childrenWriters[1].writeBatch(vec.values,currentOffset,currentLength);
+          currentOffset=nextOffset;
+          currentLength=nextLength;
+        }
+ else {
+          currentLength+=nextLength;
+        }
+      }
+    }
+    if (currentLength != 0) {
+      childrenWriters[0].writeBatch(vec.keys,currentOffset,currentLength);
+      childrenWriters[1].writeBatch(vec.values,currentOffset,currentLength);
+    }
+  }
+}

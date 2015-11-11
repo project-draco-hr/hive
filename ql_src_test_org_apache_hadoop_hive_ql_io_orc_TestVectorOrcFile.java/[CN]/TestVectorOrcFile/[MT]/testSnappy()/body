@@ -1,0 +1,27 @@
+{
+  TypeDescription schema=createInnerSchema();
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).setSchema(schema).stripeSize(1000).compress(CompressionKind.SNAPPY).bufferSize(100));
+  VectorizedRowBatch batch=schema.createRowBatch();
+  Random rand=new Random(12);
+  batch.size=1000;
+  for (int b=0; b < 10; ++b) {
+    for (int r=0; r < 1000; ++r) {
+      ((LongColumnVector)batch.cols[0]).vector[r]=rand.nextInt();
+      ((BytesColumnVector)batch.cols[1]).setVal(r,Integer.toHexString(rand.nextInt()).getBytes());
+    }
+    writer.addRowBatch(batch);
+  }
+  writer.close();
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf).filesystem(fs));
+  RecordReader rows=reader.rows();
+  rand=new Random(12);
+  OrcStruct row=null;
+  for (int i=0; i < 10000; ++i) {
+    assertEquals(true,rows.hasNext());
+    row=(OrcStruct)rows.next(row);
+    assertEquals(rand.nextInt(),((IntWritable)row.getFieldValue(0)).get());
+    assertEquals(Integer.toHexString(rand.nextInt()),row.getFieldValue(1).toString());
+  }
+  assertEquals(false,rows.hasNext());
+  rows.close();
+}

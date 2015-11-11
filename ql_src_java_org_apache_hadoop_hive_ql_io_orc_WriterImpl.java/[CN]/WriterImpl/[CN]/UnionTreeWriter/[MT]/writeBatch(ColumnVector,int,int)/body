@@ -1,0 +1,44 @@
+{
+  super.writeBatch(vector,offset,length);
+  UnionColumnVector vec=(UnionColumnVector)vector;
+  if (vector.isRepeating) {
+    if (vector.noNulls || !vector.isNull[0]) {
+      byte tag=(byte)vec.tags[0];
+      for (int i=0; i < length; ++i) {
+        tags.write(tag);
+      }
+      if (createBloomFilter) {
+        bloomFilter.addLong(tag);
+      }
+      childrenWriters[tag].writeBatch(vec.fields[tag],offset,length);
+    }
+  }
+ else {
+    byte prevTag=0;
+    int currentRun=0;
+    boolean started=false;
+    for (int i=0; i < length; ++i) {
+      if (!vec.isNull[i + offset]) {
+        byte tag=(byte)vec.tags[offset + i];
+        tags.write(tag);
+        if (!started) {
+          started=true;
+          currentRun=i;
+          prevTag=tag;
+        }
+ else         if (tag != prevTag) {
+          childrenWriters[prevTag].writeBatch(vec.fields[prevTag],offset + currentRun,i - currentRun);
+          currentRun=i;
+          prevTag=tag;
+        }
+      }
+ else       if (started) {
+        started=false;
+        childrenWriters[prevTag].writeBatch(vec.fields[prevTag],offset + currentRun,i - currentRun);
+      }
+    }
+    if (started) {
+      childrenWriters[prevTag].writeBatch(vec.fields[prevTag],offset + currentRun,length - currentRun);
+    }
+  }
+}

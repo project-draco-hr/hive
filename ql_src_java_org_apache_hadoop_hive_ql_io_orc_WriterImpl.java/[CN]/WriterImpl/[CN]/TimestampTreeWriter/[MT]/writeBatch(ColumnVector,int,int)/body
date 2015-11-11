@@ -1,0 +1,39 @@
+{
+  super.writeBatch(vector,offset,length);
+  LongColumnVector vec=(LongColumnVector)vector;
+  if (vector.isRepeating) {
+    if (vector.noNulls || !vector.isNull[0]) {
+      long value=vec.vector[0];
+      long valueMillis=value / MILLIS_PER_NANO;
+      indexStatistics.updateTimestamp(valueMillis);
+      if (createBloomFilter) {
+        bloomFilter.addLong(valueMillis);
+      }
+      final long secs=value / NANOS_PER_SECOND - base_timestamp;
+      final long nano=formatNanos((int)(value % NANOS_PER_SECOND));
+      for (int i=0; i < length; ++i) {
+        seconds.write(secs);
+        nanos.write(nano);
+      }
+    }
+  }
+ else {
+    for (int i=0; i < length; ++i) {
+      if (vec.noNulls || !vec.isNull[i + offset]) {
+        long value=vec.vector[i + offset];
+        long valueMillis=value / MILLIS_PER_NANO;
+        long valueSecs=value / NANOS_PER_SECOND - base_timestamp;
+        int valueNanos=(int)(value % NANOS_PER_SECOND);
+        if (valueNanos < 0) {
+          valueNanos+=NANOS_PER_SECOND;
+        }
+        seconds.write(valueSecs);
+        nanos.write(formatNanos(valueNanos));
+        indexStatistics.updateTimestamp(valueMillis);
+        if (createBloomFilter) {
+          bloomFilter.addLong(valueMillis);
+        }
+      }
+    }
+  }
+}

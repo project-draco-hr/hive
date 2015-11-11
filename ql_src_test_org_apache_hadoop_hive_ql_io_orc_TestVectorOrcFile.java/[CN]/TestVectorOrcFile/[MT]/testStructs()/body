@@ -1,0 +1,31 @@
+{
+  TypeDescription schema=TypeDescription.createStruct().addField("struct",TypeDescription.createStruct().addField("inner",TypeDescription.createLong()));
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).setSchema(schema));
+  VectorizedRowBatch batch=schema.createRowBatch();
+  batch.size=1024;
+  StructColumnVector outer=(StructColumnVector)batch.cols[0];
+  outer.noNulls=false;
+  for (int r=0; r < 1024; ++r) {
+    if (r < 200 || (r >= 400 && r < 600) || r >= 800) {
+      outer.isNull[r]=true;
+    }
+    ((LongColumnVector)outer.fields[0]).vector[r]=r;
+  }
+  writer.addRowBatch(batch);
+  writer.close();
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf));
+  RecordReader rows=reader.rows();
+  OrcStruct row=null;
+  for (int r=0; r < 1024; ++r) {
+    assertEquals(true,rows.hasNext());
+    row=(OrcStruct)rows.next(row);
+    OrcStruct inner=(OrcStruct)row.getFieldValue(0);
+    if (r < 200 || (r >= 400 && r < 600) || r >= 800) {
+      assertEquals("row " + r,null,inner);
+    }
+ else {
+      assertEquals("row " + r,"{" + r + "}",inner.toString());
+    }
+  }
+  assertEquals(false,rows.hasNext());
+}
