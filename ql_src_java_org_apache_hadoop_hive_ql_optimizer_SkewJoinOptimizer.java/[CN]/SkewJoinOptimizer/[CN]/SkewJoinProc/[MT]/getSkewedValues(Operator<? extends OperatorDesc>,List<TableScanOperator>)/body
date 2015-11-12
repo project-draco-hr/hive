@@ -4,6 +4,7 @@
   for (  Operator<? extends OperatorDesc> reduceSinkOp : op.getParentOperators()) {
     ReduceSinkDesc rsDesc=((ReduceSinkOperator)reduceSinkOp).getConf();
     if (rsDesc.getKeyCols() != null) {
+      TableScanOperator tableScanOp=null;
       Table table=null;
       List<String> skewedColumns=null;
       List<List<String>> skewedValueList=null;
@@ -14,17 +15,19 @@
         if (keyColDesc instanceof ExprNodeColumnDesc) {
           keyCol=(ExprNodeColumnDesc)keyColDesc;
           if (table == null) {
-            table=getTable(parseContext,reduceSinkOp,tableScanOpsForJoin);
+            tableScanOp=getTableScanOperator(parseContext,reduceSinkOp,tableScanOpsForJoin);
+            table=tableScanOp == null ? null : tableScanOp.getConf().getTableMetadata();
             skewedColumns=table == null ? null : table.getSkewedColNames();
             if ((skewedColumns == null) || (skewedColumns.isEmpty())) {
               continue;
             }
             skewedValueList=table == null ? null : table.getSkewedColValues();
           }
-          int pos=skewedColumns.indexOf(keyCol.getColumn());
+          ExprNodeDesc keyColOrigin=ExprNodeDescUtils.backtrack(keyCol,reduceSinkOp,tableScanOp);
+          int pos=keyColOrigin == null || !(keyColOrigin instanceof ExprNodeColumnDesc) ? -1 : skewedColumns.indexOf(((ExprNodeColumnDesc)keyColOrigin).getColumn());
           if ((pos >= 0) && (!positionSkewedKeys.contains(pos))) {
             positionSkewedKeys.add(pos);
-            ExprNodeColumnDesc keyColClone=(ExprNodeColumnDesc)keyCol.clone();
+            ExprNodeColumnDesc keyColClone=(ExprNodeColumnDesc)keyColOrigin.clone();
             keyColClone.setTabAlias(null);
             joinKeysSkewedCols.add(new ExprNodeDescEqualityWrapper(keyColClone));
           }
