@@ -1,0 +1,30 @@
+{
+  FixedBucketPruningOptimizerCtxt ctxt=((FixedBucketPruningOptimizerCtxt)procCtx);
+  Table tbl=top.getConf().getTableMetadata();
+  if (tbl.getNumBuckets() > 0) {
+    final int nbuckets=tbl.getNumBuckets();
+    ctxt.setNumBuckets(nbuckets);
+    ctxt.setBucketCols(tbl.getBucketCols());
+    ctxt.setSchema(tbl.getFields());
+    if (tbl.isPartitioned()) {
+      ParseContext parseCtx=ctxt.pctx;
+      PrunedPartitionList prunedPartList;
+      try {
+        String alias=(String)parseCtx.getTopOps().keySet().toArray()[0];
+        prunedPartList=PartitionPruner.prune(top,parseCtx,alias);
+      }
+ catch (      HiveException e) {
+        throw new SemanticException(e.getMessage(),e);
+      }
+      if (prunedPartList != null) {
+        ctxt.setPartitions(prunedPartList);
+        for (        Partition p : prunedPartList.getPartitions()) {
+          if (nbuckets != p.getBucketCount()) {
+            ctxt.setNumBuckets(-1);
+            break;
+          }
+        }
+      }
+    }
+  }
+}

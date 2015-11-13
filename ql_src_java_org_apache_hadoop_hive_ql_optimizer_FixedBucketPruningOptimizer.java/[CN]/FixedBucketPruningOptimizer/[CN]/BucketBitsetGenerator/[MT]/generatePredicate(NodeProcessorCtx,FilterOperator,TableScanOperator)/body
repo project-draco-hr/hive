@@ -1,0 +1,101 @@
+{
+  FixedBucketPruningOptimizerCtxt ctxt=((FixedBucketPruningOptimizerCtxt)procCtx);
+  if (ctxt.getNumBuckets() <= 0 || ctxt.getBucketCols().size() != 1) {
+    return;
+  }
+  ExprNodeGenericFuncDesc filter=top.getConf().getFilterExpr();
+  if (filter == null) {
+    return;
+  }
+  SearchArgument sarg=ConvertAstToSearchArg.create(filter);
+  if (sarg == null) {
+    return;
+  }
+  final String bucketCol=ctxt.getBucketCols().get(0);
+  StructField bucketField=null;
+  for (  StructField fs : ctxt.getSchema()) {
+    if (fs.getFieldName().equals(bucketCol)) {
+      bucketField=fs;
+    }
+  }
+  Preconditions.checkArgument(bucketField != null);
+  List<Object> literals=new ArrayList<Object>();
+  List<PredicateLeaf> leaves=sarg.getLeaves();
+  Set<PredicateLeaf> bucketLeaves=new HashSet<PredicateLeaf>();
+  for (  PredicateLeaf l : leaves) {
+    if (bucketCol.equals(l.getColumnName())) {
+switch (l.getOperator()) {
+case EQUALS:
+case IN:
+        break;
+case IS_NULL:
+case BETWEEN:
+default :
+      return;
+  }
+  bucketLeaves.add(l);
+}
+}
+if (bucketLeaves.size() == 0) {
+return;
+}
+ExpressionTree expr=sarg.getExpression();
+if (expr.getOperator() == Operator.LEAF) {
+PredicateLeaf l=leaves.get(expr.getLeaf());
+if (!addLiteral(literals,l)) {
+  return;
+}
+}
+ else if (expr.getOperator() == Operator.AND) {
+boolean found=false;
+for (ExpressionTree subExpr : expr.getChildren()) {
+  if (subExpr.getOperator() != Operator.LEAF) {
+    return;
+  }
+  PredicateLeaf l=leaves.get(subExpr.getLeaf());
+  if (bucketLeaves.contains(l)) {
+    if (!addLiteral(literals,l)) {
+      return;
+    }
+    found=true;
+  }
+}
+if (!found) {
+  return;
+}
+}
+ else if (expr.getOperator() == Operator.OR) {
+for (ExpressionTree subExpr : expr.getChildren()) {
+  if (subExpr.getOperator() != Operator.LEAF) {
+    return;
+  }
+  PredicateLeaf l=leaves.get(subExpr.getLeaf());
+  if (bucketLeaves.contains(l)) {
+    if (!addLiteral(literals,l)) {
+      return;
+    }
+  }
+ else {
+    return;
+  }
+}
+}
+BitSet bs=new BitSet(ctxt.getNumBuckets());
+bs.clear();
+PrimitiveObjectInspector bucketOI=(PrimitiveObjectInspector)bucketField.getFieldObjectInspector();
+PrimitiveObjectInspector constOI=PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(bucketOI.getPrimitiveCategory());
+for (Object literal : literals) {
+PrimitiveObjectInspector origOI=PrimitiveObjectInspectorFactory.getPrimitiveObjectInspectorFromClass(literal.getClass());
+Converter conv=ObjectInspectorConverters.getConverter(origOI,constOI);
+if (conv == null) {
+  return;
+}
+Object convCols[]=new Object[]{conv.convert(literal)};
+int n=ObjectInspectorUtils.getBucketNumber(convCols,new ObjectInspector[]{constOI},ctxt.getNumBuckets());
+bs.set(n);
+}
+if (bs.cardinality() < ctxt.getNumBuckets()) {
+top.getConf().setIncludedBuckets(bs);
+top.getConf().setNumBuckets(ctxt.getNumBuckets());
+}
+}
