@@ -22,36 +22,74 @@
   }
   HiveDefaultRelMetadataProvider mdProvider=new HiveDefaultRelMetadataProvider(conf);
   calcitePreCboPlan=applyPreJoinOrderingTransforms(calciteGenPlan,mdProvider.getMetadataProvider());
-  List<RelMetadataProvider> list=Lists.newArrayList();
-  list.add(mdProvider.getMetadataProvider());
-  RelTraitSet desiredTraits=cluster.traitSetOf(HiveRelNode.CONVENTION,RelCollations.EMPTY);
-  HepProgram hepPgm=null;
-  HepProgramBuilder hepPgmBldr=new HepProgramBuilder().addMatchOrder(HepMatchOrder.BOTTOM_UP).addRuleInstance(new JoinToMultiJoinRule(HiveJoin.class));
-  hepPgmBldr.addRuleInstance(new LoptOptimizeJoinRule(HiveJoin.HIVE_JOIN_FACTORY,HiveProject.DEFAULT_PROJECT_FACTORY,HiveFilter.DEFAULT_FILTER_FACTORY));
-  hepPgmBldr.addRuleInstance(ReduceExpressionsRule.JOIN_INSTANCE);
-  hepPgmBldr.addRuleInstance(ReduceExpressionsRule.FILTER_INSTANCE);
-  hepPgmBldr.addRuleInstance(ReduceExpressionsRule.PROJECT_INSTANCE);
-  hepPgmBldr.addRuleInstance(ProjectRemoveRule.INSTANCE);
-  hepPgmBldr.addRuleInstance(UnionMergeRule.INSTANCE);
-  hepPgmBldr.addRuleInstance(new ProjectMergeRule(false,HiveProject.DEFAULT_PROJECT_FACTORY));
-  hepPgmBldr.addRuleInstance(HiveAggregateProjectMergeRule.INSTANCE);
+  if (profilesCBO.contains(ExtendedCBOProfile.JOIN_REORDERING)) {
+    try {
+      List<RelMetadataProvider> list=Lists.newArrayList();
+      list.add(mdProvider.getMetadataProvider());
+      RelTraitSet desiredTraits=cluster.traitSetOf(HiveRelNode.CONVENTION,RelCollations.EMPTY);
+      HepProgramBuilder hepPgmBldr=new HepProgramBuilder().addMatchOrder(HepMatchOrder.BOTTOM_UP);
+      hepPgmBldr.addRuleInstance(new JoinToMultiJoinRule(HiveJoin.class));
+      hepPgmBldr.addRuleInstance(new LoptOptimizeJoinRule(HiveJoin.HIVE_JOIN_FACTORY,HiveProject.DEFAULT_PROJECT_FACTORY,HiveFilter.DEFAULT_FILTER_FACTORY));
+      HepProgram hepPgm=hepPgmBldr.build();
+      HepPlanner hepPlanner=new HepPlanner(hepPgm);
+      hepPlanner.registerMetadataProviders(list);
+      RelMetadataProvider chainedProvider=ChainedRelMetadataProvider.of(list);
+      cluster.setMetadataProvider(new CachingRelMetadataProvider(chainedProvider,hepPlanner));
+      RelNode rootRel=calcitePreCboPlan;
+      hepPlanner.setRoot(rootRel);
+      if (!calcitePreCboPlan.getTraitSet().equals(desiredTraits)) {
+        rootRel=hepPlanner.changeTraits(calcitePreCboPlan,desiredTraits);
+      }
+      hepPlanner.setRoot(rootRel);
+      calciteOptimizedPlan=hepPlanner.findBestExp();
+    }
+ catch (    Exception e) {
+      boolean isMissingStats=noColsMissingStats.get() > 0;
+      if (isMissingStats) {
+        LOG.warn("Missing column stats (see previous messages), skipping join reordering in CBO");
+        noColsMissingStats.set(0);
+        calciteOptimizedPlan=calcitePreCboPlan;
+        disableSemJoinReordering=false;
+      }
+ else {
+        throw e;
+      }
+    }
+  }
+ else {
+    calciteOptimizedPlan=calcitePreCboPlan;
+    disableSemJoinReordering=false;
+  }
+  calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,ReduceExpressionsRule.JOIN_INSTANCE,ReduceExpressionsRule.FILTER_INSTANCE,ReduceExpressionsRule.PROJECT_INSTANCE,ProjectRemoveRule.INSTANCE,UnionMergeRule.INSTANCE,new ProjectMergeRule(false,HiveProject.DEFAULT_PROJECT_FACTORY),HiveAggregateProjectMergeRule.INSTANCE);
   if (conf.getBoolVar(ConfVars.AGGR_JOIN_TRANSPOSE)) {
-    hepPgmBldr.addRuleInstance(HiveAggregateJoinTransposeRule.INSTANCE);
+    try {
+      HepProgramBuilder hepPgmBldr=new HepProgramBuilder().addMatchOrder(HepMatchOrder.BOTTOM_UP);
+      hepPgmBldr.addRuleInstance(HiveAggregateJoinTransposeRule.INSTANCE);
+      HepProgram hepPgm=hepPgmBldr.build();
+      HepPlanner hepPlanner=new HepPlanner(hepPgm);
+      List<RelMetadataProvider> list=Lists.newArrayList();
+      list.add(mdProvider.getMetadataProvider());
+      hepPlanner.registerMetadataProviders(list);
+      RelMetadataProvider chainedProvider=ChainedRelMetadataProvider.of(list);
+      cluster.setMetadataProvider(new CachingRelMetadataProvider(chainedProvider,hepPlanner));
+      hepPlanner.setRoot(calciteOptimizedPlan);
+      calciteOptimizedPlan=hepPlanner.findBestExp();
+    }
+ catch (    Exception e) {
+      boolean isMissingStats=noColsMissingStats.get() > 0;
+      if (isMissingStats) {
+        LOG.warn("Missing column stats (see previous messages), skipping aggregate-join transpose in CBO");
+        noColsMissingStats.set(0);
+      }
+ else {
+        throw e;
+      }
+    }
   }
-  hepPgm=hepPgmBldr.build();
-  HepPlanner hepPlanner=new HepPlanner(hepPgm);
-  hepPlanner.registerMetadataProviders(list);
-  RelMetadataProvider chainedProvider=ChainedRelMetadataProvider.of(list);
-  cluster.setMetadataProvider(new CachingRelMetadataProvider(chainedProvider,hepPlanner));
-  RelNode rootRel=calcitePreCboPlan;
-  hepPlanner.setRoot(rootRel);
-  if (!calcitePreCboPlan.getTraitSet().equals(desiredTraits)) {
-    rootRel=hepPlanner.changeTraits(calcitePreCboPlan,desiredTraits);
-  }
-  hepPlanner.setRoot(rootRel);
-  calciteOptimizedPlan=hepPlanner.findBestExp();
   calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,HiveJoinCommuteRule.INSTANCE);
-  calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,HiveWindowingFixRule.INSTANCE);
+  if (profilesCBO.contains(ExtendedCBOProfile.WINDOWING_POSTPROCESSING)) {
+    calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,HiveWindowingFixRule.INSTANCE);
+  }
   if (HiveConf.getBoolVar(conf,ConfVars.HIVE_CBO_RETPATH_HIVEOP)) {
     calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,true,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,HiveJoinProjectTransposeRule.BOTH_PROJECT_INCLUDE_OUTER,HiveJoinProjectTransposeRule.LEFT_PROJECT_INCLUDE_OUTER,HiveJoinProjectTransposeRule.RIGHT_PROJECT_INCLUDE_OUTER,HiveJoinToMultiJoinRule.INSTANCE,HiveProjectMergeRule.INSTANCE);
     HiveRelFieldTrimmer fieldTrimmer=new HiveRelFieldTrimmer(null,cluster,HiveProject.DEFAULT_PROJECT_FACTORY,HiveFilter.DEFAULT_FILTER_FACTORY,HiveJoin.HIVE_JOIN_FACTORY,HiveSemiJoin.HIVE_SEMIJOIN_FACTORY,HiveSortLimit.HIVE_SORT_REL_FACTORY,HiveAggregate.HIVE_AGGR_REL_FACTORY,HiveUnion.UNION_REL_FACTORY);
