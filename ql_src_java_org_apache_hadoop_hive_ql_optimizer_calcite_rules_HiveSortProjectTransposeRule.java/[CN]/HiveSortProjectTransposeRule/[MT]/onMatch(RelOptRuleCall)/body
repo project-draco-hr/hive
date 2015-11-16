@@ -1,0 +1,14 @@
+{
+  final HiveSortLimit sort=call.rel(0);
+  final HiveProject project=call.rel(1);
+  final Mappings.TargetMapping map=RelOptUtil.permutation(project.getProjects(),project.getInput().getRowType());
+  for (  RelFieldCollation fc : sort.getCollation().getFieldCollations()) {
+    if (map.getTargetOpt(fc.getFieldIndex()) < 0) {
+      return;
+    }
+  }
+  final RelCollation newCollation=RelCollationTraitDef.INSTANCE.canonize(RexUtil.apply(map,sort.getCollation()));
+  final HiveSortLimit newSort=sort.copy(sort.getTraitSet().replace(newCollation),project.getInput(),newCollation,sort.offset,sort.fetch);
+  final RelNode newProject=project.copy(sort.getTraitSet(),ImmutableList.<RelNode>of(newSort));
+  call.transformTo(newProject);
+}

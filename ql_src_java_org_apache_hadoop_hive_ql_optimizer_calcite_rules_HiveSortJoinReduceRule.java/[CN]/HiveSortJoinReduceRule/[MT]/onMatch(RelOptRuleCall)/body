@@ -1,0 +1,18 @@
+{
+  final HiveSortLimit sortLimit=call.rel(0);
+  final HiveJoin join=call.rel(1);
+  RelNode inputLeft=join.getLeft();
+  RelNode inputRight=join.getRight();
+  if (join.getJoinType() == JoinRelType.LEFT) {
+    inputLeft=sortLimit.copy(sortLimit.getTraitSet(),inputLeft,sortLimit.getCollation(),sortLimit.offset,sortLimit.fetch);
+    ((HiveSortLimit)inputLeft).setRuleCreated(true);
+  }
+ else {
+    final RelCollation rightCollation=RelCollationTraitDef.INSTANCE.canonize(RelCollations.shift(sortLimit.getCollation(),-join.getLeft().getRowType().getFieldCount()));
+    inputRight=sortLimit.copy(sortLimit.getTraitSet().replace(rightCollation),inputRight,rightCollation,sortLimit.offset,sortLimit.fetch);
+    ((HiveSortLimit)inputRight).setRuleCreated(true);
+  }
+  RelNode result=join.copy(join.getTraitSet(),join.getCondition(),inputLeft,inputRight,join.getJoinType(),join.isSemiJoinDone());
+  result=sortLimit.copy(sortLimit.getTraitSet(),result,sortLimit.getCollation(),sortLimit.offset,sortLimit.fetch);
+  call.transformTo(result);
+}

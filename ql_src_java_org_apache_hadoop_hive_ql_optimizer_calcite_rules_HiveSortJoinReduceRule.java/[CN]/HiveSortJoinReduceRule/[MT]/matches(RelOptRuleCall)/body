@@ -1,0 +1,35 @@
+{
+  final HiveSortLimit sortLimit=call.rel(0);
+  final HiveJoin join=call.rel(1);
+  if (!HiveCalciteUtil.limitRelNode(sortLimit)) {
+    return false;
+  }
+  RelNode reducedInput;
+  if (join.getJoinType() == JoinRelType.LEFT) {
+    reducedInput=join.getLeft();
+    if (sortLimit.getCollation() != RelCollations.EMPTY) {
+      for (      RelFieldCollation relFieldCollation : sortLimit.getCollation().getFieldCollations()) {
+        if (relFieldCollation.getFieldIndex() >= join.getLeft().getRowType().getFieldCount()) {
+          return false;
+        }
+      }
+    }
+  }
+ else   if (join.getJoinType() == JoinRelType.RIGHT) {
+    reducedInput=join.getRight();
+    if (sortLimit.getCollation() != RelCollations.EMPTY) {
+      for (      RelFieldCollation relFieldCollation : sortLimit.getCollation().getFieldCollations()) {
+        if (relFieldCollation.getFieldIndex() < join.getLeft().getRowType().getFieldCount()) {
+          return false;
+        }
+      }
+    }
+  }
+ else {
+    return false;
+  }
+  if (RexLiteral.intValue(sortLimit.fetch) >= RelMetadataQuery.getRowCount(reducedInput)) {
+    return false;
+  }
+  return true;
+}

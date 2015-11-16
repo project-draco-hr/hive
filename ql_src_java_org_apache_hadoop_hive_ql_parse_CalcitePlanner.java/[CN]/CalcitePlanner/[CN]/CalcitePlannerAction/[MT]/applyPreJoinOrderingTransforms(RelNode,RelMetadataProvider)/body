@@ -2,6 +2,12 @@
   if (!conf.getVar(HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("mr") && conf.getBoolVar(HiveConf.ConfVars.HIVEOPTIMIZEDISTINCTREWRITE)) {
     basePlan=hepPlan(basePlan,true,mdProvider,HiveExpandDistinctAggregatesRule.INSTANCE);
   }
+  if (conf.getBoolVar(HiveConf.ConfVars.HIVE_OPTIMIZE_LIMIT_JOIN_TRANSPOSE)) {
+    final float reductionProportion=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVE_OPTIMIZE_LIMIT_JOIN_TRANSPOSE_REDUCTION_PERCENTAGE);
+    final long reductionTuples=HiveConf.getLongVar(conf,HiveConf.ConfVars.HIVE_OPTIMIZE_LIMIT_JOIN_TRANSPOSE_REDUCTION_TUPLES);
+    basePlan=hepPlan(basePlan,true,mdProvider,HiveSortMergeRule.INSTANCE,HiveSortProjectTransposeRule.INSTANCE,HiveSortJoinReduceRule.INSTANCE);
+    basePlan=hepPlan(basePlan,true,mdProvider,HepMatchOrder.BOTTOM_UP,new HiveSortRemoveRule(reductionProportion,reductionTuples),HiveProjectSortTransposeRule.INSTANCE);
+  }
   basePlan=hepPlan(basePlan,true,mdProvider,SemiJoinJoinTransposeRule.INSTANCE,SemiJoinFilterTransposeRule.INSTANCE,SemiJoinProjectTransposeRule.INSTANCE);
   if (conf.getBoolVar(HiveConf.ConfVars.HIVE_CBO_RETPATH_HIVEOP)) {
     basePlan=hepPlan(basePlan,true,mdProvider,HiveJoinAddNotNullRule.INSTANCE);
