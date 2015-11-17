@@ -2,12 +2,13 @@
   try {
     Connection dbConn=null;
     Statement stmt=null;
+    ResultSet rs=null;
     try {
       dbConn=getDbConn(Connection.TRANSACTION_READ_COMMITTED);
       stmt=dbConn.createStatement();
       String s="select ntxn_next - 1 from NEXT_TXN_ID";
       LOG.debug("Going to execute query <" + s + ">");
-      ResultSet rs=stmt.executeQuery(s);
+      rs=stmt.executeQuery(s);
       if (!rs.next()) {
         throw new MetaException("Transaction tables not properly " + "initialized, no record found in next_txn_id");
       }
@@ -15,6 +16,7 @@
       if (rs.wasNull()) {
         throw new MetaException("Transaction tables not properly " + "initialized, null record found in next_txn_id");
       }
+      close(rs);
       List<TxnInfo> txnInfo=new ArrayList<TxnInfo>();
       s="select txn_id, txn_state, txn_user, txn_host from TXNS where txn_id <= " + hwm;
       LOG.debug("Going to execute query<" + s + ">");
@@ -45,8 +47,7 @@ checkRetryable(dbConn,e,"getOpenTxnsInfo");
 throw new MetaException("Unable to select from transaction database: " + getMessage(e) + StringUtils.stringifyException(e));
 }
  finally {
-closeStmt(stmt);
-closeDbConn(dbConn);
+close(rs,stmt,dbConn);
 }
 }
  catch (RetryException e) {

@@ -3,9 +3,9 @@
   Statement stmt=null;
   ResultSet rs=null;
   try {
-    dbConn=getDbConn(Connection.TRANSACTION_SERIALIZABLE);
+    dbConn=getDbConn(Connection.TRANSACTION_READ_COMMITTED);
     long now=getDbTime(dbConn);
-    timeOutLocks(dbConn);
+    timeOutLocks(dbConn,now);
     while (true) {
       stmt=dbConn.createStatement();
       String s=" txn_id from TXNS where txn_state = '" + TXN_OPEN + "' and txn_last_heartbeat <  "+ (now - timeout);
@@ -26,14 +26,20 @@
         }
       }
  while (rs.next());
-      close(rs,stmt,null);
       dbConn.commit();
+      close(rs,stmt,dbConn);
+      dbConn=getDbConn(Connection.TRANSACTION_SERIALIZABLE);
+      int numTxnsAborted=0;
       for (      List<Long> batchToAbort : timedOutTxns) {
-        abortTxns(dbConn,batchToAbort);
-        dbConn.commit();
-        LOG.info("Aborted the following transactions due to timeout: " + batchToAbort.toString());
+        if (abortTxns(dbConn,batchToAbort,now - timeout) == batchToAbort.size()) {
+          dbConn.commit();
+          numTxnsAborted+=batchToAbort.size();
+          LOG.info("Aborted the following transactions due to timeout: " + batchToAbort.toString());
+        }
+ else {
+          dbConn.rollback();
+        }
       }
-      int numTxnsAborted=(timedOutTxns.size() - 1) * TIMED_OUT_TXN_ABORT_BATCH_SIZE + timedOutTxns.get(timedOutTxns.size() - 1).size();
       LOG.info("Aborted " + numTxnsAborted + " transactions due to timeout");
     }
   }

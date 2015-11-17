@@ -2,13 +2,14 @@
   Connection dbConn=null;
   Set<CompactionInfo> response=new HashSet<CompactionInfo>();
   Statement stmt=null;
+  ResultSet rs=null;
   try {
     try {
       dbConn=getDbConn(Connection.TRANSACTION_READ_COMMITTED);
       stmt=dbConn.createStatement();
       String s="select distinct ctc_database, ctc_table, " + "ctc_partition from COMPLETED_TXN_COMPONENTS";
       LOG.debug("Going to execute query <" + s + ">");
-      ResultSet rs=stmt.executeQuery(s);
+      rs=stmt.executeQuery(s);
       while (rs.next()) {
         CompactionInfo info=new CompactionInfo();
         info.dbname=rs.getString(1);
@@ -16,6 +17,7 @@
         info.partName=rs.getString(3);
         response.add(info);
       }
+      rs.close();
       s="select tc_database, tc_table, tc_partition " + "from TXNS, TXN_COMPONENTS " + "where txn_id = tc_txnid and txn_state = '" + TXN_ABORTED + "' "+ "group by tc_database, tc_table, tc_partition "+ "having count(*) > "+ maxAborted;
       LOG.debug("Going to execute query <" + s + ">");
       rs=stmt.executeQuery(s);
@@ -35,8 +37,7 @@
       checkRetryable(dbConn,e,"findPotentialCompactions(maxAborted:" + maxAborted + ")");
     }
  finally {
-      closeDbConn(dbConn);
-      closeStmt(stmt);
+      close(rs,stmt,dbConn);
     }
     return response;
   }
