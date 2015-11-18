@@ -1,0 +1,29 @@
+{
+  LOG.info("Validating MapWork...");
+  ImmutablePair<String,TableScanOperator> pair=verifyOnlyOneTableScanOperator(mapWork);
+  if (pair == null) {
+    return false;
+  }
+  String alias=pair.left;
+  TableScanOperator tableScanOperator=pair.right;
+  if (!validateInputFormatAndSchemaEvolution(mapWork,alias,tableScanOperator,vectorTaskColumnInfo)) {
+    return false;
+  }
+  Map<Rule,NodeProcessor> opRules=new LinkedHashMap<Rule,NodeProcessor>();
+  MapWorkValidationNodeProcessor vnp=new MapWorkValidationNodeProcessor(mapWork,isTez);
+  addMapWorkRules(opRules,vnp);
+  Dispatcher disp=new DefaultRuleDispatcher(vnp,opRules,null);
+  GraphWalker ogw=new DefaultGraphWalker(disp);
+  ArrayList<Node> topNodes=new ArrayList<Node>();
+  topNodes.addAll(mapWork.getAliasToWork().values());
+  HashMap<Node,Object> nodeOutput=new HashMap<Node,Object>();
+  ogw.startWalking(topNodes,nodeOutput);
+  for (  Node n : nodeOutput.keySet()) {
+    if (nodeOutput.get(n) != null) {
+      if (!((Boolean)nodeOutput.get(n)).booleanValue()) {
+        return false;
+      }
+    }
+  }
+  return true;
+}

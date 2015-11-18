@@ -1,0 +1,42 @@
+{
+  ValidTxnList txnList=new ValidTxnList(){
+    @Override public boolean isTxnValid(    long txnid){
+      return true;
+    }
+    @Override public RangeResponse isTxnRangeValid(    long minTxnId,    long maxTxnId){
+      return RangeResponse.ALL;
+    }
+    @Override public String writeToString(){
+      return "";
+    }
+    @Override public void readFromString(    String src){
+    }
+    @Override public long getHighWatermark(){
+      return Long.MAX_VALUE;
+    }
+    @Override public long[] getInvalidTransactions(){
+      return new long[0];
+    }
+  }
+;
+  OrcInputFormat aif=new OrcInputFormat();
+  Configuration conf=new Configuration();
+  conf.set("columns",columnNamesProperty);
+  conf.set("columns.types",columnTypesProperty);
+  AcidInputFormat.RawReader<OrcStruct> reader=aif.getRawReader(conf,false,bucket,txnList,base,deltas);
+  RecordIdentifier identifier=reader.createKey();
+  OrcStruct value=reader.createValue();
+  long currentTxn=min;
+  boolean seenCurrentTxn=false;
+  while (reader.next(identifier,value)) {
+    if (!seenCurrentTxn) {
+      Assert.assertEquals(currentTxn,identifier.getTransactionId());
+      seenCurrentTxn=true;
+    }
+    if (currentTxn != identifier.getTransactionId()) {
+      Assert.assertEquals(currentTxn + 1,identifier.getTransactionId());
+      currentTxn++;
+    }
+  }
+  Assert.assertEquals(max,currentTxn);
+}

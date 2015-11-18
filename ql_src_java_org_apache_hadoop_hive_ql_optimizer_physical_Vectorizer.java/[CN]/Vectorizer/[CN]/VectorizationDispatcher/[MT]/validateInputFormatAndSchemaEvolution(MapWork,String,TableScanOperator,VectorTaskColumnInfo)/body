@@ -1,0 +1,92 @@
+{
+  final List<String> allColumnNameList=new ArrayList<String>();
+  final List<TypeInfo> allTypeInfoList=new ArrayList<TypeInfo>();
+  getTableScanOperatorSchemaInfo(tableScanOperator,allColumnNameList,allTypeInfoList);
+  final int allColumnCount=allColumnNameList.size();
+  HashMap<ImmutablePair,boolean[]> conversionMap=new HashMap<ImmutablePair,boolean[]>();
+  boolean isFirst=true;
+  int dataColumnCount=0;
+  int partitionColumnCount=0;
+  List<String> dataColumnList=null;
+  String dataColumnsString="";
+  List<TypeInfo> dataTypeInfoList=null;
+  VectorPartitionConversion partitionConversion=new VectorPartitionConversion();
+  LinkedHashMap<String,ArrayList<String>> pathToAliases=mapWork.getPathToAliases();
+  LinkedHashMap<String,PartitionDesc> pathToPartitionInfo=mapWork.getPathToPartitionInfo();
+  for (  Entry<String,ArrayList<String>> entry : pathToAliases.entrySet()) {
+    String path=entry.getKey();
+    List<String> aliases=entry.getValue();
+    boolean isPresent=(aliases != null && aliases.indexOf(alias) != -1);
+    if (!isPresent) {
+      LOG.info("Alias " + alias + " not present in aliases "+ aliases);
+      return false;
+    }
+    PartitionDesc partDesc=pathToPartitionInfo.get(path);
+    if (partDesc.getVectorPartitionDesc() != null) {
+      continue;
+    }
+    if (!verifyAndSetVectorPartDesc(partDesc)) {
+      return false;
+    }
+    VectorPartitionDesc vectorPartDesc=partDesc.getVectorPartitionDesc();
+    LOG.info("Vectorizer path: " + path + ", read type "+ vectorPartDesc.getVectorMapOperatorReadType().name()+ ", aliases "+ aliases);
+    Properties partProps=partDesc.getProperties();
+    String nextDataColumnsString=partProps.getProperty(hive_metastoreConstants.META_TABLE_COLUMNS);
+    String[] nextDataColumns=nextDataColumnsString.split(",");
+    String nextDataTypesString=partProps.getProperty(hive_metastoreConstants.META_TABLE_COLUMN_TYPES);
+    List<TypeInfo> nextDataTypeInfoList=TypeInfoUtils.getTypeInfosFromTypeString(nextDataTypesString);
+    if (isFirst) {
+      LinkedHashMap<String,String> partSpec=partDesc.getPartSpec();
+      if (partSpec != null && partSpec.size() > 0) {
+        partitionColumnCount=partSpec.size();
+        dataColumnCount=allColumnCount - partitionColumnCount;
+      }
+ else {
+        partitionColumnCount=0;
+        dataColumnCount=allColumnCount;
+      }
+      dataColumnList=allColumnNameList.subList(0,dataColumnCount);
+      dataColumnsString=getColumns(allColumnNameList,0,dataColumnCount,',');
+      dataTypeInfoList=allTypeInfoList.subList(0,dataColumnCount);
+      conversionMap.put(new ImmutablePair(dataColumnsString,dataTypeInfoList),null);
+      isFirst=false;
+    }
+    ImmutablePair columnNamesAndTypesCombination=new ImmutablePair(nextDataColumnsString,nextDataTypeInfoList);
+    boolean[] conversionFlags;
+    if (conversionMap.containsKey(columnNamesAndTypesCombination)) {
+      conversionFlags=conversionMap.get(columnNamesAndTypesCombination);
+    }
+ else {
+      List<String> nextDataColumnList=Arrays.asList(nextDataColumns);
+      if (nextDataColumnList.size() > dataColumnList.size()) {
+        LOG.info(String.format("Could not vectorize partition %s.  The partition column names %d is greater than the number of table columns %d",path,nextDataColumnList.size(),dataColumnList.size()));
+        return false;
+      }
+      for (int i=0; i < nextDataColumnList.size(); i++) {
+        String nextColumnName=nextDataColumnList.get(i);
+        String tableColumnName=dataColumnList.get(i);
+        if (!nextColumnName.equals(tableColumnName)) {
+          LOG.info(String.format("Could not vectorize partition %s.  The partition column name %s is does not match table column name %s",path,nextColumnName,tableColumnName));
+          return false;
+        }
+      }
+      if (vectorPartDesc.getNeedsDataTypeConversionCheck() && !nextDataTypeInfoList.equals(dataTypeInfoList)) {
+        partitionConversion.validateConversion(nextDataTypeInfoList,dataTypeInfoList);
+        if (!partitionConversion.getValidConversion()) {
+          return false;
+        }
+        conversionFlags=partitionConversion.getResultConversionFlags();
+      }
+ else {
+        conversionFlags=null;
+      }
+      conversionMap.put(columnNamesAndTypesCombination,conversionFlags);
+    }
+    vectorPartDesc.setConversionFlags(conversionFlags);
+    vectorPartDesc.setTypeInfos(nextDataTypeInfoList);
+  }
+  vectorTaskColumnInfo.setColumnNames(allColumnNameList);
+  vectorTaskColumnInfo.setTypeInfos(allTypeInfoList);
+  vectorTaskColumnInfo.setPartitionColumnCount(partitionColumnCount);
+  return true;
+}

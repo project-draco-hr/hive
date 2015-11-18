@@ -1,17 +1,22 @@
 {
+  TypeDescription schema=OrcUtils.getDesiredRowTypeDescr(conf);
   List<OrcProto.Type> types=file.getTypes();
   Reader.Options options=new Reader.Options();
+  options.schema(schema);
   this.offset=fileSplit.getStart();
   this.length=fileSplit.getLength();
   options.range(offset,length);
   options.include(OrcInputFormat.genIncludedColumns(types,conf,true));
   OrcInputFormat.setSearchArgument(options,types,conf,true);
   this.reader=file.rowsOptions(options);
-  try {
-    rbCtx=new VectorizedRowBatchCtx();
-    rbCtx.init(conf,fileSplit);
+  rbCtx=Utilities.getVectorizedRowBatchCtx(conf);
+  columnsToIncludeTruncated=rbCtx.getColumnsToIncludeTruncated(conf);
+  int partitionColumnCount=rbCtx.getPartitionColumnCount();
+  if (partitionColumnCount > 0) {
+    partitionValues=new Object[partitionColumnCount];
+    rbCtx.getPartitionValues(rbCtx,conf,fileSplit,partitionValues);
   }
- catch (  Exception e) {
-    throw new RuntimeException(e);
+ else {
+    partitionValues=null;
   }
 }

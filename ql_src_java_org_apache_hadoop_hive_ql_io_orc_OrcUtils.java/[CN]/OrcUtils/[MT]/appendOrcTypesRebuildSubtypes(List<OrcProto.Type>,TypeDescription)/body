@@ -1,0 +1,115 @@
+{
+  int subtype=result.size();
+  OrcProto.Type.Builder type=OrcProto.Type.newBuilder();
+  boolean needsAdd=true;
+  List<TypeDescription> children=typeDescr.getChildren();
+switch (typeDescr.getCategory()) {
+case BOOLEAN:
+    type.setKind(OrcProto.Type.Kind.BOOLEAN);
+  break;
+case BYTE:
+type.setKind(OrcProto.Type.Kind.BYTE);
+break;
+case SHORT:
+type.setKind(OrcProto.Type.Kind.SHORT);
+break;
+case INT:
+type.setKind(OrcProto.Type.Kind.INT);
+break;
+case LONG:
+type.setKind(OrcProto.Type.Kind.LONG);
+break;
+case FLOAT:
+type.setKind(OrcProto.Type.Kind.FLOAT);
+break;
+case DOUBLE:
+type.setKind(OrcProto.Type.Kind.DOUBLE);
+break;
+case STRING:
+type.setKind(OrcProto.Type.Kind.STRING);
+break;
+case CHAR:
+type.setKind(OrcProto.Type.Kind.CHAR);
+type.setMaximumLength(typeDescr.getMaxLength());
+break;
+case VARCHAR:
+type.setKind(Type.Kind.VARCHAR);
+type.setMaximumLength(typeDescr.getMaxLength());
+break;
+case BINARY:
+type.setKind(OrcProto.Type.Kind.BINARY);
+break;
+case TIMESTAMP:
+type.setKind(OrcProto.Type.Kind.TIMESTAMP);
+break;
+case DATE:
+type.setKind(OrcProto.Type.Kind.DATE);
+break;
+case DECIMAL:
+type.setKind(OrcProto.Type.Kind.DECIMAL);
+type.setPrecision(typeDescr.getPrecision());
+type.setScale(typeDescr.getScale());
+break;
+case LIST:
+type.setKind(OrcProto.Type.Kind.LIST);
+type.addSubtypes(++subtype);
+result.add(type.build());
+needsAdd=false;
+appendOrcTypesRebuildSubtypes(result,children.get(0));
+break;
+case MAP:
+{
+result.add(null);
+appendOrcTypesRebuildSubtypes(result,children.get(0));
+int subtype2=result.size();
+appendOrcTypesRebuildSubtypes(result,children.get(1));
+type.setKind(OrcProto.Type.Kind.MAP);
+type.addSubtypes(subtype + 1);
+type.addSubtypes(subtype2);
+result.set(subtype,type.build());
+needsAdd=false;
+}
+break;
+case STRUCT:
+{
+List<String> fieldNames=typeDescr.getFieldNames();
+result.add(null);
+List<Integer> fieldSubtypes=new ArrayList<Integer>(fieldNames.size());
+for (TypeDescription child : children) {
+int fieldSubtype=result.size();
+fieldSubtypes.add(fieldSubtype);
+appendOrcTypesRebuildSubtypes(result,child);
+}
+type.setKind(OrcProto.Type.Kind.STRUCT);
+for (int i=0; i < fieldNames.size(); i++) {
+type.addSubtypes(fieldSubtypes.get(i));
+type.addFieldNames(fieldNames.get(i));
+}
+result.set(subtype,type.build());
+needsAdd=false;
+}
+break;
+case UNION:
+{
+result.add(null);
+List<Integer> unionSubtypes=new ArrayList<Integer>(children.size());
+for (TypeDescription child : children) {
+int unionSubtype=result.size();
+unionSubtypes.add(unionSubtype);
+appendOrcTypesRebuildSubtypes(result,child);
+}
+type.setKind(OrcProto.Type.Kind.UNION);
+for (int i=0; i < children.size(); i++) {
+type.addSubtypes(unionSubtypes.get(i));
+}
+result.set(subtype,type.build());
+needsAdd=false;
+}
+break;
+default :
+throw new IllegalArgumentException("Unknown category: " + typeDescr.getCategory());
+}
+if (needsAdd) {
+result.add(type.build());
+}
+}
