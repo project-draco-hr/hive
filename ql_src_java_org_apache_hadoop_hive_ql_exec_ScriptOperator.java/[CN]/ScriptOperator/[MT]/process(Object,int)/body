@@ -1,6 +1,7 @@
 {
   if (firstRow) {
     firstRow=false;
+    SparkConf sparkConf=null;
     try {
       String[] cmdArgs=splitArgs(conf.getScriptCmd());
       String prog=cmdArgs[0];
@@ -9,6 +10,7 @@
         PathFinder finder=new PathFinder("PATH");
         finder.prependPathComponent(currentDir.toString());
         if (HiveConf.getVar(hconf,HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("spark")) {
+          sparkConf=SparkEnv.get().conf();
           finder.prependPathComponent(SparkFiles.getRootDirectory());
         }
         File f=finder.getAbsolutePath(prog);
@@ -31,6 +33,12 @@
       String idEnvVarName=HiveConf.getVar(hconf,HiveConf.ConfVars.HIVESCRIPTIDENVVAR);
       String idEnvVarVal=getOperatorId();
       env.put(safeEnvVarName(idEnvVarName),idEnvVarVal);
+      if (sparkConf != null) {
+        String master=sparkConf.get("spark.master");
+        if (master.equals("local") || master.startsWith("local[")) {
+          pb.directory(new File(SparkFiles.getRootDirectory()));
+        }
+      }
       scriptPid=pb.start();
       DataOutputStream scriptOut=new DataOutputStream(new BufferedOutputStream(scriptPid.getOutputStream()));
       DataInputStream scriptIn=new DataInputStream(new BufferedInputStream(scriptPid.getInputStream()));
