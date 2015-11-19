@@ -22,6 +22,26 @@
  catch (  Throwable t) {
     throw new Error("Unable to intitialize HiveServer2",t);
   }
+  try {
+    if (hiveConf.getBoolVar(ConfVars.HIVE_IN_TEST)) {
+      LOG.info("Web UI is disabled since in test mode");
+    }
+ else {
+      int webUIPort=hiveConf.getIntVar(ConfVars.HIVE_SERVER2_WEBUI_PORT);
+      if (webUIPort <= 0) {
+        LOG.info("Web UI is disabled since port is set to " + webUIPort);
+      }
+ else {
+        AccessControlList adminsAcl=new AccessControlList(hiveConf.getVar(ConfVars.USERS_IN_ADMIN_ROLE));
+        hiveConf.set("startcode",String.valueOf(System.currentTimeMillis()));
+        webServer=new HttpServer("hiveserver2",hiveConf.getVar(ConfVars.HIVE_SERVER2_WEBUI_BIND_HOST),webUIPort,hiveConf.getIntVar(ConfVars.HIVE_SERVER2_WEBUI_MAX_THREADS),hiveConf,adminsAcl);
+        webServer.setContextAttribute("hive.sm",cliService.getSessionManager());
+      }
+    }
+  }
+ catch (  IOException ie) {
+    throw new ServiceException(ie);
+  }
   Runtime.getRuntime().addShutdownHook(new Thread(){
     @Override public void run(){
       hiveServer2.stop();

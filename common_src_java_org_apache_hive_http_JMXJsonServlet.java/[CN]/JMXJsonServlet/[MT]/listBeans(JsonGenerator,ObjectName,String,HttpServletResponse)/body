@@ -1,0 +1,74 @@
+{
+  LOG.debug("Listing beans for " + qry);
+  Set<ObjectName> names=null;
+  names=mBeanServer.queryNames(qry,null);
+  jg.writeArrayFieldStart("beans");
+  Iterator<ObjectName> it=names.iterator();
+  while (it.hasNext()) {
+    ObjectName oname=it.next();
+    MBeanInfo minfo;
+    String code="";
+    Object attributeinfo=null;
+    try {
+      minfo=mBeanServer.getMBeanInfo(oname);
+      code=minfo.getClassName();
+      String prs="";
+      try {
+        if ("org.apache.commons.modeler.BaseModelMBean".equals(code)) {
+          prs="modelerType";
+          code=(String)mBeanServer.getAttribute(oname,prs);
+        }
+        if (attribute != null) {
+          prs=attribute;
+          attributeinfo=mBeanServer.getAttribute(oname,prs);
+        }
+      }
+ catch (      AttributeNotFoundException e) {
+        LOG.error("getting attribute " + prs + " of "+ oname+ " threw an exception",e);
+      }
+catch (      MBeanException e) {
+        LOG.error("getting attribute " + prs + " of "+ oname+ " threw an exception",e);
+      }
+catch (      RuntimeException e) {
+        LOG.error("getting attribute " + prs + " of "+ oname+ " threw an exception",e);
+      }
+catch (      ReflectionException e) {
+        LOG.error("getting attribute " + prs + " of "+ oname+ " threw an exception",e);
+      }
+    }
+ catch (    InstanceNotFoundException e) {
+      continue;
+    }
+catch (    IntrospectionException e) {
+      LOG.error("Problem while trying to process JMX query: " + qry + " with MBean "+ oname,e);
+      continue;
+    }
+catch (    ReflectionException e) {
+      LOG.error("Problem while trying to process JMX query: " + qry + " with MBean "+ oname,e);
+      continue;
+    }
+    jg.writeStartObject();
+    jg.writeStringField("name",oname.toString());
+    jg.writeStringField("modelerType",code);
+    if ((attribute != null) && (attributeinfo == null)) {
+      jg.writeStringField("result","ERROR");
+      jg.writeStringField("message","No attribute with name " + attribute + " was found.");
+      jg.writeEndObject();
+      jg.writeEndArray();
+      jg.close();
+      response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+      return;
+    }
+    if (attribute != null) {
+      writeAttribute(jg,attribute,attributeinfo);
+    }
+ else {
+      MBeanAttributeInfo attrs[]=minfo.getAttributes();
+      for (int i=0; i < attrs.length; i++) {
+        writeAttribute(jg,oname,attrs[i]);
+      }
+    }
+    jg.writeEndObject();
+  }
+  jg.writeEndArray();
+}
