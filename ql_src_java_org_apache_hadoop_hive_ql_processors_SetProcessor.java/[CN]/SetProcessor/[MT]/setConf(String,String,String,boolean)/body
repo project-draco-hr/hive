@@ -1,4 +1,5 @@
 {
+  String result=null;
   HiveConf conf=SessionState.get().getConf();
   String value=new VariableSubstitution(new HiveVariableSource(){
     @Override public Map<String,String> getHiveVariable(){
@@ -29,10 +30,17 @@
     }
   }
   conf.verifyAndSet(key,value);
-  if (HiveConf.ConfVars.HIVE_EXECUTION_ENGINE.varname.equals(key) && !"spark".equals(value)) {
-    SessionState.get().closeSparkSession();
+  if (HiveConf.ConfVars.HIVE_EXECUTION_ENGINE.varname.equals(key)) {
+    if (!"spark".equals(value)) {
+      SessionState.get().closeSparkSession();
+    }
+    if ("mr".equals(value)) {
+      result=HiveConf.generateMrDeprecationWarning();
+      LOG.warn(result);
+    }
   }
   if (register) {
     SessionState.get().getOverriddenConfigurations().put(key,value);
   }
+  return result;
 }
