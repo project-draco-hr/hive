@@ -32,10 +32,23 @@
         LOG.info("Web UI is disabled since port is set to " + webUIPort);
       }
  else {
-        AccessControlList adminsAcl=new AccessControlList(hiveConf.getVar(ConfVars.USERS_IN_ADMIN_ROLE));
+        HttpServer.Builder builder=new HttpServer.Builder();
+        builder.setName("hiveserver2").setPort(webUIPort).setConf(hiveConf);
+        builder.setHost(hiveConf.getVar(ConfVars.HIVE_SERVER2_WEBUI_BIND_HOST));
+        builder.setMaxThreads(hiveConf.getIntVar(ConfVars.HIVE_SERVER2_WEBUI_MAX_THREADS));
+        builder.setAdmins(hiveConf.getVar(ConfVars.USERS_IN_ADMIN_ROLE));
+        builder.setContextAttribute("hive.sm",cliService.getSessionManager());
         hiveConf.set("startcode",String.valueOf(System.currentTimeMillis()));
-        webServer=new HttpServer("hiveserver2",hiveConf.getVar(ConfVars.HIVE_SERVER2_WEBUI_BIND_HOST),webUIPort,hiveConf.getIntVar(ConfVars.HIVE_SERVER2_WEBUI_MAX_THREADS),hiveConf,adminsAcl);
-        webServer.setContextAttribute("hive.sm",cliService.getSessionManager());
+        if (hiveConf.getBoolVar(ConfVars.HIVE_SERVER2_WEBUI_USE_SSL)) {
+          String keyStorePath=hiveConf.getVar(ConfVars.HIVE_SERVER2_WEBUI_SSL_KEYSTORE_PATH);
+          if (Strings.isBlank(keyStorePath)) {
+            throw new IllegalArgumentException(ConfVars.HIVE_SERVER2_WEBUI_SSL_KEYSTORE_PATH.varname + " Not configured for SSL connection");
+          }
+          builder.setKeyStorePassword(ShimLoader.getHadoopShims().getPassword(hiveConf,ConfVars.HIVE_SERVER2_WEBUI_SSL_KEYSTORE_PASSWORD.varname));
+          builder.setKeyStorePath(keyStorePath);
+          builder.setUseSSL(true);
+        }
+        webServer=builder.build();
       }
     }
   }

@@ -1,0 +1,30 @@
+{
+  QueuedThreadPool threadPool=new QueuedThreadPool();
+  if (b.maxThreads > 0) {
+    threadPool.setMaxThreads(b.maxThreads);
+  }
+  threadPool.setDaemon(true);
+  threadPool.setName(b.name + "-web");
+  webServer.setThreadPool(threadPool);
+  Connector connector=createChannelConnector(threadPool.getMaxThreads(),b);
+  connector.setHost(b.host);
+  connector.setPort(port);
+  webServer.addConnector(connector);
+  ContextHandlerCollection contexts=new ContextHandlerCollection();
+  contexts.addHandler(webAppContext);
+  webServer.setHandler(contexts);
+  addServlet("jmx","/jmx",JMXJsonServlet.class);
+  addServlet("conf","/conf",ConfServlet.class);
+  ServletContextHandler staticCtx=new ServletContextHandler(contexts,"/static");
+  staticCtx.setResourceBase(appDir + "/static");
+  staticCtx.addServlet(DefaultServlet.class,"/*");
+  staticCtx.setDisplayName("static");
+  String logDir=getLogDir(b.conf);
+  if (logDir != null) {
+    ServletContextHandler logCtx=new ServletContextHandler(contexts,"/logs");
+    setContextAttributes(logCtx.getServletContext(),b.contextAttrs);
+    logCtx.addServlet(AdminAuthorizedServlet.class,"/*");
+    logCtx.setResourceBase(logDir);
+    logCtx.setDisplayName("logs");
+  }
+}
