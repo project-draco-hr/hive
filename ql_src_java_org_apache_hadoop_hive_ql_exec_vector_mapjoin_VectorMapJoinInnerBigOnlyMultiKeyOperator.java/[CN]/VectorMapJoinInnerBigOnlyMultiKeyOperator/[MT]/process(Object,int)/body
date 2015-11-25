@@ -46,12 +46,15 @@
     if (allKeyInputColumnsRepeating) {
       keyVectorSerializeWrite.setOutput(currentKeyOutput);
       keyVectorSerializeWrite.serializeWrite(batch,0);
+      JoinUtil.JoinResult joinResult;
       if (keyVectorSerializeWrite.getHasAnyNulls()) {
-        throw new HiveException("Null key not expected in MapJoin");
+        joinResult=JoinUtil.JoinResult.NOMATCH;
       }
-      byte[] keyBytes=currentKeyOutput.getData();
-      int keyLength=currentKeyOutput.getLength();
-      JoinUtil.JoinResult joinResult=hashMultiSet.contains(keyBytes,0,keyLength,hashMultiSetResults[0]);
+ else {
+        byte[] keyBytes=currentKeyOutput.getData();
+        int keyLength=currentKeyOutput.getLength();
+        joinResult=hashMultiSet.contains(keyBytes,0,keyLength,hashMultiSetResults[0]);
+      }
       if (isLogDebugEnabled) {
         LOG.debug(CLASS_NAME + " batch #" + batchCounter+ " repeated joinResult "+ joinResult.name());
       }
@@ -74,10 +77,8 @@
         int batchIndex=(selectedInUse ? selected[logical] : logical);
         keyVectorSerializeWrite.setOutput(currentKeyOutput);
         keyVectorSerializeWrite.serializeWrite(batch,batchIndex);
-        if (keyVectorSerializeWrite.getHasAnyNulls()) {
-          throw new HiveException("Null key not expected in MapJoin");
-        }
-        if (!haveSaveKey || !saveKeyOutput.arraysEquals(currentKeyOutput)) {
+        boolean isAnyNulls=keyVectorSerializeWrite.getHasAnyNulls();
+        if (isAnyNulls || !haveSaveKey || !saveKeyOutput.arraysEquals(currentKeyOutput)) {
           if (haveSaveKey) {
 switch (saveJoinResult) {
 case MATCH:
@@ -90,13 +91,19 @@ case NOMATCH:
       break;
   }
 }
-haveSaveKey=true;
-temp=saveKeyOutput;
-saveKeyOutput=currentKeyOutput;
-currentKeyOutput=temp;
-byte[] keyBytes=saveKeyOutput.getData();
-int keyLength=saveKeyOutput.getLength();
-saveJoinResult=hashMultiSet.contains(keyBytes,0,keyLength,hashMultiSetResults[hashMultiSetResultCount]);
+if (isAnyNulls) {
+  saveJoinResult=JoinUtil.JoinResult.NOMATCH;
+  haveSaveKey=false;
+}
+ else {
+  haveSaveKey=true;
+  temp=saveKeyOutput;
+  saveKeyOutput=currentKeyOutput;
+  currentKeyOutput=temp;
+  byte[] keyBytes=saveKeyOutput.getData();
+  int keyLength=saveKeyOutput.getLength();
+  saveJoinResult=hashMultiSet.contains(keyBytes,0,keyLength,hashMultiSetResults[hashMultiSetResultCount]);
+}
 switch (saveJoinResult) {
 case MATCH:
   equalKeySeriesValueCounts[equalKeySeriesCount]=hashMultiSetResults[hashMultiSetResultCount].count();

@@ -34,10 +34,16 @@
     int[] length=joinColVector.length;
     boolean allKeyInputColumnsRepeating=joinColVector.isRepeating;
     if (allKeyInputColumnsRepeating) {
-      byte[] keyBytes=vector[0];
-      int keyStart=start[0];
-      int keyLength=length[0];
-      JoinUtil.JoinResult joinResult=hashMultiSet.contains(keyBytes,keyStart,keyLength,hashMultiSetResults[0]);
+      JoinUtil.JoinResult joinResult;
+      if (!joinColVector.noNulls && joinColVector.isNull[0]) {
+        joinResult=JoinUtil.JoinResult.NOMATCH;
+      }
+ else {
+        byte[] keyBytes=vector[0];
+        int keyStart=start[0];
+        int keyLength=length[0];
+        joinResult=hashMultiSet.contains(keyBytes,keyStart,keyLength,hashMultiSetResults[0]);
+      }
       if (isLogDebugEnabled) {
         LOG.debug(CLASS_NAME + " batch #" + batchCounter+ " repeated joinResult "+ joinResult.name());
       }
@@ -58,7 +64,8 @@
       JoinUtil.JoinResult saveJoinResult=JoinUtil.JoinResult.NOMATCH;
       for (int logical=0; logical < inputLogicalSize; logical++) {
         int batchIndex=(selectedInUse ? selected[logical] : logical);
-        if (!haveSaveKey || StringExpr.equal(vector[saveKeyBatchIndex],start[saveKeyBatchIndex],length[saveKeyBatchIndex],vector[batchIndex],start[batchIndex],length[batchIndex]) == false) {
+        boolean isNull=!joinColVector.noNulls && joinColVector.isNull[batchIndex];
+        if (isNull || !haveSaveKey || StringExpr.equal(vector[saveKeyBatchIndex],start[saveKeyBatchIndex],length[saveKeyBatchIndex],vector[batchIndex],start[batchIndex],length[batchIndex]) == false) {
           if (haveSaveKey) {
 switch (saveJoinResult) {
 case MATCH:
@@ -71,12 +78,18 @@ case NOMATCH:
       break;
   }
 }
-haveSaveKey=true;
-saveKeyBatchIndex=batchIndex;
-byte[] keyBytes=vector[batchIndex];
-int keyStart=start[batchIndex];
-int keyLength=length[batchIndex];
-saveJoinResult=hashMultiSet.contains(keyBytes,keyStart,keyLength,hashMultiSetResults[hashMultiSetResultCount]);
+if (isNull) {
+  saveJoinResult=JoinUtil.JoinResult.NOMATCH;
+  haveSaveKey=false;
+}
+ else {
+  haveSaveKey=true;
+  saveKeyBatchIndex=batchIndex;
+  byte[] keyBytes=vector[batchIndex];
+  int keyStart=start[batchIndex];
+  int keyLength=length[batchIndex];
+  saveJoinResult=hashMultiSet.contains(keyBytes,keyStart,keyLength,hashMultiSetResults[hashMultiSetResultCount]);
+}
 switch (saveJoinResult) {
 case MATCH:
   equalKeySeriesValueCounts[equalKeySeriesCount]=hashMultiSetResults[hashMultiSetResultCount].count();

@@ -37,13 +37,18 @@
     long[] vector=joinColVector.vector;
     boolean allKeyInputColumnsRepeating=joinColVector.isRepeating;
     if (allKeyInputColumnsRepeating) {
-      long key=vector[0];
       JoinUtil.JoinResult joinResult;
-      if (useMinMax && (key < min || key > max)) {
+      if (!joinColVector.noNulls && joinColVector.isNull[0]) {
         joinResult=JoinUtil.JoinResult.NOMATCH;
       }
  else {
-        joinResult=hashMap.lookup(key,hashMapResults[0]);
+        long key=vector[0];
+        if (useMinMax && (key < min || key > max)) {
+          joinResult=JoinUtil.JoinResult.NOMATCH;
+        }
+ else {
+          joinResult=hashMap.lookup(key,hashMapResults[0]);
+        }
       }
       if (isLogDebugEnabled) {
         LOG.debug(CLASS_NAME + " batch #" + batchCounter+ " repeated joinResult "+ joinResult.name());
@@ -65,8 +70,17 @@
       JoinUtil.JoinResult saveJoinResult=JoinUtil.JoinResult.NOMATCH;
       for (int logical=0; logical < inputLogicalSize; logical++) {
         int batchIndex=(selectedInUse ? selected[logical] : logical);
-        long currentKey=vector[batchIndex];
-        if (!haveSaveKey || currentKey != saveKey) {
+        long currentKey;
+        boolean isNull;
+        if (!joinColVector.noNulls && joinColVector.isNull[batchIndex]) {
+          currentKey=0;
+          isNull=true;
+        }
+ else {
+          currentKey=vector[batchIndex];
+          isNull=false;
+        }
+        if (isNull || !haveSaveKey || currentKey != saveKey) {
           if (haveSaveKey) {
 switch (saveJoinResult) {
 case MATCH:
@@ -80,13 +94,19 @@ case NOMATCH:
     break;
 }
 }
+if (isNull) {
+saveJoinResult=JoinUtil.JoinResult.NOMATCH;
+haveSaveKey=false;
+}
+ else {
 haveSaveKey=true;
 saveKey=currentKey;
 if (useMinMax && (currentKey < min || currentKey > max)) {
-saveJoinResult=JoinUtil.JoinResult.NOMATCH;
+  saveJoinResult=JoinUtil.JoinResult.NOMATCH;
 }
  else {
-saveJoinResult=hashMap.lookup(currentKey,hashMapResults[hashMapResultCount]);
+  saveJoinResult=hashMap.lookup(currentKey,hashMapResults[hashMapResultCount]);
+}
 }
 switch (saveJoinResult) {
 case MATCH:

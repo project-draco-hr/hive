@@ -47,12 +47,15 @@
     if (allKeyInputColumnsRepeating) {
       keyVectorSerializeWrite.setOutput(currentKeyOutput);
       keyVectorSerializeWrite.serializeWrite(batch,0);
+      JoinUtil.JoinResult joinResult;
       if (keyVectorSerializeWrite.getHasAnyNulls()) {
-        throw new HiveException("Null key not expected in MapJoin");
+        joinResult=JoinUtil.JoinResult.NOMATCH;
       }
-      byte[] keyBytes=currentKeyOutput.getData();
-      int keyLength=currentKeyOutput.getLength();
-      JoinUtil.JoinResult joinResult=hashMap.lookup(keyBytes,0,keyLength,hashMapResults[0]);
+ else {
+        byte[] keyBytes=currentKeyOutput.getData();
+        int keyLength=currentKeyOutput.getLength();
+        joinResult=hashMap.lookup(keyBytes,0,keyLength,hashMapResults[0]);
+      }
       if (isLogDebugEnabled) {
         LOG.debug(CLASS_NAME + " batch #" + batchCounter+ " repeated joinResult "+ joinResult.name());
       }
@@ -75,10 +78,8 @@
         int batchIndex=(selectedInUse ? selected[logical] : logical);
         keyVectorSerializeWrite.setOutput(currentKeyOutput);
         keyVectorSerializeWrite.serializeWrite(batch,batchIndex);
-        if (keyVectorSerializeWrite.getHasAnyNulls()) {
-          throw new HiveException("Null key not expected in MapJoin");
-        }
-        if (!haveSaveKey || !saveKeyOutput.arraysEquals(currentKeyOutput)) {
+        boolean isAnyNull=keyVectorSerializeWrite.getHasAnyNulls();
+        if (isAnyNull || !haveSaveKey || !saveKeyOutput.arraysEquals(currentKeyOutput)) {
           if (haveSaveKey) {
 switch (saveJoinResult) {
 case MATCH:
@@ -92,6 +93,11 @@ case NOMATCH:
     break;
 }
 }
+if (isAnyNull) {
+saveJoinResult=JoinUtil.JoinResult.NOMATCH;
+haveSaveKey=false;
+}
+ else {
 haveSaveKey=true;
 temp=saveKeyOutput;
 saveKeyOutput=currentKeyOutput;
@@ -99,6 +105,7 @@ currentKeyOutput=temp;
 byte[] keyBytes=saveKeyOutput.getData();
 int keyLength=saveKeyOutput.getLength();
 saveJoinResult=hashMap.lookup(keyBytes,0,keyLength,hashMapResults[hashMapResultCount]);
+}
 switch (saveJoinResult) {
 case MATCH:
 equalKeySeriesHashMapResultIndices[equalKeySeriesCount]=hashMapResultCount;

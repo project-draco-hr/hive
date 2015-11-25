@@ -46,12 +46,15 @@
     if (allKeyInputColumnsRepeating) {
       keyVectorSerializeWrite.setOutput(currentKeyOutput);
       keyVectorSerializeWrite.serializeWrite(batch,0);
+      JoinUtil.JoinResult joinResult;
       if (keyVectorSerializeWrite.getHasAnyNulls()) {
-        throw new HiveException("Null key not expected in MapJoin");
+        joinResult=JoinUtil.JoinResult.NOMATCH;
       }
-      byte[] keyBytes=currentKeyOutput.getData();
-      int keyLength=currentKeyOutput.getLength();
-      JoinUtil.JoinResult joinResult=hashSet.contains(keyBytes,0,keyLength,hashSetResults[0]);
+ else {
+        byte[] keyBytes=currentKeyOutput.getData();
+        int keyLength=currentKeyOutput.getLength();
+        joinResult=hashSet.contains(keyBytes,0,keyLength,hashSetResults[0]);
+      }
       if (isLogDebugEnabled) {
         LOG.debug(CLASS_NAME + " batch #" + batchCounter+ " repeated joinResult "+ joinResult.name());
       }
@@ -73,10 +76,8 @@
         int batchIndex=(selectedInUse ? selected[logical] : logical);
         keyVectorSerializeWrite.setOutput(currentKeyOutput);
         keyVectorSerializeWrite.serializeWrite(batch,batchIndex);
-        if (keyVectorSerializeWrite.getHasAnyNulls()) {
-          throw new HiveException("Null key not expected in MapJoin");
-        }
-        if (!haveSaveKey || !saveKeyOutput.arraysEquals(currentKeyOutput)) {
+        boolean isAnyNull=keyVectorSerializeWrite.getHasAnyNulls();
+        if (isAnyNull || !haveSaveKey || !saveKeyOutput.arraysEquals(currentKeyOutput)) {
           if (haveSaveKey) {
 switch (saveJoinResult) {
 case MATCH:
@@ -88,13 +89,19 @@ case NOMATCH:
         break;
     }
   }
-  haveSaveKey=true;
-  temp=saveKeyOutput;
-  saveKeyOutput=currentKeyOutput;
-  currentKeyOutput=temp;
-  byte[] keyBytes=saveKeyOutput.getData();
-  int keyLength=saveKeyOutput.getLength();
-  saveJoinResult=hashSet.contains(keyBytes,0,keyLength,hashSetResults[hashSetResultCount]);
+  if (isAnyNull) {
+    saveJoinResult=JoinUtil.JoinResult.NOMATCH;
+    haveSaveKey=false;
+  }
+ else {
+    haveSaveKey=true;
+    temp=saveKeyOutput;
+    saveKeyOutput=currentKeyOutput;
+    currentKeyOutput=temp;
+    byte[] keyBytes=saveKeyOutput.getData();
+    int keyLength=saveKeyOutput.getLength();
+    saveJoinResult=hashSet.contains(keyBytes,0,keyLength,hashSetResults[hashSetResultCount]);
+  }
 switch (saveJoinResult) {
 case MATCH:
     allMatchs[allMatchCount++]=batchIndex;
