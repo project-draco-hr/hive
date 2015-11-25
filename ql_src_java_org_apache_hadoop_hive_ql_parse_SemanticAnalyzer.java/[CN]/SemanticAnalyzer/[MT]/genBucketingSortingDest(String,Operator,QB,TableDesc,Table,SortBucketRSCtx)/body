@@ -1,13 +1,12 @@
 {
   boolean enforceBucketing=false;
-  boolean enforceSorting=false;
   ArrayList<ExprNodeDesc> partnCols=new ArrayList<ExprNodeDesc>();
   ArrayList<ExprNodeDesc> sortCols=new ArrayList<ExprNodeDesc>();
   ArrayList<Integer> sortOrders=new ArrayList<Integer>();
   boolean multiFileSpray=false;
   int numFiles=1;
   int totalFiles=1;
-  if ((dest_tab.getNumBuckets() > 0) && (conf.getBoolVar(HiveConf.ConfVars.HIVEENFORCEBUCKETING))) {
+  if (dest_tab.getNumBuckets() > 0) {
     enforceBucketing=true;
     if (updating() || deleting()) {
       partnCols=getPartitionColsFromBucketColsForUpdateDelete(input,true);
@@ -16,22 +15,27 @@
       partnCols=getPartitionColsFromBucketCols(dest,qb,dest_tab,table_desc,input,true);
     }
   }
-  if ((dest_tab.getSortCols() != null) && (dest_tab.getSortCols().size() > 0) && (conf.getBoolVar(HiveConf.ConfVars.HIVEENFORCESORTING))) {
-    enforceSorting=true;
+  if ((dest_tab.getSortCols() != null) && (dest_tab.getSortCols().size() > 0)) {
     sortCols=getSortCols(dest,qb,dest_tab,table_desc,input,true);
     sortOrders=getSortOrders(dest,qb,dest_tab,input);
-    if (!enforceBucketing) {
-      partnCols=sortCols;
+    if (!enforceBucketing && !dest_tab.isIndexTable()) {
+      throw new SemanticException(ErrorMsg.TBL_SORTED_NOT_BUCKETED.getErrorCodedMsg(dest_tab.getCompleteName()));
     }
+ else {
+      if (!enforceBucketing) {
+        partnCols=sortCols;
+      }
+    }
+    enforceBucketing=true;
   }
-  if (enforceBucketing || enforceSorting) {
+  if (enforceBucketing) {
     int maxReducers=conf.getIntVar(HiveConf.ConfVars.MAXREDUCERS);
     if (conf.getIntVar(HiveConf.ConfVars.HADOOPNUMREDUCERS) > 0) {
       maxReducers=conf.getIntVar(HiveConf.ConfVars.HADOOPNUMREDUCERS);
     }
     int numBuckets=dest_tab.getNumBuckets();
     if (numBuckets > maxReducers) {
-      LOG.debug("XXXXXX numBuckets is " + numBuckets + " and maxReducers is "+ maxReducers);
+      LOG.debug("numBuckets is {}",numBuckets," and maxReducers is {}",maxReducers);
       multiFileSpray=true;
       totalFiles=numBuckets;
       if (totalFiles % maxReducers == 0) {

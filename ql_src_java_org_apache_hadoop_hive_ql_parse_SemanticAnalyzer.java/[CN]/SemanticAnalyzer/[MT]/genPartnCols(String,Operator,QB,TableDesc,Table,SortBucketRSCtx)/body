@@ -1,8 +1,7 @@
 {
   boolean enforceBucketing=false;
-  boolean enforceSorting=false;
   ArrayList<ExprNodeDesc> partnColsNoConvert=new ArrayList<ExprNodeDesc>();
-  if ((dest_tab.getNumBuckets() > 0) && (conf.getBoolVar(HiveConf.ConfVars.HIVEENFORCEBUCKETING))) {
+  if ((dest_tab.getNumBuckets() > 0)) {
     enforceBucketing=true;
     if (updating() || deleting()) {
       partnColsNoConvert=getPartitionColsFromBucketColsForUpdateDelete(input,false);
@@ -11,13 +10,18 @@
       partnColsNoConvert=getPartitionColsFromBucketCols(dest,qb,dest_tab,table_desc,input,false);
     }
   }
-  if ((dest_tab.getSortCols() != null) && (dest_tab.getSortCols().size() > 0) && (conf.getBoolVar(HiveConf.ConfVars.HIVEENFORCESORTING))) {
-    enforceSorting=true;
-    if (!enforceBucketing) {
-      partnColsNoConvert=getSortCols(dest,qb,dest_tab,table_desc,input,false);
+  if ((dest_tab.getSortCols() != null) && (dest_tab.getSortCols().size() > 0)) {
+    if (!enforceBucketing && !dest_tab.isIndexTable()) {
+      throw new SemanticException(ErrorMsg.TBL_SORTED_NOT_BUCKETED.getErrorCodedMsg(dest_tab.getCompleteName()));
     }
+ else {
+      if (!enforceBucketing) {
+        partnColsNoConvert=getSortCols(dest,qb,dest_tab,table_desc,input,false);
+      }
+    }
+    enforceBucketing=true;
   }
-  if (enforceBucketing || enforceSorting) {
+  if (enforceBucketing) {
     ctx.setPartnCols(partnColsNoConvert);
   }
 }
