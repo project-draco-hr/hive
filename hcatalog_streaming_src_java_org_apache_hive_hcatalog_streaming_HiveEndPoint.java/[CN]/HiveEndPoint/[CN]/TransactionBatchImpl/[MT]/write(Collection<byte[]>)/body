@@ -1,18 +1,29 @@
 {
-  if (ugi == null) {
-    writeImpl(records);
-    return;
-  }
+  checkIsClosed();
+  boolean success=false;
   try {
-    ugi.doAs(new PrivilegedExceptionAction<Void>(){
-      @Override public Void run() throws StreamingException {
-        writeImpl(records);
-        return null;
-      }
+    if (ugi == null) {
+      writeImpl(records);
     }
+ else {
+      ugi.doAs(new PrivilegedExceptionAction<Void>(){
+        @Override public Void run() throws StreamingException {
+          writeImpl(records);
+          return null;
+        }
+      }
 );
+    }
+    success=true;
   }
- catch (  IOException e) {
+ catch (  SerializationError ex) {
+    success=true;
+    throw ex;
+  }
+catch (  IOException e) {
     throw new ImpersonationFailed("Failed writing as user '" + username + "' to endPoint :"+ endPt+ ". Transaction Id: "+ getCurrentTxnId(),e);
+  }
+ finally {
+    markDead(success);
   }
 }
