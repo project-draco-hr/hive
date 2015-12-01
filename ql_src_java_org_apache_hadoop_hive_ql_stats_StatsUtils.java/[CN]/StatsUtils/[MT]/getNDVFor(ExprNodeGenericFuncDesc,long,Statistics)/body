@@ -1,0 +1,23 @@
+{
+  GenericUDF udf=engfd.getGenericUDF();
+  if (!FunctionRegistry.isDeterministic(udf)) {
+    return numRows;
+  }
+  List<Long> ndvs=Lists.newArrayList();
+  Class<?> udfClass=udf instanceof GenericUDFBridge ? ((GenericUDFBridge)udf).getUdfClass() : udf.getClass();
+  NDV ndv=AnnotationUtils.getAnnotation(udfClass,NDV.class);
+  long udfNDV=Long.MAX_VALUE;
+  if (ndv != null) {
+    udfNDV=ndv.maxNdv();
+  }
+ else {
+    for (    String col : engfd.getCols()) {
+      ColStatistics stats=parentStats.getColumnStatisticsFromColName(col);
+      if (stats != null) {
+        ndvs.add(stats.getCountDistint());
+      }
+    }
+  }
+  long countDistincts=ndvs.isEmpty() ? numRows : addWithExpDecay(ndvs);
+  return Collections.min(Lists.newArrayList(countDistincts,udfNDV,numRows));
+}
