@@ -1,0 +1,29 @@
+{
+  Path dataPath=new Path(file);
+  Path sideFilePath=OrcRecordUpdater.getSideFile(dataPath);
+  Path cPath=new Path(sideFilePath.getParent(),sideFilePath.getName() + ".corrupt");
+  FileSystem fs=sideFilePath.getFileSystem(conf);
+  List<Long> offsets=offsetMap.get(key);
+  long lastOffset=offsets.get(offsets.size() - 1);
+  FSDataOutputStream fdos=fs.create(cPath,true);
+  if (numEntries < 0) {
+    byte[] lastOffsetBytes=longToBytes(lastOffset);
+    for (int i=0; i < offsets.size() - 1; i++) {
+      fdos.writeLong(offsets.get(i));
+    }
+    fdos.write(lastOffsetBytes,0,3);
+  }
+ else   if (numEntries > 0) {
+    int firstRun=Math.min(offsets.size(),numEntries);
+    for (int i=0; i < firstRun; i++) {
+      fdos.writeLong(offsets.get(i));
+    }
+    int remaining=numEntries - firstRun;
+    for (int i=0; i < remaining; i++) {
+      fdos.writeLong(lastOffset + ((i + 1) * 100));
+    }
+  }
+  fdos.close();
+  fs.delete(sideFilePath,false);
+  fs.rename(cPath,sideFilePath);
+}

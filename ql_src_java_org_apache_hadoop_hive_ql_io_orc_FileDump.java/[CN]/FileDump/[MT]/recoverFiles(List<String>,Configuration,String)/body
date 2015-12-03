@@ -1,0 +1,49 @@
+{
+  for (  String corruptFile : corruptFiles) {
+    System.err.println("Recovering file " + corruptFile);
+    Path corruptPath=new Path(corruptFile);
+    FileSystem fs=corruptPath.getFileSystem(conf);
+    FSDataInputStream fdis=fs.open(corruptPath);
+    try {
+      long corruptFileLen=fs.getFileStatus(corruptPath).getLen();
+      long remaining=corruptFileLen;
+      List<Long> footerOffsets=Lists.newArrayList();
+      while (remaining > 0) {
+        int toRead=(int)Math.min(DEFAULT_BLOCK_SIZE,remaining);
+        byte[] data=new byte[toRead];
+        long startPos=corruptFileLen - remaining;
+        fdis.readFully(startPos,data,0,toRead);
+        int index=0;
+        long nextFooterOffset;
+        while (index != -1) {
+          index=indexOf(data,OrcFile.MAGIC.getBytes(),index + 1);
+          if (index != -1) {
+            nextFooterOffset=startPos + index + OrcFile.MAGIC.length()+ 1;
+            if (isReadable(corruptPath,conf,nextFooterOffset)) {
+              footerOffsets.add(nextFooterOffset);
+            }
+          }
+        }
+        System.err.println("Scanning for valid footers - startPos: " + startPos + " toRead: "+ toRead+ " remaining: "+ remaining);
+        remaining=remaining - toRead;
+      }
+      System.err.println("Readable footerOffsets: " + footerOffsets);
+      recoverFile(corruptPath,fs,conf,footerOffsets,backup);
+    }
+ catch (    Exception e) {
+      Path recoveryFile=getRecoveryFile(corruptPath);
+      if (fs.exists(recoveryFile)) {
+        fs.delete(recoveryFile,false);
+      }
+      System.err.println("Unable to recover file " + corruptFile);
+      e.printStackTrace();
+      System.err.println(SEPARATOR);
+      continue;
+    }
+ finally {
+      fdis.close();
+    }
+    System.err.println(corruptFile + " recovered successfully!");
+    System.err.println(SEPARATOR);
+  }
+}

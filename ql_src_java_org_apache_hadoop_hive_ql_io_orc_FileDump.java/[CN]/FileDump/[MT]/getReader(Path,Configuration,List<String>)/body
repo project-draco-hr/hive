@@ -1,0 +1,61 @@
+{
+  FileSystem fs=path.getFileSystem(conf);
+  long dataFileLen=fs.getFileStatus(path).getLen();
+  System.err.println("Processing data file " + path + " [length: "+ dataFileLen+ "]");
+  Path sideFile=OrcRecordUpdater.getSideFile(path);
+  final boolean sideFileExists=fs.exists(sideFile);
+  boolean openDataFile=false;
+  boolean openSideFile=false;
+  if (fs instanceof DistributedFileSystem) {
+    DistributedFileSystem dfs=(DistributedFileSystem)fs;
+    openDataFile=!dfs.isFileClosed(path);
+    openSideFile=sideFileExists && !dfs.isFileClosed(sideFile);
+  }
+  if (openDataFile || openSideFile) {
+    if (openDataFile && openSideFile) {
+      System.err.println("Unable to perform file dump as " + path + " and "+ sideFile+ " are still open for writes.");
+    }
+ else     if (openSideFile) {
+      System.err.println("Unable to perform file dump as " + sideFile + " is still open for writes.");
+    }
+ else {
+      System.err.println("Unable to perform file dump as " + path + " is still open for writes.");
+    }
+    return null;
+  }
+  Reader reader=null;
+  if (sideFileExists) {
+    final long maxLen=OrcRawRecordMerger.getLastFlushLength(fs,path);
+    final long sideFileLen=fs.getFileStatus(sideFile).getLen();
+    System.err.println("Found flush length file " + sideFile + " [length: "+ sideFileLen+ ", maxFooterOffset: "+ maxLen+ "]");
+    if (maxLen == -1) {
+      if (dataFileLen > maxLen) {
+        System.err.println("Data file has more data than max footer offset:" + maxLen + ". Adding data file to recovery list.");
+        if (corruptFiles != null) {
+          corruptFiles.add(path.toUri().toString());
+        }
+      }
+      return null;
+    }
+    try {
+      reader=OrcFile.createReader(path,OrcFile.readerOptions(conf).maxLength(maxLen));
+      if (dataFileLen > maxLen) {
+        System.err.println("Data file has more data than max footer offset:" + maxLen + ". Adding data file to recovery list.");
+        if (corruptFiles != null) {
+          corruptFiles.add(path.toUri().toString());
+        }
+      }
+    }
+ catch (    Exception e) {
+      if (corruptFiles != null) {
+        corruptFiles.add(path.toUri().toString());
+      }
+      System.err.println("Unable to read data from max footer offset." + " Adding data file to recovery list.");
+      return null;
+    }
+  }
+ else {
+    reader=OrcFile.createReader(path,OrcFile.readerOptions(conf));
+  }
+  return reader;
+}

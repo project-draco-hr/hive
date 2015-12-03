@@ -1,0 +1,56 @@
+{
+  Path recoveredPath=getRecoveryFile(corruptPath);
+  if (fs.exists(recoveredPath)) {
+    fs.delete(recoveredPath,false);
+  }
+  if (footerOffsets == null || footerOffsets.isEmpty()) {
+    System.err.println("No readable footers found. Creating empty orc file.");
+    TypeDescription schema=TypeDescription.createStruct();
+    Writer writer=OrcFile.createWriter(recoveredPath,OrcFile.writerOptions(conf).setSchema(schema));
+    writer.close();
+  }
+ else {
+    FSDataInputStream fdis=fs.open(corruptPath);
+    FileStatus fileStatus=fs.getFileStatus(corruptPath);
+    FSDataOutputStream fdos=fs.create(recoveredPath,true,conf.getInt("io.file.buffer.size",4096),fileStatus.getReplication(),fileStatus.getBlockSize());
+    try {
+      long fileLen=footerOffsets.get(footerOffsets.size() - 1);
+      long remaining=fileLen;
+      while (remaining > 0) {
+        int toRead=(int)Math.min(DEFAULT_BLOCK_SIZE,remaining);
+        byte[] data=new byte[toRead];
+        long startPos=fileLen - remaining;
+        fdis.readFully(startPos,data,0,toRead);
+        fdos.write(data);
+        System.err.println("Copying data to recovery file - startPos: " + startPos + " toRead: "+ toRead+ " remaining: "+ remaining);
+        remaining=remaining - toRead;
+      }
+    }
+ catch (    Exception e) {
+      fs.delete(recoveredPath,false);
+      throw new IOException(e);
+    }
+ finally {
+      fdis.close();
+      fdos.close();
+    }
+  }
+  if (isReadable(recoveredPath,conf,Long.MAX_VALUE)) {
+    Path backupDataPath;
+    String scheme=corruptPath.toUri().getScheme();
+    String authority=corruptPath.toUri().getAuthority();
+    String filePath=corruptPath.toUri().getPath();
+    if (backup.equals(DEFAULT_BACKUP_PATH)) {
+      backupDataPath=new Path(scheme,authority,DEFAULT_BACKUP_PATH + filePath);
+    }
+ else {
+      backupDataPath=new Path(backup + filePath);
+    }
+    moveFiles(fs,corruptPath,backupDataPath);
+    Path sideFilePath=OrcRecordUpdater.getSideFile(corruptPath);
+    Path backupSideFilePath=new Path(backupDataPath.getParent(),sideFilePath.getName());
+    moveFiles(fs,sideFilePath,backupSideFilePath);
+    moveFiles(fs,recoveredPath,corruptPath);
+    System.err.println("Validation of recovered file successful!");
+  }
+}
