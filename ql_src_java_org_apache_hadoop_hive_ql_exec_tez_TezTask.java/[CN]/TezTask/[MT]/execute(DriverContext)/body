@@ -2,7 +2,6 @@
   int rc=1;
   boolean cleanContext=false;
   Context ctx=null;
-  DAGClient client=null;
   TezSessionState session=null;
   try {
     ctx=driverContext.getCtx();
@@ -39,15 +38,15 @@
     CallerContext callerContext=CallerContext.create("HIVE",conf.getLogIdVar(SessionState.get().getSessionId()) + " " + conf.getVar(HiveConf.ConfVars.HIVEQUERYID),"HIVE_QUERY_ID",queryPlan.getQueryStr());
     dag.setCallerContext(callerContext);
     addExtraResourcesToDag(session,dag,inputOutputJars,inputOutputLocalResources);
-    client=submit(jobConf,dag,scratchDir,appJarLr,session,additionalLr,inputOutputJars,inputOutputLocalResources);
+    dagClient=submit(jobConf,dag,scratchDir,appJarLr,session,additionalLr,inputOutputJars,inputOutputLocalResources);
     TezJobMonitor monitor=new TezJobMonitor(work.getWorkMap());
-    rc=monitor.monitorExecution(client,ctx.getHiveTxnManager(),conf,dag);
+    rc=monitor.monitorExecution(dagClient,ctx.getHiveTxnManager(),conf,dag);
     if (rc != 0) {
       this.setException(new HiveException(monitor.getDiagnostics()));
     }
     try {
       Set<StatusGetOpts> statusGetOpts=EnumSet.of(StatusGetOpts.GET_COUNTERS);
-      counters=client.getDAGStatus(statusGetOpts).getDAGCounters();
+      counters=dagClient.getDAGStatus(statusGetOpts).getDAGCounters();
     }
  catch (    Exception err) {
       LOG.error("Failed to get counters: " + err,err);
@@ -82,7 +81,7 @@
         LOG.warn("Failed to clean up after tez job");
       }
     }
-    if (client != null) {
+    if (dagClient != null) {
       rc=close(work,rc);
     }
   }
