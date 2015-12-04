@@ -16,16 +16,27 @@
     }
     List<List<Path[]>> result=checkPaths(conf,destFs,srcs,srcFs,destf,true);
     if (oldPath != null) {
+      boolean oldPathDeleted=false;
+      boolean isOldPathUnderDestf=false;
       try {
         FileSystem fs2=oldPath.getFileSystem(conf);
         if (fs2.exists(oldPath)) {
-          if (FileUtils.isSubDir(oldPath,destf,fs2)) {
-            FileUtils.trashFilesUnderDir(fs2,oldPath,conf);
+          isOldPathUnderDestf=FileUtils.isSubDir(oldPath,destf,fs2);
+          if (isOldPathUnderDestf) {
+            oldPathDeleted=FileUtils.trashFilesUnderDir(fs2,oldPath,conf);
           }
         }
       }
- catch (      Exception e) {
-        LOG.warn("Directory " + oldPath.toString() + " cannot be removed: "+ e,e);
+ catch (      IOException e) {
+        if (isOldPathUnderDestf) {
+          throw new HiveException("Directory " + oldPath.toString() + " could not be cleaned up.",e);
+        }
+ else {
+          LOG.warn("Directory " + oldPath.toString() + " cannot be cleaned: "+ e,e);
+        }
+      }
+      if (isOldPathUnderDestf && !oldPathDeleted) {
+        throw new HiveException("Destination directory " + destf + " has not be cleaned up.");
       }
     }
     boolean destfExist=FileUtils.mkdir(destFs,destf,true,conf);
