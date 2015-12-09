@@ -1,0 +1,31 @@
+{
+  if (zkSecretManager == null) {
+    throw new ServiceException("Operation not supported on unsecure cluster");
+  }
+  UserGroupInformation ugi;
+  try {
+    ugi=UserGroupInformation.getCurrentUser();
+  }
+ catch (  IOException e) {
+    throw new ServiceException(e);
+  }
+  String user=ugi.getUserName();
+  Text owner=new Text(user);
+  Text realUser=null;
+  if (ugi.getRealUser() != null) {
+    realUser=new Text(ugi.getRealUser().getUserName());
+  }
+  Text renewer=new Text(ugi.getShortUserName());
+  LlapTokenIdentifier llapId=new LlapTokenIdentifier(owner,renewer,realUser);
+  Token<LlapTokenIdentifier> token=new Token<LlapTokenIdentifier>(llapId,zkSecretManager);
+  ByteArrayDataOutput out=ByteStreams.newDataOutput();
+  try {
+    token.write(out);
+  }
+ catch (  IOException e) {
+    throw new ServiceException(e);
+  }
+  ByteString bs=ByteString.copyFrom(out.toByteArray());
+  GetTokenResponseProto response=GetTokenResponseProto.newBuilder().setToken(bs).build();
+  return response;
+}

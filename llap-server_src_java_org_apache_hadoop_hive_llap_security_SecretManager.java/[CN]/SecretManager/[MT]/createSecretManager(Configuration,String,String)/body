@@ -1,0 +1,31 @@
+{
+  UserGroupInformation zkUgi=null;
+  String principal=HiveConf.getVar(conf,ConfVars.LLAP_ZKSM_KERBEROS_PRINCIPAL,llapPrincipal);
+  String keyTab=HiveConf.getVar(conf,ConfVars.LLAP_ZKSM_KERBEROS_KEYTAB_FILE,llapKeytab);
+  try {
+    zkUgi=LlapSecurityHelper.loginWithKerberos(principal,keyTab);
+  }
+ catch (  IOException e) {
+    throw new RuntimeException(e);
+  }
+  final Configuration zkConf=new Configuration(conf);
+  zkConf.setLong(DelegationTokenManager.MAX_LIFETIME,HiveConf.getTimeVar(conf,ConfVars.LLAP_DELEGATION_TOKEN_LIFETIME,TimeUnit.SECONDS));
+  zkConf.set(SecretManager.ZK_DTSM_ZK_KERBEROS_PRINCIPAL,principal);
+  zkConf.set(SecretManager.ZK_DTSM_ZK_KERBEROS_KEYTAB,keyTab);
+  setZkConfIfNotSet(zkConf,SecretManager.ZK_DTSM_ZNODE_WORKING_PATH,"llapzkdtsm");
+  setZkConfIfNotSet(zkConf,SecretManager.ZK_DTSM_ZK_AUTH_TYPE,"sasl");
+  setZkConfIfNotSet(zkConf,SecretManager.ZK_DTSM_ZK_CONNECTION_STRING,HiveConf.getVar(zkConf,ConfVars.LLAP_ZKSM_ZK_CONNECTION_STRING));
+  return zkUgi.doAs(new PrivilegedAction<SecretManager>(){
+    @Override public SecretManager run(){
+      SecretManager zkSecretManager=new SecretManager(zkConf);
+      try {
+        zkSecretManager.startThreads();
+      }
+ catch (      IOException e) {
+        throw new RuntimeException(e);
+      }
+      return zkSecretManager;
+    }
+  }
+);
+}

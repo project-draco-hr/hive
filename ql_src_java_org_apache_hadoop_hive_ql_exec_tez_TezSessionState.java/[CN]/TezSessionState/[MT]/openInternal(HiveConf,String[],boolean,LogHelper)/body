@@ -45,8 +45,16 @@
   tezConfig.set(TezConfiguration.TEZ_AM_STAGING_DIR,tezScratchDir.toUri().toString());
   conf.stripHiddenConfigurations(tezConfig);
   ServicePluginsDescriptor servicePluginsDescriptor;
-  UserPayload servicePluginPayload=TezUtils.createUserPayloadFromConf(tezConfig);
+  Credentials llapCredentials=null;
   if (llapMode) {
+    if (UserGroupInformation.isSecurityEnabled()) {
+      LlapTokenProvider tp=LlapProxy.getOrInitTokenProvider(conf);
+      Token<LlapTokenIdentifier> token=tp.getDelegationToken();
+      LOG.info("Obtained a token: " + token);
+      llapCredentials=new Credentials();
+      llapCredentials.addToken(LlapTokenIdentifier.KIND_NAME,token);
+    }
+    UserPayload servicePluginPayload=TezUtils.createUserPayloadFromConf(tezConfig);
     servicePluginsDescriptor=ServicePluginsDescriptor.create(true,new TaskSchedulerDescriptor[]{TaskSchedulerDescriptor.create(LLAP_SERVICE,LLAP_SCHEDULER).setUserPayload(servicePluginPayload)},new ContainerLauncherDescriptor[]{ContainerLauncherDescriptor.create(LLAP_SERVICE,LLAP_LAUNCHER)},new TaskCommunicatorDescriptor[]{TaskCommunicatorDescriptor.create(LLAP_SERVICE,LLAP_TASK_COMMUNICATOR).setUserPayload(servicePluginPayload)});
   }
  else {
@@ -57,7 +65,7 @@
     n=Math.max(tezConfig.getInt(TezConfiguration.TEZ_AM_SESSION_MIN_HELD_CONTAINERS,TezConfiguration.TEZ_AM_SESSION_MIN_HELD_CONTAINERS_DEFAULT),n);
     tezConfig.setInt(TezConfiguration.TEZ_AM_SESSION_MIN_HELD_CONTAINERS,n);
   }
-  final TezClient session=TezClient.newBuilder("HIVE-" + sessionId,tezConfig).setIsSession(true).setLocalResources(commonLocalResources).setServicePluginDescriptor(servicePluginsDescriptor).build();
+  final TezClient session=TezClient.newBuilder("HIVE-" + sessionId,tezConfig).setIsSession(true).setLocalResources(commonLocalResources).setCredentials(llapCredentials).setServicePluginDescriptor(servicePluginsDescriptor).build();
   LOG.info("Opening new Tez Session (id: " + sessionId + ", scratch dir: "+ tezScratchDir+ ")");
   TezJobMonitor.initShutdownHook();
   if (!isAsync) {
