@@ -24,9 +24,36 @@ synchronized (HMSHandler.class) {
       LOG.error("error in Metrics init: " + e.getClass().getName() + " "+ e.getMessage(),e);
     }
   }
+  Metrics metrics=MetricsFactory.getInstance();
+  if (metrics != null) {
+    LOG.info("Begin calculating metadata count metrics.");
+    updateMetrics();
+    LOG.info("Finished metadata count metrics: " + initDatabaseCount + " databases, "+ initTableCount+ " tables, "+ initPartCount+ " partitions.");
+    metrics.addGauge(MetricsConstant.INIT_TOTAL_DATABASES,new MetricsVariable(){
+      @Override public Object getValue(){
+        return initDatabaseCount;
+      }
+    }
+);
+    metrics.addGauge(MetricsConstant.INIT_TOTAL_TABLES,new MetricsVariable(){
+      @Override public Object getValue(){
+        return initTableCount;
+      }
+    }
+);
+    metrics.addGauge(MetricsConstant.INIT_TOTAL_PARTITIONS,new MetricsVariable(){
+      @Override public Object getValue(){
+        return initPartCount;
+      }
+    }
+);
+  }
   preListeners=MetaStoreUtils.getMetaStoreListeners(MetaStorePreEventListener.class,hiveConf,hiveConf.getVar(HiveConf.ConfVars.METASTORE_PRE_EVENT_LISTENERS));
   listeners=MetaStoreUtils.getMetaStoreListeners(MetaStoreEventListener.class,hiveConf,hiveConf.getVar(HiveConf.ConfVars.METASTORE_EVENT_LISTENERS));
   listeners.add(new SessionPropertiesListener(hiveConf));
+  if (metrics != null) {
+    listeners.add(new HMSMetricsListener(hiveConf,metrics));
+  }
   endFunctionListeners=MetaStoreUtils.getMetaStoreListeners(MetaStoreEndFunctionListener.class,hiveConf,hiveConf.getVar(HiveConf.ConfVars.METASTORE_END_FUNCTION_LISTENERS));
   String partitionValidationRegex=hiveConf.getVar(HiveConf.ConfVars.METASTORE_PARTITION_NAME_WHITELIST_PATTERN);
   if (partitionValidationRegex != null && !partitionValidationRegex.isEmpty()) {
