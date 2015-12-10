@@ -1,12 +1,15 @@
 {
   HiveRelNode sortRel=null;
   QBParseInfo qbp=getQBParseInfo(qb);
-  Integer limit=qbp.getDestToLimit().get(qbp.getClauseNames().iterator().next());
-  if (limit != null) {
-    RexNode fetch=cluster.getRexBuilder().makeExactLiteral(BigDecimal.valueOf(limit));
+  SimpleEntry<Integer,Integer> entry=qbp.getDestToLimit().get(qbp.getClauseNames().iterator().next());
+  Integer offset=(entry == null) ? 0 : entry.getKey();
+  Integer fetch=(entry == null) ? null : entry.getValue();
+  if (fetch != null) {
+    RexNode offsetRN=cluster.getRexBuilder().makeExactLiteral(BigDecimal.valueOf(offset));
+    RexNode fetchRN=cluster.getRexBuilder().makeExactLiteral(BigDecimal.valueOf(fetch));
     RelTraitSet traitSet=cluster.traitSetOf(HiveRelNode.CONVENTION);
     RelCollation canonizedCollation=traitSet.canonize(RelCollations.EMPTY);
-    sortRel=new HiveSortLimit(cluster,traitSet,srcRel,canonizedCollation,null,fetch);
+    sortRel=new HiveSortLimit(cluster,traitSet,srcRel,canonizedCollation,offsetRN,fetchRN);
     RowResolver outputRR=new RowResolver();
     if (!RowResolver.add(outputRR,relToHiveRR.get(srcRel))) {
       throw new CalciteSemanticException("Duplicates detected when adding columns to RR: see previous message",UnsupportedFeature.Duplicates_in_RR);

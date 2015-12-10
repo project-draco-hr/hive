@@ -5,13 +5,15 @@
   Map<String,SplitSample> nameToSplitSample=pctx.getNameToSplitSample();
   if (ctx.getTryCount() == 0 && topOps.size() == 1 && !globalLimitCtx.ifHasTransformOrUDTF() && nameToSplitSample.isEmpty()) {
     TableScanOperator ts=topOps.values().iterator().next();
-    Integer tempGlobalLimit=checkQbpForGlobalLimit(ts);
-    if (tempGlobalLimit != null && tempGlobalLimit != 0) {
+    LimitOperator tempGlobalLimit=checkQbpForGlobalLimit(ts);
+    if (tempGlobalLimit != null) {
+      LimitDesc tempGlobalLimitDesc=tempGlobalLimit.getConf();
       Table tab=ts.getConf().getTableMetadata();
       Set<FilterOperator> filterOps=OperatorUtils.findOperators(ts,FilterOperator.class);
       if (!tab.isPartitioned()) {
         if (filterOps.size() == 0) {
-          globalLimitCtx.enableOpt(tempGlobalLimit);
+          Integer tempOffset=tempGlobalLimitDesc.getOffset();
+          globalLimitCtx.enableOpt(tempGlobalLimitDesc.getLimit(),(tempOffset == null) ? 0 : tempOffset);
         }
       }
  else {
@@ -19,11 +21,13 @@
           String alias=(String)topOps.keySet().toArray()[0];
           PrunedPartitionList partsList=pctx.getPrunedPartitions(alias,ts);
           if (!partsList.hasUnknownPartitions()) {
-            globalLimitCtx.enableOpt(tempGlobalLimit);
+            Integer tempOffset=tempGlobalLimitDesc.getOffset();
+            globalLimitCtx.enableOpt(tempGlobalLimitDesc.getLimit(),(tempOffset == null) ? 0 : tempOffset);
           }
         }
       }
       if (globalLimitCtx.isEnable()) {
+        LOG.info("Qualify the optimize that reduces input size for 'offset' for offset " + globalLimitCtx.getGlobalOffset());
         LOG.info("Qualify the optimize that reduces input size for 'limit' for limit " + globalLimitCtx.getGlobalLimit());
       }
     }
