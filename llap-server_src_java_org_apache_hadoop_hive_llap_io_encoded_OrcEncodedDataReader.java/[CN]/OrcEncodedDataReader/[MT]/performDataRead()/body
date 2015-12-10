@@ -10,8 +10,8 @@
   counters.setDesc(QueryFragmentCounters.Desc.TABLE,getDbAndTableName(split.getPath()));
   orcReader=null;
   fs=split.getPath().getFileSystem(conf);
-  fileId=determineFileId(fs,split);
-  counters.setDesc(QueryFragmentCounters.Desc.FILE,fileId);
+  fileId=determineFileId(fs,split,HiveConf.getBoolVar(conf,ConfVars.LLAP_CACHE_ALLOW_SYNTHETIC_FILEID));
+  counters.setDesc(QueryFragmentCounters.Desc.FILE,split.getPath() + (fileId == null ? "" : " (" + fileId + ")"));
   try {
     fileMetadata=getOrReadFileMetadata();
     consumer.setFileMetadata(fileMetadata);
@@ -91,6 +91,8 @@
     cleanupReaders();
     return null;
   }
+  boolean hasFileId=this.fileId != null;
+  long fileId=hasFileId ? this.fileId : 0;
   OrcBatchKey stripeKey=new OrcBatchKey(fileId,-1,0);
   for (int stripeIxMod=0; stripeIxMod < readState.length; ++stripeIxMod) {
     if (processStop()) {
@@ -126,7 +128,9 @@
       }
  else {
         stripeKey.stripeIx=stripeIx;
-        stripeMetadata=metadataCache.getStripeMetadata(stripeKey);
+        if (hasFileId) {
+          stripeMetadata=metadataCache.getStripeMetadata(stripeKey);
+        }
         isFoundInCache=(stripeMetadata != null);
         if (!isFoundInCache) {
           counters.incrCounter(Counter.METADATA_CACHE_MISS);
@@ -134,7 +138,9 @@
           long startTimeHdfs=counters.startTimeCounter();
           stripeMetadata=new OrcStripeMetadata(stripeKey,metadataReader,stripe,stripeIncludes,sargColumns);
           counters.incrTimeCounter(Counter.HDFS_TIME_US,startTimeHdfs);
-          stripeMetadata=metadataCache.putStripeMetadata(stripeMetadata);
+          if (hasFileId) {
+            stripeMetadata=metadataCache.putStripeMetadata(stripeMetadata);
+          }
           if (DebugUtils.isTraceOrcEnabled()) {
             LlapIoImpl.LOG.info("Caching stripe " + stripeKey.stripeIx + " metadata with includes: "+ DebugUtils.toString(stripeIncludes));
           }

@@ -1,9 +1,11 @@
 {
   ArrayList<OrcStripeMetadata> result=new ArrayList<OrcStripeMetadata>(readState.length);
+  boolean hasFileId=this.fileId != null;
+  long fileId=hasFileId ? this.fileId : 0;
   OrcBatchKey stripeKey=new OrcBatchKey(fileId,0,0);
   for (int stripeIxMod=0; stripeIxMod < readState.length; ++stripeIxMod) {
     stripeKey.stripeIx=stripeIxMod + stripeIxFrom;
-    OrcStripeMetadata value=metadataCache.getStripeMetadata(stripeKey);
+    OrcStripeMetadata value=hasFileId ? metadataCache.getStripeMetadata(stripeKey) : null;
     if (value == null || !value.hasAllIndexes(globalInc)) {
       counters.incrCounter(Counter.METADATA_CACHE_MISS);
       ensureMetadataReader();
@@ -12,7 +14,9 @@
         long startTime=counters.startTimeCounter();
         value=new OrcStripeMetadata(stripeKey,metadataReader,si,globalInc,sargColumns);
         counters.incrTimeCounter(Counter.HDFS_TIME_US,startTime);
-        value=metadataCache.putStripeMetadata(value);
+        if (hasFileId) {
+          value=metadataCache.putStripeMetadata(value);
+        }
         if (DebugUtils.isTraceOrcEnabled()) {
           LlapIoImpl.LOG.info("Caching stripe " + stripeKey.stripeIx + " metadata with includes: "+ DebugUtils.toString(globalInc));
         }
