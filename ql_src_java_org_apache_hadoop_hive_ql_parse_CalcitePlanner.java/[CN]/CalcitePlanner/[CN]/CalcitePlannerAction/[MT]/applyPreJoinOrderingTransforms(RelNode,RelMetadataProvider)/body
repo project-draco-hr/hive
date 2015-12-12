@@ -2,20 +2,22 @@
   if (!conf.getVar(HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("mr") && conf.getBoolVar(HiveConf.ConfVars.HIVEOPTIMIZEDISTINCTREWRITE)) {
     basePlan=hepPlan(basePlan,true,mdProvider,HiveExpandDistinctAggregatesRule.INSTANCE);
   }
+  basePlan=hepPlan(basePlan,false,mdProvider,HepMatchOrder.ARBITRARY,HivePreFilteringRule.INSTANCE);
+  basePlan=hepPlan(basePlan,true,mdProvider,new HiveFilterProjectTransposeRule(Filter.class,HiveFilter.DEFAULT_FILTER_FACTORY,HiveProject.class,HiveProject.DEFAULT_PROJECT_FACTORY),new HiveFilterSetOpTransposeRule(HiveFilter.DEFAULT_FILTER_FACTORY),HiveFilterJoinRule.JOIN,HiveFilterJoinRule.FILTER_ON_JOIN,new HiveFilterAggregateTransposeRule(Filter.class,HiveFilter.DEFAULT_FILTER_FACTORY,Aggregate.class),new FilterMergeRule(HiveFilter.DEFAULT_FILTER_FACTORY));
+  basePlan=hepPlan(basePlan,true,mdProvider,new HiveJoinPushTransitivePredicatesRule(Join.class,HiveFilter.DEFAULT_FILTER_FACTORY));
   if (conf.getBoolVar(HiveConf.ConfVars.HIVE_OPTIMIZE_LIMIT_JOIN_TRANSPOSE)) {
     final float reductionProportion=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVE_OPTIMIZE_LIMIT_JOIN_TRANSPOSE_REDUCTION_PERCENTAGE);
     final long reductionTuples=HiveConf.getLongVar(conf,HiveConf.ConfVars.HIVE_OPTIMIZE_LIMIT_JOIN_TRANSPOSE_REDUCTION_TUPLES);
     basePlan=hepPlan(basePlan,true,mdProvider,HiveSortMergeRule.INSTANCE,HiveSortProjectTransposeRule.INSTANCE,HiveSortJoinReduceRule.INSTANCE);
     basePlan=hepPlan(basePlan,true,mdProvider,HepMatchOrder.BOTTOM_UP,new HiveSortRemoveRule(reductionProportion,reductionTuples),HiveProjectSortTransposeRule.INSTANCE);
   }
+  basePlan=hepPlan(basePlan,true,mdProvider,HiveJoinAddNotNullRule.INSTANCE);
+  basePlan=hepPlan(basePlan,true,mdProvider,new HiveFilterProjectTransposeRule(Filter.class,HiveFilter.DEFAULT_FILTER_FACTORY,HiveProject.class,HiveProject.DEFAULT_PROJECT_FACTORY),new HiveFilterSetOpTransposeRule(HiveFilter.DEFAULT_FILTER_FACTORY),HiveFilterJoinRule.JOIN,HiveFilterJoinRule.FILTER_ON_JOIN,new HiveFilterAggregateTransposeRule(Filter.class,HiveFilter.DEFAULT_FILTER_FACTORY,Aggregate.class),new FilterMergeRule(HiveFilter.DEFAULT_FILTER_FACTORY));
   basePlan=hepPlan(basePlan,true,mdProvider,SemiJoinJoinTransposeRule.INSTANCE,SemiJoinFilterTransposeRule.INSTANCE,SemiJoinProjectTransposeRule.INSTANCE);
-  if (conf.getBoolVar(HiveConf.ConfVars.HIVE_CBO_RETPATH_HIVEOP)) {
-    basePlan=hepPlan(basePlan,true,mdProvider,HiveJoinAddNotNullRule.INSTANCE);
-  }
-  basePlan=hepPlan(basePlan,true,mdProvider,ReduceExpressionsRule.PROJECT_INSTANCE,ReduceExpressionsRule.FILTER_INSTANCE,ReduceExpressionsRule.JOIN_INSTANCE,HivePreFilteringRule.INSTANCE,new HiveFilterProjectTransposeRule(Filter.class,HiveFilter.DEFAULT_FILTER_FACTORY,HiveProject.class,HiveProject.DEFAULT_PROJECT_FACTORY),new HiveFilterSetOpTransposeRule(HiveFilter.DEFAULT_FILTER_FACTORY),HiveFilterJoinRule.JOIN,HiveFilterJoinRule.FILTER_ON_JOIN,new FilterAggregateTransposeRule(Filter.class,HiveFilter.DEFAULT_FILTER_FACTORY,Aggregate.class));
-  basePlan=hepPlan(basePlan,false,mdProvider,new HiveJoinPushTransitivePredicatesRule(Join.class,HiveFilter.DEFAULT_FILTER_FACTORY),new HivePartitionPruneRule(conf));
+  basePlan=hepPlan(basePlan,false,mdProvider,new HivePartitionPruneRule(conf));
   HiveRelFieldTrimmer fieldTrimmer=new HiveRelFieldTrimmer(null,cluster,HiveProject.DEFAULT_PROJECT_FACTORY,HiveFilter.DEFAULT_FILTER_FACTORY,HiveJoin.HIVE_JOIN_FACTORY,HiveSemiJoin.HIVE_SEMIJOIN_FACTORY,HiveSortLimit.HIVE_SORT_REL_FACTORY,HiveAggregate.HIVE_AGGR_REL_FACTORY,HiveUnion.UNION_REL_FACTORY);
   basePlan=fieldTrimmer.trim(basePlan);
-  basePlan=hepPlan(basePlan,true,mdProvider,new FilterProjectTransposeRule(Filter.class,HiveFilter.DEFAULT_FILTER_FACTORY,HiveProject.class,HiveProject.DEFAULT_PROJECT_FACTORY));
+  basePlan=hepPlan(basePlan,false,mdProvider,new ProjectMergeRule(true,HiveProject.DEFAULT_PROJECT_FACTORY));
+  basePlan=hepPlan(basePlan,true,mdProvider,new HiveFilterProjectTSTransposeRule(Filter.class,HiveFilter.DEFAULT_FILTER_FACTORY,HiveProject.class,HiveProject.DEFAULT_PROJECT_FACTORY,HiveTableScan.class));
   return basePlan;
 }
