@@ -19,7 +19,25 @@
       res=client.checkLock(res.getLockid());
     }
     long retryDuration=System.currentTimeMillis() - startRetry;
-    DbHiveLock hl=new DbHiveLock(res.getLockid());
+    DbHiveLock hl=new DbHiveLock(res.getLockid(),queryId,lock.getTxnid());
+    if (locks.size() > 0) {
+      boolean logMsg=false;
+      for (      DbHiveLock l : locks) {
+        if (l.txnId != hl.txnId) {
+          logMsg=true;
+          break;
+        }
+ else         if (l.txnId == 0) {
+          if (!l.queryId.equals(hl.queryId)) {
+            logMsg=true;
+            break;
+          }
+        }
+      }
+      if (logMsg) {
+        LOG.warn("adding new DbHiveLock(" + hl + ") while we are already tracking locks: "+ locks);
+      }
+    }
     locks.add(hl);
     if (res.getState() != LockState.ACQUIRED) {
       if (res.getState() == LockState.WAITING) {
