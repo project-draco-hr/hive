@@ -1,0 +1,30 @@
+{
+  Path path=new Path(location);
+  FileSystem fs=path.getFileSystem(conf);
+  List<Path> files;
+  if (!fs.isDirectory(path)) {
+    files=Lists.newArrayList(path);
+  }
+ else {
+    files=new ArrayList<>();
+    RemoteIterator<LocatedFileStatus> iter=fs.listFiles(path,true);
+    while (iter.hasNext()) {
+      LocatedFileStatus lfs=iter.next();
+      if (lfs.isDirectory())       continue;
+      files.add(lfs.getPath());
+    }
+  }
+  for (  Path file : files) {
+    long fileId;
+    try {
+      fileId=SHIMS.getFileId(fs,Path.getPathWithoutSchemeAndAuthority(file).toString());
+    }
+ catch (    UnsupportedOperationException ex) {
+      LOG.error("Cannot cache file metadata for " + location + "; "+ fs.getClass().getCanonicalName()+ " does not support fileId");
+      return;
+    }
+    LOG.info("Caching file metadata for " + file + " (file ID "+ fileId+ ")");
+    file=HdfsUtils.getFileIdPath(fs,file,fileId);
+    tlms.getMS().getFileMetadataHandler(type).cacheFileMetadata(fileId,fs,file);
+  }
+}
