@@ -1,13 +1,18 @@
 {
   TaskWrapper taskWrapper=new TaskWrapper(task,this);
+  SubmissionState result;
   TaskWrapper evictedTask;
 synchronized (lock) {
     evictedTask=waitQueue.offer(taskWrapper);
-    if (evictedTask != taskWrapper) {
+    if (evictedTask == null || evictedTask != taskWrapper) {
       knownTasks.put(taskWrapper.getRequestId(),taskWrapper);
       taskWrapper.setIsInWaitQueue(true);
       if (isDebugEnabled) {
         LOG.debug("{} added to wait queue. Current wait queue size={}",task.getRequestId(),waitQueue.size());
+      }
+      result=evictedTask == null ? SubmissionState.ACCEPTED : SubmissionState.EVICTED_OTHER;
+      if (isDebugEnabled && evictedTask != null) {
+        LOG.debug("Eviction: {} {} {}",taskWrapper,result,evictedTask);
       }
     }
  else {
@@ -15,7 +20,11 @@ synchronized (lock) {
         LOG.info("wait queue full, size={}. {} not added",waitQueue.size(),task.getRequestId());
       }
       evictedTask.getTaskRunnerCallable().killTask();
-      throw new RejectedExecutionException("Wait queue full");
+      result=SubmissionState.REJECTED;
+      if (isDebugEnabled) {
+        LOG.debug("{} is {} as wait queue is full",taskWrapper.getRequestId(),result);
+      }
+      return result;
     }
   }
   boolean canFinish=taskWrapper.getTaskRunnerCallable().canFinish();
@@ -35,4 +44,5 @@ synchronized (lock) {
 synchronized (lock) {
     lock.notify();
   }
+  return result;
 }

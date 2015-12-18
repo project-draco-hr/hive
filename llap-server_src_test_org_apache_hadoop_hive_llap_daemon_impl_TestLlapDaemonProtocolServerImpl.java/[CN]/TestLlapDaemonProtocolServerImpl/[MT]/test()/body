@@ -2,13 +2,16 @@
   LlapConfiguration daemonConf=new LlapConfiguration();
   int rpcPort=HiveConf.getIntVar(daemonConf,ConfVars.LLAP_DAEMON_RPC_PORT);
   int numHandlers=HiveConf.getIntVar(daemonConf,ConfVars.LLAP_DAEMON_RPC_NUM_HANDLERS);
-  LlapDaemonProtocolServerImpl server=new LlapDaemonProtocolServerImpl(numHandlers,mock(ContainerRunner.class),new AtomicReference<InetSocketAddress>(),new AtomicReference<InetSocketAddress>(),rpcPort,rpcPort + 1);
+  ContainerRunner containerRunnerMock=mock(ContainerRunner.class);
+  LlapDaemonProtocolServerImpl server=new LlapDaemonProtocolServerImpl(numHandlers,containerRunnerMock,new AtomicReference<InetSocketAddress>(),new AtomicReference<InetSocketAddress>(),rpcPort,rpcPort + 1);
+  when(containerRunnerMock.submitWork(any(SubmitWorkRequestProto.class))).thenReturn(SubmitWorkResponseProto.newBuilder().setSubmissionState(SubmissionStateProto.ACCEPTED).build());
   try {
     server.init(new Configuration());
     server.start();
     InetSocketAddress serverAddr=server.getBindAddress();
     LlapDaemonProtocolBlockingPB client=new LlapDaemonProtocolClientImpl(new Configuration(),serverAddr.getHostName(),serverAddr.getPort(),null,null);
-    client.submitWork(null,SubmitWorkRequestProto.newBuilder().setAmHost("amhost").setAmPort(2000).build());
+    SubmitWorkResponseProto responseProto=client.submitWork(null,SubmitWorkRequestProto.newBuilder().setAmHost("amhost").setAmPort(2000).build());
+    assertEquals(responseProto.getSubmissionState().name(),SubmissionStateProto.ACCEPTED.name());
   }
   finally {
     server.stop();

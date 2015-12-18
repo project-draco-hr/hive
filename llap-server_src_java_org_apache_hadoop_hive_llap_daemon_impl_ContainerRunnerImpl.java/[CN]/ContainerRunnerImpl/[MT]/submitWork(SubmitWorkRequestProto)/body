@@ -5,6 +5,8 @@
   }
   String ndcContextString=request.getFragmentSpec().getFragmentIdentifierString();
   NDC.push(ndcContextString);
+  Scheduler.SubmissionState submissionState;
+  SubmitWorkResponseProto.Builder responseBuilder=SubmitWorkResponseProto.newBuilder();
   try {
     Map<String,String> env=new HashMap<>();
     env.putAll(localEnv);
@@ -24,15 +26,18 @@
     dib.reset(tokenBytes,tokenBytes.length);
     credentials.readTokenStorageStream(dib);
     Token<JobTokenIdentifier> jobToken=TokenCache.getSessionToken(credentials);
-    LOG.debug("Registering request with the ShuffleHandler");
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Registering request with the ShuffleHandler");
+    }
     ShuffleHandler.get().registerDag(request.getApplicationIdString(),dagIdentifier,jobToken,request.getUser(),localDirs);
     TaskRunnerCallable callable=new TaskRunnerCallable(request,fragmentInfo,new Configuration(getConfig()),new LlapExecutionContext(localAddress.get().getHostName(),queryTracker),env,credentials,memoryPerExecutor,amReporter,confParams,metrics,killedTaskHandler,this);
-    try {
-      executorService.schedule(callable);
+    submissionState=executorService.schedule(callable);
+    if (LOG.isInfoEnabled()) {
+      LOG.info("SubmissionState for {} : {} ",ndcContextString,submissionState);
     }
- catch (    RejectedExecutionException e) {
+    if (submissionState.equals(Scheduler.SubmissionState.REJECTED)) {
       fragmentComplete(fragmentInfo);
-      throw e;
+      return responseBuilder.setSubmissionState(SubmissionStateProto.valueOf(submissionState.name())).build();
     }
     metrics.incrExecutorTotalRequestsHandled();
     metrics.incrExecutorNumQueuedRequests();
@@ -40,4 +45,6 @@
   finally {
     NDC.pop();
   }
+  responseBuilder.setSubmissionState(SubmissionStateProto.valueOf(submissionState.name()));
+  return responseBuilder.build();
 }

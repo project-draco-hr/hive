@@ -30,6 +30,17 @@ synchronized (containerInfo) {
   getContext().taskStartedRemotely(taskSpec.getTaskAttemptID(),containerId);
   communicator.sendSubmitWork(requestProto,host,port,new TaskCommunicator.ExecuteRequestCallback<SubmitWorkResponseProto>(){
     @Override public void setResponse(    SubmitWorkResponseProto response){
+      if (response.hasSubmissionState()) {
+        LlapDaemonProtocolProtos.SubmissionStateProto ss=response.getSubmissionState();
+        if (ss.equals(LlapDaemonProtocolProtos.SubmissionStateProto.REJECTED)) {
+          LOG.info("Unable to run task: " + taskSpec.getTaskAttemptID() + " on containerId: "+ containerId+ ", Service Busy");
+          getContext().taskKilled(taskSpec.getTaskAttemptID(),TaskAttemptEndReason.EXECUTOR_BUSY,"Service Busy");
+          return;
+        }
+      }
+ else {
+        throw new RuntimeException("SubmissionState in response is expected!");
+      }
       LOG.info("Successfully launched task: " + taskSpec.getTaskAttemptID());
     }
     @Override public void indicateError(    Throwable t){
@@ -39,15 +50,8 @@ synchronized (containerInfo) {
       }
       if (t instanceof RemoteException) {
         RemoteException re=(RemoteException)t;
-        String message=re.toString();
-        if (message.contains(RejectedExecutionException.class.getName())) {
-          LOG.info("Unable to run task: " + taskSpec.getTaskAttemptID() + " on containerId: "+ containerId+ ", Service Busy");
-          getContext().taskKilled(taskSpec.getTaskAttemptID(),TaskAttemptEndReason.EXECUTOR_BUSY,"Service Busy");
-        }
- else {
-          LOG.info("Failed to run task: " + taskSpec.getTaskAttemptID() + " on containerId: "+ containerId,t);
-          getContext().taskFailed(taskSpec.getTaskAttemptID(),TaskAttemptEndReason.OTHER,t.toString());
-        }
+        LOG.info("Failed to run task: " + taskSpec.getTaskAttemptID() + " on containerId: "+ containerId,t);
+        getContext().taskFailed(taskSpec.getTaskAttemptID(),TaskAttemptEndReason.OTHER,t.toString());
       }
  else {
         if (t instanceof IOException) {
