@@ -1,15 +1,23 @@
 {
   int badCallCount=0;
   int nextLog=4;
-  while (memoryToReserve > 0) {
-    long usedMem=usedMemory.get(), newUsedMem=usedMem + memoryToReserve;
+  long evictedTotalMetric=0, reservedTotalMetric=0, remainingToReserve=memoryToReserve;
+  boolean result=true;
+  while (remainingToReserve > 0) {
+    long usedMem=usedMemory.get(), newUsedMem=usedMem + remainingToReserve;
     if (newUsedMem <= maxSize) {
-      if (usedMemory.compareAndSet(usedMem,newUsedMem))       break;
+      if (usedMemory.compareAndSet(usedMem,newUsedMem)) {
+        reservedTotalMetric+=remainingToReserve;
+        break;
+      }
       continue;
     }
-    long evicted=evictor.evictSomeBlocks(memoryToReserve);
+    long evicted=evictor.evictSomeBlocks(remainingToReserve);
     if (evicted == 0) {
-      if (!waitForEviction)       return false;
+      if (!waitForEviction) {
+        result=false;
+        break;
+      }
       ++badCallCount;
       if (badCallCount == nextLog) {
         LlapIoImpl.LOG.warn("Cannot evict blocks for " + badCallCount + " calls; cache full?");
@@ -19,21 +27,25 @@
         }
  catch (        InterruptedException e) {
           Thread.currentThread().interrupt();
-          return false;
+          result=false;
+          break;
         }
       }
       continue;
     }
+    evictedTotalMetric+=evicted;
     badCallCount=0;
     while (true) {
-      long reserveWithEviction=Math.min(memoryToReserve,maxSize - usedMem + evicted);
-      if (usedMemory.compareAndSet(usedMem,usedMem - evicted + reserveWithEviction)) {
-        memoryToReserve-=reserveWithEviction;
+      long availableToReserveAfterEvict=maxSize - usedMem + evicted;
+      long reservedAfterEvict=Math.min(remainingToReserve,availableToReserveAfterEvict);
+      if (usedMemory.compareAndSet(usedMem,usedMem - evicted + reservedAfterEvict)) {
+        remainingToReserve-=reservedAfterEvict;
+        reservedTotalMetric+=reservedAfterEvict;
         break;
       }
       usedMem=usedMemory.get();
     }
   }
-  metrics.incrCacheCapacityUsed(memoryToReserve);
-  return true;
+  metrics.incrCacheCapacityUsed(reservedTotalMetric - evictedTotalMetric);
+  return result;
 }

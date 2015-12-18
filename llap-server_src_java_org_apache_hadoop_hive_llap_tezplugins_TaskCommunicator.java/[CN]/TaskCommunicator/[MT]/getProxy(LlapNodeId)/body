@@ -2,7 +2,27 @@
   String hostId=getHostIdentifier(nodeId.getHostname(),nodeId.getPort());
   LlapDaemonProtocolBlockingPB proxy=hostProxies.get(hostId);
   if (proxy == null) {
-    proxy=new LlapDaemonProtocolClientImpl(getConfig(),nodeId.getHostname(),nodeId.getPort(),retryPolicy,socketFactory);
+    if (llapToken == null) {
+      proxy=new LlapDaemonProtocolClientImpl(getConfig(),nodeId.getHostname(),nodeId.getPort(),retryPolicy,socketFactory);
+    }
+ else {
+      UserGroupInformation ugi;
+      try {
+        ugi=UserGroupInformation.getCurrentUser();
+      }
+ catch (      IOException e) {
+        throw new RuntimeException(e);
+      }
+      Token<LlapTokenIdentifier> nodeToken=new Token<LlapTokenIdentifier>(llapToken);
+      SecurityUtil.setTokenService(nodeToken,NetUtils.createSocketAddrForHost(nodeId.getHostname(),nodeId.getPort()));
+      ugi.addToken(nodeToken);
+      proxy=ugi.doAs(new PrivilegedAction<LlapDaemonProtocolBlockingPB>(){
+        @Override public LlapDaemonProtocolBlockingPB run(){
+          return new LlapDaemonProtocolClientImpl(getConfig(),nodeId.getHostname(),nodeId.getPort(),retryPolicy,socketFactory);
+        }
+      }
+);
+    }
     LlapDaemonProtocolBlockingPB proxyOld=hostProxies.putIfAbsent(hostId,proxy);
     if (proxyOld != null) {
       proxy=proxyOld;

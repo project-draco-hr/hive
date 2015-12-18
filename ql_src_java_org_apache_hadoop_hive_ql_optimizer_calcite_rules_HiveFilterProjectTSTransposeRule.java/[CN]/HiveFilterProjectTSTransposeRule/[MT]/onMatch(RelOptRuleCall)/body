@@ -1,0 +1,18 @@
+{
+  final Filter filter=call.rel(0);
+  final Project project=call.rel(1);
+  if (RexOver.containsOver(project.getProjects(),null)) {
+    return;
+  }
+  if (RexUtil.containsCorrelation(filter.getCondition())) {
+    return;
+  }
+  RexNode newCondition=RelOptUtil.pushPastProject(filter.getCondition(),project);
+  final RelDataTypeFactory typeFactory=filter.getCluster().getTypeFactory();
+  if (RexUtil.isNullabilityCast(typeFactory,newCondition)) {
+    newCondition=((RexCall)newCondition).getOperands().get(0);
+  }
+  RelNode newFilterRel=filterFactory == null ? filter.copy(filter.getTraitSet(),project.getInput(),newCondition) : filterFactory.createFilter(project.getInput(),newCondition);
+  RelNode newProjRel=projectFactory == null ? project.copy(project.getTraitSet(),newFilterRel,project.getProjects(),project.getRowType()) : projectFactory.createProject(newFilterRel,project.getProjects(),project.getRowType().getFieldNames());
+  call.transformTo(newProjRel);
+}

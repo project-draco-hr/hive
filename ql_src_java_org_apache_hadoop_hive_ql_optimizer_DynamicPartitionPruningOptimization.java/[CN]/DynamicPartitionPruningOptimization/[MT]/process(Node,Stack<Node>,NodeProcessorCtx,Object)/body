@@ -9,7 +9,8 @@
  else {
     throw new IllegalArgumentException("expected parseContext to be either " + "OptimizeTezProcContext or OptimizeSparkProcContext, but found " + procCtx.getClass().getName());
   }
-  final FilterOperator filter=(FilterOperator)nd;
+  FilterOperator filter=(FilterOperator)nd;
+  FilterDesc desc=filter.getConf();
   TableScanOperator ts=null;
   if (!parseContext.getConf().getBoolVar(ConfVars.TEZ_DYNAMIC_PARTITION_PRUNING) && !parseContext.getConf().getBoolVar(ConfVars.SPARK_DYNAMIC_PARTITION_PRUNING)) {
     return null;
@@ -18,14 +19,13 @@
   if (filter.getParentOperators().size() == 1 && filter.getParentOperators().get(0) instanceof TableScanOperator) {
     ts=(TableScanOperator)filter.getParentOperators().get(0);
   }
-  final ExprNodeDesc filterPredicate=filter.getConf().getPredicate(), tsPredicate=ts != null ? ts.getConf().getFilterExpr() : null, predicateToUse=(tsPredicate == null) ? filterPredicate : tsPredicate;
   if (LOG.isDebugEnabled()) {
     LOG.debug("Parent: " + filter.getParentOperators().get(0));
-    LOG.debug("Filter: " + predicateToUse.getExprString());
+    LOG.debug("Filter: " + desc.getPredicateString());
     LOG.debug("TableScan: " + ts);
   }
   removerContext.dynLists.clear();
-  walkExprTree(predicateToUse,removerContext);
+  walkExprTree(desc.getPredicate(),removerContext);
   for (  DynamicListContext ctx : removerContext) {
     String column=extractColName(ctx.parent);
     if (ts != null && column != null) {
@@ -54,20 +54,16 @@
         LOG.debug("Column " + column + " is not a partition column");
       }
     }
-    if (predicateToUse == filterPredicate) {
-      removeDppExpr(filter.getConf(),ctx);
+    ExprNodeDesc constNode=new ExprNodeConstantDesc(ctx.parent.getTypeInfo(),true);
+    if (ctx.grandParent == null) {
+      desc.setPredicate(constNode);
     }
  else {
-      removeDppExpr(ts.getConf(),ctx);
+      int i=ctx.grandParent.getChildren().indexOf(ctx.parent);
+      ctx.grandParent.getChildren().remove(i);
+      ctx.grandParent.getChildren().add(i,constNode);
     }
   }
-  if (predicateToUse == tsPredicate) {
-    removerContext=new DynamicPartitionPrunerContext();
-    removerContext.dynLists.clear();
-    walkExprTree(filterPredicate,removerContext);
-    for (    DynamicListContext ctx : removerContext) {
-      removeDppExpr(filter.getConf(),ctx);
-    }
-  }
+  cleanTableScanFilters(ts);
   return false;
 }

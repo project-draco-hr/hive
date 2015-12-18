@@ -1,11 +1,15 @@
 {
   Join join=call.rel(0);
+  HiveRulesRegistry registry=call.getPlanner().getContext().unwrap(HiveRulesRegistry.class);
+  if (registry != null) {
+    registry.registerVisited(this,join);
+  }
   RelOptPredicateList preds=RelMetadataQuery.getPulledUpPredicates(join);
   RexBuilder rB=join.getCluster().getRexBuilder();
   RelNode lChild=call.rel(1);
   RelNode rChild=call.rel(2);
-  List<RexNode> leftPreds=getValidPreds(preds.leftInferredPredicates,lChild.getRowType().getFieldList());
-  List<RexNode> rightPreds=getValidPreds(preds.rightInferredPredicates,rChild.getRowType().getFieldList());
+  List<RexNode> leftPreds=getValidPreds(join.getCluster(),lChild,preds.leftInferredPredicates,lChild.getRowType());
+  List<RexNode> rightPreds=getValidPreds(join.getCluster(),rChild,preds.rightInferredPredicates,rChild.getRowType());
   if (leftPreds.isEmpty() && rightPreds.isEmpty()) {
     return;
   }
@@ -21,5 +25,8 @@
   }
   RelNode newRel=join.copy(join.getTraitSet(),join.getCondition(),lChild,rChild,join.getJoinType(),join.isSemiJoinDone());
   call.getPlanner().onCopy(join,newRel);
+  if (registry != null) {
+    registry.registerVisited(this,newRel);
+  }
   call.transformTo(newRel);
 }

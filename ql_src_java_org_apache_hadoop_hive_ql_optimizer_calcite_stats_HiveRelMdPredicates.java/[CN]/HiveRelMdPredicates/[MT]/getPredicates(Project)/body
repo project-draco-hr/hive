@@ -1,0 +1,38 @@
+{
+  RelNode child=project.getInput();
+  final RexBuilder rexBuilder=project.getCluster().getRexBuilder();
+  RelOptPredicateList childInfo=RelMetadataQuery.getPulledUpPredicates(child);
+  List<RexNode> projectPullUpPredicates=new ArrayList<RexNode>();
+  HashMultimap<Integer,Integer> inpIndxToOutIndxMap=HashMultimap.create();
+  ImmutableBitSet.Builder columnsMappedBuilder=ImmutableBitSet.builder();
+  Mapping m=Mappings.create(MappingType.PARTIAL_FUNCTION,child.getRowType().getFieldCount(),project.getRowType().getFieldCount());
+  for (  Ord<RexNode> o : Ord.zip(project.getProjects())) {
+    if (o.e instanceof RexInputRef) {
+      int sIdx=((RexInputRef)o.e).getIndex();
+      m.set(sIdx,o.i);
+      inpIndxToOutIndxMap.put(sIdx,o.i);
+      columnsMappedBuilder.set(sIdx);
+    }
+  }
+  final ImmutableBitSet columnsMapped=columnsMappedBuilder.build();
+  for (  RexNode r : childInfo.pulledUpPredicates) {
+    ImmutableBitSet rCols=RelOptUtil.InputFinder.bits(r);
+    if (columnsMapped.contains(rCols)) {
+      r=r.accept(new RexPermuteInputsShuttle(m,child));
+      projectPullUpPredicates.add(r);
+    }
+  }
+  for (  Ord<RexNode> expr : Ord.zip(project.getProjects())) {
+    if (RexLiteral.isNullLiteral(expr.e)) {
+      projectPullUpPredicates.add(rexBuilder.makeCall(SqlStdOperatorTable.IS_NULL,rexBuilder.makeInputRef(project,expr.i)));
+    }
+ else     if (expr.e instanceof RexLiteral) {
+      final RexLiteral literal=(RexLiteral)expr.e;
+      projectPullUpPredicates.add(rexBuilder.makeCall(SqlStdOperatorTable.EQUALS,rexBuilder.makeInputRef(project,expr.i),literal));
+    }
+ else     if (expr.e instanceof RexCall && HiveCalciteUtil.isDeterministicFuncOnLiterals(expr.e)) {
+      projectPullUpPredicates.add(rexBuilder.makeCall(SqlStdOperatorTable.EQUALS,rexBuilder.makeInputRef(project,expr.i),expr.e));
+    }
+  }
+  return RelOptPredicateList.of(projectPullUpPredicates);
+}

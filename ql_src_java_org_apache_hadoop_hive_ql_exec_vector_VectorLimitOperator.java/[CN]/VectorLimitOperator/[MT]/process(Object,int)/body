@@ -1,11 +1,30 @@
 {
   VectorizedRowBatch batch=(VectorizedRowBatch)row;
-  if (currCount < limit) {
-    batch.size=Math.min(batch.size,limit - currCount);
-    forward(row,inputObjInspectors[tag]);
+  if (currCount + batch.size < offset) {
     currCount+=batch.size;
   }
- else {
+ else   if (currCount >= offset + limit) {
     setDone(true);
+  }
+ else {
+    int skipSize=0;
+    if (currCount < offset) {
+      skipSize=offset - currCount;
+    }
+    batch.size=Math.min(batch.size,offset + limit - currCount);
+    if (batch.selectedInUse == false) {
+      batch.selectedInUse=true;
+      batch.selected=new int[batch.size];
+      for (int i=0; i < batch.size - skipSize; i++) {
+        batch.selected[i]=skipSize + i;
+      }
+    }
+ else {
+      for (int i=0; i < batch.size - skipSize; i++) {
+        batch.selected[i]=batch.selected[skipSize + i];
+      }
+    }
+    forward(row,inputObjInspectors[tag]);
+    currCount+=batch.size;
   }
 }

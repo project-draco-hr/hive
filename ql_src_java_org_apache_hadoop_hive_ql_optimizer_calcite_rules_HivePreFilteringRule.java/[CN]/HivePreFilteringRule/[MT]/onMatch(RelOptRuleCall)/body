@@ -5,48 +5,59 @@
     registry.registerVisited(this,filter);
   }
   final RexBuilder rexBuilder=filter.getCluster().getRexBuilder();
-  final RexNode condition=RexUtil.pullFactors(rexBuilder,filter.getCondition());
-  List<RexNode> commonOperands=new ArrayList<>();
-switch (condition.getKind()) {
+  RexNode topFilterCondition=RexUtil.pullFactors(rexBuilder,filter.getCondition());
+  List<RexNode> operandsToPushDown=new ArrayList<>();
+  List<RexNode> deterministicExprs=new ArrayList<>();
+  List<RexNode> nonDeterministicExprs=new ArrayList<>();
+switch (topFilterCondition.getKind()) {
 case AND:
-    ImmutableList<RexNode> operands=RexUtil.flattenAnd(((RexCall)condition).getOperands());
-  for (  RexNode operand : operands) {
-    if (operand.getKind() == SqlKind.OR) {
-      commonOperands.addAll(extractCommonOperands(rexBuilder,operand));
+    ImmutableList<RexNode> operands=RexUtil.flattenAnd(((RexCall)topFilterCondition).getOperands());
+  Set<String> operandsToPushDownDigest=new HashSet<String>();
+List<RexNode> extractedCommonOperands=null;
+for (RexNode operand : operands) {
+if (operand.getKind() == SqlKind.OR) {
+  extractedCommonOperands=extractCommonOperands(rexBuilder,operand);
+  for (  RexNode extractedExpr : extractedCommonOperands) {
+    if (operandsToPushDownDigest.add(extractedExpr.toString())) {
+      operandsToPushDown.add(extractedExpr);
     }
   }
+}
+if (HiveCalciteUtil.isDeterministic(operand)) {
+  deterministicExprs.add(operand);
+}
+ else {
+  nonDeterministicExprs.add(operand);
+}
+}
+if (nonDeterministicExprs.size() > 0) {
+for (RexNode expr : deterministicExprs) {
+if (!operandsToPushDownDigest.contains(expr.toString())) {
+  operandsToPushDown.add(expr);
+  operandsToPushDownDigest.add(expr.toString());
+}
+}
+topFilterCondition=RexUtil.pullFactors(rexBuilder,RexUtil.composeConjunction(rexBuilder,nonDeterministicExprs,false));
+}
 break;
 case OR:
-commonOperands=extractCommonOperands(rexBuilder,condition);
+operandsToPushDown=extractCommonOperands(rexBuilder,topFilterCondition);
 break;
 default :
 return;
 }
-if (commonOperands.isEmpty()) {
+if (operandsToPushDown.isEmpty()) {
 return;
 }
-final RelOptPredicateList predicates=RelMetadataQuery.getPulledUpPredicates(filter.getInput());
-final List<RexNode> newConjuncts=new ArrayList<>();
-for (RexNode commonOperand : commonOperands) {
-boolean found=false;
-for (RexNode conjunct : predicates.pulledUpPredicates) {
-if (commonOperand.toString().equals(conjunct.toString())) {
-found=true;
-break;
-}
-}
-if (!found) {
-newConjuncts.add(commonOperand);
-}
-}
+final List<RexNode> newConjuncts=HiveCalciteUtil.getPredsNotPushedAlready(filter.getInput(),operandsToPushDown);
 if (newConjuncts.isEmpty()) {
 return;
 }
-final RexNode newCondition=RexUtil.pullFactors(rexBuilder,RexUtil.composeConjunction(rexBuilder,newConjuncts,false));
-RelNode newFilter=filterFactory.createFilter(filter.getInput(),newCondition);
-RelNode newTopFilter=filterFactory.createFilter(newFilter,condition);
+final RexNode newChildFilterCondition=RexUtil.pullFactors(rexBuilder,RexUtil.composeConjunction(rexBuilder,newConjuncts,false));
+RelNode newChildFilter=filterFactory.createFilter(filter.getInput(),newChildFilterCondition);
+RelNode newTopFilter=filterFactory.createFilter(newChildFilter,topFilterCondition);
 if (registry != null) {
-registry.registerVisited(this,newFilter);
+registry.registerVisited(this,newChildFilter);
 registry.registerVisited(this,newTopFilter);
 }
 call.transformTo(newTopFilter);

@@ -1,9 +1,10 @@
 {
   long lockId=((DbHiveLock)hiveLock).lockId;
+  boolean removed=false;
   try {
     LOG.debug("Unlocking " + hiveLock);
     client.unlock(lockId);
-    boolean removed=locks.remove(hiveLock);
+    removed=locks.remove(hiveLock);
     Metrics metrics=MetricsFactory.getInstance();
     if (metrics != null) {
       try {
@@ -16,6 +17,7 @@
     LOG.debug("Removed a lock " + removed);
   }
  catch (  NoSuchLockException e) {
+    removed=locks.remove(hiveLock);
     LOG.error("Metastore could find no record of lock " + JavaUtils.lockIdToString(lockId));
     throw new LockException(e,ErrorMsg.LOCK_NO_SUCH_LOCK,JavaUtils.lockIdToString(lockId));
   }
@@ -24,5 +26,10 @@ catch (  TxnOpenException e) {
   }
 catch (  TException e) {
     throw new LockException(ErrorMsg.METASTORE_COMMUNICATION_FAILED.getMsg(),e);
+  }
+ finally {
+    if (removed) {
+      LOG.debug("Removed a lock " + hiveLock);
+    }
   }
 }

@@ -1,0 +1,160 @@
+{
+  if (obj == null) {
+    column.noNulls=false;
+    column.isNull[rowId]=true;
+  }
+ else {
+switch (inspector.getCategory()) {
+case PRIMITIVE:
+switch (((PrimitiveObjectInspector)inspector).getPrimitiveCategory()) {
+case BOOLEAN:
+{
+          LongColumnVector vector=(LongColumnVector)column;
+          vector.vector[rowId]=((BooleanObjectInspector)inspector).get(obj) ? 1 : 0;
+          break;
+        }
+case BYTE:
+{
+        LongColumnVector vector=(LongColumnVector)column;
+        vector.vector[rowId]=((ByteObjectInspector)inspector).get(obj);
+        break;
+      }
+case SHORT:
+{
+      LongColumnVector vector=(LongColumnVector)column;
+      vector.vector[rowId]=((ShortObjectInspector)inspector).get(obj);
+      break;
+    }
+case INT:
+{
+    LongColumnVector vector=(LongColumnVector)column;
+    vector.vector[rowId]=((IntObjectInspector)inspector).get(obj);
+    break;
+  }
+case LONG:
+{
+  LongColumnVector vector=(LongColumnVector)column;
+  vector.vector[rowId]=((LongObjectInspector)inspector).get(obj);
+  break;
+}
+case FLOAT:
+{
+DoubleColumnVector vector=(DoubleColumnVector)column;
+vector.vector[rowId]=((FloatObjectInspector)inspector).get(obj);
+break;
+}
+case DOUBLE:
+{
+DoubleColumnVector vector=(DoubleColumnVector)column;
+vector.vector[rowId]=((DoubleObjectInspector)inspector).get(obj);
+break;
+}
+case BINARY:
+{
+BytesColumnVector vector=(BytesColumnVector)column;
+BytesWritable blob=((BinaryObjectInspector)inspector).getPrimitiveWritableObject(obj);
+vector.setVal(rowId,blob.getBytes(),0,blob.getLength());
+break;
+}
+case STRING:
+{
+BytesColumnVector vector=(BytesColumnVector)column;
+Text blob=((StringObjectInspector)inspector).getPrimitiveWritableObject(obj);
+vector.setVal(rowId,blob.getBytes(),0,blob.getLength());
+break;
+}
+case VARCHAR:
+{
+BytesColumnVector vector=(BytesColumnVector)column;
+Text blob=((HiveVarcharObjectInspector)inspector).getPrimitiveWritableObject(obj).getTextValue();
+vector.setVal(rowId,blob.getBytes(),0,blob.getLength());
+break;
+}
+case CHAR:
+{
+BytesColumnVector vector=(BytesColumnVector)column;
+Text blob=((HiveCharObjectInspector)inspector).getPrimitiveWritableObject(obj).getTextValue();
+vector.setVal(rowId,blob.getBytes(),0,blob.getLength());
+break;
+}
+case TIMESTAMP:
+{
+LongColumnVector vector=(LongColumnVector)column;
+Timestamp ts=((TimestampObjectInspector)inspector).getPrimitiveJavaObject(obj);
+vector.vector[rowId]=ts.getTime() * NANOS_PER_MILLI + (ts.getNanos() % NANOS_PER_MILLI);
+break;
+}
+case DATE:
+{
+LongColumnVector vector=(LongColumnVector)column;
+vector.vector[rowId]=((DateObjectInspector)inspector).getPrimitiveWritableObject(obj).getDays();
+break;
+}
+case DECIMAL:
+{
+DecimalColumnVector vector=(DecimalColumnVector)column;
+vector.set(rowId,((HiveDecimalObjectInspector)inspector).getPrimitiveWritableObject(obj));
+break;
+}
+}
+break;
+case STRUCT:
+{
+StructColumnVector vector=(StructColumnVector)column;
+StructObjectInspector oi=(StructObjectInspector)inspector;
+List<? extends StructField> fields=oi.getAllStructFieldRefs();
+for (int c=0; c < vector.fields.length; ++c) {
+StructField field=fields.get(c);
+setColumn(rowId,vector.fields[c],field.getFieldObjectInspector(),oi.getStructFieldData(obj,field));
+}
+break;
+}
+case UNION:
+{
+UnionColumnVector vector=(UnionColumnVector)column;
+UnionObjectInspector oi=(UnionObjectInspector)inspector;
+int tag=oi.getTag(obj);
+vector.tags[rowId]=tag;
+setColumn(rowId,vector.fields[tag],oi.getObjectInspectors().get(tag),oi.getField(obj));
+break;
+}
+case LIST:
+{
+ListColumnVector vector=(ListColumnVector)column;
+ListObjectInspector oi=(ListObjectInspector)inspector;
+int offset=vector.childCount;
+int length=oi.getListLength(obj);
+vector.offsets[rowId]=offset;
+vector.lengths[rowId]=length;
+vector.child.ensureSize(offset + length,true);
+vector.childCount+=length;
+for (int c=0; c < length; ++c) {
+setColumn(offset + c,vector.child,oi.getListElementObjectInspector(),oi.getListElement(obj,c));
+}
+break;
+}
+case MAP:
+{
+MapColumnVector vector=(MapColumnVector)column;
+MapObjectInspector oi=(MapObjectInspector)inspector;
+int offset=vector.childCount;
+Set map=oi.getMap(obj).entrySet();
+int length=map.size();
+vector.offsets[rowId]=offset;
+vector.lengths[rowId]=length;
+vector.keys.ensureSize(offset + length,true);
+vector.values.ensureSize(offset + length,true);
+vector.childCount+=length;
+for (Object item : map) {
+Map.Entry pair=(Map.Entry)item;
+setColumn(offset,vector.keys,oi.getMapKeyObjectInspector(),pair.getKey());
+setColumn(offset,vector.values,oi.getMapValueObjectInspector(),pair.getValue());
+offset+=1;
+}
+break;
+}
+default :
+throw new IllegalArgumentException("Unknown ObjectInspector kind " + inspector.getCategory());
+}
+}
+}

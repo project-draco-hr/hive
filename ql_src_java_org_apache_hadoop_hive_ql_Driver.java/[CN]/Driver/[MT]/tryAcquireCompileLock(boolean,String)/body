@@ -1,0 +1,27 @@
+{
+  final ReentrantLock compileLock=isParallelEnabled ? SessionState.get().getCompileLock() : globalCompileLock;
+  long maxCompileLockWaitTime=HiveConf.getTimeVar(this.conf,ConfVars.HIVE_SERVER2_COMPILE_LOCK_TIMEOUT,TimeUnit.SECONDS);
+  if (maxCompileLockWaitTime > 0) {
+    try {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Waiting to acquire compile lock: " + command);
+      }
+      if (!compileLock.tryLock(maxCompileLockWaitTime,TimeUnit.SECONDS)) {
+        errorMessage=ErrorMsg.COMPILE_LOCK_TIMED_OUT.getErrorCodedMsg();
+        LOG.error(errorMessage + ": " + command);
+        return null;
+      }
+    }
+ catch (    InterruptedException e) {
+      Thread.currentThread().interrupt();
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Interrupted Exception ignored",e);
+      }
+      return null;
+    }
+  }
+ else {
+    compileLock.lock();
+  }
+  return compileLock;
+}

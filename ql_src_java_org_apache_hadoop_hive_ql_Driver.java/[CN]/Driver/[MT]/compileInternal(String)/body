@@ -1,8 +1,10 @@
 {
   boolean isParallelEnabled=SessionState.get().isHiveServerQuery() && this.isParallelEnabled;
   int ret;
-  final ReentrantLock compileLock=isParallelEnabled ? SessionState.get().getCompileLock() : globalCompileLock;
-  compileLock.lock();
+  final ReentrantLock compileLock=tryAcquireCompileLock(isParallelEnabled,command);
+  if (compileLock == null) {
+    return ErrorMsg.COMPILE_LOCK_TIMED_OUT.getErrorCode();
+  }
   try {
     if (isParallelEnabled && LOG.isDebugEnabled()) {
       LOG.debug("Entering compile: " + command);

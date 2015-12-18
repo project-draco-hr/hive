@@ -1,0 +1,37 @@
+{
+  long tmpNoNulls=0;
+  long maxNoNulls=0;
+  if (pred instanceof ExprNodeColumnDesc) {
+    ColStatistics cs=stats.getColumnStatisticsFromColName(((ExprNodeColumnDesc)pred).getColumn());
+    if (cs != null) {
+      tmpNoNulls=cs.getNumNulls();
+    }
+  }
+ else   if (pred instanceof ExprNodeGenericFuncDesc || pred instanceof ExprNodeColumnListDesc) {
+    long noNullsOfChild=0;
+    for (    ExprNodeDesc childExpr : pred.getChildren()) {
+      noNullsOfChild=getMaxNulls(stats,childExpr);
+      if (noNullsOfChild > tmpNoNulls) {
+        tmpNoNulls=noNullsOfChild;
+      }
+    }
+  }
+ else   if (pred instanceof ExprNodeConstantDesc) {
+    if (ExprNodeDescUtils.isNullConstant(pred)) {
+      tmpNoNulls=stats.getNumRows();
+    }
+ else {
+      tmpNoNulls=0;
+    }
+  }
+ else   if (pred instanceof ExprNodeDynamicListDesc) {
+    tmpNoNulls=0;
+  }
+ else   if (pred instanceof ExprNodeFieldDesc) {
+    tmpNoNulls=getMaxNulls(stats,((ExprNodeFieldDesc)pred).getDesc());
+  }
+  if (tmpNoNulls > maxNoNulls) {
+    maxNoNulls=tmpNoNulls;
+  }
+  return maxNoNulls;
+}

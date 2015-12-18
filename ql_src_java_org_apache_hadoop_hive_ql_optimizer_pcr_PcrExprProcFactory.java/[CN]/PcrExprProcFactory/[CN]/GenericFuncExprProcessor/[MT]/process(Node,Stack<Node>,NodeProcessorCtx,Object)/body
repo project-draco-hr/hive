@@ -114,13 +114,22 @@
     if (lhs instanceof ExprNodeGenericFuncDesc) {
       if (FunctionRegistry.isDeterministic(((ExprNodeGenericFuncDesc)lhs).getGenericUDF())) {
         boolean hasOnlyPartCols=true;
+        boolean hasDynamicListDesc=false;
         for (        ExprNodeDesc ed : ((ExprNodeGenericFuncDesc)lhs).getChildren()) {
           if (!(ed instanceof ExprNodeColumnDesc && ((ExprNodeColumnDesc)ed).getIsPartitionColOrVirtualCol())) {
             hasOnlyPartCols=false;
             break;
           }
         }
-        removePredElem=hasOnlyPartCols;
+        if (hasOnlyPartCols) {
+          for (int i=1; i < children.size(); i++) {
+            if (children.get(i) instanceof ExprNodeDynamicListDesc) {
+              hasDynamicListDesc=true;
+              break;
+            }
+          }
+        }
+        removePredElem=hasOnlyPartCols && !hasDynamicListDesc;
       }
     }
     return removePredElem ? new NodeInfoWrapper(WalkState.TRUE,null,new ExprNodeConstantDesc(fd.getTypeInfo(),Boolean.TRUE)) : new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,nodeOutputs));
