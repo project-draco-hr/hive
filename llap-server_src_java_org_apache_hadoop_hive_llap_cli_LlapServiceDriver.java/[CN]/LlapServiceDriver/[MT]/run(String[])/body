@@ -76,6 +76,37 @@
   lfs.delete(new Path(libDir,"tez.tar.gz"),false);
   lfs.copyFromLocalFile(new Path(Utilities.jarFinderGetJar(LlapInputFormat.class)),libDir);
   lfs.copyFromLocalFile(new Path(Utilities.jarFinderGetJar(HiveInputFormat.class)),libDir);
+  for (  String className : DEFAULT_AUX_CLASSES) {
+    String jarPath=null;
+    boolean hasException=false;
+    try {
+      Class<?> auxClass=Class.forName(className);
+      jarPath=Utilities.jarFinderGetJar(auxClass);
+    }
+ catch (    Throwable t) {
+      hasException=true;
+      String err="Cannot find a jar for [" + className + "] due to an exception ("+ t.getMessage()+ "); not packaging the jar";
+      LOG.error(err,t);
+      System.err.println(err);
+    }
+    if (jarPath != null) {
+      lfs.copyFromLocalFile(new Path(jarPath),libDir);
+    }
+ else     if (!hasException) {
+      String err="Cannot find a jar for [" + className + "]; not packaging the jar";
+      LOG.error(err);
+      System.err.println(err);
+    }
+  }
+  String auxJars=options.getAuxJars();
+  if (auxJars != null && !auxJars.isEmpty()) {
+    String[] jarPaths=auxJars.split(",");
+    for (    String jarPath : jarPaths) {
+      if (!jarPath.isEmpty()) {
+        lfs.copyFromLocalFile(new Path(jarPath),libDir);
+      }
+    }
+  }
   Path confPath=new Path(tmpDir,"conf");
   lfs.mkdirs(confPath);
   for (  String f : neededConfig) {
