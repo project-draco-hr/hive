@@ -1,13 +1,31 @@
 {
   final HiveSortLimit topSortLimit=call.rel(0);
   final HiveSortLimit bottomSortLimit=call.rel(1);
+  final RexNode newOffset;
   final RexNode newLimit;
-  if (bottomSortLimit.fetch != null && RexLiteral.intValue(topSortLimit.fetch) >= RexLiteral.intValue(bottomSortLimit.fetch)) {
-    newLimit=bottomSortLimit.fetch;
+  if (HiveCalciteUtil.limitRelNode(bottomSortLimit)) {
+    final RexBuilder rexBuilder=topSortLimit.getCluster().getRexBuilder();
+    int topOffset=topSortLimit.offset == null ? 0 : RexLiteral.intValue(topSortLimit.offset);
+    int topLimit=RexLiteral.intValue(topSortLimit.fetch);
+    int bottomOffset=bottomSortLimit.offset == null ? 0 : RexLiteral.intValue(bottomSortLimit.offset);
+    int bottomLimit=RexLiteral.intValue(bottomSortLimit.fetch);
+    if (topOffset + topLimit <= bottomLimit) {
+      newOffset=bottomOffset + topOffset == 0 ? null : rexBuilder.makeExactLiteral(BigDecimal.valueOf(bottomOffset + topOffset));
+      newLimit=topSortLimit.fetch;
+    }
+ else     if (topOffset < bottomLimit) {
+      newOffset=bottomOffset + topOffset == 0 ? null : rexBuilder.makeExactLiteral(BigDecimal.valueOf(bottomOffset + topOffset));
+      newLimit=rexBuilder.makeExactLiteral(BigDecimal.valueOf(bottomLimit - topOffset));
+    }
+ else {
+      newOffset=null;
+      newLimit=rexBuilder.makeExactLiteral(BigDecimal.valueOf(0));
+    }
   }
  else {
+    newOffset=topSortLimit.offset;
     newLimit=topSortLimit.fetch;
   }
-  final HiveSortLimit newSort=bottomSortLimit.copy(bottomSortLimit.getTraitSet(),bottomSortLimit.getInput(),bottomSortLimit.collation,null,newLimit);
+  final HiveSortLimit newSort=bottomSortLimit.copy(bottomSortLimit.getTraitSet(),bottomSortLimit.getInput(),bottomSortLimit.collation,newOffset,newLimit);
   call.transformTo(newSort);
 }
