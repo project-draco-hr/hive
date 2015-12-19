@@ -1,0 +1,25 @@
+{
+  final HiveSortLimit sort=call.rel(0);
+  final HiveUnion union=call.rel(1);
+  List<RelNode> inputs=new ArrayList<>();
+  boolean finishPushSortPastUnion=true;
+  final int offset=sort.offset == null ? 0 : RexLiteral.intValue(sort.offset);
+  for (  RelNode input : union.getInputs()) {
+    if (RexLiteral.intValue(sort.fetch) + offset < RelMetadataQuery.getRowCount(input)) {
+      finishPushSortPastUnion=false;
+      RexNode fetchRN=sort.getCluster().getRexBuilder().makeExactLiteral(BigDecimal.valueOf(RexLiteral.intValue(sort.fetch) + offset));
+      HiveSortLimit branchSort=sort.copy(sort.getTraitSet(),input,sort.getCollation(),null,fetchRN);
+      branchSort.setRuleCreated(true);
+      inputs.add(branchSort);
+    }
+ else {
+      inputs.add(input);
+    }
+  }
+  if (finishPushSortPastUnion) {
+    return;
+  }
+  HiveUnion unionCopy=(HiveUnion)union.copy(union.getTraitSet(),inputs,union.all);
+  HiveSortLimit result=sort.copy(sort.getTraitSet(),unionCopy,sort.getCollation(),sort.offset,sort.fetch);
+  call.transformTo(result);
+}
