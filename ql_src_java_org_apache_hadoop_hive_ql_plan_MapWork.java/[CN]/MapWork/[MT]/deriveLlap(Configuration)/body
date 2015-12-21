@@ -1,16 +1,23 @@
 {
-  boolean hasLlap=false, hasNonLlap=false;
+  boolean hasLlap=false, hasNonLlap=false, hasAcid=false;
   boolean isLlapOn=HiveInputFormat.isLlapEnabled(conf), canWrapAny=isLlapOn && HiveInputFormat.canWrapAnyForLlap(conf,this);
   boolean hasPathToPartInfo=(pathToPartitionInfo != null && !pathToPartitionInfo.isEmpty());
   if (canWrapAny && hasPathToPartInfo) {
+    assert isLlapOn;
     for (    PartitionDesc part : pathToPartitionInfo.values()) {
-      boolean isUsingLlapIo=isLlapOn && HiveInputFormat.canWrapForLlap(part.getInputFileFormatClass());
-      hasLlap|=isUsingLlapIo;
-      hasNonLlap|=(!isUsingLlapIo);
+      boolean isUsingLlapIo=HiveInputFormat.canWrapForLlap(part.getInputFileFormatClass());
+      if (isUsingLlapIo) {
+        if (part.getTableDesc() != null && AcidUtils.isTablePropertyTransactional(part.getTableDesc().getProperties())) {
+          hasAcid=true;
+        }
+ else {
+          hasLlap=true;
+        }
+      }
+ else {
+        hasNonLlap=true;
+      }
     }
   }
- else {
-    hasNonLlap=true;
-  }
-  llapIoDesc=isLlapOn ? (canWrapAny ? (hasPathToPartInfo ? ((hasLlap == hasNonLlap) ? "some inputs" : (hasLlap ? "all inputs" : "no inputs")) : "unknown") : "no inputs") : null;
+  llapIoDesc=deriveLlapIoDescString(isLlapOn,canWrapAny,hasPathToPartInfo,hasLlap,hasNonLlap,hasAcid);
 }
