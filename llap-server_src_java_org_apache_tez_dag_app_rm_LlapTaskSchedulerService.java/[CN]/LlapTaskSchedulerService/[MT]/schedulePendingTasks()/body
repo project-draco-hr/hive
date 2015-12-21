@@ -13,17 +13,45 @@
           dagStats.registerDelayedAllocation();
         }
         taskInfo.triedAssigningTask();
-        boolean scheduled=scheduleTask(taskInfo);
-        if (scheduled) {
+        ScheduleResult scheduleResult=scheduleTask(taskInfo);
+        if (scheduleResult == ScheduleResult.SCHEDULED) {
           taskIter.remove();
         }
  else {
-          LOG.info("Attempting to preempt for {}, pendingPreemptions={}",taskInfo.task,pendingPreemptions.get());
-          if (pendingPreemptions.get() == 0) {
-            preemptTasks(entry.getKey().getPriority(),1);
+          String[] potentialHosts;
+          if (scheduleResult == ScheduleResult.DELAYED_LOCALITY) {
+            potentialHosts=taskInfo.requestedHosts;
+            if (potentialHosts == null || potentialHosts.length == 0) {
+              potentialHosts=null;
+            }
+          }
+ else {
+            potentialHosts=null;
+          }
+          if (potentialHosts != null) {
+            boolean shouldPreempt=true;
+            for (            String host : potentialHosts) {
+              MutableInt pendingHostPreemptions=pendingPreemptionsPerHost.get(host);
+              if (pendingHostPreemptions != null && pendingHostPreemptions.intValue() > 0) {
+                shouldPreempt=false;
+                break;
+              }
+            }
+            if (shouldPreempt) {
+              LOG.info("Attempting to preempt for {}, pendingPreemptions={} on hosts={}",taskInfo.task,pendingPreemptions.get(),Arrays.toString(potentialHosts));
+              preemptTasks(entry.getKey().getPriority(),1,potentialHosts);
+            }
+          }
+ else {
+            if (pendingPreemptions.get() == 0) {
+              LOG.info("Attempting to preempt for {}, pendingPreemptions={} on any host",taskInfo.task,pendingPreemptions.get());
+              preemptTasks(entry.getKey().getPriority(),1,null);
+            }
           }
           scheduledAllAtPriority=false;
-          break;
+          if (scheduleResult != ScheduleResult.DELAYED_LOCALITY) {
+            break;
+          }
         }
       }
       if (taskListAtPriority.isEmpty()) {

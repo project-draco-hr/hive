@@ -9,20 +9,35 @@
       refreshInstances();
     }
     if (getTotalResources().getMemory() <= 0) {
-      return null;
+      return SELECT_HOST_RESULT_INADEQUATE_TOTAL_CAPACITY;
     }
-    if (requestedHosts != null) {
+    if (requestedHosts != null && requestedHosts.length > 0) {
       int prefHostCount=-1;
+      boolean requestedHostExists=false;
       for (      String host : requestedHosts) {
         prefHostCount++;
         Set<ServiceInstance> instances=activeInstances.getByHost(host);
         if (!instances.isEmpty()) {
+          requestedHostExists=true;
           for (          ServiceInstance inst : instances) {
             NodeInfo nodeInfo=instanceToNodeMap.get(inst);
             if (nodeInfo != null && nodeInfo.canAcceptTask()) {
-              LOG.info("Assigning " + inst + " when looking for "+ host+ "."+ " FirstRequestedHost="+ (prefHostCount == 0));
-              return new NodeServiceInstancePair(inst,nodeInfo);
+              LOG.info("Assigning " + inst + " when looking for "+ host+ "."+ " FirstRequestedHost="+ (prefHostCount == 0)+ (requestedHosts.length > 1 ? "#prefLocations=" + requestedHosts.length : ""));
+              return new SelectHostResult(inst,nodeInfo);
             }
+          }
+        }
+      }
+      if (forceLocation) {
+        if (requestedHostExists) {
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Skipping non-local location allocation for [" + request.task + "] when trying to allocate on ["+ Arrays.toString(requestedHosts)+ "]");
+          }
+          return SELECT_HOST_RESULT_DELAYED_LOCALITY;
+        }
+ else {
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Not skipping non-local location allocation for [" + request.task + "] when trying to allocate on ["+ Arrays.toString(requestedHosts)+ "] since none of these hosts are part of the known list");
           }
         }
       }
@@ -33,12 +48,12 @@
       for (int i=0; i < all.length; i++) {
         Entry<ServiceInstance,NodeInfo> inst=all[(i + n) % all.length];
         if (inst.getValue().canAcceptTask()) {
-          LOG.info("Assigning " + inst + " when looking for any host, from #hosts="+ all.length);
-          return new NodeServiceInstancePair(inst.getKey(),inst.getValue());
+          LOG.info("Assigning " + inst + " when looking for any host, from #hosts="+ all.length+ ", requestedHosts="+ ((requestedHosts == null || requestedHosts.length == 0) ? "null" : Arrays.toString(requestedHosts)));
+          return new SelectHostResult(inst.getKey(),inst.getValue());
         }
       }
     }
-    return null;
+    return SELECT_HOST_RESULT_DELAYED_RESOURCES;
   }
   finally {
     readLock.unlock();

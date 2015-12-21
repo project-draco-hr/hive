@@ -1,0 +1,68 @@
+{
+  Priority priority1=Priority.newInstance(1);
+  String[] hosts=new String[]{HOST1,HOST2};
+  String[] hostsH1=new String[]{HOST1};
+  String[] hostsH2=new String[]{HOST2};
+  TestTaskSchedulerServiceWrapper tsWrapper=new TestTaskSchedulerServiceWrapper(2000,hosts,1,1,(forceLocality ? -1l : 0l));
+  try {
+    Object task1="task1";
+    Object clientCookie1="cookie1";
+    Object task2="task2";
+    Object clientCookie2="cookie2";
+    Object task3="task3";
+    Object clientCookie3="cookie3";
+    Object task4="task4";
+    Object clientCookie4="cookie4";
+    Object task5="task5";
+    Object clientCookie5="cookie5";
+    tsWrapper.controlScheduler(true);
+    tsWrapper.allocateTask(task1,hostsH1,priority1,clientCookie1);
+    tsWrapper.allocateTask(task2,hostsH1,priority1,clientCookie2);
+    tsWrapper.allocateTask(task3,hostsH1,priority1,clientCookie3);
+    tsWrapper.allocateTask(task4,hostsH2,priority1,clientCookie4);
+    tsWrapper.allocateTask(task5,null,priority1,clientCookie5);
+    while (true) {
+      tsWrapper.signalSchedulerRun();
+      tsWrapper.awaitSchedulerRun();
+      if (tsWrapper.ts.dagStats.numTotalAllocations == 4) {
+        break;
+      }
+    }
+    verify(tsWrapper.mockAppCallback,never()).preemptContainer(any(ContainerId.class));
+    ArgumentCaptor<Object> argumentCaptor=ArgumentCaptor.forClass(Object.class);
+    verify(tsWrapper.mockAppCallback,times(4)).taskAllocated(argumentCaptor.capture(),any(Object.class),any(Container.class));
+    assertEquals(4,argumentCaptor.getAllValues().size());
+    assertEquals(task1,argumentCaptor.getAllValues().get(0));
+    assertEquals(task2,argumentCaptor.getAllValues().get(1));
+    if (forceLocality) {
+      assertEquals(task4,argumentCaptor.getAllValues().get(2));
+      assertEquals(task5,argumentCaptor.getAllValues().get(3));
+    }
+ else {
+      assertEquals(task3,argumentCaptor.getAllValues().get(2));
+      assertEquals(task4,argumentCaptor.getAllValues().get(3));
+    }
+    tsWrapper.deallocateTask(task1,true,null);
+    reset(tsWrapper.mockAppCallback);
+    while (true) {
+      tsWrapper.signalSchedulerRun();
+      tsWrapper.awaitSchedulerRun();
+      if (tsWrapper.ts.dagStats.numTotalAllocations == 5) {
+        break;
+      }
+    }
+    verify(tsWrapper.mockAppCallback,never()).preemptContainer(any(ContainerId.class));
+    argumentCaptor=ArgumentCaptor.forClass(Object.class);
+    verify(tsWrapper.mockAppCallback,times(1)).taskAllocated(argumentCaptor.capture(),any(Object.class),any(Container.class));
+    assertEquals(1,argumentCaptor.getAllValues().size());
+    if (forceLocality) {
+      assertEquals(task3,argumentCaptor.getAllValues().get(0));
+    }
+ else {
+      assertEquals(task5,argumentCaptor.getAllValues().get(0));
+    }
+  }
+  finally {
+    tsWrapper.shutdown();
+  }
+}

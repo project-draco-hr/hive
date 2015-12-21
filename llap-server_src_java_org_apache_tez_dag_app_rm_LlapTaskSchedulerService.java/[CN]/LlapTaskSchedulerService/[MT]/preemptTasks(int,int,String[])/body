@@ -1,4 +1,11 @@
 {
+  Set<String> preemptHosts;
+  if (potentialHosts == null) {
+    preemptHosts=null;
+  }
+ else {
+    preemptHosts=Sets.newHashSet(potentialHosts);
+  }
   writeLock.lock();
   List<TaskInfo> preemptedTaskList=null;
   try {
@@ -11,16 +18,18 @@
         Iterator<TaskInfo> taskInfoIterator=entryAtPriority.getValue().iterator();
         while (taskInfoIterator.hasNext() && preemptedCount < numTasksToPreempt) {
           TaskInfo taskInfo=taskInfoIterator.next();
-          preemptedCount++;
-          LOG.info("preempting {} for task at priority {}",taskInfo,forPriority);
-          taskInfo.setPreemptedInfo(clock.getTime());
-          if (preemptedTaskList == null) {
-            preemptedTaskList=new LinkedList<>();
+          if (preemptHosts == null || preemptHosts.contains(taskInfo.assignedInstance.getHost())) {
+            preemptedCount++;
+            LOG.info("preempting {} for task at priority {} with potentialHosts={}",taskInfo,forPriority,potentialHosts == null ? "" : Arrays.toString(potentialHosts));
+            taskInfo.setPreemptedInfo(clock.getTime());
+            if (preemptedTaskList == null) {
+              preemptedTaskList=new LinkedList<>();
+            }
+            dagStats.registerTaskPreempted(taskInfo.assignedInstance.getHost());
+            preemptedTaskList.add(taskInfo);
+            registerPendingPreemption(taskInfo.assignedInstance.getHost());
+            taskInfoIterator.remove();
           }
-          dagStats.registerTaskPreempted(taskInfo.assignedInstance.getHost());
-          preemptedTaskList.add(taskInfo);
-          pendingPreemptions.incrementAndGet();
-          taskInfoIterator.remove();
         }
         if (entryAtPriority.getValue().isEmpty()) {
           iterator.remove();

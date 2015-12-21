@@ -1,8 +1,10 @@
 {
   Priority priority1=Priority.newInstance(1);
   Priority priority2=Priority.newInstance(2);
-  String[] hosts=new String[]{HOST1};
-  TestTaskSchedulerServiceWrapper tsWrapper=new TestTaskSchedulerServiceWrapper(2000,hosts,1,1);
+  String[] hosts=new String[]{HOST1,HOST2};
+  String[] hostsH1=new String[]{HOST1};
+  String[] hostsH2=new String[]{HOST2};
+  TestTaskSchedulerServiceWrapper tsWrapper=new TestTaskSchedulerServiceWrapper(2000,hosts,1,1,-1l);
   try {
     Object task1="task1";
     Object clientCookie1="cookie1";
@@ -13,9 +15,9 @@
     Object task4="task4";
     Object clientCookie4="cookie4";
     tsWrapper.controlScheduler(true);
-    tsWrapper.allocateTask(task1,hosts,priority2,clientCookie1);
-    tsWrapper.allocateTask(task2,hosts,priority2,clientCookie2);
-    tsWrapper.allocateTask(task3,hosts,priority2,clientCookie3);
+    tsWrapper.allocateTask(task1,hostsH1,priority2,clientCookie1);
+    tsWrapper.allocateTask(task2,hostsH1,priority2,clientCookie2);
+    tsWrapper.allocateTask(task3,hostsH1,priority2,clientCookie3);
     while (true) {
       tsWrapper.signalSchedulerRun();
       tsWrapper.awaitSchedulerRun();
@@ -23,11 +25,14 @@
         break;
       }
     }
-    verify(tsWrapper.mockAppCallback,times(2)).taskAllocated(any(Object.class),any(Object.class),any(Container.class));
-    assertEquals(2,tsWrapper.ts.dagStats.numLocalAllocations);
-    assertEquals(0,tsWrapper.ts.dagStats.numAllocationsNoLocalityRequest);
+    verify(tsWrapper.mockAppCallback,never()).preemptContainer(any(ContainerId.class));
+    ArgumentCaptor<Object> argumentCaptor=ArgumentCaptor.forClass(Object.class);
+    verify(tsWrapper.mockAppCallback,times(2)).taskAllocated(argumentCaptor.capture(),any(Object.class),any(Container.class));
+    assertEquals(2,argumentCaptor.getAllValues().size());
+    assertEquals(task1,argumentCaptor.getAllValues().get(0));
+    assertEquals(task2,argumentCaptor.getAllValues().get(1));
     reset(tsWrapper.mockAppCallback);
-    tsWrapper.allocateTask(task4,hosts,priority1,clientCookie4);
+    tsWrapper.allocateTask(task4,hostsH1,priority1,clientCookie4);
     while (true) {
       tsWrapper.signalSchedulerRun();
       tsWrapper.awaitSchedulerRun();
@@ -36,7 +41,7 @@
       }
     }
     verify(tsWrapper.mockAppCallback).preemptContainer(any(ContainerId.class));
-    tsWrapper.deallocateTask(task2,false,TaskAttemptEndReason.INTERNAL_PREEMPTION);
+    tsWrapper.deallocateTask(task1,false,TaskAttemptEndReason.INTERNAL_PREEMPTION);
     while (true) {
       tsWrapper.signalSchedulerRun();
       tsWrapper.awaitSchedulerRun();
