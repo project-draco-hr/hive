@@ -1,6 +1,19 @@
 {
   PerfLogger perfLogger=SessionState.getPerfLogger();
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.COMPILE);
+  command=new VariableSubstitution(new HiveVariableSource(){
+    @Override public Map<String,String> getHiveVariable(){
+      return SessionState.get().getHiveVariables();
+    }
+  }
+).substitute(conf,command);
+  String queryStr=command;
+  try {
+    queryStr=HookUtils.redactLogString(conf,command);
+  }
+ catch (  Exception e) {
+    LOG.warn("WARNING! Query command could not be redacted." + e);
+  }
   QueryState queryState=new QueryState();
   if (ctx != null) {
     close();
@@ -14,6 +27,7 @@
     queryId=QueryPlan.makeQueryId();
     conf.setVar(HiveConf.ConfVars.HIVEQUERYID,queryId);
   }
+  LOG.info("Compiling command(queryId=" + queryId + "): "+ queryStr);
   SessionState.get().setupQueryCurrentTimestamp();
   try {
     final HiveTxnManager txnManager=SessionState.get().initTxnMgr(conf);
@@ -29,12 +43,6 @@
     }
 ;
     ShutdownHookManager.addShutdownHook(shutdownRunner,SHUTDOWN_HOOK_PRIORITY);
-    command=new VariableSubstitution(new HiveVariableSource(){
-      @Override public Map<String,String> getHiveVariable(){
-        return SessionState.get().getHiveVariables();
-      }
-    }
-).substitute(conf,command);
     ctx=new Context(conf);
     ctx.setTryCount(getTryCount());
     ctx.setCmd(command);
@@ -70,7 +78,6 @@
     LOG.info("Semantic Analysis Completed");
     sem.validate();
     perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.ANALYZE);
-    String queryStr=HookUtils.redactLogString(conf,command);
     schema=getSchema(sem,conf);
     plan=new QueryPlan(queryStr,sem,perfLogger.getStartTime(PerfLogger.DRIVER_RUN),queryId,SessionState.get().getHiveOperation(),schema);
     conf.setVar(HiveConf.ConfVars.HIVEQUERYSTRING,queryStr);
@@ -120,8 +127,9 @@
     return error.getErrorCode();
   }
  finally {
-    perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.COMPILE);
+    double duration=perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.COMPILE) / 1000.00;
     dumpMetaCallTimingWithoutEx("compilation");
     restoreSession(queryState);
+    LOG.info("Completed compiling command(queryId=" + queryId + "); Time taken: "+ duration+ " seconds");
   }
 }
