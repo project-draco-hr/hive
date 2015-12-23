@@ -1,0 +1,25 @@
+{
+  RelNode optimizedRelNode=basePlan;
+  HepProgramBuilder programBuilder=new HepProgramBuilder();
+  if (followPlanChanges) {
+    programBuilder.addMatchOrder(order);
+    programBuilder=programBuilder.addRuleCollection(ImmutableList.copyOf(rules));
+  }
+ else {
+    for (    RelOptRule r : rules)     programBuilder.addRuleInstance(r);
+  }
+  HiveRulesRegistry registry=new HiveRulesRegistry();
+  HiveHepPlannerContext context=new HiveHepPlannerContext(registry);
+  HepPlanner planner=new HepPlanner(programBuilder.build(),context);
+  List<RelMetadataProvider> list=Lists.newArrayList();
+  list.add(mdProvider);
+  planner.registerMetadataProviders(list);
+  RelMetadataProvider chainedProvider=ChainedRelMetadataProvider.of(list);
+  basePlan.getCluster().setMetadataProvider(new CachingRelMetadataProvider(chainedProvider,planner));
+  if (executorProvider != null) {
+    basePlan.getCluster().getPlanner().setExecutor(executorProvider);
+  }
+  planner.setRoot(basePlan);
+  optimizedRelNode=planner.findBestExp();
+  return optimizedRelNode;
+}

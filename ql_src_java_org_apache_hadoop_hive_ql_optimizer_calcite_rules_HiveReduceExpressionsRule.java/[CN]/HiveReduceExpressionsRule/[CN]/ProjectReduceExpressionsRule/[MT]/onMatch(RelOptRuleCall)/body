@@ -1,0 +1,17 @@
+{
+  Project project=call.rel(0);
+  HiveRulesRegistry registry=call.getPlanner().getContext().unwrap(HiveRulesRegistry.class);
+  if (registry != null) {
+    registry.registerVisited(this,project);
+  }
+  final RelOptPredicateList predicates=RelMetadataQuery.getPulledUpPredicates(project.getInput());
+  final List<RexNode> expList=Lists.newArrayList(project.getProjects());
+  if (reduceExpressions(project,expList,predicates)) {
+    RelNode newProject=call.builder().push(project.getInput()).project(expList,project.getRowType().getFieldNames()).build();
+    if (registry != null) {
+      registry.registerVisited(this,newProject);
+    }
+    call.transformTo(newProject);
+    call.getPlanner().setImportance(project,0.0);
+  }
+}

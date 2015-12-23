@@ -1,0 +1,33 @@
+{
+  if (call.getType().getSqlTypeName() != SqlTypeName.BOOLEAN) {
+    return call;
+  }
+switch (call.getKind()) {
+case CASE:
+case AND:
+case OR:
+    return call;
+}
+int caseOrdinal=-1;
+final List<RexNode> operands=call.getOperands();
+for (int i=0; i < operands.size(); i++) {
+  RexNode operand=operands.get(i);
+switch (operand.getKind()) {
+case CASE:
+    caseOrdinal=i;
+}
+}
+if (caseOrdinal < 0) {
+return call;
+}
+final RexCall case_=(RexCall)operands.get(caseOrdinal);
+final List<RexNode> nodes=new ArrayList<>();
+for (int i=0; i < case_.getOperands().size(); i++) {
+RexNode node=case_.getOperands().get(i);
+if (!RexUtil.isCasePredicate(case_,i)) {
+  node=substitute(call,caseOrdinal,node);
+}
+nodes.add(node);
+}
+return case_.clone(call.getType(),nodes);
+}

@@ -1,0 +1,51 @@
+{
+  PerfLogger perfLogger=SessionState.getPerfLogger();
+  if (!conf.getVar(HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("mr") && conf.getBoolVar(HiveConf.ConfVars.HIVEOPTIMIZEDISTINCTREWRITE)) {
+    perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
+    basePlan=hepPlan(basePlan,true,mdProvider,null,HiveExpandDistinctAggregatesRule.INSTANCE);
+    perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, Distinct aggregate rewrite");
+  }
+  perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
+  basePlan=hepPlan(basePlan,false,mdProvider,null,HepMatchOrder.ARBITRARY,HivePreFilteringRule.INSTANCE);
+  perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, factor out common filter elements and separating deterministic vs non-deterministic UDF");
+  perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
+  basePlan=hepPlan(basePlan,true,mdProvider,null,HiveFilterProjectTransposeRule.INSTANCE_DETERMINISTIC,HiveFilterSetOpTransposeRule.INSTANCE,HiveFilterSortTransposeRule.INSTANCE,HiveFilterJoinRule.JOIN,HiveFilterJoinRule.FILTER_ON_JOIN,new HiveFilterAggregateTransposeRule(Filter.class,HiveRelFactories.HIVE_FILTER_FACTORY,Aggregate.class),new FilterMergeRule(HiveRelFactories.HIVE_FILTER_FACTORY));
+  perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, PPD for old join syntax");
+  perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
+  basePlan=hepPlan(basePlan,true,mdProvider,null,new HiveJoinPushTransitivePredicatesRule(Join.class,HiveRelFactories.HIVE_FILTER_FACTORY));
+  perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, Transitive inference for join on clauses");
+  if (conf.getBoolVar(HiveConf.ConfVars.HIVE_OPTIMIZE_LIMIT_TRANSPOSE)) {
+    perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
+    final float reductionProportion=HiveConf.getFloatVar(conf,HiveConf.ConfVars.HIVE_OPTIMIZE_LIMIT_TRANSPOSE_REDUCTION_PERCENTAGE);
+    final long reductionTuples=HiveConf.getLongVar(conf,HiveConf.ConfVars.HIVE_OPTIMIZE_LIMIT_TRANSPOSE_REDUCTION_TUPLES);
+    basePlan=hepPlan(basePlan,true,mdProvider,null,HiveSortMergeRule.INSTANCE,HiveSortProjectTransposeRule.INSTANCE,HiveSortJoinReduceRule.INSTANCE,HiveSortUnionReduceRule.INSTANCE);
+    basePlan=hepPlan(basePlan,true,mdProvider,null,HepMatchOrder.BOTTOM_UP,new HiveSortRemoveRule(reductionProportion,reductionTuples),HiveProjectSortTransposeRule.INSTANCE);
+    perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, Push down limit through outer join");
+  }
+  perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
+  basePlan=hepPlan(basePlan,true,mdProvider,null,HiveJoinAddNotNullRule.INSTANCE);
+  perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, Add not null filters");
+  perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
+  basePlan=hepPlan(basePlan,true,mdProvider,null,HiveFilterProjectTransposeRule.INSTANCE_DETERMINISTIC,HiveFilterSetOpTransposeRule.INSTANCE,HiveFilterSortTransposeRule.INSTANCE,HiveFilterJoinRule.JOIN,HiveFilterJoinRule.FILTER_ON_JOIN,new HiveFilterAggregateTransposeRule(Filter.class,HiveRelFactories.HIVE_FILTER_FACTORY,Aggregate.class),new FilterMergeRule(HiveRelFactories.HIVE_FILTER_FACTORY));
+  perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, Constant propagation and PPD");
+  perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
+  basePlan=hepPlan(basePlan,true,mdProvider,null,SemiJoinJoinTransposeRule.INSTANCE,SemiJoinFilterTransposeRule.INSTANCE,SemiJoinProjectTransposeRule.INSTANCE);
+  perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, Push Down Semi Joins");
+  perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
+  basePlan=hepPlan(basePlan,true,mdProvider,executorProvider,HiveReduceExpressionsRule.PROJECT_INSTANCE,HiveReduceExpressionsRule.FILTER_INSTANCE,HiveReduceExpressionsRule.JOIN_INSTANCE);
+  perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, Constant folding");
+  perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
+  basePlan=hepPlan(basePlan,false,mdProvider,null,new HivePartitionPruneRule(conf));
+  perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, Partition Pruning");
+  perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
+  HiveRelFieldTrimmer fieldTrimmer=new HiveRelFieldTrimmer(null,HiveRelFactories.HIVE_BUILDER.create(cluster,null));
+  basePlan=fieldTrimmer.trim(basePlan);
+  perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, Projection Pruning");
+  perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
+  basePlan=hepPlan(basePlan,false,mdProvider,null,new ProjectMergeRule(true,HiveRelFactories.HIVE_PROJECT_FACTORY));
+  perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, Merge Project-Project");
+  perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
+  basePlan=hepPlan(basePlan,true,mdProvider,null,new HiveFilterProjectTSTransposeRule(Filter.class,HiveRelFactories.HIVE_FILTER_FACTORY,HiveProject.class,HiveRelFactories.HIVE_PROJECT_FACTORY,HiveTableScan.class));
+  perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, Rerun PPD");
+  return basePlan;
+}

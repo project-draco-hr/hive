@@ -24,7 +24,8 @@
   }
   perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Plan generation");
   HiveDefaultRelMetadataProvider mdProvider=new HiveDefaultRelMetadataProvider(conf);
-  calcitePreCboPlan=applyPreJoinOrderingTransforms(calciteGenPlan,mdProvider.getMetadataProvider());
+  Executor executorProvider=new HiveRexExecutorImpl(cluster);
+  calcitePreCboPlan=applyPreJoinOrderingTransforms(calciteGenPlan,mdProvider.getMetadataProvider(),executorProvider);
   if (profilesCBO.contains(ExtendedCBOProfile.JOIN_REORDERING)) {
     perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
     try {
@@ -66,7 +67,7 @@
     disableSemJoinReordering=false;
   }
   perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
-  calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,ProjectRemoveRule.INSTANCE,UnionMergeRule.INSTANCE,new ProjectMergeRule(false,HiveRelFactories.HIVE_PROJECT_FACTORY),HiveAggregateProjectMergeRule.INSTANCE,HiveJoinCommuteRule.INSTANCE);
+  calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),null,HepMatchOrder.BOTTOM_UP,ProjectRemoveRule.INSTANCE,UnionMergeRule.INSTANCE,new ProjectMergeRule(false,HiveRelFactories.HIVE_PROJECT_FACTORY),HiveAggregateProjectMergeRule.INSTANCE,HiveJoinCommuteRule.INSTANCE);
   perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Optimizations without stats");
   if (conf.getBoolVar(ConfVars.AGGR_JOIN_TRANSPOSE)) {
     perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
@@ -97,17 +98,17 @@
   }
   if (profilesCBO.contains(ExtendedCBOProfile.WINDOWING_POSTPROCESSING)) {
     perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
-    calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,HiveWindowingFixRule.INSTANCE);
+    calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),null,HepMatchOrder.BOTTOM_UP,HiveWindowingFixRule.INSTANCE);
     perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Window fixing rule");
   }
   if (HiveConf.getBoolVar(conf,ConfVars.HIVE_CBO_RETPATH_HIVEOP)) {
     perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
-    calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,true,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,HiveJoinProjectTransposeRule.BOTH_PROJECT_INCLUDE_OUTER,HiveJoinProjectTransposeRule.LEFT_PROJECT_INCLUDE_OUTER,HiveJoinProjectTransposeRule.RIGHT_PROJECT_INCLUDE_OUTER,HiveJoinToMultiJoinRule.INSTANCE,HiveProjectMergeRule.INSTANCE);
+    calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,true,mdProvider.getMetadataProvider(),null,HepMatchOrder.BOTTOM_UP,HiveJoinProjectTransposeRule.BOTH_PROJECT_INCLUDE_OUTER,HiveJoinProjectTransposeRule.LEFT_PROJECT_INCLUDE_OUTER,HiveJoinProjectTransposeRule.RIGHT_PROJECT_INCLUDE_OUTER,HiveJoinToMultiJoinRule.INSTANCE,HiveProjectMergeRule.INSTANCE);
     HiveRelFieldTrimmer fieldTrimmer=new HiveRelFieldTrimmer(null,HiveRelFactories.HIVE_BUILDER.create(cluster,null));
     calciteOptimizedPlan=fieldTrimmer.trim(calciteOptimizedPlan);
-    calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,ProjectRemoveRule.INSTANCE,new ProjectMergeRule(false,HiveRelFactories.HIVE_PROJECT_FACTORY));
-    calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,true,mdProvider.getMetadataProvider(),new HiveFilterProjectTSTransposeRule(Filter.class,HiveRelFactories.HIVE_FILTER_FACTORY,HiveProject.class,HiveRelFactories.HIVE_PROJECT_FACTORY,HiveTableScan.class));
-    calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),HepMatchOrder.BOTTOM_UP,HiveInsertExchange4JoinRule.EXCHANGE_BELOW_JOIN,HiveInsertExchange4JoinRule.EXCHANGE_BELOW_MULTIJOIN);
+    calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),null,HepMatchOrder.BOTTOM_UP,ProjectRemoveRule.INSTANCE,new ProjectMergeRule(false,HiveRelFactories.HIVE_PROJECT_FACTORY));
+    calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,true,mdProvider.getMetadataProvider(),null,new HiveFilterProjectTSTransposeRule(Filter.class,HiveRelFactories.HIVE_FILTER_FACTORY,HiveProject.class,HiveRelFactories.HIVE_PROJECT_FACTORY,HiveTableScan.class));
+    calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),null,HepMatchOrder.BOTTOM_UP,HiveInsertExchange4JoinRule.EXCHANGE_BELOW_JOIN,HiveInsertExchange4JoinRule.EXCHANGE_BELOW_MULTIJOIN);
     perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Translation from Calcite tree to Hive tree");
   }
   if (LOG.isDebugEnabled() && !conf.getBoolVar(ConfVars.HIVE_IN_TEST)) {

@@ -1,0 +1,17 @@
+{
+  final HiveJoin join=call.rel(0);
+  final List<RexNode> expList=Lists.newArrayList(join.getCondition());
+  final int fieldCount=join.getLeft().getRowType().getFieldCount();
+  final RelOptPredicateList leftPredicates=RelMetadataQuery.getPulledUpPredicates(join.getLeft());
+  final RelOptPredicateList rightPredicates=RelMetadataQuery.getPulledUpPredicates(join.getRight());
+  final RelOptPredicateList predicates=leftPredicates.union(rightPredicates.shift(fieldCount));
+  if (!reduceExpressions(join,expList,predicates)) {
+    return;
+  }
+  final JoinInfo joinInfo=JoinInfo.of(join.getLeft(),join.getRight(),expList.get(0));
+  if (!joinInfo.isEqui()) {
+    return;
+  }
+  call.transformTo(join.copy(join.getTraitSet(),expList.get(0),join.getLeft(),join.getRight(),join.getJoinType(),join.isSemiJoinDone()));
+  call.getPlanner().setImportance(join,0.0);
+}

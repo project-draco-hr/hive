@@ -7,6 +7,9 @@
   ConstantObjectInspector coi=literal.getWritableObjectInspector();
   Object value=ObjectInspectorUtils.copyToStandardJavaObject(coi.getWritableConstantValue(),coi);
   RexNode calciteLiteral=null;
+  if (value == null) {
+    hiveTypeCategory=PrimitiveCategory.VOID;
+  }
 switch (hiveTypeCategory) {
 case BOOLEAN:
     calciteLiteral=rexBuilder.makeLiteral(((Boolean)value).booleanValue());
@@ -47,6 +50,9 @@ case FLOAT:
 calciteLiteral=rexBuilder.makeApproxLiteral(new BigDecimal((Float)value),calciteDataType);
 break;
 case DOUBLE:
+if (Double.isNaN((Double)value)) {
+throw new CalciteSemanticException("NaN",UnsupportedFeature.Invalid_decimal);
+}
 calciteLiteral=rexBuilder.makeApproxLiteral(new BigDecimal((Double)value),calciteDataType);
 break;
 case CHAR:
@@ -85,10 +91,7 @@ BigDecimal totalMonths=BigDecimal.valueOf(((HiveIntervalYearMonth)value).getTota
 calciteLiteral=rexBuilder.makeIntervalLiteral(totalMonths,new SqlIntervalQualifier(TimeUnit.YEAR,TimeUnit.MONTH,new SqlParserPos(1,1)));
 break;
 case INTERVAL_DAY_TIME:
-BigDecimal secsValueBd=BigDecimal.valueOf(((HiveIntervalDayTime)value).getTotalSeconds() * 1000);
-BigDecimal nanosValueBd=BigDecimal.valueOf(((HiveIntervalDayTime)value).getNanos(),6);
-calciteLiteral=rexBuilder.makeIntervalLiteral(secsValueBd.add(nanosValueBd),new SqlIntervalQualifier(TimeUnit.DAY,TimeUnit.SECOND,new SqlParserPos(1,1)));
-break;
+throw new CalciteSemanticException("INTERVAL_DAY_TIME is not well supported",UnsupportedFeature.Invalid_interval);
 case VOID:
 calciteLiteral=cluster.getRexBuilder().makeLiteral(null,cluster.getTypeFactory().createSqlType(SqlTypeName.NULL),true);
 break;

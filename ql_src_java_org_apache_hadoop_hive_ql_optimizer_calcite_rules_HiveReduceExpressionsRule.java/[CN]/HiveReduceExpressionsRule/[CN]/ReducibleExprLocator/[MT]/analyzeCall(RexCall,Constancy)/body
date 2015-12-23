@@ -1,0 +1,34 @@
+{
+  Stacks.push(parentCallTypeStack,call.getOperator());
+  super.visitCall(call);
+  int operandCount=call.getOperands().size();
+  List<Constancy> operandStack=Util.last(stack,operandCount);
+  for (  Constancy operandConstancy : operandStack) {
+    if (operandConstancy == Constancy.NON_CONSTANT) {
+      callConstancy=Constancy.NON_CONSTANT;
+    }
+  }
+  if (!call.getOperator().isDeterministic()) {
+    callConstancy=Constancy.NON_CONSTANT;
+  }
+ else   if (call.getOperator().isDynamicFunction()) {
+    callConstancy=Constancy.NON_CONSTANT;
+  }
+  if ((callConstancy == Constancy.REDUCIBLE_CONSTANT) && (call.getOperator() instanceof SqlRowOperator)) {
+    callConstancy=Constancy.NON_CONSTANT;
+  }
+  if (callConstancy == Constancy.NON_CONSTANT) {
+    for (int iOperand=0; iOperand < operandCount; ++iOperand) {
+      Constancy constancy=operandStack.get(iOperand);
+      if (constancy == Constancy.REDUCIBLE_CONSTANT) {
+        addResult(call.getOperands().get(iOperand));
+      }
+    }
+    if (call.getOperator() == SqlStdOperatorTable.CAST) {
+      reduceCasts(call);
+    }
+  }
+  operandStack.clear();
+  Stacks.pop(parentCallTypeStack,call.getOperator());
+  stack.add(callConstancy);
+}
