@@ -1,0 +1,20 @@
+{
+  LlapNodeId nodeId=LlapNodeId.getInstance(hostname,port);
+  registerPingingNode(nodeId);
+  BiMap<ContainerId,TezTaskAttemptID> biMap=entityTracker.getContainerAttemptMapForNode(nodeId);
+  if (biMap != null) {
+synchronized (biMap) {
+      for (      Map.Entry<ContainerId,TezTaskAttemptID> entry : biMap.entrySet()) {
+        getContext().taskAlive(entry.getValue());
+        getContext().containerAlive(entry.getKey());
+      }
+    }
+  }
+ else {
+    long currentTs=TimeUnit.MILLISECONDS.convert(System.nanoTime(),TimeUnit.NANOSECONDS);
+    if (currentTs > nodeNotFoundLogTime.get() + 5000l) {
+      LOG.warn("Received ping from node without any registered tasks or containers: " + hostname + ":"+ port+ ". Could be caused by pre-emption by the AM,"+ " or a mismatched hostname. Enable debug logging for mismatched host names");
+      nodeNotFoundLogTime.set(currentTs);
+    }
+  }
+}
