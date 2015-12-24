@@ -2,10 +2,17 @@
   this.inited=true;
   for (int i=0; i < blockingQueueLength; i++) {
     HiveConf newConf=new HiveConf(initConf);
-    TezSessionState sessionState=defaultQueuePool.take();
+    TezSessionPoolSession sessionState=defaultQueuePool.take();
+    boolean isUsable=sessionState.tryUse();
+    if (!isUsable)     throw new IOException(sessionState + " is not usable at pool startup");
     newConf.set("tez.queue.name",sessionState.getQueueName());
     sessionState.open(newConf);
-    openSessions.add(sessionState);
-    defaultQueuePool.put(sessionState);
+    if (sessionState.returnAfterUse()) {
+      defaultQueuePool.put(sessionState);
+    }
+  }
+  if (expirationThread != null) {
+    expirationThread.start();
+    restartThread.start();
   }
 }

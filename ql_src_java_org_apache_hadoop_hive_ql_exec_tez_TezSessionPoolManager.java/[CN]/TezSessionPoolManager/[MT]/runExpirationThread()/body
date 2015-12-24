@@ -1,0 +1,45 @@
+{
+  try {
+    while (true) {
+      TezSessionPoolSession nextToExpire=null;
+      while (true) {
+        nextToExpire=expirationQueue.take();
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("Seeing if we can expire [" + nextToExpire + "]");
+        }
+        try {
+          if (!nextToExpire.tryExpire(false))           break;
+        }
+ catch (        Exception e) {
+          LOG.error("Failed to expire session " + nextToExpire + "; ignoring",e);
+          nextToExpire=null;
+          break;
+        }
+        LOG.info("Tez session [" + nextToExpire + "] has expired");
+      }
+      if (nextToExpire != null && LOG.isDebugEnabled()) {
+        LOG.debug("[" + nextToExpire + "] is not ready to expire; adding it back");
+      }
+synchronized (expirationQueue) {
+        if (nextToExpire != null) {
+          expirationQueue.add(nextToExpire);
+        }
+        nextToExpire=expirationQueue.peek();
+        if (nextToExpire != null) {
+          long timeToWaitMs=10 + (nextToExpire.expirationNs - System.nanoTime()) / 1000000L;
+          timeToWaitMs=Math.max(1,timeToWaitMs);
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Waiting for ~" + timeToWaitMs + "ms to expire ["+ nextToExpire+ "]");
+          }
+          expirationQueue.wait(timeToWaitMs);
+        }
+ else         if (LOG.isDebugEnabled()) {
+          LOG.debug("Expiration queue is empty");
+        }
+      }
+    }
+  }
+ catch (  InterruptedException e) {
+    LOG.info("Expiration thread is exiting due to an interruption");
+  }
+}
