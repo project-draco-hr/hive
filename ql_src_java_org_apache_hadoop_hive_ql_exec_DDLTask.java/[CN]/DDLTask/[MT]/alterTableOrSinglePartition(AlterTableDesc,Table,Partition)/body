@@ -41,6 +41,10 @@
     String comment=alterTbl.getNewColComment();
     boolean first=alterTbl.getFirst();
     String afterCol=alterTbl.getAfterCol();
+    boolean isOrc=sd.getInputFormat().equals(OrcInputFormat.class.getName());
+    if (isOrc && (first || (afterCol != null && !afterCol.trim().isEmpty()))) {
+      throw new HiveException(ErrorMsg.CANNOT_REORDER_COLUMNS,alterTbl.getOldName());
+    }
     FieldSchema column=null;
     boolean found=false;
     int position=-1;
@@ -55,6 +59,9 @@
         throw new HiveException(ErrorMsg.DUPLICATE_COLUMN_NAMES,newName);
       }
  else       if (oldColName.equalsIgnoreCase(oldName)) {
+        if (isOrc && !isSupportedTypeChange(col.getType(),type)) {
+          throw new HiveException(ErrorMsg.CANNOT_CHANGE_COLUMN_TYPE,col.getType(),type,newName);
+        }
         col.setName(newName);
         if (type != null && !type.trim().equals("")) {
           col.setType(type);
@@ -92,8 +99,23 @@
       console.printInfo("Replacing columns for columnsetSerDe and changing to LazySimpleSerDe");
       sd.getSerdeInfo().setSerializationLib(LazySimpleSerDe.class.getName());
     }
- else     if (!serializationLib.equals(MetadataTypedColumnsetSerDe.class.getName()) && !serializationLib.equals(LazySimpleSerDe.class.getName()) && !serializationLib.equals(ColumnarSerDe.class.getName())&& !serializationLib.equals(DynamicSerDe.class.getName())&& !serializationLib.equals(ParquetHiveSerDe.class.getName())) {
+ else     if (!serializationLib.equals(MetadataTypedColumnsetSerDe.class.getName()) && !serializationLib.equals(LazySimpleSerDe.class.getName()) && !serializationLib.equals(ColumnarSerDe.class.getName())&& !serializationLib.equals(DynamicSerDe.class.getName())&& !serializationLib.equals(ParquetHiveSerDe.class.getName())&& !serializationLib.equals(OrcSerde.class.getName())) {
       throw new HiveException(ErrorMsg.CANNOT_REPLACE_COLUMNS,alterTbl.getOldName());
+    }
+    final boolean isOrc=serializationLib.equals(OrcSerde.class.getName());
+    if (isOrc) {
+      final List<FieldSchema> existingCols=sd.getCols();
+      final List<FieldSchema> replaceCols=alterTbl.getNewCols();
+      if (replaceCols.size() < existingCols.size()) {
+        throw new HiveException(ErrorMsg.REPLACE_CANNOT_DROP_COLUMNS,alterTbl.getOldName());
+      }
+      for (int i=0; i < existingCols.size(); i++) {
+        final String currentColType=existingCols.get(i).getType().toLowerCase().trim();
+        final String newColType=replaceCols.get(i).getType().toLowerCase().trim();
+        if (!isSupportedTypeChange(currentColType,newColType)) {
+          throw new HiveException(ErrorMsg.REPLACE_UNSUPPORTED_TYPE_CONVERSION,currentColType,newColType,replaceCols.get(i).getName());
+        }
+      }
     }
     sd.setCols(alterTbl.getNewCols());
   }
@@ -114,6 +136,9 @@
     StorageDescriptor sd=(part == null ? tbl.getTTable().getSd() : part.getTPartition().getSd());
     String serdeName=alterTbl.getSerdeName();
     String oldSerdeName=sd.getSerdeInfo().getSerializationLib();
+    if (oldSerdeName.equalsIgnoreCase(OrcSerde.class.getName()) && !serdeName.equalsIgnoreCase(OrcSerde.class.getName())) {
+      throw new HiveException(ErrorMsg.CANNOT_CHANGE_SERDE,OrcSerde.class.getSimpleName(),alterTbl.getOldName());
+    }
     sd.getSerdeInfo().setSerializationLib(serdeName);
     if ((alterTbl.getProps() != null) && (alterTbl.getProps().size() > 0)) {
       sd.getSerdeInfo().getParameters().putAll(alterTbl.getProps());
@@ -135,6 +160,9 @@
   }
  else   if (alterTbl.getOp() == AlterTableDesc.AlterTableTypes.ADDFILEFORMAT) {
     StorageDescriptor sd=(part == null ? tbl.getTTable().getSd() : part.getTPartition().getSd());
+    if (sd.getInputFormat().equals(OrcInputFormat.class.getName()) && !alterTbl.getInputFormat().equals(OrcInputFormat.class.getName())) {
+      throw new HiveException(ErrorMsg.CANNOT_CHANGE_FILEFORMAT,"ORC",alterTbl.getOldName());
+    }
     sd.setInputFormat(alterTbl.getInputFormat());
     sd.setOutputFormat(alterTbl.getOutputFormat());
     if (alterTbl.getSerdeName() != null) {
