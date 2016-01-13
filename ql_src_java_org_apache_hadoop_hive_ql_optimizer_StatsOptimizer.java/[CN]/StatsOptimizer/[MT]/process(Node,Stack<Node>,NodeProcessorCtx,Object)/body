@@ -1,4 +1,9 @@
 {
+  StatsOptimizerProcContext soProcCtx=(StatsOptimizerProcContext)procCtx;
+  if (soProcCtx.stopProcess) {
+    return null;
+  }
+  boolean isOptimized=false;
   try {
     TableScanOperator tsOp=(TableScanOperator)stack.get(0);
     if (tsOp.getNumParent() > 0) {
@@ -401,15 +406,30 @@ ois.add(TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(colInfo.getType
 }
 allRows.add(oneRowWithConstant);
 }
+FetchWork fWork=null;
+FetchTask fTask=pctx.getFetchTask();
+if (fTask != null) {
+fWork=fTask.getWork();
+fWork.getRowsComputedUsingStats().addAll(allRows);
+}
+ else {
 StandardStructObjectInspector sOI=ObjectInspectorFactory.getStandardStructObjectInspector(colNames,ois);
-FetchWork fWork=new FetchWork(allRows,sOI);
-FetchTask fTask=(FetchTask)TaskFactory.get(fWork,pctx.getConf());
-fWork.setLimit(allRows.size());
+fWork=new FetchWork(allRows,sOI);
+fTask=(FetchTask)TaskFactory.get(fWork,pctx.getConf());
 pctx.setFetchTask(fTask);
+}
+fWork.setLimit(fWork.getRowsComputedUsingStats().size());
+isOptimized=true;
 return null;
 }
  catch (Exception e) {
 Logger.debug("Failed to optimize using metadata optimizer",e);
 return null;
+}
+ finally {
+if (!isOptimized) {
+soProcCtx.stopProcess=true;
+pctx.setFetchTask(null);
+}
 }
 }
