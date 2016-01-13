@@ -1,29 +1,42 @@
 {
-  this.rootNode=rootNode;
-  startIndx=rootNode.getMemoizedStringLen();
-  String str;
-  if (children == null || children.size() == 0) {
-    str=this.toString();
-    rootNode.addtoMemoizedString(this.getType() != HiveParser.StringLiteral ? str.toLowerCase() : str);
-    endIndx=rootNode.getMemoizedStringLen();
-    return this.getType() != HiveParser.StringLiteral ? str.toLowerCase() : str;
-  }
-  if (!isNil()) {
-    rootNode.addtoMemoizedString("(");
-    str=this.toString();
-    rootNode.addtoMemoizedString((this.getType() == HiveParser.StringLiteral || null == str) ? str : str.toLowerCase());
-    rootNode.addtoMemoizedString(" ");
-  }
-  for (int i=0; children != null && i < children.size(); i++) {
-    ASTNode t=(ASTNode)children.get(i);
-    if (i > 0) {
-      rootNode.addtoMemoizedString(" ");
+  Deque<ASTNode> stack=new ArrayDeque<ASTNode>();
+  stack.push(this);
+  while (!stack.isEmpty()) {
+    ASTNode next=stack.peek();
+    if (!next.visited) {
+      if (next.parent != null && next.parent.getChildCount() > 1 && next != next.parent.getChild(0)) {
+        rootNode.addtoMemoizedString(" ");
+      }
+      next.rootNode=rootNode;
+      next.startIndx=rootNode.getMemoizedStringLen();
+      if (next.children == null || next.children.size() == 0) {
+        String str=next.toString();
+        rootNode.addtoMemoizedString(next.getType() != HiveParser.StringLiteral ? str.toLowerCase() : str);
+        next.endIndx=rootNode.getMemoizedStringLen();
+        stack.pop();
+        continue;
+      }
+      if (!next.isNil()) {
+        rootNode.addtoMemoizedString("(");
+        String str=next.toString();
+        rootNode.addtoMemoizedString((next.getType() == HiveParser.StringLiteral || null == str) ? str : str.toLowerCase());
+        rootNode.addtoMemoizedString(" ");
+      }
+      if (next.children != null) {
+        for (int i=next.children.size() - 1; i >= 0; i--) {
+          stack.push((ASTNode)next.children.get(i));
+        }
+      }
+      next.visited=true;
     }
-    t.toStringTree(rootNode);
+ else {
+      if (!next.isNil()) {
+        rootNode.addtoMemoizedString(")");
+      }
+      next.endIndx=rootNode.getMemoizedStringLen();
+      next.visited=false;
+      stack.pop();
+    }
   }
-  if (!isNil()) {
-    rootNode.addtoMemoizedString(")");
-  }
-  endIndx=rootNode.getMemoizedStringLen();
   return rootNode.getMemoizedSubString(startIndx,endIndx);
 }
