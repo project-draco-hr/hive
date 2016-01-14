@@ -1,0 +1,26 @@
+{
+  Connection dbConn=null;
+  Statement stmt=null;
+  try {
+    try {
+      dbConn=getDbConn(Connection.TRANSACTION_READ_COMMITTED);
+      stmt=dbConn.createStatement();
+      int updCount=stmt.executeUpdate("UPDATE COMPACTION_QUEUE SET CQ_HIGHEST_TXN_ID = " + highestTxnId + " WHERE CQ_ID = "+ ci.id);
+      if (updCount != 1) {
+        throw new IllegalStateException("Could not find record in COMPACTION_QUEUE for " + ci);
+      }
+      dbConn.commit();
+    }
+ catch (    SQLException e) {
+      rollbackDBConn(dbConn);
+      checkRetryable(dbConn,e,"setCompactionHighestTxnId(" + ci + ","+ highestTxnId+ ")");
+      throw new MetaException("Unable to connect to transaction database " + StringUtils.stringifyException(e));
+    }
+ finally {
+      close(null,stmt,dbConn);
+    }
+  }
+ catch (  RetryException ex) {
+    setCompactionHighestTxnId(ci,highestTxnId);
+  }
+}
