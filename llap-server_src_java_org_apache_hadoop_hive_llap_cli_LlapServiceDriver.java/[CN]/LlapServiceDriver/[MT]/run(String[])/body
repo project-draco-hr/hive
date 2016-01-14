@@ -79,25 +79,25 @@
   lfs.copyFromLocalFile(new Path(Utilities.jarFinderGetJar(LlapInputFormat.class)),libDir);
   lfs.copyFromLocalFile(new Path(Utilities.jarFinderGetJar(HiveInputFormat.class)),libDir);
   for (  String className : DEFAULT_AUX_CLASSES) {
-    String jarPath=null;
-    boolean hasException=false;
+    localizeJarForClass(lfs,libDir,className,false);
+  }
+  if (options.getIsHBase()) {
     try {
-      Class<?> auxClass=Class.forName(className);
-      jarPath=Utilities.jarFinderGetJar(auxClass);
+      localizeJarForClass(lfs,libDir,HBASE_SERDE_CLASS,true);
+      Job fakeJob=new Job(new JobConf());
+      TableMapReduceUtil.addDependencyJars(fakeJob);
+      Collection<String> hbaseJars=fakeJob.getConfiguration().getStringCollection("tmpjars");
+      for (      String jarPath : hbaseJars) {
+        if (!jarPath.isEmpty()) {
+          lfs.copyFromLocalFile(new Path(jarPath),libDir);
+        }
+      }
     }
  catch (    Throwable t) {
-      hasException=true;
-      String err="Cannot find a jar for [" + className + "] due to an exception ("+ t.getMessage()+ "); not packaging the jar";
-      LOG.error(err,t);
-      System.err.println(err);
-    }
-    if (jarPath != null) {
-      lfs.copyFromLocalFile(new Path(jarPath),libDir);
-    }
- else     if (!hasException) {
-      String err="Cannot find a jar for [" + className + "]; not packaging the jar";
+      String err="Failed to add HBase jars. Use --auxhbase=false to avoid localizing them";
       LOG.error(err);
       System.err.println(err);
+      throw new RuntimeException(t);
     }
   }
   String auxJars=options.getAuxJars();
