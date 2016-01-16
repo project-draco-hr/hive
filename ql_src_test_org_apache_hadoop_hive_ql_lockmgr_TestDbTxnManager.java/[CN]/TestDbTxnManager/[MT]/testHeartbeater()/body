@@ -1,0 +1,40 @@
+{
+  Assert.assertTrue(txnMgr instanceof DbTxnManager);
+  addTableInput();
+  LockException exception=null;
+  QueryPlan qp=new MockQueryPlan(this);
+  txnMgr.openTxn("fred");
+  txnMgr.acquireLocks(qp,ctx,"fred");
+  runReaper();
+  try {
+    txnMgr.commitTxn();
+  }
+ catch (  LockException e) {
+    exception=e;
+  }
+  Assert.assertNull("Txn commit should be successful",exception);
+  exception=null;
+  txnMgr.openTxn("tom");
+  ((DbTxnManager)txnMgr).acquireLocksWithHeartbeatDelay(qp,ctx,"tom",HiveConf.getTimeVar(conf,HiveConf.ConfVars.HIVE_TXN_TIMEOUT,TimeUnit.MILLISECONDS) / 2);
+  runReaper();
+  try {
+    txnMgr.commitTxn();
+  }
+ catch (  LockException e) {
+    exception=e;
+  }
+  Assert.assertNull("Txn commit should also be successful",exception);
+  exception=null;
+  txnMgr.openTxn("jerry");
+  ((DbTxnManager)txnMgr).acquireLocks(qp,ctx,"jerry",true);
+  Thread.sleep(HiveConf.getTimeVar(conf,HiveConf.ConfVars.HIVE_TXN_TIMEOUT,TimeUnit.MILLISECONDS));
+  runReaper();
+  try {
+    txnMgr.commitTxn();
+  }
+ catch (  LockException e) {
+    exception=e;
+  }
+  Assert.assertNotNull("Txn should have been aborted",exception);
+  Assert.assertEquals(ErrorMsg.TXN_ABORTED,exception.getCanonicalErrorMsg());
+}

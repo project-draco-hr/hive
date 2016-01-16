@@ -1,0 +1,137 @@
+{
+  long monitorStartTime=System.currentTimeMillis();
+  DAGStatus status=null;
+  completed=new HashSet<String>();
+  diagnostics=new StringBuffer();
+  boolean running=false;
+  boolean done=false;
+  int failedCounter=0;
+  int rc=0;
+  DAGStatus.State lastState=null;
+  String lastReport=null;
+  Set<StatusGetOpts> opts=new HashSet<StatusGetOpts>();
+  long startTime=0;
+  boolean isProfileEnabled=HiveConf.getBoolVar(conf,HiveConf.ConfVars.TEZ_EXEC_SUMMARY) || Utilities.isPerfOrAboveLogging(conf);
+  boolean inPlaceEligible=InPlaceUpdates.inPlaceEligible(conf);
+  shutdownList.add(dagClient);
+  console.printInfo("\n");
+  perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_RUN_DAG);
+  perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_SUBMIT_TO_RUNNING);
+  while (true) {
+    try {
+      status=dagClient.getDAGStatus(opts,checkInterval);
+      Map<String,Progress> progressMap=status.getVertexProgress();
+      DAGStatus.State state=status.getState();
+      if (state != lastState || state == RUNNING) {
+        lastState=state;
+switch (state) {
+case SUBMITTED:
+          console.printInfo("Status: Submitted");
+        break;
+case INITING:
+      console.printInfo("Status: Initializing");
+    startTime=System.currentTimeMillis();
+  break;
+case RUNNING:
+if (!running) {
+  perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.TEZ_SUBMIT_TO_RUNNING);
+  console.printInfo("Status: Running (" + dagClient.getExecutionContext() + ")\n");
+  startTime=System.currentTimeMillis();
+  running=true;
+}
+if (inPlaceEligible) {
+printStatusInPlace(progressMap,startTime,false,dagClient);
+lastReport=logStatus(progressMap,lastReport,console);
+}
+ else {
+lastReport=printStatus(progressMap,lastReport,console);
+}
+break;
+case SUCCEEDED:
+if (!running) {
+startTime=monitorStartTime;
+}
+if (inPlaceEligible) {
+printStatusInPlace(progressMap,startTime,false,dagClient);
+lastReport=logStatus(progressMap,lastReport,console);
+}
+ else {
+lastReport=printStatus(progressMap,lastReport,console);
+}
+if (isProfileEnabled) {
+double duration=(System.currentTimeMillis() - startTime) / 1000.0;
+console.printInfo("Status: DAG finished successfully in " + String.format("%.2f seconds",duration));
+console.printInfo("\n");
+printMethodsSummary();
+printDagSummary(progressMap,console,dagClient,conf,dag);
+}
+running=false;
+done=true;
+break;
+case KILLED:
+if (!running) {
+startTime=monitorStartTime;
+}
+if (inPlaceEligible) {
+printStatusInPlace(progressMap,startTime,true,dagClient);
+lastReport=logStatus(progressMap,lastReport,console);
+}
+console.printInfo("Status: Killed");
+running=false;
+done=true;
+rc=1;
+break;
+case FAILED:
+case ERROR:
+if (!running) {
+startTime=monitorStartTime;
+}
+if (inPlaceEligible) {
+printStatusInPlace(progressMap,startTime,true,dagClient);
+lastReport=logStatus(progressMap,lastReport,console);
+}
+console.printError("Status: Failed");
+running=false;
+done=true;
+rc=2;
+break;
+}
+}
+}
+ catch (Exception e) {
+console.printInfo("Exception: " + e.getMessage());
+boolean isInterrupted=hasInterruptedException(e);
+if (isInterrupted || (++failedCounter % maxRetryInterval / checkInterval == 0)) {
+try {
+console.printInfo("Killing DAG...");
+dagClient.tryKillDAG();
+}
+ catch (IOException io) {
+}
+catch (TezException te) {
+}
+e.printStackTrace();
+console.printError("Execution has failed.");
+rc=1;
+done=true;
+}
+ else {
+console.printInfo("Retrying...");
+}
+}
+ finally {
+if (done) {
+if (rc != 0 && status != null) {
+for (String diag : status.getDiagnostics()) {
+console.printError(diag);
+diagnostics.append(diag);
+}
+}
+shutdownList.remove(dagClient);
+break;
+}
+}
+}
+perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.TEZ_RUN_DAG);
+return rc;
+}
