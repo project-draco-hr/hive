@@ -107,13 +107,17 @@ ExprNodeColumnDesc desc=(ExprNodeColumnDesc)exprMap.get(((ExprNodeColumnDesc)agg
 String colName=desc.getColumn();
 StatType type=getType(desc.getTypeString());
 if (!tbl.isPartitioned()) {
-if (!StatsSetupConst.areStatsUptoDate(tbl.getParameters())) {
-Logger.debug("Stats for table : " + tbl.getTableName() + " are not upto date.");
+if (!StatsSetupConst.areBasicStatsUptoDate(tbl.getParameters())) {
+Logger.debug("Stats for table : " + tbl.getTableName() + " are not up to date.");
 return null;
 }
 rowCnt=Long.parseLong(tbl.getProperty(StatsSetupConst.ROW_COUNT));
-if (rowCnt < 1) {
-Logger.debug("Table doesn't have upto date stats " + tbl.getTableName());
+if (rowCnt == null) {
+Logger.debug("Table doesn't have up to date stats " + tbl.getTableName());
+return null;
+}
+if (!StatsSetupConst.areColumnStatsUptoDate(tbl.getParameters(),colName)) {
+Logger.debug("Stats for table : " + tbl.getTableName() + " column "+ colName+ " are not up to date.");
 return null;
 }
 List<ColumnStatisticsObj> stats=hive.getMSC().getTableColumnStatistics(tbl.getDbName(),tbl.getTableName(),Lists.newArrayList(colName));
@@ -133,18 +137,18 @@ rowCnt-=nullCnt;
  else {
 Set<Partition> parts=pctx.getPrunedPartitions(tsOp.getConf().getAlias(),tsOp).getPartitions();
 for (Partition part : parts) {
-if (!StatsSetupConst.areStatsUptoDate(part.getParameters())) {
-  Logger.debug("Stats for part : " + part.getSpec() + " are not upto date.");
+if (!StatsSetupConst.areBasicStatsUptoDate(part.getParameters())) {
+  Logger.debug("Stats for part : " + part.getSpec() + " are not up to date.");
   return null;
 }
 Long partRowCnt=Long.parseLong(part.getParameters().get(StatsSetupConst.ROW_COUNT));
-if (partRowCnt < 1) {
-  Logger.debug("Partition doesn't have upto date stats " + part.getSpec());
+if (partRowCnt == null) {
+  Logger.debug("Partition doesn't have up to date stats " + part.getSpec());
   return null;
 }
 rowCnt+=partRowCnt;
 }
-Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartStats(hive,tbl,colName,parts);
+Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartColumnStats(hive,tbl,colName,parts);
 if (result == null) {
 return null;
 }
@@ -169,8 +173,8 @@ ExprNodeColumnDesc colDesc=(ExprNodeColumnDesc)exprMap.get(((ExprNodeColumnDesc)
 String colName=colDesc.getColumn();
 StatType type=getType(colDesc.getTypeString());
 if (!tbl.isPartitioned()) {
-if (!StatsSetupConst.areStatsUptoDate(tbl.getParameters())) {
-Logger.debug("Stats for table : " + tbl.getTableName() + " are not upto date.");
+if (!StatsSetupConst.areColumnStatsUptoDate(tbl.getParameters(),colName)) {
+Logger.debug("Stats for table : " + tbl.getTableName() + " column "+ colName+ " are not up to date.");
 return null;
 }
 List<ColumnStatisticsObj> stats=hive.getMSC().getTableColumnStatistics(tbl.getDbName(),tbl.getTableName(),Lists.newArrayList(colName));
@@ -218,7 +222,7 @@ case Integeral:
 {
 LongSubType subType=LongSubType.valueOf(name);
 Long maxVal=null;
-Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartStats(hive,tbl,colName,parts);
+Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartColumnStats(hive,tbl,colName,parts);
 if (result == null) {
 return null;
 }
@@ -244,7 +248,7 @@ case Double:
 {
 DoubleSubType subType=DoubleSubType.valueOf(name);
 Double maxVal=null;
-Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartStats(hive,tbl,colName,parts);
+Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartColumnStats(hive,tbl,colName,parts);
 if (result == null) {
 return null;
 }
@@ -277,8 +281,8 @@ ExprNodeColumnDesc colDesc=(ExprNodeColumnDesc)exprMap.get(((ExprNodeColumnDesc)
 String colName=colDesc.getColumn();
 StatType type=getType(colDesc.getTypeString());
 if (!tbl.isPartitioned()) {
-if (!StatsSetupConst.areStatsUptoDate(tbl.getParameters())) {
-Logger.debug("Stats for table : " + tbl.getTableName() + " are not upto date.");
+if (!StatsSetupConst.areColumnStatsUptoDate(tbl.getParameters(),colName)) {
+Logger.debug("Stats for table : " + tbl.getTableName() + " column "+ colName+ " are not up to date.");
 return null;
 }
 ColumnStatisticsData statData=hive.getMSC().getTableColumnStatistics(tbl.getDbName(),tbl.getTableName(),Lists.newArrayList(colName)).get(0).getStatsData();
@@ -321,7 +325,7 @@ case Integeral:
 {
 LongSubType subType=LongSubType.valueOf(name);
 Long minVal=null;
-Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartStats(hive,tbl,colName,parts);
+Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartColumnStats(hive,tbl,colName,parts);
 if (result == null) {
 return null;
 }
@@ -347,7 +351,7 @@ case Double:
 {
 DoubleSubType subType=DoubleSubType.valueOf(name);
 Double minVal=null;
-Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartStats(hive,tbl,colName,parts);
+Collection<List<ColumnStatisticsObj>> result=verifyAndGetPartColumnStats(hive,tbl,colName,parts);
 if (result == null) {
 return null;
 }
