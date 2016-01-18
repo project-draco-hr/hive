@@ -1,9 +1,21 @@
 {
-  HashSet<ReadEntity> inputs=sem.getInputs();
-  HashSet<WriteEntity> outputs=sem.getOutputs();
   SessionState ss=SessionState.get();
   HiveOperation op=ss.getHiveOperation();
   Hive db=sem.getDb();
+  Set<ReadEntity> additionalInputs=new HashSet<ReadEntity>();
+  for (  Entity e : sem.getInputs()) {
+    if (e.getType() == Entity.Type.PARTITION) {
+      additionalInputs.add(new ReadEntity(e.getTable()));
+    }
+  }
+  Set<WriteEntity> additionalOutputs=new HashSet<WriteEntity>();
+  for (  Entity e : sem.getOutputs()) {
+    if (e.getType() == Entity.Type.PARTITION) {
+      additionalOutputs.add(new WriteEntity(e.getTable(),WriteEntity.WriteType.DDL_NO_LOCK));
+    }
+  }
+  Set<ReadEntity> inputs=Sets.union(sem.getInputs(),additionalInputs);
+  Set<WriteEntity> outputs=Sets.union(sem.getOutputs(),additionalOutputs);
   if (ss.isAuthorizationModeV2()) {
     ColumnAccessInfo colAccessInfo=sem.getColumnAccessInfo();
     Map<String,List<String>> selectTab2Cols=colAccessInfo != null ? colAccessInfo.getTableToColumnAccessMap() : null;
