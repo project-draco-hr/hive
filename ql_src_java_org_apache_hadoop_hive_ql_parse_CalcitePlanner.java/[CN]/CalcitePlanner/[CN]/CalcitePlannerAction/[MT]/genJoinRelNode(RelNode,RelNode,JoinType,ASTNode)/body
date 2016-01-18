@@ -1,17 +1,6 @@
 {
-  RelNode joinRel=null;
   RowResolver leftRR=this.relToHiveRR.get(leftRel);
   RowResolver rightRR=this.relToHiveRR.get(rightRel);
-  RowResolver joinRR=null;
-  if (hiveJoinType != JoinType.LEFTSEMI) {
-    joinRR=RowResolver.getCombinedRR(leftRR,rightRR);
-  }
- else {
-    joinRR=new RowResolver();
-    if (!RowResolver.add(joinRR,leftRR)) {
-      LOG.warn("Duplicates detected when adding columns to RR: see previous message");
-    }
-  }
   RexNode calciteJoinCond=null;
   if (joinCond != null) {
     JoinTypeCheckCtx jCtx=new JoinTypeCheckCtx(leftRR,rightRR,hiveJoinType);
@@ -47,6 +36,8 @@ default :
 calciteJoinType=JoinRelType.INNER;
 break;
 }
+RelNode topRel=null;
+RowResolver topRR=null;
 if (leftSemiJoin) {
 List<RelDataTypeField> sysFieldList=new ArrayList<RelDataTypeField>();
 List<RexNode> leftJoinKeys=new ArrayList<RexNode>();
@@ -59,12 +50,41 @@ RelNode[] inputRels=new RelNode[]{leftRel,rightRel};
 final List<Integer> leftKeys=new ArrayList<Integer>();
 final List<Integer> rightKeys=new ArrayList<Integer>();
 calciteJoinCond=HiveCalciteUtil.projectNonColumnEquiConditions(HiveRelFactories.HIVE_PROJECT_FACTORY,inputRels,leftJoinKeys,rightJoinKeys,0,leftKeys,rightKeys);
-joinRel=HiveSemiJoin.getSemiJoin(cluster,cluster.traitSetOf(HiveRelNode.CONVENTION),inputRels[0],inputRels[1],calciteJoinCond,ImmutableIntList.copyOf(leftKeys),ImmutableIntList.copyOf(rightKeys));
+topRel=HiveSemiJoin.getSemiJoin(cluster,cluster.traitSetOf(HiveRelNode.CONVENTION),inputRels[0],inputRels[1],calciteJoinCond,ImmutableIntList.copyOf(leftKeys),ImmutableIntList.copyOf(rightKeys));
+if (inputRels[0] != leftRel) {
+RowResolver newLeftRR=new RowResolver();
+if (!RowResolver.add(newLeftRR,leftRR)) {
+LOG.warn("Duplicates detected when adding columns to RR: see previous message");
+}
+for (int i=leftRel.getRowType().getFieldCount(); i < inputRels[0].getRowType().getFieldCount(); i++) {
+ColumnInfo oColInfo=new ColumnInfo(SemanticAnalyzer.getColumnInternalName(i),TypeConverter.convert(inputRels[0].getRowType().getFieldList().get(i).getType()),null,false);
+newLeftRR.put(oColInfo.getTabAlias(),oColInfo.getInternalName(),oColInfo);
+}
+RowResolver joinRR=new RowResolver();
+if (!RowResolver.add(joinRR,newLeftRR)) {
+LOG.warn("Duplicates detected when adding columns to RR: see previous message");
+}
+relToHiveColNameCalcitePosMap.put(topRel,this.buildHiveToCalciteColumnMap(joinRR,topRel));
+relToHiveRR.put(topRel,joinRR);
+List<RexNode> topFields=new ArrayList<RexNode>();
+List<String> topFieldNames=new ArrayList<String>();
+for (int i=0; i < leftRel.getRowType().getFieldCount(); i++) {
+final RelDataTypeField field=leftRel.getRowType().getFieldList().get(i);
+topFields.add(leftRel.getCluster().getRexBuilder().makeInputRef(field.getType(),i));
+topFieldNames.add(field.getName());
+}
+topRel=HiveRelFactories.HIVE_PROJECT_FACTORY.createProject(topRel,topFields,topFieldNames);
+}
+topRR=new RowResolver();
+if (!RowResolver.add(topRR,leftRR)) {
+LOG.warn("Duplicates detected when adding columns to RR: see previous message");
+}
 }
  else {
-joinRel=HiveJoin.getJoin(cluster,leftRel,rightRel,calciteJoinCond,calciteJoinType,leftSemiJoin);
+topRel=HiveJoin.getJoin(cluster,leftRel,rightRel,calciteJoinCond,calciteJoinType,leftSemiJoin);
+topRR=RowResolver.getCombinedRR(leftRR,rightRR);
 }
-relToHiveColNameCalcitePosMap.put(joinRel,this.buildHiveToCalciteColumnMap(joinRR,joinRel));
-relToHiveRR.put(joinRel,joinRR);
-return joinRel;
+relToHiveColNameCalcitePosMap.put(topRel,this.buildHiveToCalciteColumnMap(topRR,topRel));
+relToHiveRR.put(topRel,topRR);
+return topRel;
 }
