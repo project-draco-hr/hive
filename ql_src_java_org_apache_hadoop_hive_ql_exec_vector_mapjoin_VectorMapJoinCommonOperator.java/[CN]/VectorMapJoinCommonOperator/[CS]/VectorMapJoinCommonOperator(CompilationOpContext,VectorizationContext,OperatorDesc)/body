@@ -1,0 +1,46 @@
+{
+  super(ctx);
+  MapJoinDesc desc=(MapJoinDesc)conf;
+  this.conf=desc;
+  this.vContext=vContext;
+  vOutContext=new VectorizationContext(getName(),this.vContext);
+  order=desc.getTagOrder();
+  posBigTable=(byte)desc.getPosBigTable();
+  posSingleVectorMapJoinSmallTable=(order[0] == posBigTable ? order[1] : order[0]);
+  isOuterJoin=!desc.getNoOuterJoin();
+  Map<Byte,List<ExprNodeDesc>> filterExpressions=desc.getFilters();
+  bigTableFilterExpressions=vContext.getVectorExpressions(filterExpressions.get(posBigTable),VectorExpressionDescriptor.Mode.FILTER);
+  List<ExprNodeDesc> keyDesc=desc.getKeys().get(posBigTable);
+  bigTableKeyExpressions=vContext.getVectorExpressions(keyDesc);
+  bigTableKeyColumnMap=new int[bigTableKeyExpressions.length];
+  bigTableKeyTypeNames=new ArrayList<String>();
+  boolean onlyColumns=true;
+  for (int i=0; i < bigTableKeyColumnMap.length; i++) {
+    VectorExpression ve=bigTableKeyExpressions[i];
+    if (!IdentityExpression.isColumnOnly(ve)) {
+      onlyColumns=false;
+    }
+    bigTableKeyTypeNames.add(keyDesc.get(i).getTypeString());
+    bigTableKeyColumnMap[i]=ve.getOutputColumn();
+  }
+  if (onlyColumns) {
+    bigTableKeyExpressions=null;
+  }
+  List<ExprNodeDesc> bigTableExprs=desc.getExprs().get(posBigTable);
+  bigTableValueExpressions=vContext.getVectorExpressions(bigTableExprs);
+  bigTableValueColumnMap=new int[bigTableValueExpressions.length];
+  bigTableValueTypeNames=new ArrayList<String>();
+  onlyColumns=true;
+  for (int i=0; i < bigTableValueColumnMap.length; i++) {
+    VectorExpression ve=bigTableValueExpressions[i];
+    if (!IdentityExpression.isColumnOnly(ve)) {
+      onlyColumns=false;
+    }
+    bigTableValueTypeNames.add(bigTableExprs.get(i).getTypeString());
+    bigTableValueColumnMap[i]=ve.getOutputColumn();
+  }
+  if (onlyColumns) {
+    bigTableValueExpressions=null;
+  }
+  determineCommonInfo(isOuterJoin);
+}
