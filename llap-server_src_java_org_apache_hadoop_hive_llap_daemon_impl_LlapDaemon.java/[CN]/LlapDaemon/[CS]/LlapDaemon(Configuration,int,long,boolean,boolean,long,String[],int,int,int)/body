@@ -34,7 +34,16 @@
   LOG.info("Started LlapMetricsSystem with displayName: " + displayName + " sessionId: "+ sessionId);
   this.amReporter=new AMReporter(srvAddress,new QueryFailedHandlerProxy(),daemonConf);
   this.server=new LlapDaemonProtocolServerImpl(numHandlers,this,srvAddress,mngAddress,srvPort,mngPort);
-  this.containerRunner=new ContainerRunnerImpl(daemonConf,numExecutors,waitQueueSize,enablePreemption,localDirs,this.shufflePort,srvAddress,executorMemoryBytes,metrics,amReporter);
+  ClassLoader executorClassLoader=null;
+  if (HiveConf.getBoolVar(daemonConf,ConfVars.LLAP_DAEMON_ALLOW_PERMANENT_FNS)) {
+    this.fnLocalizer=new FunctionLocalizer(daemonConf,localDirs[0]);
+    executorClassLoader=fnLocalizer.getClassLoader();
+  }
+ else {
+    this.fnLocalizer=null;
+    executorClassLoader=Thread.currentThread().getContextClassLoader();
+  }
+  this.containerRunner=new ContainerRunnerImpl(daemonConf,numExecutors,waitQueueSize,enablePreemption,localDirs,this.shufflePort,srvAddress,executorMemoryBytes,metrics,amReporter,executorClassLoader);
   addIfService(containerRunner);
   this.registry=new LlapRegistryService(true);
   addIfService(registry);
