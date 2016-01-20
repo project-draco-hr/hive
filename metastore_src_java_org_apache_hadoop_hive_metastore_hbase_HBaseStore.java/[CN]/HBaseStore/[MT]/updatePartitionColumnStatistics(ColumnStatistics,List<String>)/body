@@ -2,8 +2,19 @@
   boolean commit=false;
   openTransaction();
   try {
-    getHBase().updateStatistics(statsObj.getStatsDesc().getDbName(),statsObj.getStatsDesc().getTableName(),partVals,statsObj);
-    getHBase().getStatsCache().invalidate(statsObj.getStatsDesc().getDbName(),statsObj.getStatsDesc().getTableName(),statsObj.getStatsDesc().getPartName());
+    String db_name=colStats.getStatsDesc().getDbName();
+    String tbl_name=colStats.getStatsDesc().getTableName();
+    Partition oldPart=getHBase().getPartition(db_name,tbl_name,partVals);
+    Partition new_partCopy=oldPart.deepCopy();
+    List<String> colNames=new ArrayList<>();
+    List<ColumnStatisticsObj> statsObjs=colStats.getStatsObj();
+    for (    ColumnStatisticsObj statsObj : statsObjs) {
+      colNames.add(statsObj.getColName());
+    }
+    StatsSetupConst.setColumnStatsState(new_partCopy.getParameters(),colNames);
+    getHBase().replacePartition(oldPart,new_partCopy,HBaseUtils.getPartitionKeyTypes(getTable(db_name,tbl_name).getPartitionKeys()));
+    getHBase().updateStatistics(colStats.getStatsDesc().getDbName(),colStats.getStatsDesc().getTableName(),partVals,colStats);
+    getHBase().getStatsCache().invalidate(colStats.getStatsDesc().getDbName(),colStats.getStatsDesc().getTableName(),colStats.getStatsDesc().getPartName());
     commit=true;
     return true;
   }
