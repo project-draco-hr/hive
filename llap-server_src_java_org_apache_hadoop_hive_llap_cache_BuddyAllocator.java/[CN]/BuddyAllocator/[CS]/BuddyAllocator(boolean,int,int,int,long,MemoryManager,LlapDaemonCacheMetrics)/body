@@ -1,0 +1,48 @@
+{
+  isDirect=isDirectVal;
+  minAllocation=minAllocVal;
+  maxAllocation=maxAllocVal;
+  int arenaSizeVal=(arenaCount == 0) ? MAX_ARENA_SIZE : (int)(maxSizeVal / arenaCount);
+  arenaSizeVal=Math.max(maxAllocation,Math.min(arenaSizeVal,MAX_ARENA_SIZE));
+  if (LlapIoImpl.LOG.isInfoEnabled()) {
+    LlapIoImpl.LOG.info("Buddy allocator with " + (isDirect ? "direct" : "byte") + " buffers; allocation sizes "+ minAllocation+ " - "+ maxAllocation+ ", arena size "+ arenaSizeVal+ ". total size "+ maxSizeVal);
+  }
+  if (minAllocation < 8) {
+    throw new AssertionError("Min allocation must be at least 8 bytes: " + minAllocation);
+  }
+  if (maxSizeVal < arenaSizeVal || maxAllocation < minAllocation) {
+    throw new AssertionError("Inconsistent sizes of cache, arena and allocations: " + minAllocation + ", "+ maxAllocation+ ", "+ arenaSizeVal+ ", "+ maxSizeVal);
+  }
+  if ((Integer.bitCount(minAllocation) != 1) || (Integer.bitCount(maxAllocation) != 1)) {
+    throw new AssertionError("Allocation sizes must be powers of two: " + minAllocation + ", "+ maxAllocation);
+  }
+  if ((arenaSizeVal % maxAllocation) > 0) {
+    long oldArenaSize=arenaSizeVal;
+    arenaSizeVal=(arenaSizeVal / maxAllocation) * maxAllocation;
+    LlapIoImpl.LOG.warn("Rounding arena size to " + arenaSizeVal + " from "+ oldArenaSize+ " to be divisible by allocation size "+ maxAllocation);
+  }
+  arenaSize=arenaSizeVal;
+  if ((maxSizeVal % arenaSize) > 0) {
+    long oldMaxSize=maxSizeVal;
+    maxSizeVal=(maxSizeVal / arenaSize) * arenaSize;
+    LlapIoImpl.LOG.warn("Rounding cache size to " + maxSizeVal + " from "+ oldMaxSize+ " to be divisible by arena size "+ arenaSize);
+  }
+  if ((maxSizeVal / arenaSize) > Integer.MAX_VALUE) {
+    throw new AssertionError("Too many arenas needed to allocate the cache: " + arenaSize + ","+ maxSizeVal);
+  }
+  maxSize=maxSizeVal;
+  memoryManager.updateMaxSize(maxSize);
+  minAllocLog2=31 - Integer.numberOfLeadingZeros(minAllocation);
+  maxAllocLog2=31 - Integer.numberOfLeadingZeros(maxAllocation);
+  arenaSizeLog2=63 - Long.numberOfLeadingZeros(arenaSize);
+  maxArenas=(int)(maxSize / arenaSize);
+  arenas=new Arena[maxArenas];
+  for (int i=0; i < maxArenas; ++i) {
+    arenas[i]=new Arena();
+  }
+  arenas[0].init();
+  allocatedArenas.set(1);
+  this.memoryManager=memoryManager;
+  this.metrics=metrics;
+  metrics.incrAllocatedArena();
+}
