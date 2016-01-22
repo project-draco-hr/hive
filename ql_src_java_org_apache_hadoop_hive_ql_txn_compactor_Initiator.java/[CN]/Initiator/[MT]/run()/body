@@ -29,6 +29,10 @@
               LOG.debug("Found currently initiated or working compaction for " + ci.getFullPartitionName() + " so we will not initiate another compaction");
               continue;
             }
+            if (txnHandler.checkFailedCompactions(ci)) {
+              LOG.warn("Will not initiate compaction for " + ci.getFullPartitionName() + " since last 3 attempts to compact it failed.");
+              continue;
+            }
             Partition p=resolvePartition(ci);
             if (p == null && ci.partName != null) {
               LOG.info("Can't find partition " + ci.getFullPartitionName() + ", assuming it has been dropped and moving on.");
@@ -40,8 +44,8 @@
             if (compactionNeeded != null)             requestCompaction(ci,runAs,compactionNeeded);
           }
  catch (          Throwable t) {
-            LOG.error("Caught exception while trying to determine if we should compact " + ci.getFullPartitionName() + ".  Marking clean to avoid repeated failures, "+ ""+ StringUtils.stringifyException(t));
-            txnHandler.markCleaned(ci);
+            LOG.error("Caught exception while trying to determine if we should compact " + ci + ".  Marking clean to avoid repeated failures, "+ ""+ StringUtils.stringifyException(t));
+            txnHandler.markFailed(ci);
           }
         }
         recoverFailedCompactions(true);

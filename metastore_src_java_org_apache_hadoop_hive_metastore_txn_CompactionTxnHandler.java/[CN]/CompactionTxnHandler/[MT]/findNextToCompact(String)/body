@@ -20,48 +20,39 @@
         info.dbname=rs.getString(2);
         info.tableName=rs.getString(3);
         info.partName=rs.getString(4);
-switch (rs.getString(5).charAt(0)) {
-case MAJOR_TYPE:
-          info.type=CompactionType.MAJOR;
-        break;
-case MINOR_TYPE:
-      info.type=CompactionType.MINOR;
-    break;
-default :
-  throw new MetaException("Unexpected compaction type " + rs.getString(5));
-}
-long now=getDbTime(dbConn);
-s="update COMPACTION_QUEUE set cq_worker_id = '" + workerId + "', "+ "cq_start = "+ now+ ", cq_state = '"+ WORKING_STATE+ "' where cq_id = "+ info.id+ " AND cq_state='"+ INITIATED_STATE+ "'";
-LOG.debug("Going to execute update <" + s + ">");
-int updCount=stmt.executeUpdate(s);
-if (updCount == 1) {
-dbConn.commit();
-return info;
-}
-if (updCount == 0) {
-LOG.debug("Another Worker picked up " + info);
-continue;
-}
-LOG.error("Unable to set to cq_state=" + WORKING_STATE + " for compaction record: "+ info+ ". updCnt="+ updCount+ ".");
-dbConn.rollback();
-return null;
-}
+        info.type=dbCompactionType2ThriftType(rs.getString(5).charAt(0));
+        long now=getDbTime(dbConn);
+        s="update COMPACTION_QUEUE set cq_worker_id = '" + workerId + "', "+ "cq_start = "+ now+ ", cq_state = '"+ WORKING_STATE+ "' where cq_id = "+ info.id+ " AND cq_state='"+ INITIATED_STATE+ "'";
+        LOG.debug("Going to execute update <" + s + ">");
+        int updCount=stmt.executeUpdate(s);
+        if (updCount == 1) {
+          dbConn.commit();
+          return info;
+        }
+        if (updCount == 0) {
+          LOG.debug("Another Worker picked up " + info);
+          continue;
+        }
+        LOG.error("Unable to set to cq_state=" + WORKING_STATE + " for compaction record: "+ info+ ". updCnt="+ updCount+ ".");
+        dbConn.rollback();
+        return null;
+      }
  while (rs.next());
-dbConn.rollback();
-return null;
-}
- catch (SQLException e) {
-LOG.error("Unable to select next element for compaction, " + e.getMessage());
-LOG.debug("Going to rollback");
-rollbackDBConn(dbConn);
-checkRetryable(dbConn,e,"findNextToCompact(workerId:" + workerId + ")");
-throw new MetaException("Unable to connect to transaction database " + StringUtils.stringifyException(e));
-}
+      dbConn.rollback();
+      return null;
+    }
+ catch (    SQLException e) {
+      LOG.error("Unable to select next element for compaction, " + e.getMessage());
+      LOG.debug("Going to rollback");
+      rollbackDBConn(dbConn);
+      checkRetryable(dbConn,e,"findNextToCompact(workerId:" + workerId + ")");
+      throw new MetaException("Unable to connect to transaction database " + StringUtils.stringifyException(e));
+    }
  finally {
-close(rs,stmt,dbConn);
-}
-}
- catch (RetryException e) {
-return findNextToCompact(workerId);
-}
+      close(rs,stmt,dbConn);
+    }
+  }
+ catch (  RetryException e) {
+    return findNextToCompact(workerId);
+  }
 }

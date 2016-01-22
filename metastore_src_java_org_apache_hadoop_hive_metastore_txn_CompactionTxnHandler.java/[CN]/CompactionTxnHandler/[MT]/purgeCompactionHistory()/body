@@ -1,0 +1,52 @@
+{
+  Connection dbConn=null;
+  Statement stmt=null;
+  ResultSet rs=null;
+  List<Long> deleteSet=new ArrayList<>();
+  RetentionCounters rc=null;
+  try {
+    try {
+      dbConn=getDbConn(Connection.TRANSACTION_READ_COMMITTED);
+      stmt=dbConn.createStatement();
+      rs=stmt.executeQuery("select cc_id, cc_database, cc_table, cc_partition, cc_state from " + "COMPLETED_COMPACTIONS order by cc_database, cc_table, cc_partition, cc_id desc");
+      String lastCompactedEntity=null;
+      while (rs.next()) {
+        CompactionInfo ci=new CompactionInfo(rs.getLong(1),rs.getString(2),rs.getString(3),rs.getString(4),rs.getString(5).charAt(0));
+        if (!ci.getFullPartitionName().equals(lastCompactedEntity)) {
+          lastCompactedEntity=ci.getFullPartitionName();
+          rc=new RetentionCounters(conf.getIntVar(HiveConf.ConfVars.COMPACTOR_HISTORY_RETENTION_ATTEMPTED),getFailedCompactionRetention(),conf.getIntVar(HiveConf.ConfVars.COMPACTOR_HISTORY_RETENTION_SUCCEEDED));
+        }
+        checkForDeletion(deleteSet,ci,rc);
+      }
+      close(rs);
+      String baseDeleteSql="delete from COMPLETED_COMPACTIONS where cc_id IN(";
+      StringBuilder queryStr=new StringBuilder(baseDeleteSql);
+      for (int i=0; i < deleteSet.size(); i++) {
+        if (i > 0 && i % TIMED_OUT_TXN_ABORT_BATCH_SIZE == 0) {
+          queryStr.setCharAt(queryStr.length() - 1,')');
+          stmt.executeUpdate(queryStr.toString());
+          dbConn.commit();
+          queryStr=new StringBuilder(baseDeleteSql);
+        }
+        queryStr.append(deleteSet.get(i)).append(',');
+      }
+      if (queryStr.length() > baseDeleteSql.length()) {
+        queryStr.setCharAt(queryStr.length() - 1,')');
+        int updCnt=stmt.executeUpdate(queryStr.toString());
+        dbConn.commit();
+      }
+      dbConn.commit();
+    }
+ catch (    SQLException e) {
+      rollbackDBConn(dbConn);
+      checkRetryable(dbConn,e,"purgeCompactionHistory()");
+      throw new MetaException("Unable to connect to transaction database " + StringUtils.stringifyException(e));
+    }
+ finally {
+      close(rs,stmt,dbConn);
+    }
+  }
+ catch (  RetryException ex) {
+    purgeCompactionHistory();
+  }
+}

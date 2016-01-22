@@ -1,0 +1,38 @@
+{
+  Connection dbConn=null;
+  Statement stmt=null;
+  ResultSet rs=null;
+  try {
+    try {
+      dbConn=getDbConn(Connection.TRANSACTION_READ_COMMITTED);
+      stmt=dbConn.createStatement();
+      rs=stmt.executeQuery("select CC_STATE from COMPLETED_COMPACTIONS where " + "CC_DATABASE = " + quoteString(ci.dbname) + " and "+ "CC_TABLE = "+ quoteString(ci.tableName)+ (ci.partName != null ? "and CC_PARTITION = " + quoteString(ci.partName) : "")+ " order by CC_ID desc");
+      int numFailed=0;
+      int numTotal=0;
+      int failedThreshold=conf.getIntVar(HiveConf.ConfVars.COMPACTOR_INITIATOR_FAILED_THRESHOLD);
+      while (rs.next() && ++numTotal <= failedThreshold) {
+        if (rs.getString(1).charAt(0) == FAILED_STATE) {
+          numFailed++;
+        }
+ else {
+          numFailed--;
+        }
+      }
+      return numFailed == failedThreshold;
+    }
+ catch (    SQLException e) {
+      LOG.error("Unable to delete from compaction queue " + e.getMessage());
+      LOG.debug("Going to rollback");
+      rollbackDBConn(dbConn);
+      checkRetryable(dbConn,e,"checkFailedCompactions(" + ci + ")");
+      LOG.error("Unable to connect to transaction database " + StringUtils.stringifyException(e));
+      return false;
+    }
+ finally {
+      close(rs,stmt,dbConn);
+    }
+  }
+ catch (  RetryException e) {
+    return checkFailedCompactions(ci);
+  }
+}
