@@ -1,6 +1,5 @@
 {
   Path tblDataLocationPath=tbl.getDataLocation();
-  Partition newTPart=null;
   try {
     Partition oldPart=getPartition(tbl,partSpec,false);
     Path oldPartPath=null;
@@ -27,11 +26,18 @@
       Hive.replaceFiles(tbl.getPath(),loadPath,newPartPath,oldPartPath,getConf(),isSrcLocal);
     }
  else {
-      newFiles=new ArrayList<Path>();
+      if (conf.getBoolVar(ConfVars.FIRE_EVENTS_FOR_DML) && !tbl.isTemporary()) {
+        newFiles=new ArrayList<>();
+      }
       FileSystem fs=tbl.getDataLocation().getFileSystem(conf);
       Hive.copyFiles(conf,loadPath,newPartPath,fs,isSrcLocal,isAcid,newFiles);
     }
-    newTPart=getPartition(tbl,partSpec,true,newPartPath.toString(),inheritTableSpecs,newFiles);
+    Partition newTPart=oldPart != null ? oldPart : new Partition(tbl,partSpec,newPartPath);
+    alterPartitionSpecInMemory(tbl,partSpec,newTPart.getTPartition(),inheritTableSpecs,newPartPath.toString());
+    validatePartition(newTPart);
+    if (oldPart != null && null != newFiles) {
+      fireInsertEvent(tbl,partSpec,newFiles);
+    }
     StatsSetupConst.clearColumnStatsState(newTPart.getParameters());
     if (isSkewedStoreAsSubdir) {
       org.apache.hadoop.hive.metastore.api.Partition newCreatedTpart=newTPart.getTPartition();
@@ -39,17 +45,19 @@
       Map<List<String>,String> skewedColValueLocationMaps=constructListBucketingLocationMap(newPartPath,skewedInfo);
       skewedInfo.setSkewedColValueLocationMaps(skewedColValueLocationMaps);
       newCreatedTpart.getSd().setSkewedInfo(skewedInfo);
-      if (!this.getConf().getBoolVar(HiveConf.ConfVars.HIVESTATSAUTOGATHER)) {
-        StatsSetupConst.setBasicStatsState(newTPart.getParameters(),StatsSetupConst.FALSE);
-      }
-      alterPartition(tbl.getDbName(),tbl.getTableName(),new Partition(tbl,newCreatedTpart));
-      newTPart=getPartition(tbl,partSpec,true,newPartPath.toString(),inheritTableSpecs,newFiles);
-      return new Partition(tbl,newCreatedTpart);
     }
     if (!this.getConf().getBoolVar(HiveConf.ConfVars.HIVESTATSAUTOGATHER)) {
       StatsSetupConst.setBasicStatsState(newTPart.getParameters(),StatsSetupConst.FALSE);
     }
-    alterPartition(tbl.getDbName(),tbl.getTableName(),new Partition(tbl,newTPart.getTPartition()));
+    if (oldPart == null) {
+      newTPart.getTPartition().setParameters(new HashMap<String,String>());
+      MetaStoreUtils.populateQuickStats(HiveStatsUtils.getFileStatusRecurse(newPartPath,-1,newPartPath.getFileSystem(conf)),newTPart.getParameters());
+      getMSC().add_partition(newTPart.getTPartition());
+    }
+ else {
+      alterPartition(tbl.getDbName(),tbl.getTableName(),new Partition(tbl,newTPart.getTPartition()));
+    }
+    return newTPart;
   }
  catch (  IOException e) {
     LOG.error(StringUtils.stringifyException(e));
@@ -63,5 +71,8 @@ catch (  InvalidOperationException e) {
     LOG.error(StringUtils.stringifyException(e));
     throw new HiveException(e);
   }
-  return newTPart;
+catch (  TException e) {
+    LOG.error(StringUtils.stringifyException(e));
+    throw new HiveException(e);
+  }
 }
