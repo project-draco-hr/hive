@@ -1,14 +1,47 @@
 {
   this.inited=true;
-  for (int i=0; i < blockingQueueLength; i++) {
-    HiveConf newConf=new HiveConf(initConf);
-    TezSessionPoolSession sessionState=defaultQueuePool.take();
-    boolean isUsable=sessionState.tryUse();
-    if (!isUsable)     throw new IOException(sessionState + " is not usable at pool startup");
-    newConf.set("tez.queue.name",sessionState.getQueueName());
-    sessionState.open(newConf);
-    if (sessionState.returnAfterUse()) {
-      defaultQueuePool.put(sessionState);
+  if (blockingQueueLength == 0)   return;
+  int threadCount=Math.min(blockingQueueLength,HiveConf.getIntVar(initConf,ConfVars.HIVE_SERVER2_TEZ_SESSION_MAX_INIT_THREADS));
+  Preconditions.checkArgument(threadCount > 0);
+  if (threadCount == 1) {
+    for (int i=0; i < blockingQueueLength; i++) {
+      startNextSessionFromQueue();
+    }
+  }
+ else {
+    final SessionState parentSessionState=SessionState.get();
+    final AtomicInteger remainingToStart=new AtomicInteger(blockingQueueLength);
+    final AtomicReference<Exception> firstError=new AtomicReference<>(null);
+    Runnable runnable=new Runnable(){
+      public void run(){
+        if (parentSessionState != null) {
+          SessionState.setCurrentSessionState(parentSessionState);
+        }
+        while (remainingToStart.decrementAndGet() >= 0) {
+          try {
+            startNextSessionFromQueue();
+          }
+ catch (          Exception e) {
+            if (!firstError.compareAndSet(null,e)) {
+              LOG.error("Failed to start session; ignoring due to previous error",e);
+            }
+          }
+        }
+      }
+    }
+;
+    Thread[] threads=new Thread[threadCount - 1];
+    for (int i=0; i < threads.length; ++i) {
+      threads[i]=new Thread(runnable,"Tez session init " + i);
+      threads[i].start();
+    }
+    runnable.run();
+    for (int i=0; i < threads.length; ++i) {
+      threads[i].join();
+    }
+    Exception ex=firstError.get();
+    if (ex != null) {
+      throw ex;
     }
   }
   if (expirationThread != null) {

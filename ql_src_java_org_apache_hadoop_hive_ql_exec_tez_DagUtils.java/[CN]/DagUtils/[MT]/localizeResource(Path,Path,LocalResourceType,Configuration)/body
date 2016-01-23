@@ -1,33 +1,31 @@
 {
   FileSystem destFS=dest.getFileSystem(conf);
-  if (src != null && checkPreExisting(src,dest,conf) == false) {
-    LOG.info("Localizing resource because it does not exist: " + src + " to dest: "+ dest);
+  if (src != null && !checkPreExisting(src,dest,conf)) {
+    String srcStr=src.toString();
+    LOG.info("Localizing resource because it does not exist: " + srcStr + " to dest: "+ dest);
+    Object notifierNew=new Object(), notifierOld=copyNotifiers.putIfAbsent(srcStr,notifierNew), notifier=(notifierOld == null) ? notifierNew : notifierOld;
+    if (notifierOld != null && checkOrWaitForTheFile(src,dest,conf,notifierOld,1,150,false)) {
+      return createLocalResource(destFS,dest,type,LocalResourceVisibility.PRIVATE);
+    }
     try {
       destFS.copyFromLocalFile(false,false,src,dest);
+synchronized (notifier) {
+        notifier.notifyAll();
+      }
+      copyNotifiers.remove(srcStr,notifier);
     }
  catch (    IOException e) {
-      LOG.info("Looks like another thread is writing the same file will wait.");
-      int waitAttempts=conf.getInt(HiveConf.ConfVars.HIVE_LOCALIZE_RESOURCE_NUM_WAIT_ATTEMPTS.varname,HiveConf.ConfVars.HIVE_LOCALIZE_RESOURCE_NUM_WAIT_ATTEMPTS.defaultIntVal);
+      LOG.info("Looks like another thread or process is writing the same file");
+      int waitAttempts=HiveConf.getIntVar(conf,ConfVars.HIVE_LOCALIZE_RESOURCE_NUM_WAIT_ATTEMPTS);
       long sleepInterval=HiveConf.getTimeVar(conf,HiveConf.ConfVars.HIVE_LOCALIZE_RESOURCE_WAIT_INTERVAL,TimeUnit.MILLISECONDS);
-      LOG.info("Number of wait attempts: " + waitAttempts + ". Wait interval: "+ sleepInterval);
-      boolean found=false;
-      for (int i=0; i < waitAttempts; i++) {
-        if (!checkPreExisting(src,dest,conf)) {
-          try {
-            Thread.sleep(sleepInterval);
-          }
- catch (          InterruptedException interruptedException) {
-            throw new IOException(interruptedException);
-          }
-        }
- else {
-          found=true;
-          break;
-        }
-      }
-      if (!found) {
+      if (!checkOrWaitForTheFile(src,dest,conf,notifierOld,waitAttempts,sleepInterval,true)) {
         LOG.error("Could not find the jar that was being uploaded");
         throw new IOException("Previous writer likely failed to write " + dest + ". Failing because I am unlikely to write too.");
+      }
+    }
+ finally {
+      if (notifier == notifierNew) {
+        copyNotifiers.remove(srcStr,notifierNew);
       }
     }
   }
