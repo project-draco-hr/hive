@@ -1,0 +1,21 @@
+{
+  ReadWriteLock dagLock=getDagLock(queryIdentifier);
+  dagLock.readLock().lock();
+  try {
+    if (!completedDagMap.contains(queryIdentifier)) {
+      QueryInfo queryInfo=queryInfoMap.get(queryIdentifier);
+      if (queryInfo == null) {
+        queryInfo=new QueryInfo(queryIdentifier,appIdString,dagName,dagIdentifier,user,getSourceCompletionMap(queryIdentifier),localDirsBase,localFs);
+        queryInfoMap.putIfAbsent(queryIdentifier,queryInfo);
+      }
+      return queryInfo.registerFragment(vertexName,fragmentNumber,attemptNumber,fragmentSpec);
+    }
+ else {
+      dagSpecificLocks.remove(queryIdentifier);
+      throw new RuntimeException("Dag " + dagName + " already complete. Rejecting fragment ["+ vertexName+ ", "+ fragmentNumber+ ", "+ attemptNumber+ "]");
+    }
+  }
+  finally {
+    dagLock.readLock().unlock();
+  }
+}
