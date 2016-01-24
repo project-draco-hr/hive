@@ -55,13 +55,14 @@
     Multimap<Integer,InputSplit> bucketToGroupedSplitMap=HashMultimap.<Integer,InputSplit>create();
     boolean secondLevelGroupingDone=false;
     if ((mainWorkName.isEmpty()) || (inputName.compareTo(mainWorkName) == 0)) {
+      SplitLocationProvider splitLocationProvider=Utils.getSplitLocationProvider(conf,LOG);
       for (      Integer key : bucketToInitialSplitMap.keySet()) {
         InputSplit[] inputSplitArray=(bucketToInitialSplitMap.get(key).toArray(new InputSplit[0]));
-        Multimap<Integer,InputSplit> groupedSplit=grouper.generateGroupedSplits(jobConf,conf,inputSplitArray,waves,availableSlots,inputName,mainWorkName.isEmpty());
+        Multimap<Integer,InputSplit> groupedSplit=grouper.generateGroupedSplits(jobConf,conf,inputSplitArray,waves,availableSlots,inputName,mainWorkName.isEmpty(),splitLocationProvider);
         if (mainWorkName.isEmpty() == false) {
           Multimap<Integer,InputSplit> singleBucketToGroupedSplit=HashMultimap.<Integer,InputSplit>create();
           singleBucketToGroupedSplit.putAll(key,groupedSplit.values());
-          groupedSplit=grouper.group(jobConf,singleBucketToGroupedSplit,availableSlots,HiveConf.getFloatVar(conf,HiveConf.ConfVars.TEZ_SMB_NUMBER_WAVES));
+          groupedSplit=grouper.group(jobConf,singleBucketToGroupedSplit,availableSlots,HiveConf.getFloatVar(conf,HiveConf.ConfVars.TEZ_SMB_NUMBER_WAVES),null);
           secondLevelGroupingDone=true;
         }
         bucketToGroupedSplitMap.putAll(key,groupedSplit.values());
@@ -69,9 +70,10 @@
       processAllEvents(inputName,bucketToGroupedSplitMap,secondLevelGroupingDone);
     }
  else {
+      SplitLocationProvider splitLocationProvider=Utils.getSplitLocationProvider(conf,LOG);
       for (      Integer key : bucketToInitialSplitMap.keySet()) {
         InputSplit[] inputSplitArray=(bucketToInitialSplitMap.get(key).toArray(new InputSplit[0]));
-        Multimap<Integer,InputSplit> groupedSplit=grouper.generateGroupedSplits(jobConf,conf,inputSplitArray,waves,availableSlots,inputName,false);
+        Multimap<Integer,InputSplit> groupedSplit=grouper.generateGroupedSplits(jobConf,conf,inputSplitArray,waves,availableSlots,inputName,false,splitLocationProvider);
         bucketToGroupedSplitMap.putAll(key,groupedSplit.values());
       }
       LOG.info("This is the side work - multi-mr work.");

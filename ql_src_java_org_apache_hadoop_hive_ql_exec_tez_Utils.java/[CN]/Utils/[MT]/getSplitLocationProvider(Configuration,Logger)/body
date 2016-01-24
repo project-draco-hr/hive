@@ -1,0 +1,23 @@
+{
+  boolean useCustomLocations=HiveConf.getBoolVar(conf,HiveConf.ConfVars.LLAP_CLIENT_CONSISTENT_SPLITS);
+  SplitLocationProvider splitLocationProvider;
+  LOG.info("SplitGenerator using llap affinitized locations: " + useCustomLocations);
+  if (useCustomLocations) {
+    LlapRegistryService serviceRegistry;
+    serviceRegistry=LlapRegistryService.getClient(conf);
+    List<ServiceInstance> serviceInstances=serviceRegistry.getInstances().getAllInstancesOrdered();
+    String[] locations=new String[serviceInstances.size()];
+    int i=0;
+    for (    ServiceInstance serviceInstance : serviceInstances) {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Adding " + serviceInstance.getWorkerIdentity() + " with hostname="+ serviceInstance.getHost()+ " to list for split locations");
+      }
+      locations[i++]=serviceInstance.getHost();
+    }
+    splitLocationProvider=new HostAffinitySplitLocationProvider(locations);
+  }
+ else {
+    splitLocationProvider=null;
+  }
+  return splitLocationProvider;
+}
