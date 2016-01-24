@@ -1,25 +1,22 @@
 {
   boolean vectorMode=Utilities.isVectorMode(conf);
-  if (inputSplit.getClass() == FileSplit.class) {
+  boolean isAcidRead=isAcidRead(conf,inputSplit);
+  if (!isAcidRead) {
     if (vectorMode) {
       return createVectorizedReader(inputSplit,conf,reporter);
     }
-    return new OrcRecordReader(OrcFile.createReader(((FileSplit)inputSplit).getPath(),OrcFile.readerOptions(conf)),conf,(FileSplit)inputSplit);
+ else {
+      return new OrcRecordReader(OrcFile.createReader(((FileSplit)inputSplit).getPath(),OrcFile.readerOptions(conf)),conf,(FileSplit)inputSplit);
+    }
   }
   OrcSplit split=(OrcSplit)inputSplit;
   reporter.setStatus(inputSplit.toString());
   Options options=new Options(conf).reporter(reporter);
   final RowReader<OrcStruct> inner=getReader(inputSplit,options);
-  if (split.isOriginal() && split.getDeltas().isEmpty()) {
-    if (vectorMode) {
-      return createVectorizedReader(inputSplit,conf,reporter);
-    }
- else {
-      return new NullKeyRecordReader(inner,conf);
-    }
-  }
   if (vectorMode) {
     return (org.apache.hadoop.mapred.RecordReader)new VectorizedOrcAcidRowReader(inner,conf,Utilities.getMapWork(conf).getVectorizedRowBatchCtx(),(FileSplit)inputSplit);
   }
-  return new NullKeyRecordReader(inner,conf);
+ else {
+    return new NullKeyRecordReader(inner,conf);
+  }
 }
