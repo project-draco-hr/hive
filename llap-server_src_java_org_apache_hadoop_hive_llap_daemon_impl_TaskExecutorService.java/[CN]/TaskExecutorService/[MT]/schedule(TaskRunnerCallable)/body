@@ -2,7 +2,9 @@
   TaskWrapper taskWrapper=new TaskWrapper(task,this);
   SubmissionState result;
   TaskWrapper evictedTask;
+  boolean canFinish;
 synchronized (lock) {
+    canFinish=taskWrapper.getTaskRunnerCallable().canFinish();
     evictedTask=waitQueue.offer(taskWrapper);
     if (evictedTask == null || evictedTask != taskWrapper) {
       knownTasks.put(taskWrapper.getRequestId(),taskWrapper);
@@ -27,8 +29,13 @@ synchronized (lock) {
       return result;
     }
   }
-  boolean canFinish=taskWrapper.getTaskRunnerCallable().canFinish();
-  taskWrapper.maybeRegisterForFinishedStateNotifications(canFinish);
+  boolean stateChanged=taskWrapper.maybeRegisterForFinishedStateNotifications(canFinish);
+  if (stateChanged) {
+    if (isDebugEnabled) {
+      LOG.debug("Finishable state of {} updated to {} during registration for state updates",taskWrapper.getRequestId(),!canFinish);
+    }
+    finishableStateUpdated(taskWrapper,!canFinish);
+  }
   if (isDebugEnabled) {
     LOG.debug("Wait Queue: {}",waitQueue);
   }
