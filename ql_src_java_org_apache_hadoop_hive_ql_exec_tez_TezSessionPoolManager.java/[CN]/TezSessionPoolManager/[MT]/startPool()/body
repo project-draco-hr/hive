@@ -1,25 +1,27 @@
 {
-  this.inited=true;
-  if (blockingQueueLength == 0)   return;
-  int threadCount=Math.min(blockingQueueLength,HiveConf.getIntVar(initConf,ConfVars.HIVE_SERVER2_TEZ_SESSION_MAX_INIT_THREADS));
+  if (initialSessions.isEmpty())   return;
+  int threadCount=Math.min(initialSessions.size(),HiveConf.getIntVar(initConf,ConfVars.HIVE_SERVER2_TEZ_SESSION_MAX_INIT_THREADS));
   Preconditions.checkArgument(threadCount > 0);
   if (threadCount == 1) {
-    for (int i=0; i < blockingQueueLength; i++) {
-      startNextSessionFromQueue();
+    while (true) {
+      TezSessionPoolSession session=initialSessions.poll();
+      if (session == null)       break;
+      startInitialSession(session);
     }
   }
  else {
     final SessionState parentSessionState=SessionState.get();
-    final AtomicInteger remainingToStart=new AtomicInteger(blockingQueueLength);
     final AtomicReference<Exception> firstError=new AtomicReference<>(null);
     Runnable runnable=new Runnable(){
       public void run(){
         if (parentSessionState != null) {
           SessionState.setCurrentSessionState(parentSessionState);
         }
-        while (remainingToStart.decrementAndGet() >= 0) {
+        while (true) {
+          TezSessionPoolSession session=initialSessions.poll();
+          if (session == null)           break;
           try {
-            startNextSessionFromQueue();
+            startInitialSession(session);
           }
  catch (          Exception e) {
             if (!firstError.compareAndSet(null,e)) {
