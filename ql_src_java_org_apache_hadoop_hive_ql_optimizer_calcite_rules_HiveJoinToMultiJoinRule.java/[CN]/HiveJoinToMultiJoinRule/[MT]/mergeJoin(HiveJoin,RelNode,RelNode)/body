@@ -105,5 +105,33 @@
     }
   }
   RexNode newCondition=RexUtil.flatten(rexBuilder,RexUtil.composeConjunction(rexBuilder,newJoinCondition,false));
-  return new HiveMultiJoin(join.getCluster(),newInputs,newCondition,join.getRowType(),joinInputs,joinTypes,joinFilters);
+  List<RelNode> newInputsArray=Lists.newArrayList(newInputs);
+  JoinPredicateInfo joinPredInfo=null;
+  try {
+    joinPredInfo=HiveCalciteUtil.JoinPredicateInfo.constructJoinPredicateInfo(newInputsArray,systemFieldList,newCondition);
+  }
+ catch (  CalciteSemanticException e) {
+    throw new RuntimeException(e);
+  }
+  if (joinPredInfo.getEquiJoinPredicateElements().size() < newInputs.size() - 1) {
+    return null;
+  }
+  for (int i=0; i < newInputs.size(); i++) {
+    List<RexNode> joinKeys=null;
+    for (int j=0; j < joinPredInfo.getEquiJoinPredicateElements().size(); j++) {
+      List<RexNode> currJoinKeys=joinPredInfo.getEquiJoinPredicateElements().get(j).getJoinExprs(i);
+      if (currJoinKeys.isEmpty()) {
+        continue;
+      }
+      if (joinKeys == null) {
+        joinKeys=currJoinKeys;
+      }
+ else {
+        if (!joinKeys.containsAll(currJoinKeys) || !currJoinKeys.containsAll(joinKeys)) {
+          return null;
+        }
+      }
+    }
+  }
+  return new HiveMultiJoin(join.getCluster(),newInputsArray,newCondition,join.getRowType(),joinInputs,joinTypes,joinFilters,joinPredInfo);
 }
