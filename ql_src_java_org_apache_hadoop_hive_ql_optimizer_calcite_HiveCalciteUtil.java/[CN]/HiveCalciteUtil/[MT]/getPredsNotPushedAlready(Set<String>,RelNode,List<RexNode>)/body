@@ -1,0 +1,28 @@
+{
+  if (predsToPushDown.isEmpty()) {
+    return ImmutableList.of();
+  }
+  Map<String,RexNode> stringToRexNode=Maps.newLinkedHashMap();
+  for (  RexNode r : predsToPushDown) {
+    String rexNodeString=r.toString();
+    if (predicatesToExclude.add(rexNodeString)) {
+      stringToRexNode.put(rexNodeString,r);
+    }
+  }
+  if (stringToRexNode.isEmpty()) {
+    return ImmutableList.of();
+  }
+  Set<String> predicatesInSubtree=Sets.newHashSet();
+  for (  RexNode pred : RelMetadataQuery.getPulledUpPredicates(inp).pulledUpPredicates) {
+    predicatesInSubtree.add(pred.toString());
+    predicatesInSubtree.addAll(Lists.transform(RelOptUtil.conjunctions(pred),REX_STR_FN));
+  }
+  final ImmutableList.Builder<RexNode> newConjuncts=ImmutableList.builder();
+  for (  Entry<String,RexNode> e : stringToRexNode.entrySet()) {
+    if (predicatesInSubtree.add(e.getKey())) {
+      newConjuncts.add(e.getValue());
+    }
+  }
+  predicatesToExclude.addAll(predicatesInSubtree);
+  return newConjuncts.build();
+}
