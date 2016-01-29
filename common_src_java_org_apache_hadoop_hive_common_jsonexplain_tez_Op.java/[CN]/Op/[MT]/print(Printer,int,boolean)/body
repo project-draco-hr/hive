@@ -1,0 +1,47 @@
+{
+  if (parser.printSet.contains(this)) {
+    printer.println(TezJsonParser.prefixString(indentFlag) + " Please refer to the previous " + this.getNameWithOpIdStats());
+    return;
+  }
+  parser.printSet.add(this);
+  if (!branchOfJoinOp) {
+    printer.println(TezJsonParser.prefixString(indentFlag) + this.getNameWithOpIdStats());
+  }
+ else {
+    printer.println(TezJsonParser.prefixString(indentFlag,"<-") + this.getNameWithOpIdStats());
+  }
+  branchOfJoinOp=false;
+  if (this.type == OpType.MAPJOIN || this.type == OpType.MERGEJOIN) {
+    inlineJoinOp();
+    branchOfJoinOp=true;
+  }
+  List<Connection> noninlined=new ArrayList<>();
+  if (this.parent == null) {
+    if (this.vertex != null) {
+      for (      Connection connection : this.vertex.parentConnections) {
+        if (!parser.isInline(connection.from)) {
+          noninlined.add(connection);
+        }
+      }
+    }
+  }
+  indentFlag++;
+  if (!attrs.isEmpty()) {
+    printer.println(TezJsonParser.prefixString(indentFlag) + TezJsonParserUtils.attrsToString(attrs));
+  }
+  if (parser.inlineMap.containsKey(this)) {
+    for (int index=0; index < parser.inlineMap.get(this).size(); index++) {
+      Connection connection=parser.inlineMap.get(this).get(index);
+      connection.from.print(printer,indentFlag,connection.type,this.vertex);
+    }
+  }
+  if (this.parent != null) {
+    this.parent.print(printer,indentFlag,branchOfJoinOp);
+  }
+ else {
+    for (int index=0; index < noninlined.size(); index++) {
+      Vertex v=noninlined.get(index).from;
+      v.print(printer,indentFlag,noninlined.get(index).type,this.vertex);
+    }
+  }
+}

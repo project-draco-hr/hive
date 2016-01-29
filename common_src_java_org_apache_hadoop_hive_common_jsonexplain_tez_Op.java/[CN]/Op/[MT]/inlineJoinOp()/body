@@ -1,14 +1,14 @@
 {
-  if (this.name.equals("Map Join Operator")) {
-    JSONObject mapjoinObj=opObject.getJSONObject("Map Join Operator");
-    JSONObject verticeObj=mapjoinObj.getJSONObject("input vertices:");
-    Map<String,String> posToVertex=new LinkedHashMap<>();
+  if (this.type == OpType.MAPJOIN) {
+    JSONObject joinObj=opObject.getJSONObject(this.name);
+    JSONObject verticeObj=joinObj.getJSONObject("input vertices:");
+    Map<String,Vertex> posToVertex=new LinkedHashMap<>();
     for (    String pos : JSONObject.getNames(verticeObj)) {
       String vertexName=verticeObj.getString(pos);
-      posToVertex.put(pos,vertexName);
       Connection c=null;
       for (      Connection connection : vertex.parentConnections) {
         if (connection.from.name.equals(vertexName)) {
+          posToVertex.put(pos,connection.from);
           c=connection;
           break;
         }
@@ -17,28 +17,157 @@
         parser.addInline(this,c);
       }
     }
-    removeAttr("input vertices:");
-    JSONObject keys=mapjoinObj.getJSONObject("keys:");
+    this.attrs.remove("input vertices:");
+    JSONObject keys=joinObj.getJSONObject("keys:");
+    Set<Vertex> parentVertexes=new HashSet<>();
+    for (    Connection connection : vertex.parentConnections) {
+      parentVertexes.add(connection.from);
+    }
+    parentVertexes.removeAll(posToVertex.values());
+    Map<String,String> posToOpId=new LinkedHashMap<>();
     if (keys.length() != 0) {
-      JSONObject newKeys=new JSONObject(new LinkedHashMap<>());
       for (      String key : JSONObject.getNames(keys)) {
-        String vertexName=posToVertex.get(key);
-        if (vertexName != null) {
-          newKeys.put(vertexName,keys.get(key));
+        if (posToVertex.containsKey(key)) {
+          Vertex vertex=posToVertex.get(key);
+          if (vertex.rootOps.size() == 1) {
+            posToOpId.put(key,vertex.rootOps.get(0).operatorId);
+          }
+ else           if ((vertex.rootOps.size() == 0 && vertex.vertexType == VertexType.UNION)) {
+            posToOpId.put(key,vertex.name);
+          }
+ else {
+            Op singleRSOp=vertex.getSingleRSOp();
+            if (singleRSOp != null) {
+              posToOpId.put(key,singleRSOp.operatorId);
+            }
+ else {
+              throw new Exception("There are none or more than one root operators in a single vertex " + vertex.name + " when hive explain user is trying to identify the operator id.");
+            }
+          }
+        }
+ else         if (parent != null) {
+          posToOpId.put(key,parent.operatorId);
+        }
+ else         if (parentVertexes.size() == 1) {
+          Vertex vertex=parentVertexes.iterator().next();
+          parentVertexes.clear();
+          if (vertex.rootOps.size() == 1) {
+            posToOpId.put(key,vertex.rootOps.get(0).operatorId);
+          }
+ else           if ((vertex.rootOps.size() == 0 && vertex.vertexType == VertexType.UNION)) {
+            posToOpId.put(key,vertex.name);
+          }
+ else {
+            Op singleRSOp=vertex.getSingleRSOp();
+            if (singleRSOp != null) {
+              posToOpId.put(key,singleRSOp.operatorId);
+            }
+ else {
+              throw new Exception("There are none or more than one root operators in a single vertex " + vertex.name + " when hive explain user is trying to identify the operator id.");
+            }
+          }
         }
  else {
-          newKeys.put(this.vertex.name,keys.get(key));
+          throw new Exception("Can not find the source operator on one of the branches of map join.");
         }
       }
-      removeAttr("keys:");
-      this.attrs.add(new Attr("keys:",newKeys.toString()));
     }
+    this.attrs.remove("keys:");
+    StringBuffer sb=new StringBuffer();
+    JSONArray conditionMap=joinObj.getJSONArray("condition map:");
+    for (int index=0; index < conditionMap.length(); index++) {
+      JSONObject cond=conditionMap.getJSONObject(index);
+      String k=(String)cond.keys().next();
+      JSONObject condObject=new JSONObject((String)cond.get(k));
+      String type=condObject.getString("type");
+      String left=condObject.getString("left");
+      String right=condObject.getString("right");
+      if (keys.length() != 0) {
+        sb.append(posToOpId.get(left) + "." + keys.get(left)+ "="+ posToOpId.get(right)+ "."+ keys.get(right)+ "("+ type+ "),");
+      }
+ else {
+        sb.append("(" + type + "),");
+      }
+    }
+    this.attrs.remove("condition map:");
+    this.attrs.put("Conds:",sb.substring(0,sb.length() - 1));
   }
  else {
-    if (this.vertex != null) {
-      for (      Vertex v : this.vertex.mergeJoinDummyVertexs) {
-        parser.addInline(this,new Connection(null,v));
+    Map<String,String> posToOpId=new LinkedHashMap<>();
+    if (vertex.mergeJoinDummyVertexs.size() == 0) {
+      if (vertex.tagToInput.size() != vertex.parentConnections.size()) {
+        throw new Exception("tagToInput size " + vertex.tagToInput.size() + " is different from parentConnections size "+ vertex.parentConnections.size());
+      }
+      for (      Entry<String,String> entry : vertex.tagToInput.entrySet()) {
+        Connection c=null;
+        for (        Connection connection : vertex.parentConnections) {
+          if (connection.from.name.equals(entry.getValue())) {
+            Vertex v=connection.from;
+            if (v.rootOps.size() == 1) {
+              posToOpId.put(entry.getKey(),v.rootOps.get(0).operatorId);
+            }
+ else             if ((v.rootOps.size() == 0 && v.vertexType == VertexType.UNION)) {
+              posToOpId.put(entry.getKey(),v.name);
+            }
+ else {
+              Op singleRSOp=v.getSingleRSOp();
+              if (singleRSOp != null) {
+                posToOpId.put(entry.getKey(),singleRSOp.operatorId);
+              }
+ else {
+                throw new Exception("There are none or more than one root operators in a single vertex " + v.name + " when hive explain user is trying to identify the operator id.");
+              }
+            }
+            c=connection;
+            break;
+          }
+        }
+        if (c == null) {
+          throw new Exception("Can not find " + entry.getValue() + " while parsing keys of merge join operator");
+        }
       }
     }
+ else {
+      posToOpId.put(vertex.tag,this.parent.operatorId);
+      for (      Vertex v : vertex.mergeJoinDummyVertexs) {
+        if (v.rootOps.size() != 1) {
+          throw new Exception("Can not find a single root operators in a single vertex " + v.name + " when hive explain user is trying to identify the operator id.");
+        }
+        posToOpId.put(v.tag,v.rootOps.get(0).operatorId);
+      }
+    }
+    JSONObject joinObj=opObject.getJSONObject(this.name);
+    JSONObject keys=joinObj.getJSONObject("keys:");
+    if (keys.length() != 0) {
+      for (      String key : JSONObject.getNames(keys)) {
+        if (!posToOpId.containsKey(key)) {
+          throw new Exception("Can not find the source operator on one of the branches of merge join.");
+        }
+      }
+      if (this.vertex != null) {
+        for (        Vertex v : this.vertex.mergeJoinDummyVertexs) {
+          parser.addInline(this,new Connection(null,v));
+        }
+      }
+    }
+    this.attrs.remove("keys:");
+    StringBuffer sb=new StringBuffer();
+    JSONArray conditionMap=joinObj.getJSONArray("condition map:");
+    for (int index=0; index < conditionMap.length(); index++) {
+      JSONObject cond=conditionMap.getJSONObject(index);
+      String k=(String)cond.keys().next();
+      JSONObject condObject=new JSONObject((String)cond.get(k));
+      String type=condObject.getString("type");
+      String left=condObject.getString("left");
+      String right=condObject.getString("right");
+      if (keys.length() != 0) {
+        sb.append(posToOpId.get(left) + "." + keys.get(left)+ "="+ posToOpId.get(right)+ "."+ keys.get(right)+ "("+ type+ "),");
+      }
+ else {
+        sb.append("(" + type + "),");
+      }
+    }
+    this.attrs.remove("condition map:");
+    this.attrs.put("Conds:",sb.substring(0,sb.length() - 1));
   }
 }
