@@ -15,11 +15,16 @@
     LOG.debug("Bailing out of sort dynamic partition optimization as destination table is null");
     return null;
   }
+  Operator<? extends OperatorDesc> fsParent=fsOp.getParentOperators().get(0);
+  if (allStaticPartitions(fsParent,fsOp.getConf().getDynPartCtx())) {
+    LOG.debug("Bailing out of sorted dynamic partition optimizer as all dynamic partition" + " columns got constant folded (static partitioning)");
+    return null;
+  }
   if (!removeRSInsertedByEnforceBucketing(fsOp)) {
     LOG.debug("Bailing out of sort dynamic partition optimization as some partition columns " + "got constant folded.");
     return null;
   }
-  Operator<? extends OperatorDesc> fsParent=fsOp.getParentOperators().get(0);
+  fsParent=fsOp.getParentOperators().get(0);
   fsParent.getChildOperators().clear();
   DynamicPartitionCtx dpCtx=fsOp.getConf().getDynPartCtx();
   int numBuckets=destTable.getNumBuckets();
@@ -86,5 +91,6 @@
   ArrayList<ExprNodeDesc> partitionColumns=getPositionsToExprNodes(partitionPositions,rsOp.getSchema().getSignature());
   fsOp.getConf().setPartitionCols(partitionColumns);
   LOG.info("Inserted " + rsOp.getOperatorId() + " and "+ selOp.getOperatorId()+ " as parent of "+ fsOp.getOperatorId()+ " and child of "+ fsParent.getOperatorId());
+  parseCtx.setReduceSinkAddedBySortedDynPartition(true);
   return null;
 }
