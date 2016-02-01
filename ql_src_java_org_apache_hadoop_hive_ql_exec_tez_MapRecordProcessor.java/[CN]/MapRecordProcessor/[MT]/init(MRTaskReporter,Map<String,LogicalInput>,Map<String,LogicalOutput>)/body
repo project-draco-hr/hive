@@ -55,6 +55,7 @@
     }
     mapOp.clearConnectedOperators();
     mapOp.setExecContext(execContext);
+    boolean fromCache=false;
     if (mergeWorkList != null) {
       MapOperator mergeMapOp=null;
       for (      BaseWork mergeWork : mergeWorkList) {
@@ -92,17 +93,22 @@
  else {
             mergeMapOp.setChildren(jconf);
           }
-          DummyStoreOperator dummyOp=getJoinParentOp(mergeMapOp);
-          if (dummyOp instanceof TezDummyStoreOperator) {
-            ((TezDummyStoreOperator)dummyOp).setFetchDone(skipRead);
+          Operator<? extends OperatorDesc> finalOp=getFinalOp(mergeMapOp);
+          if (finalOp instanceof TezDummyStoreOperator) {
+            ((TezDummyStoreOperator)finalOp).setFetchDone(skipRead);
+            mapOp.setConnectedOperators(mergeMapWork.getTag(),(DummyStoreOperator)finalOp);
           }
-          mapOp.setConnectedOperators(mergeMapWork.getTag(),dummyOp);
+ else {
+            fromCache=true;
+          }
           mergeMapOp.passExecContext(new ExecMapperContext(jconf));
           mergeMapOp.initializeLocalWork(jconf);
         }
       }
     }
-    ((TezContext)(MapredContext.get())).setDummyOpsMap(mapOp.getConnectedOperators());
+    if (!fromCache) {
+      ((TezContext)(MapredContext.get())).setDummyOpsMap(mapOp.getConnectedOperators());
+    }
     mapOp.setConf(mapWork);
     l4j.info("Main input name is " + mapWork.getName());
     jconf.set(Utilities.INPUT_NAME,mapWork.getName());
