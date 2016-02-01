@@ -1,0 +1,32 @@
+{
+  String hostId=getHostIdentifier(nodeId.getHostname(),nodeId.getPort());
+  LlapProtocolBlockingPB proxy=hostProxies.get(hostId);
+  if (proxy == null) {
+    if (llapToken == null) {
+      proxy=new LlapProtocolClientImpl(getConfig(),nodeId.getHostname(),nodeId.getPort(),retryPolicy,socketFactory);
+    }
+ else {
+      UserGroupInformation ugi;
+      try {
+        ugi=UserGroupInformation.getCurrentUser();
+      }
+ catch (      IOException e) {
+        throw new RuntimeException(e);
+      }
+      Token<LlapTokenIdentifier> nodeToken=new Token<LlapTokenIdentifier>(llapToken);
+      SecurityUtil.setTokenService(nodeToken,NetUtils.createSocketAddrForHost(nodeId.getHostname(),nodeId.getPort()));
+      ugi.addToken(nodeToken);
+      proxy=ugi.doAs(new PrivilegedAction<LlapProtocolBlockingPB>(){
+        @Override public LlapProtocolBlockingPB run(){
+          return new LlapProtocolClientImpl(getConfig(),nodeId.getHostname(),nodeId.getPort(),retryPolicy,socketFactory);
+        }
+      }
+);
+    }
+    LlapProtocolBlockingPB proxyOld=hostProxies.putIfAbsent(hostId,proxy);
+    if (proxyOld != null) {
+      proxy=proxyOld;
+    }
+  }
+  return proxy;
+}
