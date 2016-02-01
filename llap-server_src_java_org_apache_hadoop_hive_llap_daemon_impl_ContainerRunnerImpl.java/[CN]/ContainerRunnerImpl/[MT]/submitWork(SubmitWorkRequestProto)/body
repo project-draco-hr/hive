@@ -15,22 +15,18 @@
     TezTaskAttemptID taskAttemptId=TezTaskAttemptID.fromString(fragmentSpec.getFragmentIdentifierString());
     int dagIdentifier=taskAttemptId.getTaskID().getVertexID().getDAGId().getId();
     QueryIdentifier queryIdentifier=new QueryIdentifier(request.getApplicationIdString(),dagIdentifier);
-    QueryFragmentInfo fragmentInfo=queryTracker.registerFragment(queryIdentifier,request.getApplicationIdString(),fragmentSpec.getDagName(),dagIdentifier,fragmentSpec.getVertexName(),fragmentSpec.getFragmentNumber(),fragmentSpec.getAttemptNumber(),request.getUser(),request.getFragmentSpec());
-    String[] localDirs=fragmentInfo.getLocalDirs();
-    Preconditions.checkNotNull(localDirs);
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Dirs are: " + Arrays.toString(localDirs));
-    }
     Credentials credentials=new Credentials();
     DataInputBuffer dib=new DataInputBuffer();
     byte[] tokenBytes=request.getCredentialsBinary().toByteArray();
     dib.reset(tokenBytes,tokenBytes.length);
     credentials.readTokenStorageStream(dib);
     Token<JobTokenIdentifier> jobToken=TokenCache.getSessionToken(credentials);
+    QueryFragmentInfo fragmentInfo=queryTracker.registerFragment(queryIdentifier,request.getApplicationIdString(),fragmentSpec.getDagName(),dagIdentifier,fragmentSpec.getVertexName(),fragmentSpec.getFragmentNumber(),fragmentSpec.getAttemptNumber(),request.getUser(),request.getFragmentSpec(),jobToken);
+    String[] localDirs=fragmentInfo.getLocalDirs();
+    Preconditions.checkNotNull(localDirs);
     if (LOG.isDebugEnabled()) {
-      LOG.debug("Registering request with the ShuffleHandler");
+      LOG.debug("Dirs are: " + Arrays.toString(localDirs));
     }
-    ShuffleHandler.get().registerDag(request.getApplicationIdString(),dagIdentifier,jobToken,request.getUser(),localDirs);
     TaskRunnerCallable callable=new TaskRunnerCallable(request,fragmentInfo,new Configuration(getConfig()),new LlapExecutionContext(localAddress.get().getHostName(),queryTracker),env,credentials,memoryPerExecutor,amReporter,confParams,metrics,killedTaskHandler,this,tezHadoopShim);
     submissionState=executorService.schedule(callable);
     if (LOG.isInfoEnabled()) {
