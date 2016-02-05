@@ -9,14 +9,41 @@
     throw new AuthenticationException("Error validating LDAP user:" + " a null or blank password has been provided");
   }
   env.put(Context.SECURITY_AUTHENTICATION,"simple");
-  env.put(Context.SECURITY_PRINCIPAL,user);
   env.put(Context.SECURITY_CREDENTIALS,password);
-  LOG.debug("Connecting using principal=" + user + " at url="+ ldapURL);
+  String bindDN=null;
   DirContext ctx=null;
   String userDN=null;
   String userName=null;
+  Exception ex=null;
+  if (!isDN(user) && !hasDomain(user) && userBases.size() > 0) {
+    ListIterator<String> listIter=userBases.listIterator();
+    while (listIter.hasNext()) {
+      try {
+        bindDN=listIter.next().replaceAll("%s",user);
+        env.put(Context.SECURITY_PRINCIPAL,bindDN);
+        LOG.debug("Connecting using principal=" + user + " at url="+ ldapURL);
+        ctx=new InitialDirContext(env);
+        break;
+      }
+ catch (      NamingException e) {
+        ex=e;
+      }
+    }
+  }
+ else {
+    env.put(Context.SECURITY_PRINCIPAL,user);
+    LOG.debug("Connecting using principal=" + user + " at url="+ ldapURL);
+    try {
+      ctx=new InitialDirContext(env);
+    }
+ catch (    NamingException e) {
+      ex=e;
+    }
+  }
+  if (ctx == null) {
+    throw new AuthenticationException("LDAP Authentication failed for user",ex);
+  }
   try {
-    ctx=new InitialDirContext(env);
     if (isDN(user) || hasDomain(user)) {
       userName=extractName(user);
     }
@@ -25,7 +52,7 @@
     }
     if (userFilter == null && groupFilter == null && customQuery == null && userBases.size() > 0) {
       if (isDN(user)) {
-        userDN=findUserDNByDN(ctx,userName);
+        userDN=findUserDNByDN(ctx,user);
       }
  else {
         if (userDN == null) {
