@@ -13,6 +13,7 @@
   boolean ifNotExists=false;
   boolean isExt=false;
   boolean isTemporary=false;
+  boolean isMaterialization=false;
   ASTNode selectStmt=null;
   final int CREATE_TABLE=0;
   final int CTLT=1;
@@ -42,6 +43,7 @@ case HiveParser.KW_EXTERNAL:
 break;
 case HiveParser.KW_TEMPORARY:
 isTemporary=true;
+isMaterialization=MATERIALIZATION_MARKER.equals(child.getText());
 break;
 case HiveParser.TOK_LIKETABLE:
 if (child.getChildCount() > 0) {
@@ -184,6 +186,7 @@ rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),crtTblLikeDes
 break;
 case CTAS:
 if (isTemporary) {
+if (!ctx.getExplain() && !isMaterialization) {
 String dbName=qualifiedTabName[0];
 String tblName=qualifiedTabName[1];
 SessionState ss=SessionState.get();
@@ -191,8 +194,9 @@ if (ss == null) {
 throw new SemanticException("No current SessionState, cannot create temporary table " + dbName + "."+ tblName);
 }
 Map<String,Table> tables=SessionHiveMetaStoreClient.getTempTablesForDatabase(dbName);
-if (tables != null && tables.containsKey(tblName) && !ctx.getExplain()) {
+if (tables != null && tables.containsKey(tblName)) {
 throw new SemanticException("Temporary table " + dbName + "."+ tblName+ " already exists");
+}
 }
 }
  else {
@@ -232,6 +236,7 @@ LOG.debug("Exception when validate folder ",ioE);
 }
 tblProps=addDefaultProperties(tblProps);
 tableDesc=new CreateTableDesc(qualifiedTabName[0],dbDotTab,isExt,isTemporary,cols,partCols,bucketCols,sortCols,numBuckets,rowFormatParams.fieldDelim,rowFormatParams.fieldEscape,rowFormatParams.collItemDelim,rowFormatParams.mapKeyDelim,rowFormatParams.lineDelim,comment,storageFormat.getInputFormat(),storageFormat.getOutputFormat(),location,storageFormat.getSerde(),storageFormat.getStorageHandler(),storageFormat.getSerdeProps(),tblProps,ifNotExists,skewedColNames,skewedValues);
+tableDesc.setMaterialization(isMaterialization);
 tableDesc.setStoredAsSubDirectories(storedAsDirs);
 tableDesc.setNullFormat(rowFormatParams.nullFormat);
 qb.setTableDesc(tableDesc);

@@ -1,0 +1,42 @@
+{
+  List<Task<? extends Serializable>> cteRoots=new ArrayList<>();
+  List<Task<? extends Serializable>> cteLeafs=new ArrayList<>();
+  List<Task<? extends Serializable>> curTopRoots=null;
+  List<Task<? extends Serializable>> curBottomLeafs=null;
+  for (int i=0; i < execution.size(); i++) {
+    CTEClause current=execution.get(i);
+    if (current.parents.isEmpty() && curTopRoots != null) {
+      cteRoots.addAll(curTopRoots);
+      cteLeafs.addAll(curBottomLeafs);
+      curTopRoots=curBottomLeafs=null;
+    }
+    List<Task<? extends Serializable>> curTasks=current.getTasks();
+    if (curTasks == null) {
+      continue;
+    }
+    if (curTopRoots == null) {
+      curTopRoots=curTasks;
+    }
+    if (curBottomLeafs != null) {
+      for (      Task<?> topLeafTask : curBottomLeafs) {
+        for (        Task<?> currentRootTask : curTasks) {
+          topLeafTask.addDependentTask(currentRootTask);
+        }
+      }
+    }
+    curBottomLeafs=Task.findLeafs(curTasks);
+  }
+  if (curTopRoots != null) {
+    cteRoots.addAll(curTopRoots);
+    cteLeafs.addAll(curBottomLeafs);
+  }
+  if (cteRoots.isEmpty()) {
+    return rootTasks;
+  }
+  for (  Task<?> cteLeafTask : cteLeafs) {
+    for (    Task<?> mainRootTask : rootTasks) {
+      cteLeafTask.addDependentTask(mainRootTask);
+    }
+  }
+  return cteRoots;
+}

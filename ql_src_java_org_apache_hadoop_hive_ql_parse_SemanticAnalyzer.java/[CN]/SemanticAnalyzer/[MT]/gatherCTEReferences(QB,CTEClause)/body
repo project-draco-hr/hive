@@ -1,0 +1,25 @@
+{
+  for (  String alias : qb.getTabAliases()) {
+    String tabName=qb.getTabNameForAlias(alias);
+    String cteName=tabName.toLowerCase();
+    CTEClause cte=findCTEFromName(qb,cteName);
+    if (cte != null) {
+      if (ctesExpanded.contains(cteName)) {
+        throw new SemanticException("Recursive cte " + cteName + " detected (cycle: "+ StringUtils.join(ctesExpanded," -> ")+ " -> "+ cteName+ ").");
+      }
+      cte.reference++;
+      current.parents.add(cte);
+      if (cte.qbExpr != null) {
+        continue;
+      }
+      cte.qbExpr=new QBExpr(cteName);
+      doPhase1QBExpr(cte.cteNode,cte.qbExpr,qb.getId(),cteName);
+      ctesExpanded.add(cteName);
+      gatherCTEReferences(cte.qbExpr,cte);
+      ctesExpanded.remove(ctesExpanded.size() - 1);
+    }
+  }
+  for (  String alias : qb.getSubqAliases()) {
+    gatherCTEReferences(qb.getSubqForAlias(alias),current);
+  }
+}

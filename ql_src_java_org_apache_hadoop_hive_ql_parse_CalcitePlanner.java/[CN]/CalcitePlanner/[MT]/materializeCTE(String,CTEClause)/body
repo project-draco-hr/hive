@@ -1,0 +1,35 @@
+{
+  ASTNode createTable=new ASTNode(new ClassicToken(HiveParser.TOK_CREATETABLE));
+  ASTNode tableName=new ASTNode(new ClassicToken(HiveParser.TOK_TABNAME));
+  tableName.addChild(new ASTNode(new ClassicToken(HiveParser.Identifier,cteName)));
+  ASTNode temporary=new ASTNode(new ClassicToken(HiveParser.KW_TEMPORARY,MATERIALIZATION_MARKER));
+  createTable.addChild(tableName);
+  createTable.addChild(temporary);
+  createTable.addChild(cte.cteNode);
+  CalcitePlanner analyzer=new CalcitePlanner(conf);
+  analyzer.initCtx(ctx);
+  analyzer.init(false);
+  analyzer.aliasToCTEs.putAll(aliasToCTEs);
+  HiveOperation operation=SessionState.get().getHiveOperation();
+  try {
+    analyzer.analyzeInternal(createTable);
+  }
+  finally {
+    SessionState.get().setCommandType(operation);
+  }
+  Table table=analyzer.tableDesc.toTable(conf);
+  Path location=table.getDataLocation();
+  try {
+    location.getFileSystem(conf).mkdirs(location);
+  }
+ catch (  IOException e) {
+    throw new HiveException(e);
+  }
+  table.setMaterializedTable(true);
+  LOG.info(cteName + " will be materialized into " + location);
+  cte.table=table;
+  cte.source=analyzer;
+  ctx.addMaterializedTable(cteName,table);
+  ctx.addMaterializedTable(table.getDbName() + "." + table.getTableName(),table);
+  return table;
+}
