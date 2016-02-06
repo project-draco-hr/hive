@@ -2,27 +2,34 @@
   if (colNames.isEmpty()) {
     return null;
   }
-  boolean doTrace=LOG.isDebugEnabled();
-  long start=doTrace ? System.nanoTime() : 0;
-  String queryText="select " + STATS_COLLIST + " from \"TAB_COL_STATS\" "+ " where \"DB_NAME\" = ? and \"TABLE_NAME\" = ? and \"COLUMN_NAME\" in ("+ makeParams(colNames.size())+ ")";
-  Query query=pm.newQuery("javax.jdo.query.SQL",queryText);
-  Object[] params=new Object[colNames.size() + 2];
-  params[0]=dbName;
-  params[1]=tableName;
-  for (int i=0; i < colNames.size(); ++i) {
-    params[i + 2]=colNames.get(i);
+  final boolean doTrace=LOG.isDebugEnabled();
+  final String queryText0="select " + STATS_COLLIST + " from \"TAB_COL_STATS\" "+ " where \"DB_NAME\" = ? and \"TABLE_NAME\" = ? and \"COLUMN_NAME\" in (";
+  Batchable<String,Object[]> b=new Batchable<String,Object[]>(){
+    public List<Object[]> run(    List<String> input) throws MetaException {
+      String queryText=queryText0 + makeParams(input.size()) + ")";
+      Object[] params=new Object[input.size() + 2];
+      params[0]=dbName;
+      params[1]=tableName;
+      for (int i=0; i < input.size(); ++i) {
+        params[i + 2]=input.get(i);
+      }
+      long start=doTrace ? System.nanoTime() : 0;
+      Query query=pm.newQuery("javax.jdo.query.SQL",queryText);
+      Object qResult=executeWithArray(query,params,queryText);
+      timingTrace(doTrace,queryText0 + "...)",start,(doTrace ? System.nanoTime() : 0));
+      if (qResult == null) {
+        query.closeAll();
+        return null;
+      }
+      addQueryAfterUse(query);
+      return ensureList(qResult);
+    }
   }
-  Object qResult=executeWithArray(query,params,queryText);
-  long queryTime=doTrace ? System.nanoTime() : 0;
-  if (qResult == null) {
-    query.closeAll();
-    return null;
-  }
-  List<Object[]> list=ensureList(qResult);
+;
+  List<Object[]> list=runBatched(colNames,b);
   if (list.isEmpty())   return null;
   ColumnStatisticsDesc csd=new ColumnStatisticsDesc(true,dbName,tableName);
   ColumnStatistics result=makeColumnStats(list,csd,0);
-  timingTrace(doTrace,queryText,start,queryTime);
-  query.closeAll();
+  b.closeAllQueries();
   return result;
 }

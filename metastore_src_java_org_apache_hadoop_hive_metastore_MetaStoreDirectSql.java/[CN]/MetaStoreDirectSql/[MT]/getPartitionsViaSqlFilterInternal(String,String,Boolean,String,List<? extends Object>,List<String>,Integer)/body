@@ -1,12 +1,11 @@
 {
   boolean doTrace=LOG.isDebugEnabled();
-  dbName=dbName.toLowerCase();
-  tblName=tblName.toLowerCase();
+  final String dbNameLcase=dbName.toLowerCase(), tblNameLcase=tblName.toLowerCase();
   String orderForFilter=(max != null) ? " order by \"PART_NAME\" asc" : "";
   String queryText="select \"PARTITIONS\".\"PART_ID\" from \"PARTITIONS\"" + "  inner join \"TBLS\" on \"PARTITIONS\".\"TBL_ID\" = \"TBLS\".\"TBL_ID\" " + "    and \"TBLS\".\"TBL_NAME\" = ? "+ "  inner join \"DBS\" on \"TBLS\".\"DB_ID\" = \"DBS\".\"DB_ID\" "+ "     and \"DBS\".\"NAME\" = ? " + join(joinsForFilter,' ') + (StringUtils.isBlank(sqlFilter) ? "" : (" where " + sqlFilter))+ orderForFilter;
   Object[] params=new Object[paramsForFilter.size() + 2];
-  params[0]=tblName;
-  params[1]=dbName;
+  params[0]=tblNameLcase;
+  params[1]=dbNameLcase;
   for (int i=0; i < paramsForFilter.size(); ++i) {
     params[i + 2]=paramsForFilter.get(i);
   }
@@ -21,18 +20,12 @@
   if (sqlResult.isEmpty()) {
     return new ArrayList<Partition>();
   }
-  List<Partition> result=null;
-  if (batchSize != NO_BATCHING && batchSize < sqlResult.size()) {
-    result=new ArrayList<Partition>(sqlResult.size());
-    while (result.size() < sqlResult.size()) {
-      int toIndex=Math.min(result.size() + batchSize,sqlResult.size());
-      List<Object> batchedSqlResult=sqlResult.subList(result.size(),toIndex);
-      result.addAll(getPartitionsFromPartitionIds(dbName,tblName,isView,batchedSqlResult));
+  List<Partition> result=runBatched(sqlResult,new Batchable<Object,Partition>(){
+    public List<Partition> run(    List<Object> input) throws MetaException {
+      return getPartitionsFromPartitionIds(dbNameLcase,tblNameLcase,isView,input);
     }
   }
- else {
-    result=getPartitionsFromPartitionIds(dbName,tblName,isView,sqlResult);
-  }
+);
   query.closeAll();
   return result;
 }

@@ -2,17 +2,36 @@
   if (colNames.isEmpty() || partNames.isEmpty()) {
     return Lists.newArrayList();
   }
-  boolean doTrace=LOG.isDebugEnabled();
-  long start=doTrace ? System.nanoTime() : 0;
-  String queryText="select \"PARTITION_NAME\", " + STATS_COLLIST + " from \"PART_COL_STATS\""+ " where \"DB_NAME\" = ? and \"TABLE_NAME\" = ? and \"COLUMN_NAME\" in ("+ makeParams(colNames.size())+ ") AND \"PARTITION_NAME\" in ("+ makeParams(partNames.size())+ ") order by \"PARTITION_NAME\"";
-  Query query=pm.newQuery("javax.jdo.query.SQL",queryText);
-  Object qResult=executeWithArray(query,prepareParams(dbName,tableName,partNames,colNames),queryText);
-  long queryTime=doTrace ? System.nanoTime() : 0;
-  if (qResult == null) {
-    query.closeAll();
-    return Lists.newArrayList();
+  final boolean doTrace=LOG.isDebugEnabled();
+  final String queryText0="select \"PARTITION_NAME\", " + STATS_COLLIST + " from "+ " \"PART_COL_STATS\" where \"DB_NAME\" = ? and \"TABLE_NAME\" = ? and \"COLUMN_NAME\""+ "  in (%1$s) AND \"PARTITION_NAME\" in (%2$s) order by \"PARTITION_NAME\"";
+  Batchable<String,Object[]> b=new Batchable<String,Object[]>(){
+    public List<Object[]> run(    final List<String> inputColNames) throws MetaException {
+      Batchable<String,Object[]> b2=new Batchable<String,Object[]>(){
+        public List<Object[]> run(        List<String> inputPartNames) throws MetaException {
+          String queryText=String.format(queryText0,makeParams(inputColNames.size()),makeParams(inputPartNames.size()));
+          long start=doTrace ? System.nanoTime() : 0;
+          Query query=pm.newQuery("javax.jdo.query.SQL",queryText);
+          Object qResult=executeWithArray(query,prepareParams(dbName,tableName,inputPartNames,inputColNames),queryText);
+          timingTrace(doTrace,queryText0,start,(doTrace ? System.nanoTime() : 0));
+          if (qResult == null) {
+            query.closeAll();
+            return Lists.newArrayList();
+          }
+          addQueryAfterUse(query);
+          return ensureList(qResult);
+        }
+      }
+;
+      try {
+        return runBatched(partNames,b2);
+      }
+  finally {
+        addQueryAfterUse(b2);
+      }
+    }
   }
-  List<Object[]> list=ensureList(qResult);
+;
+  List<Object[]> list=runBatched(colNames,b);
   List<ColumnStatistics> result=new ArrayList<ColumnStatistics>(Math.min(list.size(),partNames.size()));
   String lastPartName=null;
   int from=0;
@@ -31,7 +50,6 @@
     from=i;
     Deadline.checkTimeout();
   }
-  timingTrace(doTrace,queryText,start,queryTime);
-  query.closeAll();
+  b.closeAllQueries();
   return result;
 }
