@@ -1,0 +1,50 @@
+{
+  if (childExpressions != null) {
+    super.evaluateChildren(batch);
+  }
+  LongColumnVector inputColVector1=(LongColumnVector)batch.cols[colNum];
+  TimestampColumnVector outputColVector=(TimestampColumnVector)batch.cols[outputColumn];
+  int[] sel=batch.selected;
+  boolean[] inputIsNull=inputColVector1.isNull;
+  boolean[] outputIsNull=outputColVector.isNull;
+  outputColVector.noNulls=inputColVector1.noNulls;
+  outputColVector.isRepeating=inputColVector1.isRepeating;
+  int n=batch.size;
+  long[] vector1=inputColVector1.vector;
+  if (n == 0) {
+    return;
+  }
+  if (inputColVector1.isRepeating) {
+    outputColVector.subtract(scratchPisaTimestamp.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector1[0])),value,0);
+    outputIsNull[0]=inputIsNull[0];
+  }
+ else   if (inputColVector1.noNulls) {
+    if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        outputColVector.subtract(scratchPisaTimestamp.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector1[0])),value,i);
+      }
+    }
+ else {
+      for (int i=0; i != n; i++) {
+        outputColVector.subtract(scratchPisaTimestamp.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector1[0])),value,i);
+      }
+    }
+  }
+ else {
+    if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        outputColVector.subtract(scratchPisaTimestamp.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector1[0])),value,i);
+        outputIsNull[i]=inputIsNull[i];
+      }
+    }
+ else {
+      for (int i=0; i != n; i++) {
+        outputColVector.subtract(scratchPisaTimestamp.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector1[0])),value,i);
+      }
+      System.arraycopy(inputIsNull,0,outputIsNull,0,n);
+    }
+  }
+  NullUtil.setNullOutputEntriesColScalar(outputColVector,batch.selectedInUse,sel,n);
+}

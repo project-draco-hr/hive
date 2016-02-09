@@ -1,0 +1,33 @@
+{
+  inputExpression.evaluate(batch);
+  TimestampColumnVector inputColVector=(TimestampColumnVector)batch.cols[this.inputExpression.getOutputColumn()];
+  int batchSize=batch.size;
+  if (batchSize == 0) {
+    return;
+  }
+  Aggregation myagg=(Aggregation)agg;
+  if (inputColVector.isRepeating) {
+    if (inputColVector.noNulls) {
+      if (myagg.isNull) {
+        myagg.isNull=false;
+        myagg.sum=0;
+        myagg.count=0;
+      }
+      myagg.sum+=inputColVector.getTimestampSecondsWithFractionalNanos(0) * batchSize;
+      myagg.count+=batchSize;
+    }
+    return;
+  }
+  if (!batch.selectedInUse && inputColVector.noNulls) {
+    iterateNoSelectionNoNulls(myagg,inputColVector,batchSize);
+  }
+ else   if (!batch.selectedInUse) {
+    iterateNoSelectionHasNulls(myagg,inputColVector,batchSize,inputColVector.isNull);
+  }
+ else   if (inputColVector.noNulls) {
+    iterateSelectionNoNulls(myagg,inputColVector,batchSize,batch.selected);
+  }
+ else {
+    iterateSelectionHasNulls(myagg,inputColVector,batchSize,inputColVector.isNull,batch.selected);
+  }
+}
