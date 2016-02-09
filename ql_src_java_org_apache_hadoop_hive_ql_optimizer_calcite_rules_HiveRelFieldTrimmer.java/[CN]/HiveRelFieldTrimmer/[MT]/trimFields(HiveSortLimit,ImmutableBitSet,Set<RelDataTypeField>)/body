@@ -1,0 +1,24 @@
+{
+  final RelDataType rowType=sort.getRowType();
+  final int fieldCount=rowType.getFieldCount();
+  final RelCollation collation=sort.getCollation();
+  final RelNode input=sort.getInput();
+  RelOptCluster cluster=sort.getCluster();
+  final ImmutableBitSet.Builder inputFieldsUsed=ImmutableBitSet.builder(fieldsUsed);
+  for (  RelFieldCollation field : collation.getFieldCollations()) {
+    inputFieldsUsed.set(field.getFieldIndex());
+  }
+  final Set<RelDataTypeField> inputExtraFields=Collections.emptySet();
+  TrimResult trimResult=trimChild(sort,input,inputFieldsUsed.build(),inputExtraFields);
+  RelNode newInput=trimResult.left;
+  final Mapping inputMapping=trimResult.right;
+  if (newInput == input && inputMapping.isIdentity() && fieldsUsed.cardinality() == fieldCount) {
+    return result(sort,Mappings.createIdentity(fieldCount));
+  }
+  relBuilder.push(newInput);
+  final int offset=sort.offset == null ? 0 : RexLiteral.intValue(sort.offset);
+  final int fetch=sort.fetch == null ? -1 : RexLiteral.intValue(sort.fetch);
+  final ImmutableList<RexNode> fields=relBuilder.fields(RexUtil.apply(inputMapping,collation));
+  sortLimit(cluster,relBuilder,offset,fetch,fields);
+  return result(relBuilder.build(),inputMapping);
+}

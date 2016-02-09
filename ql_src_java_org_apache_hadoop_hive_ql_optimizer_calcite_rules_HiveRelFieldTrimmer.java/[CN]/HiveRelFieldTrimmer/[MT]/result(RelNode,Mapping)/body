@@ -1,0 +1,25 @@
+{
+  final RexBuilder rexBuilder=relBuilder.getRexBuilder();
+  for (  final CorrelationId correlation : r.getVariablesSet()) {
+    r=r.accept(new CorrelationReferenceFinder(){
+      @Override protected RexNode handle(      RexFieldAccess fieldAccess){
+        final RexCorrelVariable v=(RexCorrelVariable)fieldAccess.getReferenceExpr();
+        if (v.id.equals(correlation) && v.getType().getFieldCount() == mapping.getSourceCount()) {
+          final int old=fieldAccess.getField().getIndex();
+          final int new_=mapping.getTarget(old);
+          final RelDataTypeFactory.FieldInfoBuilder typeBuilder=relBuilder.getTypeFactory().builder();
+          for (          int target : Util.range(mapping.getTargetCount())) {
+            typeBuilder.add(v.getType().getFieldList().get(mapping.getSource(target)));
+          }
+          final RexNode newV=rexBuilder.makeCorrel(typeBuilder.build(),v.id);
+          if (old != new_) {
+            return rexBuilder.makeFieldAccess(newV,new_);
+          }
+        }
+        return fieldAccess;
+      }
+    }
+);
+  }
+  return new TrimResult(r,mapping);
+}
