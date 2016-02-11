@@ -1,0 +1,48 @@
+{
+  if (child instanceof ExprNodeGenericFuncDesc && ((ExprNodeGenericFuncDesc)child).getGenericUDF() instanceof GenericUDFIn) {
+    if (child.getChildren().get(1) instanceof ExprNodeDynamicListDesc) {
+      listContext.dynamicListNodes.add(new Pair<ExprNodeDesc,ExprNodeDesc>(child,parent));
+    }
+    return;
+  }
+  if (child instanceof ExprNodeGenericFuncDesc && ((ExprNodeGenericFuncDesc)child).getGenericUDF() instanceof GenericUDFBaseCompare && child.getChildren().size() == 2) {
+    ExprNodeDesc leftCol=child.getChildren().get(0);
+    ExprNodeDesc rightCol=child.getChildren().get(1);
+    ExprNodeColumnDesc leftColDesc=ExprNodeDescUtils.getColumnExpr(leftCol);
+    if (leftColDesc != null) {
+      boolean rightConstant=false;
+      if (rightCol instanceof ExprNodeConstantDesc) {
+        rightConstant=true;
+      }
+ else       if (rightCol instanceof ExprNodeGenericFuncDesc) {
+        ExprNodeDesc foldedExpr=ConstantPropagateProcFactory.foldExpr((ExprNodeGenericFuncDesc)rightCol);
+        rightConstant=foldedExpr != null;
+      }
+      if (rightConstant) {
+        listContext.comparatorNodes.add(leftColDesc);
+      }
+    }
+ else {
+      ExprNodeColumnDesc rightColDesc=ExprNodeDescUtils.getColumnExpr(rightCol);
+      if (rightColDesc != null) {
+        boolean leftConstant=false;
+        if (leftCol instanceof ExprNodeConstantDesc) {
+          leftConstant=true;
+        }
+ else         if (leftCol instanceof ExprNodeGenericFuncDesc) {
+          ExprNodeDesc foldedExpr=ConstantPropagateProcFactory.foldExpr((ExprNodeGenericFuncDesc)leftCol);
+          leftConstant=foldedExpr != null;
+        }
+        if (leftConstant) {
+          listContext.comparatorNodes.add(rightColDesc);
+        }
+      }
+    }
+    return;
+  }
+  if (FunctionRegistry.isOpAnd(child)) {
+    for (    ExprNodeDesc newChild : child.getChildren()) {
+      collect(child,newChild,listContext);
+    }
+  }
+}
