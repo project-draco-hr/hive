@@ -1,0 +1,31 @@
+{
+  if (metaStoreClient == null || forceCreate) {
+    try {
+      owner=UserGroupInformation.getCurrentUser();
+    }
+ catch (    IOException e) {
+      String msg="Error getting current user: " + e.getMessage();
+      LOG.error(msg,e);
+      throw new MetaException(msg + "\n" + StringUtils.stringifyException(e));
+    }
+    try {
+      metaStoreClient=createMetaStoreClient(allowEmbedded);
+    }
+ catch (    RuntimeException ex) {
+      Throwable t=ex.getCause();
+      while (t != null) {
+        if (t instanceof JDODataStoreException && t.getMessage() != null && t.getMessage().contains("autoCreate")) {
+          LOG.error("Cannot initialize metastore due to autoCreate error",t);
+          throw new SchemaException("Hive metastore database is not initialized. Please use " + "schematool (e.g. ./schematool -initSchema -dbType ...) to create the schema. If " + "needed, don't forget to include the option to auto-create the underlying database"+ " in your JDBC connection string (e.g. ?createDatabaseIfNotExist=true for mysql)");
+        }
+        t=t.getCause();
+      }
+      throw ex;
+    }
+    String metaStoreUris=conf.getVar(HiveConf.ConfVars.METASTOREURIS);
+    if (!org.apache.commons.lang3.StringUtils.isEmpty(metaStoreUris)) {
+      metaStoreClient=HiveMetaStoreClient.newSynchronizedClient(metaStoreClient);
+    }
+  }
+  return metaStoreClient;
+}
