@@ -1,5 +1,5 @@
 {
-  super(hiveConf,"localhost",MetaStoreUtils.findFreePort(),MetaStoreUtils.findFreePort());
+  super(hiveConf,"localhost",(usePortsFromConf ? hiveConf.getIntVar(HiveConf.ConfVars.HIVE_SERVER2_THRIFT_PORT) : MetaStoreUtils.findFreePort()),(usePortsFromConf ? hiveConf.getIntVar(HiveConf.ConfVars.HIVE_SERVER2_THRIFT_HTTP_PORT) : MetaStoreUtils.findFreePort()));
   this.miniClusterType=miniClusterType;
   this.useMiniKdc=useMiniKdc;
   this.serverPrincipal=serverPrincipal;
@@ -15,8 +15,14 @@ switch (miniClusterType) {
 case TEZ:
       mr=ShimLoader.getHadoopShims().getMiniTezCluster(hiveConf,4,uriString,false);
     break;
+case LLAP:
+  if (usePortsFromConf) {
+    hiveConf.setBoolean("minillap.usePortsFromConf",true);
+  }
+mr=ShimLoader.getHadoopShims().getMiniTezCluster(hiveConf,4,uriString,true);
+break;
 case MR:
-  mr=ShimLoader.getHadoopShims().getMiniMrCluster(hiveConf,4,uriString,1);
+mr=ShimLoader.getHadoopShims().getMiniMrCluster(hiveConf,4,uriString,1);
 break;
 default :
 throw new IllegalArgumentException("Unsupported cluster type " + mr);
@@ -41,7 +47,9 @@ fs.mkdirs(wareHouseDir);
 setWareHouseDir(wareHouseDir.toString());
 System.setProperty(HiveConf.ConfVars.METASTORECONNECTURLKEY.varname,metaStoreURL);
 hiveConf.setVar(HiveConf.ConfVars.METASTORECONNECTURLKEY,metaStoreURL);
+if (!usePortsFromConf) {
 setBinaryPort(MetaStoreUtils.findFreePort());
+}
 hiveConf.setVar(ConfVars.HIVE_SERVER2_THRIFT_BIND_HOST,getHost());
 hiveConf.setIntVar(ConfVars.HIVE_SERVER2_THRIFT_PORT,getBinaryPort());
 hiveConf.setIntVar(ConfVars.HIVE_SERVER2_THRIFT_HTTP_PORT,getHttpPort());
