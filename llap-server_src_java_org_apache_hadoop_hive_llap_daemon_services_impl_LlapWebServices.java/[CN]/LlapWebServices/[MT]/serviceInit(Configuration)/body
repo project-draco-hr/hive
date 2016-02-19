@@ -1,6 +1,20 @@
 {
-  this.conf=new Configuration(conf);
-  this.conf.addResource(YarnConfiguration.YARN_SITE_CONFIGURATION_FILE);
   this.port=HiveConf.getIntVar(conf,ConfVars.LLAP_DAEMON_WEB_PORT);
-  this.webAppInstance=new LlapWebApp();
+  String bindAddress="0.0.0.0";
+  HttpServer.Builder builder=new HttpServer.Builder().setName("llap").setPort(this.port).setHost(bindAddress);
+  builder.setConf(new HiveConf(conf,HiveConf.class));
+  if (UserGroupInformation.isSecurityEnabled()) {
+    builder.setUseSSL(true);
+    if (HiveConf.getBoolVar(conf,ConfVars.LLAP_WEB_AUTO_AUTH)) {
+      builder.setUseSPNEGO(true);
+      builder.setSPNEGOPrincipal(HiveConf.getVar(conf,ConfVars.LLAP_KERBEROS_PRINCIPAL));
+      builder.setSPNEGOKeytab(HiveConf.getVar(conf,ConfVars.LLAP_KERBEROS_KEYTAB_FILE));
+    }
+  }
+  try {
+    this.http=builder.build();
+  }
+ catch (  IOException e) {
+    LOG.warn("LLAP web service failed to come up",e);
+  }
 }
