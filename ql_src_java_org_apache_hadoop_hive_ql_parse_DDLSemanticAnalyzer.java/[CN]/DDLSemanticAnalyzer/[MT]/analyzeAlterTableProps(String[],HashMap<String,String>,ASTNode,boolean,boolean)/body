@@ -1,0 +1,41 @@
+{
+  String tableName=getDotName(qualified);
+  HashMap<String,String> mapProp=getProps((ASTNode)(ast.getChild(0)).getChild(0));
+  EnvironmentContext environmentContext=null;
+  if (SessionState.get().getCommandType().equals(HiveOperation.ALTERTABLE_UPDATETABLESTATS.getOperationName()) || SessionState.get().getCommandType().equals(HiveOperation.ALTERTABLE_UPDATEPARTSTATS.getOperationName())) {
+    boolean changeStatsSucceeded=false;
+    for (    Entry<String,String> entry : mapProp.entrySet()) {
+      if (entry.getKey().equals(StatsSetupConst.ROW_COUNT) || entry.getKey().equals(StatsSetupConst.RAW_DATA_SIZE)) {
+        try {
+          Long.parseLong(entry.getValue());
+          changeStatsSucceeded=true;
+        }
+ catch (        Exception e) {
+          throw new SemanticException("AlterTable " + entry.getKey() + " failed with value "+ entry.getValue());
+        }
+      }
+ else {
+        throw new SemanticException("AlterTable UpdateStats " + entry.getKey() + " failed because the only valid keys are"+ StatsSetupConst.ROW_COUNT+ " and "+ StatsSetupConst.RAW_DATA_SIZE);
+      }
+    }
+    if (changeStatsSucceeded) {
+      environmentContext=new EnvironmentContext();
+      environmentContext.putToProperties(StatsSetupConst.STATS_GENERATED,StatsSetupConst.USER);
+    }
+  }
+  AlterTableDesc alterTblDesc=null;
+  if (isUnset == true) {
+    alterTblDesc=new AlterTableDesc(AlterTableTypes.DROPPROPS,partSpec,expectView);
+    if (ast.getChild(1) != null) {
+      alterTblDesc.setDropIfExists(true);
+    }
+  }
+ else {
+    alterTblDesc=new AlterTableDesc(AlterTableTypes.ADDPROPS,partSpec,expectView);
+  }
+  alterTblDesc.setProps(mapProp);
+  alterTblDesc.setEnvironmentContext(environmentContext);
+  alterTblDesc.setOldName(tableName);
+  addInputsOutputsAlterTable(tableName,partSpec,alterTblDesc);
+  rootTasks.add(TaskFactory.get(new DDLWork(getInputs(),getOutputs(),alterTblDesc),conf));
+}

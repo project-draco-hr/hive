@@ -1,0 +1,45 @@
+{
+  startFunction("alter_table",": db=" + dbname + " tbl="+ name+ " newtbl="+ newTable.getTableName());
+  if (newTable.getParameters() == null || newTable.getParameters().get(hive_metastoreConstants.DDL_TIME) == null) {
+    newTable.putToParameters(hive_metastoreConstants.DDL_TIME,Long.toString(System.currentTimeMillis() / 1000));
+  }
+  if (newTable.getSd() != null) {
+    String newLocation=newTable.getSd().getLocation();
+    if (org.apache.commons.lang.StringUtils.isNotEmpty(newLocation)) {
+      Path tblPath=wh.getDnsPath(new Path(newLocation));
+      newTable.getSd().setLocation(tblPath.toString());
+    }
+  }
+  boolean success=false;
+  Exception ex=null;
+  try {
+    Table oldt=get_table_core(dbname,name);
+    firePreEvent(new PreAlterTableEvent(oldt,newTable,this));
+    alterHandler.alterTable(getMS(),wh,dbname,name,newTable,envContext);
+    success=true;
+    for (    MetaStoreEventListener listener : listeners) {
+      AlterTableEvent alterTableEvent=new AlterTableEvent(oldt,newTable,success,this);
+      alterTableEvent.setEnvironmentContext(envContext);
+      listener.onAlterTable(alterTableEvent);
+    }
+  }
+ catch (  NoSuchObjectException e) {
+    ex=e;
+    throw new InvalidOperationException(e.getMessage());
+  }
+catch (  Exception e) {
+    ex=e;
+    if (e instanceof MetaException) {
+      throw (MetaException)e;
+    }
+ else     if (e instanceof InvalidOperationException) {
+      throw (InvalidOperationException)e;
+    }
+ else {
+      throw newMetaException(e);
+    }
+  }
+ finally {
+    endFunction("alter_table",success,ex,name);
+  }
+}
