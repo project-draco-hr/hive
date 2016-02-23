@@ -1,11 +1,15 @@
 {
   final List<RexNode> terms=RelOptUtil.conjunctions(e);
   final List<RexNode> notTerms=new ArrayList<>();
+  final List<RexNode> negatedTerms=new ArrayList<>();
   final List<RexNode> nullOperands=new ArrayList<>();
   final List<RexNode> notNullOperands=new ArrayList<>();
-  final List<RexNode> comparedOperands=new ArrayList<>();
+  final Set<RexNode> comparedOperands=new HashSet<>();
   for (int i=0; i < terms.size(); i++) {
     final RexNode term=terms.get(i);
+    if (!HiveCalciteUtil.isDeterministic(term)) {
+      continue;
+    }
 switch (term.getKind()) {
 case NOT:
       notTerms.add(((RexCall)term).getOperands().get(0));
@@ -40,6 +44,14 @@ if (right.getKind() == SqlKind.CAST) {
 RexCall rightCast=(RexCall)right;
 comparedOperands.add(rightCast.getOperands().get(0));
 }
+RexCall negatedTerm=negate(rexBuilder,call);
+if (negatedTerm != null) {
+negatedTerms.add(negatedTerm);
+RexCall invertNegatedTerm=invert(rexBuilder,negatedTerm);
+if (invertNegatedTerm != null) {
+negatedTerms.add(invertNegatedTerm);
+}
+}
 break;
 case IN:
 comparedOperands.add(((RexCall)term).operands.get(0));
@@ -67,14 +79,21 @@ if (!comparedOperands.contains(operand)) {
 terms.add(rexBuilder.makeCall(SqlStdOperatorTable.IS_NOT_NULL,operand));
 }
 }
+final Set<String> termsSet=new HashSet<String>(Lists.transform(terms,HiveCalciteUtil.REX_STR_FN));
 for (RexNode notDisjunction : notTerms) {
-final List<RexNode> terms2=RelOptUtil.conjunctions(notDisjunction);
-if (terms.containsAll(terms2)) {
+final Set<String> notSet=new HashSet<String>(Lists.transform(RelOptUtil.conjunctions(notDisjunction),HiveCalciteUtil.REX_STR_FN));
+if (termsSet.containsAll(notSet)) {
 return rexBuilder.makeLiteral(false);
 }
 }
 for (RexNode notDisjunction : notTerms) {
 terms.add(rexBuilder.makeCall(SqlStdOperatorTable.NOT,notDisjunction));
+}
+for (RexNode notDisjunction : negatedTerms) {
+final Set<String> notSet=new HashSet<String>(Lists.transform(RelOptUtil.conjunctions(notDisjunction),HiveCalciteUtil.REX_STR_FN));
+if (termsSet.containsAll(notSet)) {
+return rexBuilder.makeLiteral(false);
+}
 }
 return RexUtil.composeConjunction(rexBuilder,terms,false);
 }
