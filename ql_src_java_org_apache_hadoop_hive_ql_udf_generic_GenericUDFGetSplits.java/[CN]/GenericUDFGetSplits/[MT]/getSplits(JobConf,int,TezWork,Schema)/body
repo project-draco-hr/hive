@@ -18,15 +18,22 @@
     Preconditions.checkState(HiveConf.getBoolVar(wxConf,HiveConf.ConfVars.LLAP_CLIENT_CONSISTENT_SPLITS));
     splitGenerator.initializeSplitGenerator(wxConf,mapWork);
     List<Event> eventList=splitGenerator.initialize();
-    InputSplit[] result=new InputSplit[eventList.size()];
-    ByteArrayOutputStream bos=new ByteArrayOutputStream(10240);
+    InputSplit[] result=new InputSplit[eventList.size() - 1];
+    DataOutputBuffer dob=new DataOutputBuffer();
     InputConfigureVertexTasksEvent configureEvent=(InputConfigureVertexTasksEvent)eventList.get(0);
     List<TaskLocationHint> hints=configureEvent.getLocationHint().getTaskLocationHints();
     Preconditions.checkState(hints.size() == eventList.size() - 1);
+    LOG.error("DBG: NumEvents=" + eventList.size());
+    LOG.error("DBG: NumSplits=" + result.length);
+    ApplicationId fakeApplicationId=ApplicationId.newInstance(Math.abs(new Random().nextInt()),0);
+    TaskSpec taskSpec=new TaskSpecBuilder().constructTaskSpec(dag,vertexName,eventList.size() - 1,fakeApplicationId);
+    SubmitWorkInfo submitWorkInfo=new SubmitWorkInfo(taskSpec,fakeApplicationId,System.currentTimeMillis());
+    EventMetaData sourceMetaData=new EventMetaData(EventMetaData.EventProducerConsumerType.INPUT,vertexName,"NULL_VERTEX",null);
+    EventMetaData destinationMetaInfo=new TaskSpecBuilder().getDestingationMetaData(wx);
     LOG.info("DBG: Number of splits: " + (eventList.size() - 1));
-    for (int i=1; i < eventList.size(); i++) {
-      Event event=eventList.get(i);
-      TaskLocationHint hint=hints.get(i - 1);
+    for (int i=0; i < eventList.size() - 1; i++) {
+      Event event=eventList.get(i + 1);
+      TaskLocationHint hint=hints.get(i);
       Set<String> hosts=hint.getHosts();
       LOG.info("DBG: Using locations: " + hosts.toString());
       if (hosts.size() != 1) {
@@ -37,15 +44,13 @@
       for (      String host : hosts) {
         locations[j++]=new SplitLocationInfo(host,false);
       }
+      TezEvent tezEvent=new TezEvent(event,sourceMetaData,System.currentTimeMillis());
+      tezEvent.setDestinationInfo(destinationMetaInfo);
       bos.reset();
-      Kryo kryo=SerializationUtilities.borrowKryo();
-      SerializationUtilities.serializeObjectByKryo(kryo,event,bos);
-      SerializationUtilities.releaseKryo(kryo);
-      TaskSpec taskSpec=new TaskSpecBuilder().constructTaskSpec(dag,vertexName,eventList.size() - 1);
-      ApplicationId fakeApplicationId=ApplicationId.newInstance(new Random().nextInt(),0);
-      SubmitWorkInfo submitWorkInfo=new SubmitWorkInfo(taskSpec,fakeApplicationId);
+      dob.reset();
+      tezEvent.write(dob);
       byte[] submitWorkBytes=SubmitWorkInfo.toBytes(submitWorkInfo);
-      result[i - 1]=new LlapInputSplit(submitWorkBytes,bos.toByteArray(),locations,schema);
+      result[i]=new LlapInputSplit(i,submitWorkBytes,dob.getData(),locations,schema);
     }
     return result;
   }

@@ -1,0 +1,30 @@
+{
+  TaskSpec taskSpec=submitWorkInfo.getTaskSpec();
+  ApplicationId appId=submitWorkInfo.getFakeAppId();
+  SubmitWorkRequestProto.Builder builder=SubmitWorkRequestProto.newBuilder();
+  LOG.info("DBG: Setting user in submitWorkRequest to: " + System.getenv(ApplicationConstants.Environment.USER.name()));
+  builder.setUser(System.getenv(ApplicationConstants.Environment.USER.name()));
+  builder.setApplicationIdString(appId.toString());
+  builder.setAppAttemptNumber(0);
+  builder.setTokenIdentifier(appId.toString());
+  ContainerId containerId=ContainerId.newInstance(ApplicationAttemptId.newInstance(appId,0),taskNum);
+  builder.setContainerIdString(containerId.toString());
+  builder.setAmHost(address.getHostName());
+  builder.setAmPort(address.getPort());
+  Credentials taskCredentials=new Credentials();
+  Credentials credentials=new Credentials();
+  TokenCache.setSessionToken(token,credentials);
+  ByteBuffer credentialsBinary=serializeCredentials(credentials);
+  builder.setCredentialsBinary(ByteString.copyFrom(credentialsBinary));
+  builder.setFragmentSpec(Converters.convertTaskSpecToProto(taskSpec));
+  FragmentRuntimeInfo.Builder runtimeInfo=FragmentRuntimeInfo.newBuilder();
+  runtimeInfo.setCurrentAttemptStartTime(System.currentTimeMillis());
+  runtimeInfo.setWithinDagPriority(0);
+  runtimeInfo.setDagStartTime(submitWorkInfo.getCreationTime());
+  runtimeInfo.setFirstAttemptStartTime(submitWorkInfo.getCreationTime());
+  runtimeInfo.setNumSelfAndUpstreamTasks(taskSpec.getVertexParallelism());
+  runtimeInfo.setNumSelfAndUpstreamCompletedTasks(0);
+  builder.setUsingTezAm(false);
+  builder.setFragmentRuntimeInfo(runtimeInfo.build());
+  return builder.build();
+}

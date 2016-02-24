@@ -1,0 +1,29 @@
+{
+  LlapInputSplit llapSplit=(LlapInputSplit)split;
+  SubmitWorkInfo submitWorkInfo=SubmitWorkInfo.fromBytes(llapSplit.getPlanBytes());
+  int llapSubmitPort=HiveConf.getIntVar(job,HiveConf.ConfVars.LLAP_DAEMON_RPC_PORT);
+  LOG.info("ZZZ: DBG: Starting LlapTaskUmbilicalExternalClient");
+  LlapTaskUmbilicalExternalClient llapClient=new LlapTaskUmbilicalExternalClient(job,submitWorkInfo.getTokenIdentifier(),submitWorkInfo.getToken());
+  llapClient.init(job);
+  llapClient.start();
+  LOG.info("ZZZ: DBG: Crated LlapClient");
+  SubmitWorkRequestProto submitWorkRequestProto=constructSubmitWorkRequestProto(submitWorkInfo,llapSplit.getSplitNum(),llapClient.getAddress(),submitWorkInfo.getToken());
+  LOG.info("ZZZ: DBG: Created submitWorkRequest for: " + submitWorkRequestProto.getFragmentSpec().getFragmentIdentifierString());
+  TezEvent tezEvent=new TezEvent();
+  DataInputBuffer dib=new DataInputBuffer();
+  dib.reset(llapSplit.getFragmentBytes(),0,llapSplit.getFragmentBytes().length);
+  tezEvent.readFields(dib);
+  List<TezEvent> tezEventList=Lists.newArrayList();
+  tezEventList.add(tezEvent);
+  String host=split.getLocations()[0];
+  llapClient.submitWork(submitWorkRequestProto,host,llapSubmitPort,tezEventList);
+  String id=HiveConf.getVar(job,HiveConf.ConfVars.HIVEQUERYID) + "_" + llapSplit.getSplitNum();
+  HiveConf conf=new HiveConf();
+  Socket socket=new Socket(host,conf.getIntVar(HiveConf.ConfVars.LLAP_DAEMON_OUTPUT_SERVICE_PORT));
+  LOG.debug("Socket connected");
+  socket.getOutputStream().write(id.getBytes());
+  socket.getOutputStream().write(0);
+  socket.getOutputStream().flush();
+  LOG.debug("Registered id: " + id);
+  return new LlapRecordReader(socket.getInputStream(),llapSplit.getSchema(),Text.class);
+}
