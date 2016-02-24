@@ -1,0 +1,79 @@
+{
+  retArray.clear();
+  String query=stringOI.getPrimitiveJavaObject(arguments[0].get());
+  int num=intOI.get(arguments[1].get());
+  Driver driver=new Driver();
+  CommandProcessorResponse cpr;
+  HiveConf conf=SessionState.get().getConf();
+  if (conf == null) {
+    throw new HiveException("Need configuration");
+  }
+  LOG.info("setting fetch.task.conversion to none and query file format to \"" + LlapOutputFormat.class.toString() + "\"");
+  HiveConf.setVar(conf,ConfVars.HIVEFETCHTASKCONVERSION,"none");
+  HiveConf.setVar(conf,HiveConf.ConfVars.HIVEQUERYRESULTFILEFORMAT,LlapOutputFormat.class.toString());
+  cpr=driver.compileAndRespond(query);
+  if (cpr.getResponseCode() != 0) {
+    throw new HiveException("Failed to compile query: " + cpr.getException());
+  }
+  QueryPlan plan=driver.getPlan();
+  List<Task<?>> roots=plan.getRootTasks();
+  Schema schema=plan.getResultSchema();
+  if (roots == null || roots.size() != 1 || !(roots.get(0) instanceof TezTask)) {
+    throw new HiveException("Was expecting a single TezTask.");
+  }
+  Path data=null;
+  InputFormat inp=null;
+  String ifc=null;
+  TezWork tezWork=((TezTask)roots.get(0)).getWork();
+  if (tezWork.getAllWork().size() != 1) {
+    String tableName="table_" + UUID.randomUUID().toString().replaceAll("[^A-Za-z0-9 ]","");
+    String ctas="create temporary table " + tableName + " as "+ query;
+    LOG.info("CTAS: " + ctas);
+    try {
+      cpr=driver.run(ctas,false);
+    }
+ catch (    CommandNeedRetryException e) {
+      throw new HiveException(e);
+    }
+    if (cpr.getResponseCode() != 0) {
+      throw new HiveException("Failed to create temp table: " + cpr.getException());
+    }
+    query="select * from " + tableName;
+    cpr=driver.compileAndRespond(query);
+    if (cpr.getResponseCode() != 0) {
+      throw new HiveException("Failed to create temp table: " + cpr.getException());
+    }
+    plan=driver.getPlan();
+    roots=plan.getRootTasks();
+    schema=plan.getResultSchema();
+    if (roots == null || roots.size() != 1 || !(roots.get(0) instanceof TezTask)) {
+      throw new HiveException("Was expecting a single TezTask.");
+    }
+    tezWork=((TezTask)roots.get(0)).getWork();
+  }
+  MapWork w=(MapWork)tezWork.getAllWork().get(0);
+  inp=new LlapInputFormat(tezWork,schema);
+  ifc=LlapInputFormat.class.toString();
+  try {
+    if (inp instanceof JobConfigurable) {
+      ((JobConfigurable)inp).configure(jc);
+    }
+    if (inp instanceof FileInputFormat) {
+      ((FileInputFormat)inp).addInputPath(jc,data);
+    }
+    for (    InputSplit s : inp.getSplits(jc,num)) {
+      Object[] os=new Object[3];
+      os[0]=ifc;
+      os[1]=s.getClass().toString();
+      bos.reset();
+      s.write(dos);
+      byte[] frozen=bos.toByteArray();
+      os[2]=frozen;
+      retArray.add(os);
+    }
+  }
+ catch (  Exception e) {
+    throw new HiveException(e);
+  }
+  return retArray;
+}

@@ -1,27 +1,25 @@
 {
+  boolean result=false;
   if (limit > 0) {
     if (data.hasOnlyPruningFilter()) {
-      return true;
+      result=true;
     }
  else     if (data.isPartitioned() == false && data.isFiltered() == false) {
-      return true;
+      result=true;
     }
   }
-  long threshold=HiveConf.getLongVar(pctx.getConf(),HiveConf.ConfVars.HIVEFETCHTASKCONVERSIONTHRESHOLD);
-  if (threshold < 0) {
-    return true;
-  }
-  Operator child=data.scanOp.getChildOperators().get(0);
-  if (child instanceof SelectOperator) {
-    if (checkExpressions((SelectOperator)child)) {
-      return true;
+ else {
+    long threshold=HiveConf.getLongVar(pctx.getConf(),HiveConf.ConfVars.HIVEFETCHTASKCONVERSIONTHRESHOLD);
+    if (threshold < 0) {
+      result=true;
+    }
+ else {
+      long remaining=threshold;
+      remaining-=data.getInputLength(pctx,remaining);
+      if (remaining >= 0) {
+        result=true;
+      }
     }
   }
-  long remaining=threshold;
-  remaining-=data.getInputLength(pctx,remaining);
-  if (remaining < 0) {
-    LOG.info("Threshold " + remaining + " exceeded for pseudoMR mode");
-    return false;
-  }
-  return true;
+  return result;
 }
