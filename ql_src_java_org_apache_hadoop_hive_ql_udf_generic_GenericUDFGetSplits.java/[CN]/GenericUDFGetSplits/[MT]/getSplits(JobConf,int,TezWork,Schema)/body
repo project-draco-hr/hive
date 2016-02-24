@@ -1,0 +1,55 @@
+{
+  DAG dag=DAG.create(work.getName());
+  dag.setCredentials(job.getCredentials());
+  DagUtils utils=DagUtils.getInstance();
+  Context ctx=new Context(job);
+  MapWork mapWork=(MapWork)work.getAllWork().get(0);
+  JobConf wxConf=utils.initializeVertexConf(job,ctx,mapWork);
+  Path scratchDir=utils.createTezDir(ctx.getMRScratchDir(),job);
+  FileSystem fs=scratchDir.getFileSystem(job);
+  try {
+    LocalResource appJarLr=createJarLocalResource(utils.getExecJarPathLocal(),utils,job);
+    Vertex wx=utils.createVertex(wxConf,mapWork,scratchDir,appJarLr,new ArrayList<LocalResource>(),fs,ctx,false,work,work.getVertexType(mapWork));
+    String vertexName=wx.getName();
+    dag.addVertex(wx);
+    utils.addCredentials(mapWork,dag);
+    HiveSplitGenerator splitGenerator=new HiveSplitGenerator(null);
+    Preconditions.checkState(HiveConf.getBoolVar(wxConf,HiveConf.ConfVars.HIVE_TEZ_GENERATE_CONSISTENT_SPLITS));
+    Preconditions.checkState(HiveConf.getBoolVar(wxConf,HiveConf.ConfVars.LLAP_CLIENT_CONSISTENT_SPLITS));
+    splitGenerator.initializeSplitGenerator(wxConf,mapWork);
+    List<Event> eventList=splitGenerator.initialize();
+    InputSplit[] result=new InputSplit[eventList.size()];
+    ByteArrayOutputStream bos=new ByteArrayOutputStream(10240);
+    InputConfigureVertexTasksEvent configureEvent=(InputConfigureVertexTasksEvent)eventList.get(0);
+    List<TaskLocationHint> hints=configureEvent.getLocationHint().getTaskLocationHints();
+    Preconditions.checkState(hints.size() == eventList.size() - 1);
+    LOG.info("DBG: Number of splits: " + (eventList.size() - 1));
+    for (int i=1; i < eventList.size(); i++) {
+      Event event=eventList.get(i);
+      TaskLocationHint hint=hints.get(i - 1);
+      Set<String> hosts=hint.getHosts();
+      LOG.info("DBG: Using locations: " + hosts.toString());
+      if (hosts.size() != 1) {
+        LOG.warn("DBG: Bad # of locations: " + hosts.size());
+      }
+      SplitLocationInfo[] locations=new SplitLocationInfo[hosts.size()];
+      int j=0;
+      for (      String host : hosts) {
+        locations[j++]=new SplitLocationInfo(host,false);
+      }
+      bos.reset();
+      Kryo kryo=SerializationUtilities.borrowKryo();
+      SerializationUtilities.serializeObjectByKryo(kryo,event,bos);
+      SerializationUtilities.releaseKryo(kryo);
+      TaskSpec taskSpec=new TaskSpecBuilder().constructTaskSpec(dag,vertexName,eventList.size() - 1);
+      ApplicationId fakeApplicationId=ApplicationId.newInstance(new Random().nextInt(),0);
+      SubmitWorkInfo submitWorkInfo=new SubmitWorkInfo(taskSpec,fakeApplicationId);
+      byte[] submitWorkBytes=SubmitWorkInfo.toBytes(submitWorkInfo);
+      result[i - 1]=new LlapInputSplit(submitWorkBytes,bos.toByteArray(),locations,schema);
+    }
+    return result;
+  }
+ catch (  Exception e) {
+    throw new IOException(e);
+  }
+}

@@ -2,7 +2,9 @@
   Utilities.setMapWork(jobConf,work);
   try {
     boolean sendSerializedEvents=conf.getBoolean("mapreduce.tez.input.initializer.serialize.event.payload",true);
-    pruner.prune();
+    if (pruner != null) {
+      pruner.prune();
+    }
     InputSplitInfoMem inputSplitInfo=null;
     boolean generateConsistentSplits=HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_TEZ_GENERATE_CONSISTENT_SPLITS);
     LOG.info("GenerateConsistentSplitsInHive=" + generateConsistentSplits);
@@ -10,9 +12,17 @@
     boolean groupingEnabled=userPayloadProto.getGroupingEnabled();
     if (groupingEnabled) {
       InputFormat<?,?> inputFormat=(InputFormat<?,?>)ReflectionUtils.newInstance(JavaUtils.loadClass(realInputFormatName),jobConf);
-      int totalResource=getContext().getTotalAvailableResource().getMemory();
-      int taskResource=getContext().getVertexTaskResource().getMemory();
-      int availableSlots=totalResource / taskResource;
+      int totalResource=0;
+      int taskResource=0;
+      int availableSlots=0;
+      if (getContext() == null) {
+        availableSlots=1;
+      }
+      if (getContext() != null) {
+        totalResource=getContext().getTotalAvailableResource().getMemory();
+        taskResource=getContext().getVertexTaskResource().getMemory();
+        availableSlots=totalResource / taskResource;
+      }
       if (HiveConf.getLongVar(conf,HiveConf.ConfVars.MAPREDMINSPLITSIZE,1) <= 1) {
         final long blockSize=conf.getLong(DFSConfigKeys.DFS_BLOCK_SIZE_KEY,DFSConfigKeys.DFS_BLOCK_SIZE_DEFAULT);
         final long minGrouping=conf.getLong(TezMapReduceSplitsGrouper.TEZ_GROUPING_SPLIT_MIN_SIZE,TezMapReduceSplitsGrouper.TEZ_GROUPING_SPLIT_MIN_SIZE_DEFAULT);
