@@ -3,6 +3,7 @@
   ArrayList<ExprNodeDesc> partnCols=new ArrayList<ExprNodeDesc>();
   ArrayList<ExprNodeDesc> sortCols=new ArrayList<ExprNodeDesc>();
   ArrayList<Integer> sortOrders=new ArrayList<Integer>();
+  ArrayList<Integer> nullSortOrders=new ArrayList<Integer>();
   boolean multiFileSpray=false;
   int numFiles=1;
   int totalFiles=1;
@@ -18,6 +19,7 @@
   if ((dest_tab.getSortCols() != null) && (dest_tab.getSortCols().size() > 0)) {
     sortCols=getSortCols(dest,qb,dest_tab,table_desc,input,true);
     sortOrders=getSortOrders(dest,qb,dest_tab,input);
+    nullSortOrders=getNullSortOrders(dest,qb,dest_tab,input);
     if (!enforceBucketing && !dest_tab.isIndexTable()) {
       throw new SemanticException(ErrorMsg.TBL_SORTED_NOT_BUCKETED.getErrorCodedMsg(dest_tab.getCompleteName()));
     }
@@ -53,7 +55,11 @@
     for (    int sortOrder : sortOrders) {
       order.append(sortOrder == BaseSemanticAnalyzer.HIVE_COLUMN_ORDER_ASC ? '+' : '-');
     }
-    input=genReduceSinkPlan(input,partnCols,sortCols,order.toString(),maxReducers,(AcidUtils.isAcidTable(dest_tab) ? getAcidType() : AcidUtils.Operation.NOT_ACID));
+    StringBuilder nullOrder=new StringBuilder();
+    for (    int pos : nullSortOrders) {
+      nullOrder.append(pos == BaseSemanticAnalyzer.HIVE_COLUMN_NULLS_FIRST ? 'a' : 'z');
+    }
+    input=genReduceSinkPlan(input,partnCols,sortCols,order.toString(),nullOrder.toString(),maxReducers,(AcidUtils.isAcidTable(dest_tab) ? getAcidType() : AcidUtils.Operation.NOT_ACID));
     reduceSinkOperatorsAddedByEnforceBucketingSorting.add((ReduceSinkOperator)input.getParentOperators().get(0));
     ctx.setMultiFileSpray(multiFileSpray);
     ctx.setNumFiles(numFiles);

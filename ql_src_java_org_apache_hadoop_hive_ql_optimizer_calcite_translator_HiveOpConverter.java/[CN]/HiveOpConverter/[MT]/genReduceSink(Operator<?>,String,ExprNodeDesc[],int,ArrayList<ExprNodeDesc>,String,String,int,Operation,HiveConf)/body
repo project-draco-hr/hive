@@ -1,0 +1,76 @@
+{
+  Operator dummy=Operator.createDummy();
+  dummy.setParentOperators(Arrays.asList(input));
+  ArrayList<ExprNodeDesc> reduceKeys=new ArrayList<ExprNodeDesc>();
+  ArrayList<ExprNodeDesc> reduceKeysBack=new ArrayList<ExprNodeDesc>();
+  for (  ExprNodeDesc key : keys) {
+    reduceKeys.add(key);
+    reduceKeysBack.add(ExprNodeDescUtils.backtrack(key,dummy,input));
+  }
+  ArrayList<ExprNodeDesc> reduceValues=new ArrayList<ExprNodeDesc>();
+  ArrayList<ExprNodeDesc> reduceValuesBack=new ArrayList<ExprNodeDesc>();
+  Map<String,ExprNodeDesc> colExprMap=new HashMap<String,ExprNodeDesc>();
+  List<ColumnInfo> inputColumns=input.getSchema().getSignature();
+  ArrayList<ColumnInfo> outputColumns=new ArrayList<ColumnInfo>();
+  List<String> outputColumnNames=new ArrayList<String>();
+  int[] index=new int[inputColumns.size()];
+  for (int i=0; i < inputColumns.size(); i++) {
+    ColumnInfo colInfo=inputColumns.get(i);
+    String outputColName=colInfo.getInternalName();
+    ExprNodeColumnDesc expr=new ExprNodeColumnDesc(colInfo);
+    ExprNodeDesc exprBack=ExprNodeDescUtils.backtrack(expr,dummy,input);
+    int kindex=exprBack == null ? -1 : ExprNodeDescUtils.indexOf(exprBack,reduceKeysBack);
+    if (kindex >= 0) {
+      ColumnInfo newColInfo=new ColumnInfo(colInfo);
+      newColInfo.setInternalName(Utilities.ReduceField.KEY + ".reducesinkkey" + kindex);
+      newColInfo.setAlias(outputColName);
+      newColInfo.setTabAlias(tableAlias);
+      outputColumns.add(newColInfo);
+      index[i]=kindex;
+      continue;
+    }
+    int vindex=exprBack == null ? -1 : ExprNodeDescUtils.indexOf(exprBack,reduceValuesBack);
+    if (vindex >= 0) {
+      index[i]=-vindex - 1;
+      continue;
+    }
+    index[i]=-reduceValues.size() - 1;
+    reduceValues.add(expr);
+    reduceValuesBack.add(exprBack);
+    ColumnInfo newColInfo=new ColumnInfo(colInfo);
+    newColInfo.setInternalName(Utilities.ReduceField.VALUE + "." + outputColName);
+    newColInfo.setAlias(outputColName);
+    newColInfo.setTabAlias(tableAlias);
+    outputColumns.add(newColInfo);
+    outputColumnNames.add(outputColName);
+  }
+  dummy.setParentOperators(null);
+  if (reduceKeys.size() == 0) {
+    numReducers=1;
+    String error=StrictChecks.checkCartesian(hiveConf);
+    if (error != null)     throw new SemanticException(error);
+  }
+  ReduceSinkDesc rsDesc;
+  if (order.isEmpty()) {
+    rsDesc=PlanUtils.getReduceSinkDesc(reduceKeys,reduceValues,outputColumnNames,false,tag,reduceKeys.size(),numReducers,acidOperation);
+  }
+ else {
+    rsDesc=PlanUtils.getReduceSinkDesc(reduceKeys,reduceValues,outputColumnNames,false,tag,partitionCols,order,nullOrder,numReducers,acidOperation);
+  }
+  ReduceSinkOperator rsOp=(ReduceSinkOperator)OperatorFactory.getAndMakeChild(rsDesc,new RowSchema(outputColumns),input);
+  List<String> keyColNames=rsDesc.getOutputKeyColumnNames();
+  for (int i=0; i < keyColNames.size(); i++) {
+    colExprMap.put(Utilities.ReduceField.KEY + "." + keyColNames.get(i),reduceKeys.get(i));
+  }
+  List<String> valColNames=rsDesc.getOutputValueColumnNames();
+  for (int i=0; i < valColNames.size(); i++) {
+    colExprMap.put(Utilities.ReduceField.VALUE + "." + valColNames.get(i),reduceValues.get(i));
+  }
+  rsOp.setValueIndex(index);
+  rsOp.setColumnExprMap(colExprMap);
+  rsOp.setInputAliases(input.getSchema().getTableNames().toArray(new String[input.getSchema().getTableNames().size()]));
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Generated " + rsOp + " with row schema: ["+ rsOp.getSchema()+ "]");
+  }
+  return rsOp;
+}

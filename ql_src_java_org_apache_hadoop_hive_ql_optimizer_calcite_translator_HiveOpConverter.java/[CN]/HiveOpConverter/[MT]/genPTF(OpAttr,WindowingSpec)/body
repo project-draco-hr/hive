@@ -11,28 +11,33 @@
     ArrayList<ExprNodeDesc> keyCols=new ArrayList<ExprNodeDesc>();
     ArrayList<ExprNodeDesc> partCols=new ArrayList<ExprNodeDesc>();
     StringBuilder order=new StringBuilder();
+    StringBuilder nullOrder=new StringBuilder();
     for (    PartitionExpression partCol : wSpec.getQueryPartitionSpec().getExpressions()) {
       ExprNodeDesc partExpr=semanticAnalyzer.genExprNodeDesc(partCol.getExpression(),rr);
       if (ExprNodeDescUtils.indexOf(partExpr,partCols) < 0) {
         keyCols.add(partExpr);
         partCols.add(partExpr);
         order.append('+');
+        nullOrder.append('a');
       }
     }
     if (wSpec.getQueryOrderSpec() != null) {
       for (      OrderExpression orderCol : wSpec.getQueryOrderSpec().getExpressions()) {
         ExprNodeDesc orderExpr=semanticAnalyzer.genExprNodeDesc(orderCol.getExpression(),rr);
         char orderChar=orderCol.getOrder() == PTFInvocationSpec.Order.ASC ? '+' : '-';
+        char nullOrderChar=orderCol.getNullOrder() == PTFInvocationSpec.NullOrder.NULLS_FIRST ? 'a' : 'z';
         int index=ExprNodeDescUtils.indexOf(orderExpr,keyCols);
         if (index >= 0) {
           order.setCharAt(index,orderChar);
+          nullOrder.setCharAt(index,nullOrderChar);
           continue;
         }
         keyCols.add(orderExpr);
         order.append(orderChar);
+        nullOrder.append(nullOrderChar);
       }
     }
-    SelectOperator selectOp=genReduceSinkAndBacktrackSelect(input,keyCols.toArray(new ExprNodeDesc[keyCols.size()]),0,partCols,order.toString(),-1,Operation.NOT_ACID,hiveConf);
+    SelectOperator selectOp=genReduceSinkAndBacktrackSelect(input,keyCols.toArray(new ExprNodeDesc[keyCols.size()]),0,partCols,order.toString(),nullOrder.toString(),-1,Operation.NOT_ACID,hiveConf);
     PTFTranslator translator=new PTFTranslator();
     PTFDesc ptfDesc=translator.translate(wSpec,semanticAnalyzer,hiveConf,rr,unparseTranslator);
     RowResolver ptfOpRR=ptfDesc.getFuncDef().getOutputShape().getRr();
