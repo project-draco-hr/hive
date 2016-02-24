@@ -1,0 +1,39 @@
+{
+  final Filter filter=call.rel(0);
+  final Project origproject=call.rel(1);
+  RexNode filterCondToPushBelowProj=filter.getCondition();
+  RexNode unPushedFilCondAboveProj=null;
+  if (RexUtil.containsCorrelation(filterCondToPushBelowProj)) {
+    return;
+  }
+  if (RexOver.containsOver(origproject.getProjects(),null)) {
+    RexNode origFilterCond=filterCondToPushBelowProj;
+    filterCondToPushBelowProj=null;
+    if (pushThroughWindowing) {
+      Set<Integer> commonPartitionKeys=getCommonPartitionCols(origproject.getProjects());
+      List<RexNode> newPartKeyFilConds=new ArrayList<RexNode>();
+      List<RexNode> unpushedFilConds=new ArrayList<RexNode>();
+      if (!commonPartitionKeys.isEmpty()) {
+        for (        RexNode ce : RelOptUtil.conjunctions(origFilterCond)) {
+          RexNode newCondition=RelOptUtil.pushPastProject(ce,origproject);
+          if (HiveCalciteUtil.isDeterministicFuncWithSingleInputRef(newCondition,commonPartitionKeys)) {
+            newPartKeyFilConds.add(newCondition);
+          }
+ else {
+            unpushedFilConds.add(ce);
+          }
+        }
+        if (!newPartKeyFilConds.isEmpty()) {
+          filterCondToPushBelowProj=RexUtil.composeConjunction(filter.getCluster().getRexBuilder(),newPartKeyFilConds,true);
+        }
+        if (!unpushedFilConds.isEmpty()) {
+          unPushedFilCondAboveProj=RexUtil.composeConjunction(filter.getCluster().getRexBuilder(),unpushedFilConds,true);
+        }
+      }
+    }
+  }
+  if (filterCondToPushBelowProj != null) {
+    RelNode newProjRel=getNewProject(filterCondToPushBelowProj,unPushedFilCondAboveProj,origproject,filter.getCluster().getTypeFactory(),call.builder());
+    call.transformTo(newProjRel);
+  }
+}
