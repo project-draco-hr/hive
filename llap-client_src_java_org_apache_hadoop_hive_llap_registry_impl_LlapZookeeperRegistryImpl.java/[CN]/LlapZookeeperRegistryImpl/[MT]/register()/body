@@ -1,0 +1,34 @@
+{
+  ServiceRecord srv=new ServiceRecord();
+  Endpoint rpcEndpoint=getRpcEndpoint();
+  srv.addInternalEndpoint(rpcEndpoint);
+  srv.addInternalEndpoint(getMngEndpoint());
+  srv.addInternalEndpoint(getShuffleEndpoint());
+  srv.addExternalEndpoint(getServicesEndpoint());
+  for (  Map.Entry<String,String> kv : this.conf) {
+    if (kv.getKey().startsWith(HiveConf.PREFIX_LLAP) || kv.getKey().startsWith(HiveConf.PREFIX_HIVE_LLAP)) {
+      srv.set(kv.getKey(),kv.getValue());
+    }
+  }
+  srv.set(UNIQUE_IDENTIFIER,uniq.toString());
+  try {
+    znode=new PersistentEphemeralNode(zooKeeperClient,PersistentEphemeralNode.Mode.EPHEMERAL_SEQUENTIAL,pathPrefix,encoder.toBytes(srv));
+    znode.start();
+    long znodeCreationTimeout=120;
+    if (!znode.waitForInitialCreate(znodeCreationTimeout,TimeUnit.SECONDS)) {
+      throw new Exception("Max znode creation wait time: " + znodeCreationTimeout + "s exhausted");
+    }
+    znodePath=znode.getActualPath();
+    if (zooKeeperClient.checkExists().forPath(znodePath) == null) {
+      throw new Exception("Unable to create znode for this LLAP instance on ZooKeeper.");
+    }
+    LOG.info("Created a znode on ZooKeeper for LLAP instance: {} znodePath: {}",rpcEndpoint,znodePath);
+  }
+ catch (  Exception e) {
+    LOG.error("Unable to create a znode for this server instance",e);
+    CloseableUtils.closeQuietly(znode);
+  }
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Created zknode with path: {} service record: {}",znodePath,srv);
+  }
+}

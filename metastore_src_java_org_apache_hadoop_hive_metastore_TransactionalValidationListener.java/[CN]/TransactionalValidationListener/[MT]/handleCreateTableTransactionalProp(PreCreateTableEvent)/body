@@ -1,0 +1,32 @@
+{
+  Table newTable=context.getTable();
+  Map<String,String> parameters=newTable.getParameters();
+  if (parameters == null || parameters.isEmpty()) {
+    return;
+  }
+  String transactionalValue=null;
+  boolean transactionalPropFound=false;
+  Set<String> keys=new HashSet<>(parameters.keySet());
+  for (  String key : keys) {
+    if (hive_metastoreConstants.TABLE_IS_TRANSACTIONAL.equalsIgnoreCase(key)) {
+      transactionalPropFound=true;
+      transactionalValue=parameters.get(key);
+      parameters.remove(key);
+    }
+  }
+  if (!transactionalPropFound) {
+    return;
+  }
+  if ("false".equalsIgnoreCase(transactionalValue)) {
+    LOG.info("'transactional'='false' is no longer a valid property and will be ignored");
+    return;
+  }
+  if ("true".equalsIgnoreCase(transactionalValue)) {
+    if (!conformToAcid(newTable)) {
+      throw new MetaException("The table must be bucketed and stored using an ACID compliant" + " format (such as ORC)");
+    }
+    parameters.put(hive_metastoreConstants.TABLE_IS_TRANSACTIONAL,Boolean.TRUE.toString());
+    return;
+  }
+  throw new MetaException("'transactional' property of TBLPROPERTIES may only have value 'true'");
+}

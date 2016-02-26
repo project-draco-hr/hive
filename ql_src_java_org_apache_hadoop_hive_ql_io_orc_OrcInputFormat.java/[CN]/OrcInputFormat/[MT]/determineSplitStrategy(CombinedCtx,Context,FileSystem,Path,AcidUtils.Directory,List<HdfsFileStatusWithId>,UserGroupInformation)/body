@@ -1,0 +1,37 @@
+{
+  Path base=dirInfo.getBaseDirectory();
+  List<HdfsFileStatusWithId> original=dirInfo.getOriginalFiles();
+  List<DeltaMetaData> deltas=AcidUtils.serializeDeltas(dirInfo.getCurrentDirectories());
+  boolean[] covered=new boolean[context.numBuckets];
+  boolean isOriginal=base == null;
+  if (base != null || !original.isEmpty()) {
+    long totalFileSize=0;
+    for (    HdfsFileStatusWithId child : baseOrOriginalFiles) {
+      totalFileSize+=child.getFileStatus().getLen();
+      AcidOutputFormat.Options opts=AcidUtils.parseBaseBucketFilename(child.getFileStatus().getPath(),context.conf);
+      int b=opts.getBucket();
+      if (b >= 0 && b < covered.length) {
+        covered[b]=true;
+      }
+    }
+    int numFiles=baseOrOriginalFiles.size();
+    long avgFileSize=totalFileSize / numFiles;
+    int totalFiles=context.numFilesCounter.addAndGet(numFiles);
+switch (context.splitStrategyKind) {
+case BI:
+      return new BISplitStrategy(context,fs,dir,baseOrOriginalFiles,isOriginal,deltas,covered);
+case ETL:
+    return combineOrCreateETLStrategy(combinedCtx,context,fs,dir,baseOrOriginalFiles,deltas,covered,isOriginal,ugi);
+default :
+  if (avgFileSize > context.maxSize || totalFiles <= context.minSplits) {
+    return combineOrCreateETLStrategy(combinedCtx,context,fs,dir,baseOrOriginalFiles,deltas,covered,isOriginal,ugi);
+  }
+ else {
+    return new BISplitStrategy(context,fs,dir,baseOrOriginalFiles,isOriginal,deltas,covered);
+  }
+}
+}
+ else {
+return new ACIDSplitStrategy(dir,context.numBuckets,deltas,covered);
+}
+}

@@ -1,0 +1,51 @@
+{
+  populateAndCacheStripeDetails();
+  List<OrcSplit> splits=Lists.newArrayList();
+  boolean[] includeStripe=null;
+  if ((deltas == null || deltas.isEmpty()) && context.sarg != null) {
+    String[] colNames=extractNeededColNames(types,context.conf,includedCols,isOriginal);
+    if (colNames == null) {
+      LOG.warn("Skipping split elimination for {} as column names is null",file.getPath());
+    }
+ else {
+      includeStripe=pickStripes(context.sarg,colNames,writerVersion,isOriginal,stripeStats,stripes.size(),file.getPath());
+    }
+  }
+  if (includeStripe == null) {
+    includeStripe=new boolean[stripes.size()];
+    Arrays.fill(includeStripe,true);
+  }
+  long currentOffset=-1;
+  long currentLength=0;
+  int idx=-1;
+  for (  StripeInformation stripe : stripes) {
+    idx++;
+    if (!includeStripe[idx]) {
+      if (currentOffset != -1) {
+        splits.add(createSplit(currentOffset,currentLength,fileMetaInfo));
+        currentOffset=-1;
+      }
+      continue;
+    }
+    if (currentOffset != -1 && currentLength > context.minSize && (currentOffset / blockSize != stripe.getOffset() / blockSize)) {
+      splits.add(createSplit(currentOffset,currentLength,fileMetaInfo));
+      currentOffset=-1;
+    }
+    if (currentOffset == -1) {
+      currentOffset=stripe.getOffset();
+      currentLength=stripe.getLength();
+    }
+ else {
+      currentLength=(stripe.getOffset() + stripe.getLength()) - currentOffset;
+    }
+    if (currentLength >= context.maxSize) {
+      splits.add(createSplit(currentOffset,currentLength,fileMetaInfo));
+      currentOffset=-1;
+    }
+  }
+  if (currentOffset != -1) {
+    splits.add(createSplit(currentOffset,currentLength,fileMetaInfo));
+  }
+  splits.addAll(deltaSplits);
+  return splits;
+}
