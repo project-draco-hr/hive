@@ -1,0 +1,61 @@
+{
+  DAG dag=DAG.create(work.getName());
+  dag.setCredentials(job.getCredentials());
+  DagUtils utils=DagUtils.getInstance();
+  Context ctx=new Context(job);
+  MapWork mapWork=(MapWork)work.getAllWork().get(0);
+  JobConf wxConf=utils.initializeVertexConf(job,ctx,mapWork);
+  Path scratchDir=utils.createTezDir(ctx.getMRScratchDir(),job);
+  FileSystem fs=scratchDir.getFileSystem(job);
+  try {
+    LocalResource appJarLr=createJarLocalResource(utils.getExecJarPathLocal(),utils,job);
+    Vertex wx=utils.createVertex(wxConf,mapWork,scratchDir,appJarLr,new ArrayList<LocalResource>(),fs,ctx,false,work,work.getVertexType(mapWork));
+    String vertexName=wx.getName();
+    dag.addVertex(wx);
+    utils.addCredentials(mapWork,dag);
+    HiveSplitGenerator splitGenerator=new HiveSplitGenerator(null);
+    Preconditions.checkState(HiveConf.getBoolVar(wxConf,HiveConf.ConfVars.HIVE_TEZ_GENERATE_CONSISTENT_SPLITS));
+    Preconditions.checkState(HiveConf.getBoolVar(wxConf,HiveConf.ConfVars.LLAP_CLIENT_CONSISTENT_SPLITS));
+    splitGenerator.initializeSplitGenerator(wxConf,mapWork);
+    List<Event> eventList=splitGenerator.initialize();
+    InputSplit[] result=new InputSplit[eventList.size() - 1];
+    DataOutputBuffer dob=new DataOutputBuffer();
+    InputConfigureVertexTasksEvent configureEvent=(InputConfigureVertexTasksEvent)eventList.get(0);
+    List<TaskLocationHint> hints=configureEvent.getLocationHint().getTaskLocationHints();
+    Preconditions.checkState(hints.size() == eventList.size() - 1);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("NumEvents=" + eventList.size());
+      LOG.debug("NumSplits=" + result.length);
+    }
+    ApplicationId fakeApplicationId=ApplicationId.newInstance(Math.abs(new Random().nextInt()),0);
+    LOG.info("Number of splits: " + (eventList.size() - 1));
+    for (int i=0; i < eventList.size() - 1; i++) {
+      TaskSpec taskSpec=new TaskSpecBuilder().constructTaskSpec(dag,vertexName,eventList.size() - 1,fakeApplicationId,i);
+      SubmitWorkInfo submitWorkInfo=new SubmitWorkInfo(taskSpec,fakeApplicationId,System.currentTimeMillis());
+      EventMetaData sourceMetaData=new EventMetaData(EventMetaData.EventProducerConsumerType.INPUT,vertexName,"NULL_VERTEX",null);
+      EventMetaData destinationMetaInfo=new TaskSpecBuilder().getDestingationMetaData(wx);
+      Event event=eventList.get(i + 1);
+      TaskLocationHint hint=hints.get(i);
+      Set<String> hosts=hint.getHosts();
+      if (hosts.size() != 1) {
+        LOG.warn("Bad # of locations: " + hosts.size());
+      }
+      SplitLocationInfo[] locations=new SplitLocationInfo[hosts.size()];
+      int j=0;
+      for (      String host : hosts) {
+        locations[j++]=new SplitLocationInfo(host,false);
+      }
+      TezEvent tezEvent=new TezEvent(event,sourceMetaData,System.currentTimeMillis());
+      tezEvent.setDestinationInfo(destinationMetaInfo);
+      bos.reset();
+      dob.reset();
+      tezEvent.write(dob);
+      byte[] submitWorkBytes=SubmitWorkInfo.toBytes(submitWorkInfo);
+      result[i]=new LlapInputSplit(i,submitWorkBytes,dob.getData(),locations,schema);
+    }
+    return result;
+  }
+ catch (  Exception e) {
+    throw new IOException(e);
+  }
+}

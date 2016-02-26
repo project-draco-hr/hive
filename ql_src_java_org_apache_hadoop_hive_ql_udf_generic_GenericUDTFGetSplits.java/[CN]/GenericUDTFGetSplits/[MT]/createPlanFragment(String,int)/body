@@ -1,0 +1,58 @@
+{
+  HiveConf conf=new HiveConf(SessionState.get().getConf());
+  HiveConf.setVar(conf,ConfVars.HIVEFETCHTASKCONVERSION,"none");
+  HiveConf.setVar(conf,HiveConf.ConfVars.HIVEQUERYRESULTFILEFORMAT,"Llap");
+  String originalMode=HiveConf.getVar(conf,HiveConf.ConfVars.HIVE_EXECUTION_MODE);
+  HiveConf.setVar(conf,HiveConf.ConfVars.HIVE_EXECUTION_MODE,"llap");
+  HiveConf.setBoolVar(conf,HiveConf.ConfVars.HIVE_TEZ_GENERATE_CONSISTENT_SPLITS,true);
+  HiveConf.setBoolVar(conf,HiveConf.ConfVars.LLAP_CLIENT_CONSISTENT_SPLITS,true);
+  try {
+    jc=DagUtils.getInstance().createConfiguration(conf);
+  }
+ catch (  IOException e) {
+    throw new HiveException(e);
+  }
+  Driver driver=new Driver(conf);
+  CommandProcessorResponse cpr;
+  LOG.info("setting fetch.task.conversion to none and query file format to \"" + LlapOutputFormat.class.getName() + "\"");
+  cpr=driver.compileAndRespond(query);
+  if (cpr.getResponseCode() != 0) {
+    throw new HiveException("Failed to compile query: " + cpr.getException());
+  }
+  QueryPlan plan=driver.getPlan();
+  List<Task<?>> roots=plan.getRootTasks();
+  Schema schema=plan.getResultSchema();
+  if (roots == null || roots.size() != 1 || !(roots.get(0) instanceof TezTask)) {
+    throw new HiveException("Was expecting a single TezTask.");
+  }
+  TezWork tezWork=((TezTask)roots.get(0)).getWork();
+  if (tezWork.getAllWork().size() != 1) {
+    String tableName="table_" + UUID.randomUUID().toString().replaceAll("[^A-Za-z0-9 ]","");
+    String ctas="create temporary table " + tableName + " as "+ query;
+    LOG.info("CTAS: " + ctas);
+    try {
+      HiveConf.setVar(conf,HiveConf.ConfVars.HIVE_EXECUTION_MODE,originalMode);
+      cpr=driver.run(ctas,false);
+    }
+ catch (    CommandNeedRetryException e) {
+      throw new HiveException(e);
+    }
+    if (cpr.getResponseCode() != 0) {
+      throw new HiveException("Failed to create temp table: " + cpr.getException());
+    }
+    HiveConf.setVar(conf,HiveConf.ConfVars.HIVE_EXECUTION_MODE,"llap");
+    query="select * from " + tableName;
+    cpr=driver.compileAndRespond(query);
+    if (cpr.getResponseCode() != 0) {
+      throw new HiveException("Failed to create temp table: " + cpr.getException());
+    }
+    plan=driver.getPlan();
+    roots=plan.getRootTasks();
+    schema=plan.getResultSchema();
+    if (roots == null || roots.size() != 1 || !(roots.get(0) instanceof TezTask)) {
+      throw new HiveException("Was expecting a single TezTask.");
+    }
+    tezWork=((TezTask)roots.get(0)).getWork();
+  }
+  return new PlanFragment(tezWork,schema,jc);
+}
