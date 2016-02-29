@@ -1,14 +1,23 @@
 {
-synchronized (lockLock) {
+  boolean success=false;
+  Connection dbConn=null;
+  try {
     Statement stmt=null;
     ResultSet rs=null;
+    ResultSet lockHandle=null;
     try {
+      lockInternal();
+      dbConn=getDbConn(Connection.TRANSACTION_READ_COMMITTED);
       long txnid=rqst.getTxnid();
-      if (txnid > 0) {
-        heartbeatTxn(dbConn,txnid);
-      }
       stmt=dbConn.createStatement();
-      String s=addForUpdateClause(dbConn,"select nl_next from NEXT_LOCK_ID");
+      if (isValidTxn(txnid)) {
+        lockHandle=lockTransactionRecord(stmt,txnid,TXN_OPEN);
+        if (lockHandle == null) {
+          ensureValidTxn(dbConn,txnid,stmt);
+          shouldNeverHappen(txnid);
+        }
+      }
+      String s=addForUpdateClause("select nl_next from NEXT_LOCK_ID");
       LOG.debug("Going to execute query <" + s + ">");
       rs=stmt.executeQuery(s);
       if (!rs.next()) {
@@ -54,14 +63,26 @@ s="insert into HIVE_LOCKS " + " (hl_lock_ext_id, hl_lock_int_id, hl_txnid, hl_db
 LOG.debug("Going to execute update <" + s + ">");
 stmt.executeUpdate(s);
 }
-return checkLock(dbConn,extLockId);
+dbConn.commit();
+success=true;
+return new ConnectionLockIdPair(dbConn,extLockId);
 }
- catch (NoSuchLockException e) {
-throw new MetaException("Couldn't find a lock we just created! " + e.getMessage());
+ catch (SQLException e) {
+LOG.debug("Going to rollback");
+rollbackDBConn(dbConn);
+checkRetryable(dbConn,e,"enqueueLockWithRetry(" + rqst + ")");
+throw new MetaException("Unable to update transaction database " + StringUtils.stringifyException(e));
 }
  finally {
-close(rs);
-closeStmt(stmt);
+close(lockHandle);
+close(rs,stmt,null);
+if (!success) {
+closeDbConn(dbConn);
 }
+unlockInternal();
+}
+}
+ catch (RetryException e) {
+return enqueueLockWithRetry(rqst);
 }
 }

@@ -1,11 +1,17 @@
 {
   Connection dbConn=null;
   Statement stmt=null;
+  ResultSet lockHandle=null;
   try {
     try {
+      lockInternal();
       dbConn=getDbConn(Connection.TRANSACTION_READ_COMMITTED);
       stmt=dbConn.createStatement();
-      heartbeatTxn(dbConn,rqst.getTxnid());
+      lockHandle=lockTransactionRecord(stmt,rqst.getTxnid(),TXN_OPEN);
+      if (lockHandle == null) {
+        ensureValidTxn(dbConn,rqst.getTxnid(),stmt);
+        shouldNeverHappen(rqst.getTxnid());
+      }
       for (      String partName : rqst.getPartitionnames()) {
         StringBuilder buff=new StringBuilder();
         buff.append("insert into TXN_COMPONENTS (tc_txnid, tc_database, tc_table, tc_partition) values (");
@@ -31,8 +37,8 @@
       throw new MetaException("Unable to insert into from transaction database " + StringUtils.stringifyException(e));
     }
  finally {
-      closeStmt(stmt);
-      closeDbConn(dbConn);
+      close(lockHandle,stmt,dbConn);
+      unlockInternal();
     }
   }
  catch (  RetryException e) {

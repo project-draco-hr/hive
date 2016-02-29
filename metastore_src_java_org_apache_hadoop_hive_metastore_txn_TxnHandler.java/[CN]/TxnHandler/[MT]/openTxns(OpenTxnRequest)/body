@@ -5,11 +5,12 @@
     Statement stmt=null;
     ResultSet rs=null;
     try {
-      dbConn=getDbConn(getRequiredIsolationLevel());
+      lockInternal();
+      dbConn=getDbConn(Connection.TRANSACTION_READ_COMMITTED);
       int maxTxns=HiveConf.getIntVar(conf,HiveConf.ConfVars.HIVE_TXN_MAX_OPEN_BATCH);
       if (numTxns > maxTxns)       numTxns=maxTxns;
       stmt=dbConn.createStatement();
-      String s=addForUpdateClause(dbConn,"select ntxn_next from NEXT_TXN_ID");
+      String s=addForUpdateClause("select ntxn_next from NEXT_TXN_ID");
       LOG.debug("Going to execute query <" + s + ">");
       rs=stmt.executeQuery(s);
       if (!rs.next()) {
@@ -41,6 +42,7 @@
     }
  finally {
       close(rs,stmt,dbConn);
+      unlockInternal();
     }
   }
  catch (  RetryException e) {
