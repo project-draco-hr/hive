@@ -24,6 +24,8 @@
     throw new RuntimeException(e);
   }
   perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Plan generation");
+  HiveRelFieldTrimmer fieldTrimmer=new HiveRelFieldTrimmer(null,HiveRelFactories.HIVE_BUILDER.create(cluster,null),this.columnAccessInfo,this.viewProjectToTableSchema);
+  fieldTrimmer.trim(calciteGenPlan);
   HiveDefaultRelMetadataProvider mdProvider=new HiveDefaultRelMetadataProvider(conf);
   Executor executorProvider=new HiveRexExecutorImpl(cluster);
   calcitePreCboPlan=applyPreJoinOrderingTransforms(calciteGenPlan,mdProvider.getMetadataProvider(),executorProvider);
@@ -105,7 +107,7 @@
   if (HiveConf.getBoolVar(conf,ConfVars.HIVE_CBO_RETPATH_HIVEOP)) {
     perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
     calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,true,mdProvider.getMetadataProvider(),null,HepMatchOrder.BOTTOM_UP,HiveJoinProjectTransposeRule.BOTH_PROJECT_INCLUDE_OUTER,HiveJoinProjectTransposeRule.LEFT_PROJECT_INCLUDE_OUTER,HiveJoinProjectTransposeRule.RIGHT_PROJECT_INCLUDE_OUTER,HiveJoinToMultiJoinRule.INSTANCE,HiveProjectMergeRule.INSTANCE);
-    HiveRelFieldTrimmer fieldTrimmer=new HiveRelFieldTrimmer(null,HiveRelFactories.HIVE_BUILDER.create(cluster,null));
+    fieldTrimmer=new HiveRelFieldTrimmer(null,HiveRelFactories.HIVE_BUILDER.create(cluster,null));
     calciteOptimizedPlan=fieldTrimmer.trim(calciteOptimizedPlan);
     calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),null,HepMatchOrder.BOTTOM_UP,ProjectRemoveRule.INSTANCE,new ProjectMergeRule(false,HiveRelFactories.HIVE_PROJECT_FACTORY));
     calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,true,mdProvider.getMetadataProvider(),null,new HiveFilterProjectTSTransposeRule(Filter.class,HiveRelFactories.HIVE_FILTER_FACTORY,HiveProject.class,HiveRelFactories.HIVE_PROJECT_FACTORY,HiveTableScan.class));
