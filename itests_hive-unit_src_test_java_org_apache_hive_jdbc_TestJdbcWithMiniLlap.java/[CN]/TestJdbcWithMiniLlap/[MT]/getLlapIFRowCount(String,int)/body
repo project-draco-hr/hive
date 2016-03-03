@@ -1,0 +1,36 @@
+{
+  Timer timer=new Timer();
+  long delay=30000;
+  TestTimerTask timerTask=new TestTimerTask(Thread.currentThread());
+  timer.schedule(timerTask,delay);
+  String url=miniHS2.getJdbcURL();
+  String user=System.getProperty("user.name");
+  String pwd=user;
+  LlapInputFormat inputFormat=new LlapInputFormat(url,user,pwd,query);
+  JobConf job=new JobConf(conf);
+  InputSplit[] splits=inputFormat.getSplits(job,numSplits);
+  assertTrue(splits.length > 0);
+  boolean first=true;
+  int rowCount=0;
+  for (  InputSplit split : splits) {
+    System.out.println("Processing split " + split.getLocations());
+    RecordReader<NullWritable,Text> reader=inputFormat.getRecordReader(split,job,null);
+    if (reader instanceof LlapRecordReader && first) {
+      Schema schema=((LlapRecordReader)reader).getSchema();
+      System.out.println("" + schema);
+    }
+    if (first) {
+      System.out.println("Results: ");
+      System.out.println("");
+      first=false;
+    }
+    Text value=reader.createValue();
+    while (reader.next(NullWritable.get(),value)) {
+      System.out.println(value);
+      ++rowCount;
+    }
+  }
+  timer.cancel();
+  assertFalse("Test timed out",timerTask.isTimedOut());
+  return rowCount;
+}

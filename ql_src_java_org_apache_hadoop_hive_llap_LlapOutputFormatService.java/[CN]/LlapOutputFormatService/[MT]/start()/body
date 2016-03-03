@@ -1,41 +1,16 @@
 {
-  executor.submit(new Runnable(){
-    byte[] buffer=new byte[4096];
-    @Override public void run(){
-      while (true) {
-        Socket s=null;
-        try {
-          s=socket.accept();
-          String id=readId(s);
-          LOG.debug("Received: " + id);
-          registerReader(s,id);
-        }
- catch (        IOException io) {
-          if (s != null) {
-            try {
-              s.close();
-            }
- catch (            IOException io2) {
-            }
-          }
-        }
-      }
-    }
-    private String readId(    Socket s) throws IOException {
-      InputStream in=s.getInputStream();
-      int idx=0;
-      while ((buffer[idx++]=(byte)in.read()) != '\0') {
-      }
-      return new String(buffer,0,idx - 1);
-    }
-    private void registerReader(    Socket s,    String id) throws IOException {
-synchronized (service) {
-        LOG.debug("registering socket for: " + id);
-        LlapRecordWriter writer=new LlapRecordWriter(s.getOutputStream());
-        writers.put(id,writer);
-        service.notifyAll();
-      }
-    }
+  LOG.info("Starting LlapOutputFormatService");
+  int port=conf.getIntVar(HiveConf.ConfVars.LLAP_DAEMON_OUTPUT_SERVICE_PORT);
+  eventLoopGroup=new NioEventLoopGroup(1);
+  serverBootstrap=new ServerBootstrap();
+  serverBootstrap.group(eventLoopGroup);
+  serverBootstrap.channel(NioServerSocketChannel.class);
+  serverBootstrap.childHandler(new LlapOutputFormatServiceChannelHandler());
+  try {
+    LOG.info("LlapOutputFormatService: Binding to port " + port);
+    listeningChannelFuture=serverBootstrap.bind(port).sync();
   }
-);
+ catch (  InterruptedException err) {
+    throw new IOException("LlapOutputFormatService: Error binding to port " + port,err);
+  }
 }
