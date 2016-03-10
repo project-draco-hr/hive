@@ -1,0 +1,27 @@
+{
+switch (colType.getCategory()) {
+case STRUCT:
+    List<Type> groupFields=getProjectedGroupFields(fieldType.asGroupType(),((StructTypeInfo)colType).getAllStructFieldNames(),((StructTypeInfo)colType).getAllStructFieldTypeInfos());
+  Type[] typesArray=groupFields.toArray(new Type[0]);
+return Types.buildGroup(fieldType.getRepetition()).addFields(typesArray).named(fieldType.getName());
+case LIST:
+TypeInfo elemType=((ListTypeInfo)colType).getListElementTypeInfo();
+if (elemType.getCategory() == ObjectInspector.Category.STRUCT) {
+Type subFieldType=fieldType.asGroupType().getType(0);
+if (!subFieldType.isPrimitive()) {
+String subFieldName=subFieldType.getName();
+Text name=new Text(subFieldName);
+if (name.equals(ParquetHiveSerDe.ARRAY) || name.equals(ParquetHiveSerDe.LIST)) {
+  subFieldType=new GroupType(Repetition.REPEATED,subFieldName,getProjectedType(elemType,subFieldType.asGroupType().getType(0)));
+}
+ else {
+  subFieldType=getProjectedType(elemType,subFieldType);
+}
+return Types.buildGroup(Repetition.OPTIONAL).as(OriginalType.LIST).addFields(subFieldType).named(fieldType.getName());
+}
+}
+break;
+default :
+}
+return fieldType;
+}
