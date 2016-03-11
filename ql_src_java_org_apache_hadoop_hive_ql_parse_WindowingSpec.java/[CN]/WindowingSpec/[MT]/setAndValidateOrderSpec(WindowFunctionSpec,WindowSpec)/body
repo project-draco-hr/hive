@@ -5,16 +5,21 @@
   BoundarySpec start=wFrame.getStart();
   BoundarySpec end=wFrame.getEnd();
   if (start instanceof ValueBoundarySpec || end instanceof ValueBoundarySpec) {
-    if (order != null) {
-      if (order.getExpressions().size() > 1) {
-        throw new SemanticException("Range based Window Frame can have only 1 Sort Key");
-      }
-      if (start instanceof ValueBoundarySpec) {
-        ((ValueBoundarySpec)start).setExpression(order.getExpressions().get(0).getExpression());
-      }
-      if (end instanceof ValueBoundarySpec) {
-        ((ValueBoundarySpec)end).setExpression(order.getExpressions().get(0).getExpression());
-      }
+    if (order == null || order.getExpressions().size() == 0) {
+      throw new SemanticException("Range based Window Frame needs to specify ORDER BY clause");
+    }
+    boolean defaultPreceding=start.getDirection() == Direction.PRECEDING && start.getAmt() == BoundarySpec.UNBOUNDED_AMOUNT && end.getDirection() == Direction.CURRENT;
+    boolean defaultFollowing=start.getDirection() == Direction.CURRENT && end.getDirection() == Direction.FOLLOWING && end.getAmt() == BoundarySpec.UNBOUNDED_AMOUNT;
+    boolean defaultPrecedingFollowing=start.getDirection() == Direction.PRECEDING && start.getAmt() == BoundarySpec.UNBOUNDED_AMOUNT && end.getDirection() == Direction.FOLLOWING && end.getAmt() == BoundarySpec.UNBOUNDED_AMOUNT;
+    boolean multiOrderAllowed=defaultPreceding || defaultFollowing || defaultPrecedingFollowing;
+    if (order.getExpressions().size() != 1 && !multiOrderAllowed) {
+      throw new SemanticException("Range value based Window Frame can have only 1 Sort Key");
+    }
+    if (start instanceof ValueBoundarySpec) {
+      ((ValueBoundarySpec)start).setOrderExpressions(order.getExpressions());
+    }
+    if (end instanceof ValueBoundarySpec) {
+      ((ValueBoundarySpec)end).setOrderExpressions(order.getExpressions());
     }
   }
 }
