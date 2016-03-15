@@ -14,14 +14,12 @@
  catch (  Exception e) {
     LOG.warn("WARNING! Query command could not be redacted." + e);
   }
-  QueryState queryState=new QueryState();
   if (ctx != null) {
     close();
   }
   if (resetTaskIds) {
     TaskFactory.resetId();
   }
-  saveSession(queryState);
   String queryId=conf.getVar(HiveConf.ConfVars.HIVEQUERYID);
   this.queryDisplay.setQueryStr(queryStr);
   this.queryDisplay.setQueryId(queryId);
@@ -52,7 +50,7 @@
     tree=ParseUtils.findRootNonNullToken(tree);
     perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.PARSE);
     perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.ANALYZE);
-    BaseSemanticAnalyzer sem=SemanticAnalyzerFactory.get(conf,tree);
+    BaseSemanticAnalyzer sem=SemanticAnalyzerFactory.get(queryState,tree);
     List<HiveSemanticAnalyzerHook> saHooks=getHooks(HiveConf.ConfVars.SEMANTIC_ANALYZER_HOOK,HiveSemanticAnalyzerHook.class);
     Hive.get().getMSC().flushCache();
     if (saHooks != null && !saHooks.isEmpty()) {
@@ -79,17 +77,17 @@
     acidInQuery=sem.hasAcidInQuery();
     perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.ANALYZE);
     schema=getSchema(sem,conf);
-    plan=new QueryPlan(queryStr,sem,perfLogger.getStartTime(PerfLogger.DRIVER_RUN),queryId,SessionState.get().getHiveOperation(),schema,queryDisplay);
+    plan=new QueryPlan(queryStr,sem,perfLogger.getStartTime(PerfLogger.DRIVER_RUN),queryId,queryState.getHiveOperation(),schema,queryDisplay);
     conf.setQueryString(queryStr);
     conf.set("mapreduce.workflow.id","hive_" + queryId);
     conf.set("mapreduce.workflow.name",queryStr);
     if (plan.getFetchTask() != null) {
-      plan.getFetchTask().initialize(conf,plan,null,ctx.getOpContext());
+      plan.getFetchTask().initialize(queryState,plan,null,ctx.getOpContext());
     }
     if (!sem.skipAuthorization() && HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_AUTHORIZATION_ENABLED)) {
       try {
         perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.DO_AUTHORIZATION);
-        doAuthorization(sem,command);
+        doAuthorization(queryState.getHiveOperation(),sem,command);
       }
  catch (      AuthorizationException authExp) {
         console.printError("Authorization failed:" + authExp.getMessage() + ". Use SHOW GRANT to get more details.");
@@ -138,7 +136,6 @@
     double duration=perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.COMPILE) / 1000.00;
     ImmutableMap<String,Long> compileHMSTimings=dumpMetaCallTimingWithoutEx("compilation");
     queryDisplay.setHmsTimings(QueryDisplay.Phase.COMPILATION,compileHMSTimings);
-    restoreSession(queryState);
     LOG.info("Completed compiling command(queryId=" + queryId + "); Time taken: "+ duration+ " seconds");
   }
 }
