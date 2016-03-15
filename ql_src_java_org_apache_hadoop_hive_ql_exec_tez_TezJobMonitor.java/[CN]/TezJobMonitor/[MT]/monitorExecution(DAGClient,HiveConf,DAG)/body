@@ -5,6 +5,7 @@
   diagnostics=new StringBuffer();
   boolean running=false;
   boolean done=false;
+  boolean success=false;
   int failedCounter=0;
   int rc=0;
   DAGStatus.State lastState=null;
@@ -20,10 +21,11 @@ synchronized (shutdownList) {
   console.printInfo("\n");
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_RUN_DAG);
   perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.TEZ_SUBMIT_TO_RUNNING);
+  Map<String,Progress> progressMap=null;
   while (true) {
     try {
       status=dagClient.getDAGStatus(opts,checkInterval);
-      Map<String,Progress> progressMap=status.getVertexProgress();
+      progressMap=status.getVertexProgress();
       DAGStatus.State state=status.getState();
       if (state != lastState || state == RUNNING) {
         lastState=state;
@@ -61,25 +63,7 @@ lastReport=logStatus(progressMap,lastReport,console);
  else {
 lastReport=printStatus(progressMap,lastReport,console);
 }
-if (isProfileEnabled) {
-double duration=(System.currentTimeMillis() - startTime) / 1000.0;
-console.printInfo("Status: DAG finished successfully in " + String.format("%.2f seconds",duration));
-console.printInfo("\n");
-console.printInfo(PREP_SUMMARY_HEADER);
-printMethodsSummary();
-console.printInfo(SEPARATOR);
-console.printInfo("");
-console.printInfo(TASK_SUMMARY_HEADER);
-printDagSummary(progressMap,console,dagClient,conf,dag);
-console.printInfo(SEPARATOR);
-console.printInfo("");
-if (llapIoEnabled) {
-console.printInfo(LLAP_IO_SUMMARY_HEADER);
-printLlapIOSummary(progressMap,console,dagClient);
-console.printInfo(SEPARATOR);
-}
-console.printInfo("\n");
-}
+success=true;
 running=false;
 done=true;
 break;
@@ -150,5 +134,24 @@ break;
 }
 }
 perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.TEZ_RUN_DAG);
+if (isProfileEnabled && success && progressMap != null) {
+double duration=(System.currentTimeMillis() - startTime) / 1000.0;
+console.printInfo("Status: DAG finished successfully in " + String.format("%.2f seconds",duration));
+console.printInfo("\n");
+console.printInfo(QUERY_EXEC_SUMMARY_HEADER);
+printQueryExecutionBreakDown();
+console.printInfo(SEPARATOR);
+console.printInfo("");
+console.printInfo(TASK_SUMMARY_HEADER);
+printDagSummary(progressMap,console,dagClient,conf,dag);
+console.printInfo(SEPARATOR);
+console.printInfo("");
+if (llapIoEnabled) {
+console.printInfo(LLAP_IO_SUMMARY_HEADER);
+printLlapIOSummary(progressMap,console,dagClient);
+console.printInfo(SEPARATOR);
+}
+console.printInfo("\n");
+}
 return rc;
 }
