@@ -1,0 +1,31 @@
+{
+  UserGroupInformation tpUgi=ugi == null ? UserGroupInformation.getCurrentUser() : ugi;
+  List<SplitInfo> splitInfos=getSplits();
+  List<Future<List<OrcSplit>>> localListF=null;
+  List<OrcSplit> localListS=null;
+  for (  SplitInfo splitInfo : splitInfos) {
+    SplitGenerator sg=new SplitGenerator(splitInfo,tpUgi,allowSyntheticFileIds);
+    if (!sg.isBlocking()) {
+      if (localListS == null) {
+        localListS=new ArrayList<>(splits.size());
+      }
+      localListS.addAll(sg.call());
+    }
+ else {
+      if (localListF == null) {
+        localListF=new ArrayList<>(splits.size());
+      }
+      localListF.add(Context.threadPool.submit(sg));
+    }
+  }
+  if (localListS != null) {
+synchronized (splits) {
+      splits.addAll(localListS);
+    }
+  }
+  if (localListF != null) {
+synchronized (splitFutures) {
+      splitFutures.addAll(localListF);
+    }
+  }
+}
