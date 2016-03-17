@@ -1,7 +1,10 @@
 {
   LlapInputSplit llapSplit=(LlapInputSplit)split;
   SubmitWorkInfo submitWorkInfo=SubmitWorkInfo.fromBytes(llapSplit.getPlanBytes());
-  int llapSubmitPort=job.getInt("hive.llap.daemon.rpc.port",15001);
+  ServiceInstance serviceInstance=getServiceInstance(job,llapSplit);
+  String host=serviceInstance.getHost();
+  int llapSubmitPort=serviceInstance.getRpcPort();
+  LOG.info("Found service instance for host " + host + " with rpc port "+ llapSubmitPort+ " and outputformat port "+ serviceInstance.getOutputFormatPort());
   LlapTaskUmbilicalExternalClient llapClient=new LlapTaskUmbilicalExternalClient(job,submitWorkInfo.getTokenIdentifier(),submitWorkInfo.getToken());
   llapClient.init(job);
   llapClient.start();
@@ -12,11 +15,10 @@
   tezEvent.readFields(dib);
   List<TezEvent> tezEventList=Lists.newArrayList();
   tezEventList.add(tezEvent);
-  String host=split.getLocations()[0];
   llapClient.submitWork(submitWorkRequestProto,host,llapSubmitPort,tezEventList);
   String id=HiveConf.getVar(job,HiveConf.ConfVars.HIVEQUERYID) + "_" + llapSplit.getSplitNum();
   HiveConf conf=new HiveConf();
-  Socket socket=new Socket(host,conf.getIntVar(HiveConf.ConfVars.LLAP_DAEMON_OUTPUT_SERVICE_PORT));
+  Socket socket=new Socket(host,serviceInstance.getOutputFormatPort());
   LOG.debug("Socket connected");
   socket.getOutputStream().write(id.getBytes());
   socket.getOutputStream().write(0);
