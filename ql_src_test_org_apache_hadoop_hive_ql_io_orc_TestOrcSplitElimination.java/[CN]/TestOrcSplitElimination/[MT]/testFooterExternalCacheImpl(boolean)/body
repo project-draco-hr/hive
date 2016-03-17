@@ -1,0 +1,61 @@
+{
+  ObjectInspector inspector=createIO();
+  writeFile(inspector,testFilePath);
+  writeFile(inspector,testFilePath2);
+  GenericUDF udf=new GenericUDFOPEqualOrLessThan();
+  List<ExprNodeDesc> childExpr=Lists.newArrayList();
+  createTestSarg(inspector,udf,childExpr);
+  setupExternalCacheConfig(isPpd,testFilePath + "," + testFilePath2);
+  conf.setBoolean(ConfVars.HIVE_ORC_MS_FOOTER_CACHE_ENABLED.varname,false);
+  OrcInputFormatForTest.clearLocalCache();
+  OrcInputFormat in0=new OrcInputFormat();
+  InputSplit[] originals=in0.getSplits(conf,-1);
+  assertEquals(10,originals.length);
+  HashSet<FsWithHash> originalHs=new HashSet<>();
+  for (  InputSplit original : originals) {
+    originalHs.add(new FsWithHash((FileSplit)original));
+  }
+  conf.setBoolean(ConfVars.HIVE_ORC_MS_FOOTER_CACHE_ENABLED.varname,true);
+  OrcInputFormatForTest in=new OrcInputFormatForTest();
+  OrcInputFormatForTest.clearLocalCache();
+  OrcInputFormatForTest.caches.resetCounts();
+  OrcInputFormatForTest.caches.cache.clear();
+  InputSplit[] splits=in.getSplits(conf,-1);
+  @SuppressWarnings("static-access") AtomicInteger[] counts={in.caches.putCount,isPpd ? in.caches.getByExprCount : in.caches.getCount,isPpd ? in.caches.getHitByExprCount : in.caches.getHitCount,isPpd ? in.caches.getCount : in.caches.getByExprCount,isPpd ? in.caches.getHitCount : in.caches.getHitByExprCount};
+  verifySplits(originalHs,splits);
+  verifyCallCounts(counts,2,2,0);
+  assertEquals(2,OrcInputFormatForTest.caches.cache.size());
+  OrcInputFormatForTest.clearLocalCache();
+  OrcInputFormatForTest.caches.resetCounts();
+  splits=in.getSplits(conf,-1);
+  verifySplits(originalHs,splits);
+  verifyCallCounts(counts,0,2,2);
+  OrcInputFormatForTest.clearLocalCache();
+  OrcInputFormatForTest.caches.resetCounts();
+  childExpr.set(1,new ExprNodeConstantDesc(5));
+  conf.set("hive.io.filter.expr.serialized",SerializationUtilities.serializeExpression(new ExprNodeGenericFuncDesc(inspector,udf,childExpr)));
+  splits=in.getSplits(conf,-1);
+  InputSplit[] filtered={originals[0],originals[4],originals[5],originals[9]};
+  originalHs=new HashSet<>();
+  for (  InputSplit original : filtered) {
+    originalHs.add(new FsWithHash((FileSplit)original));
+  }
+  verifySplits(originalHs,splits);
+  verifyCallCounts(counts,0,2,2);
+  OrcInputFormatForTest.clearLocalCache();
+  OrcInputFormatForTest.caches.resetCounts();
+  Map.Entry<Long,MockExternalCaches.MockItem> e=OrcInputFormatForTest.caches.cache.entrySet().iterator().next();
+  Long key=e.getKey();
+  byte[] someData=new byte[8];
+  ByteBuffer toCorrupt=e.getValue().data;
+  System.arraycopy(toCorrupt.array(),toCorrupt.arrayOffset(),someData,0,someData.length);
+  toCorrupt.putLong(0,0L);
+  splits=in.getSplits(conf,-1);
+  verifySplits(originalHs,splits);
+  if (!isPpd) {
+    ByteBuffer restored=OrcInputFormatForTest.caches.cache.get(key).data;
+    byte[] newData=new byte[someData.length];
+    System.arraycopy(restored.array(),restored.arrayOffset(),newData,0,newData.length);
+    assertArrayEquals(someData,newData);
+  }
+}

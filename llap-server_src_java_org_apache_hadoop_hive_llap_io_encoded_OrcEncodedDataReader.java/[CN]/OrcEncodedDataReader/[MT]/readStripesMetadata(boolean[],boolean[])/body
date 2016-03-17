@@ -1,8 +1,7 @@
 {
   ArrayList<OrcStripeMetadata> result=new ArrayList<OrcStripeMetadata>(readState.length);
-  boolean hasFileId=this.fileId != null;
-  long fileId=hasFileId ? this.fileId : 0;
-  OrcBatchKey stripeKey=hasFileId ? new OrcBatchKey(fileId,0,0) : null;
+  boolean hasFileId=this.fileKey != null;
+  OrcBatchKey stripeKey=hasFileId ? new OrcBatchKey(fileKey,0,0) : null;
   for (int stripeIxMod=0; stripeIxMod < readState.length; ++stripeIxMod) {
     OrcStripeMetadata value=null;
     int stripeIx=stripeIxMod + stripeIxFrom;
@@ -11,13 +10,13 @@
       value=metadataCache.getStripeMetadata(stripeKey);
     }
     if (value == null || !value.hasAllIndexes(globalInc)) {
-      counters.incrCounter(Counter.METADATA_CACHE_MISS);
+      counters.incrCounter(LlapIOCounters.METADATA_CACHE_MISS);
       ensureMetadataReader();
       StripeInformation si=fileMetadata.getStripes().get(stripeIx);
       if (value == null) {
         long startTime=counters.startTimeCounter();
-        value=new OrcStripeMetadata(new OrcBatchKey(fileId,stripeIx,0),metadataReader,si,globalInc,sargColumns);
-        counters.incrTimeCounter(Counter.HDFS_TIME_US,startTime);
+        value=new OrcStripeMetadata(new OrcBatchKey(fileKey,stripeIx,0),metadataReader,si,globalInc,sargColumns);
+        counters.incrTimeCounter(LlapIOCounters.HDFS_TIME_NS,startTime);
         if (hasFileId && metadataCache != null) {
           value=metadataCache.putStripeMetadata(value);
           if (DebugUtils.isTraceOrcEnabled()) {
@@ -33,7 +32,7 @@
       }
     }
  else {
-      counters.incrCounter(Counter.METADATA_CACHE_HIT);
+      counters.incrCounter(LlapIOCounters.METADATA_CACHE_HIT);
     }
     result.add(value);
     consumer.setStripeMetadata(value);

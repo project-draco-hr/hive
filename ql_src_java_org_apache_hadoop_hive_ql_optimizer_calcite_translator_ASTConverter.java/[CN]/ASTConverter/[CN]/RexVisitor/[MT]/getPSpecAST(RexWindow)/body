@@ -12,10 +12,29 @@
   if (window.orderKeys != null && !window.orderKeys.isEmpty()) {
     oByAst=ASTBuilder.createAST(HiveParser.TOK_ORDERBY,"TOK_ORDERBY");
     for (    RexFieldCollation ok : window.orderKeys) {
-      ASTNode astNode=ok.getDirection() == RelFieldCollation.Direction.ASCENDING ? ASTBuilder.createAST(HiveParser.TOK_TABSORTCOLNAMEASC,"TOK_TABSORTCOLNAMEASC") : ASTBuilder.createAST(HiveParser.TOK_TABSORTCOLNAMEDESC,"TOK_TABSORTCOLNAMEDESC");
+      ASTNode directionAST=ok.getDirection() == RelFieldCollation.Direction.ASCENDING ? ASTBuilder.createAST(HiveParser.TOK_TABSORTCOLNAMEASC,"TOK_TABSORTCOLNAMEASC") : ASTBuilder.createAST(HiveParser.TOK_TABSORTCOLNAMEDESC,"TOK_TABSORTCOLNAMEDESC");
+      ASTNode nullDirectionAST;
+      if (ok.right.contains(SqlKind.NULLS_FIRST)) {
+        nullDirectionAST=ASTBuilder.createAST(HiveParser.TOK_NULLS_FIRST,"TOK_NULLS_FIRST");
+        directionAST.addChild(nullDirectionAST);
+      }
+ else       if (ok.right.contains(SqlKind.NULLS_LAST)) {
+        nullDirectionAST=ASTBuilder.createAST(HiveParser.TOK_NULLS_LAST,"TOK_NULLS_LAST");
+        directionAST.addChild(nullDirectionAST);
+      }
+ else {
+        if (ok.getDirection() == RelFieldCollation.Direction.ASCENDING) {
+          nullDirectionAST=ASTBuilder.createAST(HiveParser.TOK_NULLS_FIRST,"TOK_NULLS_FIRST");
+          directionAST.addChild(nullDirectionAST);
+        }
+ else {
+          nullDirectionAST=ASTBuilder.createAST(HiveParser.TOK_NULLS_LAST,"TOK_NULLS_LAST");
+          directionAST.addChild(nullDirectionAST);
+        }
+      }
       ASTNode astCol=ok.left.accept(this);
-      astNode.addChild(astCol);
-      oByAst.addChild(astNode);
+      nullDirectionAST.addChild(astCol);
+      oByAst.addChild(directionAST);
     }
   }
   if (dByAst != null || oByAst != null) {

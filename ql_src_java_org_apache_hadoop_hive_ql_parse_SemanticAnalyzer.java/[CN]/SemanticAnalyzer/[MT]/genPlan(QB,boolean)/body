@@ -2,7 +2,19 @@
   Map<String,Operator> aliasToOpInfo=new LinkedHashMap<String,Operator>();
   for (  String alias : qb.getSubqAliases()) {
     QBExpr qbexpr=qb.getSubqForAlias(alias);
-    aliasToOpInfo.put(alias,genPlan(qb,qbexpr));
+    Operator operator=genPlan(qb,qbexpr);
+    aliasToOpInfo.put(alias,operator);
+    if (qb.getViewToTabSchema().containsKey(alias)) {
+      if (operator instanceof SelectOperator) {
+        if (this.viewProjectToTableSchema == null) {
+          this.viewProjectToTableSchema=new LinkedHashMap<>();
+        }
+        viewProjectToTableSchema.put((SelectOperator)operator,qb.getViewToTabSchema().get(alias));
+      }
+ else {
+        throw new SemanticException("View " + alias + " is corresponding to "+ operator.getType().name()+ ", rather than a SelectOperator.");
+      }
+    }
   }
   for (  String alias : qb.getTabAliases()) {
     Operator op=genTablePlan(alias,qb);
@@ -55,7 +67,9 @@
           extractJoinCondsFromWhereClause(joinTree,qb,dest,(ASTNode)whereClause.getChild(0),aliasToOpInfo);
         }
       }
-      if (!disableJoinMerge)       mergeJoinTree(qb);
+      if (!disableJoinMerge) {
+        mergeJoinTree(qb);
+      }
     }
     pushJoinFilters(qb,qb.getQbJoinTree(),aliasToOpInfo);
     srcOpInfo=genJoinPlan(qb,aliasToOpInfo);

@@ -2,26 +2,31 @@
   ArrayList<ExprNodeDesc> partCols=new ArrayList<ExprNodeDesc>();
   ArrayList<ExprNodeDesc> orderCols=new ArrayList<ExprNodeDesc>();
   StringBuilder order=new StringBuilder();
+  StringBuilder nullOrder=new StringBuilder();
   for (  PartitionExpression partCol : spec.getQueryPartitionSpec().getExpressions()) {
     ExprNodeDesc partExpr=genExprNodeDesc(partCol.getExpression(),inputRR);
     if (ExprNodeDescUtils.indexOf(partExpr,partCols) < 0) {
       partCols.add(partExpr);
       orderCols.add(partExpr);
       order.append('+');
+      nullOrder.append('a');
     }
   }
   if (spec.getQueryOrderSpec() != null) {
     for (    OrderExpression orderCol : spec.getQueryOrderSpec().getExpressions()) {
       ExprNodeDesc orderExpr=genExprNodeDesc(orderCol.getExpression(),inputRR);
       char orderChar=orderCol.getOrder() == PTFInvocationSpec.Order.ASC ? '+' : '-';
+      char nullOrderChar=orderCol.getNullOrder() == PTFInvocationSpec.NullOrder.NULLS_FIRST ? 'a' : 'z';
       int index=ExprNodeDescUtils.indexOf(orderExpr,orderCols);
       if (index >= 0) {
         order.setCharAt(index,orderChar);
+        nullOrder.setCharAt(index,nullOrderChar);
         continue;
       }
       orderCols.add(genExprNodeDesc(orderCol.getExpression(),inputRR));
       order.append(orderChar);
+      nullOrder.append(nullOrderChar);
     }
   }
-  return genReduceSinkPlan(input,partCols,orderCols,order.toString(),-1,Operation.NOT_ACID);
+  return genReduceSinkPlan(input,partCols,orderCols,order.toString(),nullOrder.toString(),-1,Operation.NOT_ACID);
 }

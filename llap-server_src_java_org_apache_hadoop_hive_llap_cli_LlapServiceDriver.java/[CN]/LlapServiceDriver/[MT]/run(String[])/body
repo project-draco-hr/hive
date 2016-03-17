@@ -49,6 +49,10 @@
     conf.setLong(ConfVars.LLAP_DAEMON_NUM_EXECUTORS.varname,options.getExecutors());
     propsDirectOptions.setProperty(ConfVars.LLAP_DAEMON_NUM_EXECUTORS.varname,String.valueOf(options.getExecutors()));
   }
+  if (options.getIoThreads() != -1) {
+    conf.setLong(ConfVars.LLAP_IO_THREADPOOL_SIZE.varname,options.getIoThreads());
+    propsDirectOptions.setProperty(ConfVars.LLAP_IO_THREADPOOL_SIZE.varname,String.valueOf(options.getIoThreads()));
+  }
   if (options.getCache() != -1) {
     conf.set(HiveConf.ConfVars.LLAP_IO_MEMORY_MAX_SIZE.varname,Long.toString(options.getCache()));
     propsDirectOptions.setProperty(HiveConf.ConfVars.LLAP_IO_MEMORY_MAX_SIZE.varname,Long.toString(options.getCache()));
@@ -57,6 +61,10 @@
     long xmx=(long)(options.getXmx() / (1024 * 1024));
     conf.setLong(ConfVars.LLAP_DAEMON_MEMORY_PER_INSTANCE_MB.varname,xmx);
     propsDirectOptions.setProperty(ConfVars.LLAP_DAEMON_MEMORY_PER_INSTANCE_MB.varname,String.valueOf(xmx));
+  }
+  if (options.getLlapQueueName() != null && !options.getLlapQueueName().isEmpty()) {
+    conf.set(ConfVars.LLAP_DAEMON_QUEUE_NAME.varname,options.getLlapQueueName());
+    propsDirectOptions.setProperty(ConfVars.LLAP_DAEMON_QUEUE_NAME.varname,options.getLlapQueueName());
   }
   URL logger=conf.getResource(LlapDaemon.LOG4j2_PROPERTIES_FILE);
   if (null == logger) {
@@ -83,7 +91,7 @@
   fs.copyToLocalFile(new Path(tezLibs),new Path(libDir,"tez.tar.gz"));
   CompressionUtils.unTar(new Path(libDir,"tez.tar.gz").toString(),tezDir.toString(),true);
   lfs.delete(new Path(libDir,"tez.tar.gz"),false);
-  Class<?>[] dependencies=new Class<?>[]{LlapDaemonProtocolProtos.class,LlapTezUtils.class,LlapInputFormat.class,HiveInputFormat.class,SslSocketConnector.class,com.lmax.disruptor.RingBuffer.class,org.apache.logging.log4j.Logger.class,org.apache.logging.log4j.core.Appender.class,org.apache.logging.slf4j.Log4jLogger.class};
+  Class<?>[] dependencies=new Class<?>[]{LlapDaemonProtocolProtos.class,LlapTezUtils.class,LlapInputFormat.class,HiveInputFormat.class,SslSocketConnector.class,com.lmax.disruptor.RingBuffer.class,org.apache.logging.log4j.Logger.class,org.apache.logging.log4j.core.Appender.class,org.apache.logging.slf4j.Log4jLogger.class,org.apache.log4j.NDC.class};
   for (  Class<?> c : dependencies) {
     Path jarPath=new Path(Utilities.jarFinderGetJar(c));
     lfs.copyFromLocalFile(jarPath,libDir);
@@ -165,6 +173,9 @@
   configs.put(ConfVars.LLAP_DAEMON_MEMORY_PER_INSTANCE_MB.varname,HiveConf.getIntVar(conf,ConfVars.LLAP_DAEMON_MEMORY_PER_INSTANCE_MB));
   configs.put(ConfVars.LLAP_DAEMON_VCPUS_PER_INSTANCE.varname,HiveConf.getIntVar(conf,ConfVars.LLAP_DAEMON_VCPUS_PER_INSTANCE));
   configs.put(ConfVars.LLAP_DAEMON_NUM_EXECUTORS.varname,HiveConf.getIntVar(conf,ConfVars.LLAP_DAEMON_NUM_EXECUTORS));
+  if (HiveConf.getVar(conf,ConfVars.LLAP_DAEMON_QUEUE_NAME) != null) {
+    configs.put(ConfVars.LLAP_DAEMON_QUEUE_NAME.varname,HiveConf.getVar(conf,ConfVars.LLAP_DAEMON_QUEUE_NAME));
+  }
   configs.put(YarnConfiguration.RM_SCHEDULER_MINIMUM_ALLOCATION_MB,conf.getInt(YarnConfiguration.RM_SCHEDULER_MINIMUM_ALLOCATION_MB,-1));
   configs.put(YarnConfiguration.RM_SCHEDULER_MINIMUM_ALLOCATION_VCORES,conf.getInt(YarnConfiguration.RM_SCHEDULER_MINIMUM_ALLOCATION_VCORES,-1));
   FSDataOutputStream os=lfs.create(new Path(tmpDir,"config.json"));

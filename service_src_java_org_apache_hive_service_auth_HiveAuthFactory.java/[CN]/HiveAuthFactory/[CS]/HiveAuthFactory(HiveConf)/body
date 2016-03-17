@@ -11,17 +11,19 @@
       authTypeStr=AuthTypes.NONE.getAuthName();
     }
   }
-  if (hadoopAuth.equalsIgnoreCase(AuthTypes.KERBEROS.getAuthName()) && !authTypeStr.equalsIgnoreCase(AuthTypes.NOSASL.getAuthName())) {
+  if (hadoopAuth.equalsIgnoreCase("kerberos") && !authTypeStr.equalsIgnoreCase(AuthTypes.NOSASL.getAuthName())) {
     saslServer=ShimLoader.getHadoopThriftAuthBridge().createServer(conf.getVar(ConfVars.HIVE_SERVER2_KERBEROS_KEYTAB),conf.getVar(ConfVars.HIVE_SERVER2_KERBEROS_PRINCIPAL));
+    delegationTokenManager=new HiveDelegationTokenManager();
     try {
-      HMSHandler baseHandler=null;
+      Object baseHandler=null;
       String tokenStoreClass=conf.getVar(HiveConf.ConfVars.METASTORE_CLUSTER_DELEGATION_TOKEN_STORE_CLS);
       if (tokenStoreClass.equals(DBTokenStore.class.getName())) {
-        baseHandler=new HiveMetaStore.HMSHandler("new db based metaserver",conf,true);
+        baseHandler=Hive.class;
       }
-      saslServer.startDelegationTokenSecretManager(conf,baseHandler,ServerMode.HIVESERVER2);
+      delegationTokenManager.startDelegationTokenSecretManager(conf,baseHandler,ServerMode.HIVESERVER2);
+      saslServer.setSecretManager(delegationTokenManager.getSecretManager());
     }
- catch (    MetaException|IOException e) {
+ catch (    IOException e) {
       throw new TTransportException("Failed to start token manager",e);
     }
   }

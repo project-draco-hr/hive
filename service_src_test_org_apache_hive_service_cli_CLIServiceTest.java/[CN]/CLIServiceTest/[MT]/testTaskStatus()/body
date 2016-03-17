@@ -1,0 +1,30 @@
+{
+  HashMap<String,String> confOverlay=new HashMap<String,String>();
+  String tableName="TEST_EXEC_ASYNC";
+  String columnDefinitions="(ID STRING)";
+  SessionHandle sessionHandle=setupTestData(tableName,columnDefinitions,confOverlay);
+  assertNotNull(sessionHandle);
+  String select="SELECT ID + ' ' FROM TEST_EXEC_ASYNC";
+  OperationHandle ophandle=client.executeStatementAsync(sessionHandle,select,confOverlay);
+  OperationStatus status=null;
+  int count=0;
+  while (true) {
+    status=client.getOperationStatus(ophandle);
+    checkOperationTimes(ophandle,status);
+    OperationState state=status.getState();
+    System.out.println("Polling: " + ophandle + " count="+ (++count)+ " state="+ state);
+    String jsonTaskStatus=status.getTaskStatus();
+    assertNotNull(jsonTaskStatus);
+    ObjectMapper mapper=new ObjectMapper();
+    ByteArrayInputStream in=new ByteArrayInputStream(jsonTaskStatus.getBytes("UTF-8"));
+    List<QueryDisplay.TaskDisplay> taskStatuses=mapper.readValue(in,new TypeReference<List<QueryDisplay.TaskDisplay>>(){
+    }
+);
+    checkTaskStatuses(taskStatuses);
+    System.out.println("task statuses: " + jsonTaskStatus);
+    if (OperationState.CANCELED == state || state == OperationState.CLOSED || state == OperationState.FINISHED || state == OperationState.ERROR) {
+      break;
+    }
+    Thread.sleep(1000);
+  }
+}

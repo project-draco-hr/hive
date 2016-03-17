@@ -30,7 +30,6 @@
   int numBuckets=destTable.getNumBuckets();
   dpCtx.setNumBuckets(numBuckets);
   List<Integer> bucketPositions=getBucketPositions(destTable.getBucketCols(),destTable.getCols());
-  ObjectPair<List<Integer>,List<Integer>> sortOrderPositions=getSortPositionsOrder(destTable.getSortCols(),destTable.getCols());
   List<Integer> sortPositions=null;
   List<Integer> sortOrder=null;
   if (fsOp.getConf().getWriteType() == AcidUtils.Operation.UPDATE || fsOp.getConf().getWriteType() == AcidUtils.Operation.DELETE) {
@@ -38,12 +37,17 @@
     sortOrder=Arrays.asList(1);
   }
  else {
-    sortPositions=sortOrderPositions.getFirst();
-    sortOrder=sortOrderPositions.getSecond();
+    sortPositions=getSortPositions(destTable.getSortCols(),destTable.getCols());
+    sortOrder=getSortOrders(destTable.getSortCols(),destTable.getCols());
+  }
+  List<Integer> sortNullOrder=new ArrayList<Integer>();
+  for (  int order : sortOrder) {
+    sortNullOrder.add(order == 1 ? 0 : 1);
   }
   LOG.debug("Got sort order");
   for (  int i : sortPositions)   LOG.debug("sort position " + i);
   for (  int i : sortOrder)   LOG.debug("sort order " + i);
+  for (  int i : sortNullOrder)   LOG.debug("sort null order " + i);
   List<Integer> partitionPositions=getPartitionPositions(dpCtx,fsParent.getSchema());
   List<ColumnInfo> colInfos=fsParent.getSchema().getSignature();
   ArrayList<ExprNodeDesc> bucketColumns=getPositionsToExprNodes(bucketPositions,colInfos);
@@ -55,7 +59,7 @@
   for (  ColumnInfo ci : parentCols) {
     allRSCols.add(new ExprNodeColumnDesc(ci));
   }
-  ReduceSinkOperator rsOp=getReduceSinkOp(partitionPositions,sortPositions,sortOrder,allRSCols,bucketColumns,numBuckets,fsParent,fsOp.getConf().getWriteType());
+  ReduceSinkOperator rsOp=getReduceSinkOp(partitionPositions,sortPositions,sortOrder,sortNullOrder,allRSCols,bucketColumns,numBuckets,fsParent,fsOp.getConf().getWriteType());
   List<ExprNodeDesc> descs=new ArrayList<ExprNodeDesc>(allRSCols.size());
   List<String> colNames=new ArrayList<String>();
   String colName;

@@ -3,7 +3,20 @@
   this.columnIds=includedCols;
   this.sarg=ConvertAstToSearchArg.createFromConf(job);
   this.columnNames=ColumnProjectionUtils.getReadColumnNames(job);
-  this.counters=new QueryFragmentCounters(job);
+  String dagId=job.get("tez.mapreduce.dag.index");
+  String vertexId=job.get("tez.mapreduce.vertex.index");
+  String taskId=job.get("tez.mapreduce.task.index");
+  String taskAttemptId=job.get("tez.mapreduce.task.attempt.index");
+  TezCounters taskCounters=null;
+  if (dagId != null && vertexId != null && taskId != null && taskAttemptId != null) {
+    String fullId=Joiner.on('_').join(dagId,vertexId,taskId,taskAttemptId);
+    taskCounters=FragmentCountersMap.getCountersForFragment(fullId);
+    LOG.info("Received dagid_vertexid_taskid_attempid: {}",fullId);
+  }
+ else {
+    LOG.warn("Not using tez counters as some identifier is null." + " dagId: {} vertexId: {} taskId: {} taskAttempId: {}",dagId,vertexId,taskId,taskAttemptId);
+  }
+  this.counters=new QueryFragmentCounters(job,taskCounters);
   this.counters.setDesc(QueryFragmentCounters.Desc.MACHINE,hostName);
   MapWork mapWork=Utilities.getMapWork(job);
   rbCtx=mapWork.getVectorizedRowBatchCtx();

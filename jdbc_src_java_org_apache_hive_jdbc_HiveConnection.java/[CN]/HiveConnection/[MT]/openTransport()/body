@@ -1,4 +1,11 @@
 {
+  int numRetries=0;
+  int maxRetries=1;
+  try {
+    maxRetries=Integer.parseInt(sessConfMap.get(JdbcConnectionParams.RETRIES));
+  }
+ catch (  NumberFormatException e) {
+  }
   while (true) {
     try {
       assumeSubject=JdbcConnectionParams.AUTH_KERBEROS_AUTH_TYPE_FROM_SUBJECT.equals(sessConfMap.get(JdbcConnectionParams.AUTH_KERBEROS_AUTH_TYPE));
@@ -24,7 +31,13 @@
       }
  else {
         LOG.info("Transport Used for JDBC connection: " + sessConfMap.get(JdbcConnectionParams.TRANSPORT_MODE));
-        throw new SQLException("Could not open client transport with JDBC Uri: " + jdbcUriString + ": "+ e.getMessage()," 08S01",e);
+        String errMsg="Could not open client transport with JDBC Uri: " + jdbcUriString + ": "+ e.getMessage();
+        if (++numRetries >= maxRetries) {
+          throw new SQLException(errMsg," 08S01",e);
+        }
+ else {
+          LOG.warn(errMsg + " Retrying " + numRetries+ " of "+ maxRetries);
+        }
       }
     }
   }

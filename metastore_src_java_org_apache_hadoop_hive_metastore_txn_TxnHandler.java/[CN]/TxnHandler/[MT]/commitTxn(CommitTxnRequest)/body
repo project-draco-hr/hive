@@ -3,10 +3,16 @@
   try {
     Connection dbConn=null;
     Statement stmt=null;
+    ResultSet lockHandle=null;
     try {
-      dbConn=getDbConn(Connection.TRANSACTION_SERIALIZABLE);
+      lockInternal();
+      dbConn=getDbConn(Connection.TRANSACTION_READ_COMMITTED);
       stmt=dbConn.createStatement();
-      heartbeatTxn(dbConn,txnid);
+      lockHandle=lockTransactionRecord(stmt,txnid,TXN_OPEN);
+      if (lockHandle == null) {
+        ensureValidTxn(dbConn,txnid,stmt);
+        shouldNeverHappen(txnid);
+      }
       String s="insert into COMPLETED_TXN_COMPONENTS select tc_txnid, tc_database, tc_table, " + "tc_partition from TXN_COMPONENTS where tc_txnid = " + txnid;
       LOG.debug("Going to execute insert <" + s + ">");
       if (stmt.executeUpdate(s) < 1) {
@@ -31,8 +37,8 @@
       throw new MetaException("Unable to update transaction database " + StringUtils.stringifyException(e));
     }
  finally {
-      closeStmt(stmt);
-      closeDbConn(dbConn);
+      close(lockHandle,stmt,dbConn);
+      unlockInternal();
     }
   }
  catch (  RetryException e) {

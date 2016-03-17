@@ -6,10 +6,12 @@
   boolean isArchived=false;
   Path archiveParentDir=null;
   boolean mustPurge=false;
+  boolean isExternalTbl=false;
   try {
     ms.openTransaction();
     part=ms.getPartition(db_name,tbl_name,part_vals);
     tbl=get_table_core(db_name,tbl_name);
+    isExternalTbl=isExternal(tbl);
     firePreEvent(new PreDropPartitionEvent(tbl,part,deleteData,this));
     mustPurge=isMustPurge(envContext,tbl);
     if (part == null) {
@@ -19,7 +21,7 @@
     if (isArchived) {
       archiveParentDir=MetaStoreUtils.getOriginalLocation(part);
       verifyIsWritablePath(archiveParentDir);
-      checkTrashPurgeCombination(archiveParentDir,db_name + "." + tbl_name+ "."+ part_vals,mustPurge);
+      checkTrashPurgeCombination(archiveParentDir,db_name + "." + tbl_name+ "."+ part_vals,mustPurge,deleteData && !isExternalTbl);
     }
     if (!ms.dropPartition(db_name,tbl_name,part_vals)) {
       throw new MetaException("Unable to drop partition");
@@ -28,7 +30,7 @@
     if ((part.getSd() != null) && (part.getSd().getLocation() != null)) {
       partPath=new Path(part.getSd().getLocation());
       verifyIsWritablePath(partPath);
-      checkTrashPurgeCombination(partPath,db_name + "." + tbl_name+ "."+ part_vals,mustPurge);
+      checkTrashPurgeCombination(partPath,db_name + "." + tbl_name+ "."+ part_vals,mustPurge,deleteData && !isExternalTbl);
     }
   }
   finally {
@@ -36,7 +38,7 @@
       ms.rollbackTransaction();
     }
  else     if (deleteData && ((partPath != null) || (archiveParentDir != null))) {
-      if (tbl != null && !isExternal(tbl)) {
+      if (!isExternalTbl) {
         if (mustPurge) {
           LOG.info("dropPartition() will purge " + partPath + " directly, skipping trash.");
         }
