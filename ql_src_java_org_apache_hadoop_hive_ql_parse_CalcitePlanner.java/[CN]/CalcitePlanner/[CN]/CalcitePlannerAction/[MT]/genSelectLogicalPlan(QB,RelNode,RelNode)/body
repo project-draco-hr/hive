@@ -96,6 +96,18 @@
   for (  ExprNodeDesc colExpr : col_list) {
     calciteColLst.add(rexNodeConv.convert(colExpr));
   }
-  RelNode selRel=genSelectRelNode(calciteColLst,out_rwsch,srcRel);
-  return selRel;
+  RelNode outputRel=genSelectRelNode(calciteColLst,out_rwsch,srcRel);
+  if (selForWindow != null && selExprList.getToken().getType() == HiveParser.TOK_SELECTDI) {
+    ImmutableBitSet groupSet=ImmutableBitSet.range(outputRel.getRowType().getFieldList().size());
+    outputRel=new HiveAggregate(cluster,cluster.traitSetOf(HiveRelNode.CONVENTION),outputRel,false,groupSet,null,new ArrayList<AggregateCall>());
+    RowResolver groupByOutputRowResolver=new RowResolver();
+    for (int i=0; i < out_rwsch.getColumnInfos().size(); i++) {
+      ColumnInfo colInfo=out_rwsch.getColumnInfos().get(i);
+      ColumnInfo newColInfo=new ColumnInfo(colInfo.getInternalName(),colInfo.getType(),colInfo.getTabAlias(),colInfo.getIsVirtualCol());
+      groupByOutputRowResolver.put(colInfo.getTabAlias(),colInfo.getAlias(),newColInfo);
+    }
+    relToHiveColNameCalcitePosMap.put(outputRel,buildHiveToCalciteColumnMap(groupByOutputRowResolver,outputRel));
+    this.relToHiveRR.put(outputRel,groupByOutputRowResolver);
+  }
+  return outputRel;
 }
