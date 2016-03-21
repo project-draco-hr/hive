@@ -6,32 +6,35 @@
   }
   try {
     stmt=dbConn.createStatement();
-    StringBuilder buf=new StringBuilder("update TXNS set txn_state = '" + TXN_ABORTED + "' where txn_state = '"+ TXN_OPEN+ "' and txn_id in (");
-    boolean first=true;
-    for (    Long id : txnids) {
-      if (first)       first=false;
- else       buf.append(',');
-      buf.append(id);
-    }
-    buf.append(')');
+    List<String> queries=new ArrayList<String>();
+    StringBuilder prefix=new StringBuilder();
+    StringBuilder suffix=new StringBuilder();
+    prefix.append("update TXNS set txn_state = " + quoteChar(TXN_ABORTED) + " where txn_state = "+ quoteChar(TXN_OPEN)+ " and ");
     if (max_heartbeat > 0) {
-      buf.append(" and txn_last_heartbeat < ").append(max_heartbeat);
+      suffix.append(" and txn_last_heartbeat < ").append(max_heartbeat);
     }
-    LOG.debug("Going to execute update <" + buf.toString() + ">");
-    updateCnt=stmt.executeUpdate(buf.toString());
-    if (updateCnt < txnids.size()) {
-      return updateCnt;
+ else {
+      suffix.append("");
     }
-    buf=new StringBuilder("delete from HIVE_LOCKS where hl_txnid in (");
-    first=true;
-    for (    Long id : txnids) {
-      if (first)       first=false;
- else       buf.append(',');
-      buf.append(id);
+    TxnUtils.buildQueryWithINClause(conf,queries,prefix,suffix,txnids,"txn_id",true,false);
+    for (    String query : queries) {
+      LOG.debug("Going to execute update <" + query + ">");
+      updateCnt=stmt.executeUpdate(query);
+      if (updateCnt < txnids.size()) {
+        return updateCnt;
+      }
     }
-    buf.append(')');
-    LOG.debug("Going to execute update <" + buf.toString() + ">");
-    stmt.executeUpdate(buf.toString());
+    queries.clear();
+    prefix.setLength(0);
+    suffix.setLength(0);
+    prefix.append("delete from HIVE_LOCKS where ");
+    suffix.append("");
+    TxnUtils.buildQueryWithINClause(conf,queries,prefix,suffix,txnids,"hl_txnid",false,false);
+    for (    String query : queries) {
+      LOG.debug("Going to execute update <" + query + ">");
+      int rc=stmt.executeUpdate(query);
+      LOG.debug("Removed " + rc + " records from HIVE_LOCKS");
+    }
   }
   finally {
     closeStmt(stmt);

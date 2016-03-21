@@ -15,15 +15,20 @@
       if (txnids.size() <= 0) {
         return;
       }
-      for (int i=0; i < txnids.size() / TIMED_OUT_TXN_ABORT_BATCH_SIZE; i++) {
-        List<Long> txnIdBatch=txnids.subList(i * TIMED_OUT_TXN_ABORT_BATCH_SIZE,(i + 1) * TIMED_OUT_TXN_ABORT_BATCH_SIZE);
-        deleteTxns(dbConn,stmt,txnIdBatch);
+      List<String> queries=new ArrayList<String>();
+      StringBuilder prefix=new StringBuilder();
+      StringBuilder suffix=new StringBuilder();
+      prefix.append("delete from TXNS where ");
+      suffix.append("");
+      TxnUtils.buildQueryWithINClause(conf,queries,prefix,suffix,txnids,"txn_id",false,false);
+      for (      String query : queries) {
+        LOG.debug("Going to execute update <" + query + ">");
+        int rc=stmt.executeUpdate(query);
+        LOG.info("Removed " + rc + "  empty Aborted transactions from TXNS");
       }
-      int partialBatchSize=txnids.size() % TIMED_OUT_TXN_ABORT_BATCH_SIZE;
-      if (partialBatchSize > 0) {
-        List<Long> txnIdBatch=txnids.subList(txnids.size() - partialBatchSize,txnids.size());
-        deleteTxns(dbConn,stmt,txnIdBatch);
-      }
+      LOG.info("Aborted transactions removed from TXNS: " + txnids);
+      LOG.debug("Going to commit");
+      dbConn.commit();
     }
  catch (    SQLException e) {
       LOG.error("Unable to delete from txns table " + e.getMessage());

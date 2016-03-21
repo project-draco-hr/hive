@@ -19,21 +19,16 @@
         checkForDeletion(deleteSet,ci,rc);
       }
       close(rs);
-      String baseDeleteSql="delete from COMPLETED_COMPACTIONS where cc_id IN(";
-      StringBuilder queryStr=new StringBuilder(baseDeleteSql);
-      for (int i=0; i < deleteSet.size(); i++) {
-        if (i > 0 && i % TIMED_OUT_TXN_ABORT_BATCH_SIZE == 0) {
-          queryStr.setCharAt(queryStr.length() - 1,')');
-          stmt.executeUpdate(queryStr.toString());
-          dbConn.commit();
-          queryStr=new StringBuilder(baseDeleteSql);
-        }
-        queryStr.append(deleteSet.get(i)).append(',');
-      }
-      if (queryStr.length() > baseDeleteSql.length()) {
-        queryStr.setCharAt(queryStr.length() - 1,')');
-        int updCnt=stmt.executeUpdate(queryStr.toString());
-        dbConn.commit();
+      List<String> queries=new ArrayList<String>();
+      StringBuilder prefix=new StringBuilder();
+      StringBuilder suffix=new StringBuilder();
+      prefix.append("delete from COMPLETED_COMPACTIONS where ");
+      suffix.append("");
+      TxnUtils.buildQueryWithINClause(conf,queries,prefix,suffix,deleteSet,"cc_id",false,false);
+      for (      String query : queries) {
+        LOG.debug("Going to execute update <" + query + ">");
+        int count=stmt.executeUpdate(query);
+        LOG.debug("Removed " + count + " records from COMPLETED_COMPACTIONS");
       }
       dbConn.commit();
     }

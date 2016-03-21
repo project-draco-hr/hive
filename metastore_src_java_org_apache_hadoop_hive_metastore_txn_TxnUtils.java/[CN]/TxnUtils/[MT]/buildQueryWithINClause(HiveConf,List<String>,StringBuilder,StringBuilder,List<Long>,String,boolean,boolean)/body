@@ -1,0 +1,66 @@
+{
+  int batchSize=conf.getIntVar(HiveConf.ConfVars.METASTORE_DIRECT_SQL_MAX_ELEMENTS_IN_CLAUSE);
+  int numWholeBatches=inList.size() / batchSize;
+  StringBuilder buf=new StringBuilder();
+  buf.append(prefix);
+  if (addParens) {
+    buf.append("(");
+  }
+  buf.append(inColumn);
+  if (notIn) {
+    buf.append(" not in (");
+  }
+ else {
+    buf.append(" in (");
+  }
+  for (int i=0; i <= numWholeBatches; i++) {
+    if (needNewQuery(conf,buf)) {
+      if (addParens) {
+        buf.append(")");
+      }
+      buf.append(suffix);
+      queries.add(buf.toString());
+      buf.setLength(0);
+    }
+    if (i > 0) {
+      if (notIn) {
+        if (buf.length() == 0) {
+          buf.append(prefix);
+          if (addParens) {
+            buf.append("(");
+          }
+        }
+ else {
+          buf.append(" and ");
+        }
+        buf.append(inColumn);
+        buf.append(" not in (");
+      }
+ else {
+        if (buf.length() == 0) {
+          buf.append(prefix);
+          if (addParens) {
+            buf.append("(");
+          }
+        }
+ else {
+          buf.append(" or ");
+        }
+        buf.append(inColumn);
+        buf.append(" in (");
+      }
+    }
+    if (i * batchSize == inList.size()) {
+      return;
+    }
+    for (int j=i * batchSize; j < (i + 1) * batchSize && j < inList.size(); j++) {
+      buf.append(inList.get(j)).append(",");
+    }
+    buf.setCharAt(buf.length() - 1,')');
+  }
+  if (addParens) {
+    buf.append(")");
+  }
+  buf.append(suffix);
+  queries.add(buf.toString());
+}

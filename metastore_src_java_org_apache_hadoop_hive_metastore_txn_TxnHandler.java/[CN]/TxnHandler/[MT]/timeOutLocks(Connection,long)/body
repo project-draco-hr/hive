@@ -15,26 +15,19 @@
     if (extLockIDs.size() <= 0) {
       return;
     }
+    List<String> queries=new ArrayList<String>();
+    StringBuilder prefix=new StringBuilder();
+    StringBuilder suffix=new StringBuilder();
+    prefix.append("delete from HIVE_LOCKS where hl_last_heartbeat < ");
+    prefix.append(maxHeartbeatTime);
+    prefix.append(" and hl_txnid = 0 and ");
+    suffix.append("");
+    TxnUtils.buildQueryWithINClause(conf,queries,prefix,suffix,extLockIDs,"hl_lock_ext_id",true,false);
     int deletedLocks=0;
-    s="delete from HIVE_LOCKS where hl_last_heartbeat < " + maxHeartbeatTime + " and hl_txnid = 0"+ " and hl_lock_ext_id IN (";
-    int numWholeBatches=extLockIDs.size() / TIMED_OUT_TXN_ABORT_BATCH_SIZE;
-    for (int i=0; i < numWholeBatches; i++) {
-      StringBuilder sb=new StringBuilder(s);
-      for (int j=i * TIMED_OUT_TXN_ABORT_BATCH_SIZE; j < (i + 1) * TIMED_OUT_TXN_ABORT_BATCH_SIZE; j++) {
-        sb.append(extLockIDs.get(j)).append(",");
-      }
-      sb.setCharAt(sb.length() - 1,')');
-      LOG.debug("Removing expired locks via: " + sb.toString());
-      deletedLocks+=stmt.executeUpdate(sb.toString());
-      dbConn.commit();
+    for (    String query : queries) {
+      LOG.debug("Removing expired locks via: " + query);
+      deletedLocks+=stmt.executeUpdate(query);
     }
-    StringBuilder sb=new StringBuilder(s);
-    for (int i=numWholeBatches * TIMED_OUT_TXN_ABORT_BATCH_SIZE; i < extLockIDs.size(); i++) {
-      sb.append(extLockIDs.get(i)).append(",");
-    }
-    sb.setCharAt(sb.length() - 1,')');
-    LOG.debug("Removing expired locks via: " + sb.toString());
-    deletedLocks+=stmt.executeUpdate(sb.toString());
     if (deletedLocks > 0) {
       LOG.info("Deleted " + deletedLocks + " ext locks from HIVE_LOCKS due to timeout (vs. "+ extLockIDs.size()+ " found. List: "+ extLockIDs+ ") maxHeartbeatTime="+ maxHeartbeatTime);
     }
