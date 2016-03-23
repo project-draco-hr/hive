@@ -2,6 +2,7 @@
   try {
     Connection dbConn=null;
     Statement stmt=null;
+    Statement updStmt=null;
     ResultSet rs=null;
     try {
       dbConn=getDbConn(Connection.TRANSACTION_READ_COMMITTED);
@@ -14,6 +15,7 @@
         dbConn.rollback();
         return null;
       }
+      updStmt=dbConn.createStatement();
       do {
         CompactionInfo info=new CompactionInfo();
         info.id=rs.getLong(1);
@@ -24,7 +26,7 @@
         long now=getDbTime(dbConn);
         s="update COMPACTION_QUEUE set cq_worker_id = '" + workerId + "', "+ "cq_start = "+ now+ ", cq_state = '"+ WORKING_STATE+ "' where cq_id = "+ info.id+ " AND cq_state='"+ INITIATED_STATE+ "'";
         LOG.debug("Going to execute update <" + s + ">");
-        int updCount=stmt.executeUpdate(s);
+        int updCount=updStmt.executeUpdate(s);
         if (updCount == 1) {
           dbConn.commit();
           return info;
@@ -49,6 +51,7 @@
       throw new MetaException("Unable to connect to transaction database " + StringUtils.stringifyException(e));
     }
  finally {
+      closeStmt(updStmt);
       close(rs,stmt,dbConn);
     }
   }

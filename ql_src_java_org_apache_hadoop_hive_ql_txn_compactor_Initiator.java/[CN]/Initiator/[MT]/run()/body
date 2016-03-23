@@ -3,8 +3,11 @@
     recoverFailedCompactions(false);
     int abortedThreshold=HiveConf.getIntVar(conf,HiveConf.ConfVars.HIVE_COMPACTOR_ABORTEDTXN_THRESHOLD);
     do {
-      long startedAt=System.currentTimeMillis();
+      long startedAt=-1;
+      TxnStore.MutexAPI.LockHandle handle=null;
       try {
+        handle=txnHandler.getMutexAPI().acquireLock(TxnStore.MUTEX_KEY.Initiator.name());
+        startedAt=System.currentTimeMillis();
         ShowCompactResponse currentCompactions=txnHandler.showCompact(new ShowCompactRequest());
         ValidTxnList txns=TxnUtils.createValidCompactTxnList(txnHandler.getOpenTxnsInfo());
         Set<CompactionInfo> potentials=txnHandler.findPotentialCompactions(abortedThreshold);
@@ -53,6 +56,11 @@
       }
  catch (      Throwable t) {
         LOG.error("Initiator loop caught unexpected exception this time through the loop: " + StringUtils.stringifyException(t));
+      }
+ finally {
+        if (handle != null) {
+          handle.releaseLocks();
+        }
       }
       long elapsedTime=System.currentTimeMillis() - startedAt;
       if (elapsedTime >= checkInterval || stop.get())       continue;
