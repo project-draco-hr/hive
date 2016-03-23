@@ -1,0 +1,71 @@
+{
+  RexNode node;
+  final List<RexNode> operands;
+  final List<RexNode> newOperands;
+  Map<String,RexNode> stringToExpr=Maps.newHashMap();
+  Multimap<String,String> inLHSExprToRHSExprs=LinkedHashMultimap.create();
+switch (call.getKind()) {
+case AND:
+    operands=Lists.newArrayList(RexUtil.flattenAnd(((RexCall)call).getOperands()));
+  for (int i=0; i < operands.size(); i++) {
+    RexNode operand=operands.get(i);
+    if (operand.getKind() == SqlKind.IN) {
+      RexCall inCall=(RexCall)operand;
+      if (!HiveCalciteUtil.isDeterministic(inCall.getOperands().get(0))) {
+        continue;
+      }
+      String ref=inCall.getOperands().get(0).toString();
+      stringToExpr.put(ref,inCall.getOperands().get(0));
+      if (inLHSExprToRHSExprs.containsKey(ref)) {
+        Set<String> expressions=Sets.newHashSet();
+        for (int j=1; j < inCall.getOperands().size(); j++) {
+          String expr=inCall.getOperands().get(j).toString();
+          expressions.add(expr);
+          stringToExpr.put(expr,inCall.getOperands().get(j));
+        }
+        inLHSExprToRHSExprs.get(ref).retainAll(expressions);
+      }
+ else {
+        for (int j=1; j < inCall.getOperands().size(); j++) {
+          String expr=inCall.getOperands().get(j).toString();
+          inLHSExprToRHSExprs.put(ref,expr);
+          stringToExpr.put(expr,inCall.getOperands().get(j));
+        }
+      }
+      operands.remove(i);
+      --i;
+    }
+  }
+newOperands=createInClauses(rexBuilder,stringToExpr,inLHSExprToRHSExprs);
+newOperands.addAll(operands);
+node=RexUtil.composeConjunction(rexBuilder,newOperands,false);
+break;
+case OR:
+operands=Lists.newArrayList(RexUtil.flattenOr(((RexCall)call).getOperands()));
+for (int i=0; i < operands.size(); i++) {
+RexNode operand=operands.get(i);
+if (operand.getKind() == SqlKind.IN) {
+RexCall inCall=(RexCall)operand;
+if (!HiveCalciteUtil.isDeterministic(inCall.getOperands().get(0))) {
+continue;
+}
+String ref=inCall.getOperands().get(0).toString();
+stringToExpr.put(ref,inCall.getOperands().get(0));
+for (int j=1; j < inCall.getOperands().size(); j++) {
+String expr=inCall.getOperands().get(j).toString();
+inLHSExprToRHSExprs.put(ref,expr);
+stringToExpr.put(expr,inCall.getOperands().get(j));
+}
+operands.remove(i);
+--i;
+}
+}
+newOperands=createInClauses(rexBuilder,stringToExpr,inLHSExprToRHSExprs);
+newOperands.addAll(operands);
+node=RexUtil.composeDisjunction(rexBuilder,newOperands,false);
+break;
+default :
+return super.visitCall(call);
+}
+return node;
+}
