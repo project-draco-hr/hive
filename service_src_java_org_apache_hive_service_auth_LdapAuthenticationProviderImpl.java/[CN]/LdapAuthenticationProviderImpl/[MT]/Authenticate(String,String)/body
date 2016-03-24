@@ -21,7 +21,7 @@
       try {
         bindDN=listIter.next().replaceAll("%s",user);
         env.put(Context.SECURITY_PRINCIPAL,bindDN);
-        LOG.debug("Connecting using principal=" + user + " at url="+ ldapURL);
+        LOG.debug("Connecting using DN " + bindDN + " at url "+ ldapURL);
         ctx=new InitialDirContext(env);
         break;
       }
@@ -32,7 +32,7 @@
   }
  else {
     env.put(Context.SECURITY_PRINCIPAL,user);
-    LOG.debug("Connecting using principal=" + user + " at url="+ ldapURL);
+    LOG.debug("Connecting using principal " + user + " at url "+ ldapURL);
     try {
       ctx=new InitialDirContext(env);
     }
@@ -41,8 +41,10 @@
     }
   }
   if (ctx == null) {
+    LOG.debug("Could not connect to the LDAP Server:Authentication failed for " + user);
     throw new AuthenticationException("LDAP Authentication failed for user",ex);
   }
+  LOG.debug("Connected using principal=" + user + " at url="+ ldapURL);
   try {
     if (isDN(user) || hasDomain(user)) {
       userName=extractName(user);
@@ -50,7 +52,21 @@
  else {
       userName=user;
     }
-    if (userFilter == null && groupFilter == null && customQuery == null && userBases.size() > 0) {
+    if (customQuery != null) {
+      List<String> resultList=executeLDAPQuery(ctx,customQuery,baseDN);
+      if (resultList != null) {
+        for (        String matchedDN : resultList) {
+          LOG.info("<queried user=" + matchedDN.split(",",2)[0].split("=",2)[1] + ",user="+ user+ ">");
+          if (matchedDN.split(",",2)[0].split("=",2)[1].equalsIgnoreCase(user) || matchedDN.equalsIgnoreCase(user)) {
+            LOG.info("Authentication succeeded based on result set from LDAP query");
+            return;
+          }
+        }
+      }
+      LOG.info("Authentication failed based on result set from custom LDAP query");
+      throw new AuthenticationException("Authentication failed: LDAP query " + "from property returned no data");
+    }
+ else     if (userBases.size() > 0) {
       if (isDN(user)) {
         userDN=findUserDNByDN(ctx,user);
       }
@@ -59,71 +75,51 @@
           userDN=findUserDNByPattern(ctx,userName);
         }
         if (userDN == null) {
-          userDN=findUserDNByName(ctx,baseDN,userName);
+          userDN=findUserDNByName(ctx,userName);
         }
       }
       if (userDN == null) {
         throw new AuthenticationException("Authentication failed: User search failed");
       }
+      if (userFilter.size() > 0) {
+        LOG.info("Authenticating user " + user + " using user filter");
+        if (userDN != null) {
+          LOG.info("User filter partially satisfied");
+        }
+        boolean success=false;
+        for (        String filteredUser : userFilter) {
+          if (filteredUser.equalsIgnoreCase(userName)) {
+            LOG.debug("User filter entirely satisfied");
+            success=true;
+            break;
+          }
+        }
+        if (!success) {
+          LOG.info("Authentication failed based on user membership");
+          throw new AuthenticationException("Authentication failed: User not a member " + "of specified list");
+        }
+      }
+      if (groupFilter.size() > 0) {
+        LOG.debug("Authenticating user " + user + " using group membership");
+        List<String> userGroups=getGroupsForUser(ctx,userDN);
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("User member of :");
+          prettyPrint(userGroups);
+        }
+        if (userGroups != null) {
+          for (          String elem : userGroups) {
+            String shortName=((elem.split(","))[0].split("="))[1];
+            if (groupFilter.contains(shortName)) {
+              LOG.info("Authentication succeeded based on group membership");
+              return;
+            }
+          }
+        }
+        LOG.debug("Authentication failed: User is not a member of configured groups");
+        throw new AuthenticationException("Authentication failed: User not a member of " + "listed groups");
+      }
+      LOG.info("Authentication succeeded using ldap user search");
       return;
-    }
-    if (customQuery != null) {
-      List<String> resultList=executeLDAPQuery(ctx,customQuery,baseDN);
-      if (resultList != null) {
-        for (        String matchedDN : resultList) {
-          if (matchedDN.split(",",2)[0].split("=",2)[1].equalsIgnoreCase(user)) {
-            LOG.info("Authentication succeeded based on result set from LDAP query");
-            return;
-          }
-        }
-      }
-      throw new AuthenticationException("Authentication failed: LDAP query " + "from property returned no data");
-    }
-    if (userFilter != null && userFilter.size() > 0) {
-      LOG.info("Authenticating user " + user + " using user filter");
-      boolean success=false;
-      for (      String filteredUser : userFilter) {
-        if (filteredUser.equalsIgnoreCase(userName)) {
-          LOG.debug("User filter partially satisfied");
-          success=true;
-          break;
-        }
-      }
-      if (!success) {
-        LOG.info("Authentication failed based on user membership");
-        throw new AuthenticationException("Authentication failed: User not a member " + "of specified list");
-      }
-      userDN=findUserDNByPattern(ctx,userName);
-      if (userDN != null) {
-        LOG.info("User filter entirely satisfied");
-      }
- else {
-        LOG.info("User " + user + " could not be found in the configured UserBaseDN,"+ "authentication failed");
-        throw new AuthenticationException("Authentication failed: UserDN could not be " + "found in specified User base(s)");
-      }
-    }
-    if (groupFilter != null && groupFilter.size() > 0) {
-      LOG.debug("Authenticating user " + user + " using group membership:");
-      if (userDN == null) {
-        userDN=findUserDNByName(ctx,baseDN,userName);
-      }
-      List<String> userGroups=getGroupsForUser(ctx,userDN);
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("User member of :");
-        prettyPrint(userGroups);
-      }
-      if (userGroups != null) {
-        for (        String elem : userGroups) {
-          String shortName=((elem.split(","))[0].split("="))[1];
-          String groupDN=elem.split(",",2)[1];
-          LOG.debug("Checking group:DN=" + elem + ",shortName="+ shortName+ ",groupDN="+ groupDN);
-          if (groupFilter.contains(shortName)) {
-            LOG.info("Authentication succeeded based on group membership");
-            return;
-          }
-        }
-      }
-      throw new AuthenticationException("Authentication failed: User not a member of " + "listed groups");
     }
     LOG.info("Simple password authentication succeeded");
   }
