@@ -3,12 +3,17 @@
   final UserGroupInformation ugi=UgiFactory.getUgi(user);
   final TokenWrapper twrapper=new TokenWrapper();
   ugi.doAs(new PrivilegedExceptionAction<Object>(){
-    public Object run() throws IOException {
-      FileSystem fs=FileSystem.get(conf);
-      twrapper.token=fs.getDelegationToken(ugi.getShortUserName());
+    public Object run() throws IOException, URISyntaxException {
+      Credentials creds=new Credentials();
+      collectTokens(FileSystem.get(conf),twrapper,creds,ugi.getShortUserName());
+      Collection<String> URIs=conf.getStringCollection("mapreduce.job.hdfs-servers");
+      for (      String uri : URIs) {
+        LOG.debug("Getting tokens for " + uri);
+        collectTokens(FileSystem.get(new URI(uri),conf),twrapper,creds,ugi.getShortUserName());
+      }
       return null;
     }
   }
 );
-  return twrapper.token;
+  return twrapper.tokens;
 }
