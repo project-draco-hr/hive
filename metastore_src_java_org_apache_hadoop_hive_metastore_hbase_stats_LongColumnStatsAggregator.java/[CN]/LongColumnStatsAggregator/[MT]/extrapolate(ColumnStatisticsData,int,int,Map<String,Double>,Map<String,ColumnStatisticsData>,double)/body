@@ -1,0 +1,95 @@
+{
+  int rightBorderInd=numParts;
+  LongColumnStatsData extrapolateLongData=new LongColumnStatsData();
+  Map<String,LongColumnStatsData> extractedAdjustedStatsMap=new HashMap<>();
+  for (  Map.Entry<String,ColumnStatisticsData> entry : adjustedStatsMap.entrySet()) {
+    extractedAdjustedStatsMap.put(entry.getKey(),entry.getValue().getLongStats());
+  }
+  List<Map.Entry<String,LongColumnStatsData>> list=new LinkedList<Map.Entry<String,LongColumnStatsData>>(extractedAdjustedStatsMap.entrySet());
+  Collections.sort(list,new Comparator<Map.Entry<String,LongColumnStatsData>>(){
+    public int compare(    Map.Entry<String,LongColumnStatsData> o1,    Map.Entry<String,LongColumnStatsData> o2){
+      return o1.getValue().getLowValue() < o2.getValue().getLowValue() ? -1 : 1;
+    }
+  }
+);
+  double minInd=adjustedIndexMap.get(list.get(0).getKey());
+  double maxInd=adjustedIndexMap.get(list.get(list.size() - 1).getKey());
+  long lowValue=0;
+  long min=list.get(0).getValue().getLowValue();
+  long max=list.get(list.size() - 1).getValue().getLowValue();
+  if (minInd == maxInd) {
+    lowValue=min;
+  }
+ else   if (minInd < maxInd) {
+    lowValue=(long)(max - (max - min) * maxInd / (maxInd - minInd));
+  }
+ else {
+    lowValue=(long)(max - (max - min) * (rightBorderInd - maxInd) / (minInd - maxInd));
+  }
+  Collections.sort(list,new Comparator<Map.Entry<String,LongColumnStatsData>>(){
+    public int compare(    Map.Entry<String,LongColumnStatsData> o1,    Map.Entry<String,LongColumnStatsData> o2){
+      return o1.getValue().getHighValue() < o2.getValue().getHighValue() ? -1 : 1;
+    }
+  }
+);
+  minInd=adjustedIndexMap.get(list.get(0).getKey());
+  maxInd=adjustedIndexMap.get(list.get(list.size() - 1).getKey());
+  long highValue=0;
+  min=list.get(0).getValue().getHighValue();
+  max=list.get(list.size() - 1).getValue().getHighValue();
+  if (minInd == maxInd) {
+    highValue=min;
+  }
+ else   if (minInd < maxInd) {
+    highValue=(long)(min + (max - min) * (rightBorderInd - minInd) / (maxInd - minInd));
+  }
+ else {
+    highValue=(long)(min + (max - min) * minInd / (minInd - maxInd));
+  }
+  long numNulls=0;
+  for (  Map.Entry<String,LongColumnStatsData> entry : extractedAdjustedStatsMap.entrySet()) {
+    numNulls+=entry.getValue().getNumNulls();
+  }
+  numNulls=numNulls * numParts / numPartsWithStats;
+  long ndv=0;
+  Collections.sort(list,new Comparator<Map.Entry<String,LongColumnStatsData>>(){
+    public int compare(    Map.Entry<String,LongColumnStatsData> o1,    Map.Entry<String,LongColumnStatsData> o2){
+      return o1.getValue().getNumDVs() < o2.getValue().getNumDVs() ? -1 : 1;
+    }
+  }
+);
+  long lowerBound=list.get(list.size() - 1).getValue().getNumDVs();
+  long higherBound=0;
+  for (  Map.Entry<String,LongColumnStatsData> entry : list) {
+    higherBound+=entry.getValue().getNumDVs();
+  }
+  if (useDensityFunctionForNDVEstimation && densityAvg != 0.0) {
+    ndv=(long)((highValue - lowValue) / densityAvg);
+    if (ndv < lowerBound) {
+      ndv=lowerBound;
+    }
+ else     if (ndv > higherBound) {
+      ndv=higherBound;
+    }
+  }
+ else {
+    minInd=adjustedIndexMap.get(list.get(0).getKey());
+    maxInd=adjustedIndexMap.get(list.get(list.size() - 1).getKey());
+    min=list.get(0).getValue().getNumDVs();
+    max=list.get(list.size() - 1).getValue().getNumDVs();
+    if (minInd == maxInd) {
+      ndv=min;
+    }
+ else     if (minInd < maxInd) {
+      ndv=(long)(min + (max - min) * (rightBorderInd - minInd) / (maxInd - minInd));
+    }
+ else {
+      ndv=(long)(min + (max - min) * minInd / (minInd - maxInd));
+    }
+  }
+  extrapolateLongData.setLowValue(lowValue);
+  extrapolateLongData.setHighValue(highValue);
+  extrapolateLongData.setNumNulls(numNulls);
+  extrapolateLongData.setNumDVs(ndv);
+  extrapolateData.setLongStats(extrapolateLongData);
+}

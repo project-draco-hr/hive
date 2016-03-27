@@ -1,0 +1,97 @@
+{
+  int rightBorderInd=numParts;
+  DecimalColumnStatsData extrapolateDecimalData=new DecimalColumnStatsData();
+  Map<String,DecimalColumnStatsData> extractedAdjustedStatsMap=new HashMap<>();
+  for (  Map.Entry<String,ColumnStatisticsData> entry : adjustedStatsMap.entrySet()) {
+    extractedAdjustedStatsMap.put(entry.getKey(),entry.getValue().getDecimalStats());
+  }
+  List<Map.Entry<String,DecimalColumnStatsData>> list=new LinkedList<Map.Entry<String,DecimalColumnStatsData>>(extractedAdjustedStatsMap.entrySet());
+  Collections.sort(list,new Comparator<Map.Entry<String,DecimalColumnStatsData>>(){
+    public int compare(    Map.Entry<String,DecimalColumnStatsData> o1,    Map.Entry<String,DecimalColumnStatsData> o2){
+      return o1.getValue().getLowValue().compareTo(o2.getValue().getLowValue());
+    }
+  }
+);
+  double minInd=adjustedIndexMap.get(list.get(0).getKey());
+  double maxInd=adjustedIndexMap.get(list.get(list.size() - 1).getKey());
+  double lowValue=0;
+  double min=HBaseUtils.getDoubleValue(list.get(0).getValue().getLowValue());
+  double max=HBaseUtils.getDoubleValue(list.get(list.size() - 1).getValue().getLowValue());
+  if (minInd == maxInd) {
+    lowValue=min;
+  }
+ else   if (minInd < maxInd) {
+    lowValue=(max - (max - min) * maxInd / (maxInd - minInd));
+  }
+ else {
+    lowValue=(max - (max - min) * (rightBorderInd - maxInd) / (minInd - maxInd));
+  }
+  Collections.sort(list,new Comparator<Map.Entry<String,DecimalColumnStatsData>>(){
+    public int compare(    Map.Entry<String,DecimalColumnStatsData> o1,    Map.Entry<String,DecimalColumnStatsData> o2){
+      return o1.getValue().getHighValue().compareTo(o2.getValue().getHighValue());
+    }
+  }
+);
+  minInd=adjustedIndexMap.get(list.get(0).getKey());
+  maxInd=adjustedIndexMap.get(list.get(list.size() - 1).getKey());
+  double highValue=0;
+  min=HBaseUtils.getDoubleValue(list.get(0).getValue().getHighValue());
+  max=HBaseUtils.getDoubleValue(list.get(list.size() - 1).getValue().getHighValue());
+  if (minInd == maxInd) {
+    highValue=min;
+  }
+ else   if (minInd < maxInd) {
+    highValue=(min + (max - min) * (rightBorderInd - minInd) / (maxInd - minInd));
+  }
+ else {
+    highValue=(min + (max - min) * minInd / (minInd - maxInd));
+  }
+  long numNulls=0;
+  for (  Map.Entry<String,DecimalColumnStatsData> entry : extractedAdjustedStatsMap.entrySet()) {
+    numNulls+=entry.getValue().getNumNulls();
+  }
+  numNulls=numNulls * numParts / numPartsWithStats;
+  long ndv=0;
+  long ndvMin=0;
+  long ndvMax=0;
+  Collections.sort(list,new Comparator<Map.Entry<String,DecimalColumnStatsData>>(){
+    public int compare(    Map.Entry<String,DecimalColumnStatsData> o1,    Map.Entry<String,DecimalColumnStatsData> o2){
+      return o1.getValue().getNumDVs() < o2.getValue().getNumDVs() ? -1 : 1;
+    }
+  }
+);
+  long lowerBound=list.get(list.size() - 1).getValue().getNumDVs();
+  long higherBound=0;
+  for (  Map.Entry<String,DecimalColumnStatsData> entry : list) {
+    higherBound+=entry.getValue().getNumDVs();
+  }
+  if (useDensityFunctionForNDVEstimation && densityAvg != 0.0) {
+    ndv=(long)((highValue - lowValue) / densityAvg);
+    if (ndv < lowerBound) {
+      ndv=lowerBound;
+    }
+ else     if (ndv > higherBound) {
+      ndv=higherBound;
+    }
+  }
+ else {
+    minInd=adjustedIndexMap.get(list.get(0).getKey());
+    maxInd=adjustedIndexMap.get(list.get(list.size() - 1).getKey());
+    ndvMin=list.get(0).getValue().getNumDVs();
+    ndvMax=list.get(list.size() - 1).getValue().getNumDVs();
+    if (minInd == maxInd) {
+      ndv=ndvMin;
+    }
+ else     if (minInd < maxInd) {
+      ndv=(long)(ndvMin + (ndvMax - ndvMin) * (rightBorderInd - minInd) / (maxInd - minInd));
+    }
+ else {
+      ndv=(long)(ndvMin + (ndvMax - ndvMin) * minInd / (minInd - maxInd));
+    }
+  }
+  extrapolateDecimalData.setLowValue(StatObjectConverter.createThriftDecimal(String.valueOf(lowValue)));
+  extrapolateDecimalData.setHighValue(StatObjectConverter.createThriftDecimal(String.valueOf(highValue)));
+  extrapolateDecimalData.setNumNulls(numNulls);
+  extrapolateDecimalData.setNumDVs(ndv);
+  extrapolateData.setDecimalStats(extrapolateDecimalData);
+}
