@@ -1,13 +1,60 @@
 {
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Received heartbeat from container, request=" + request);
+  }
   TezHeartbeatResponse response=new TezHeartbeatResponse();
+  response.setLastRequestId(request.getRequestId());
   TezTaskAttemptID taskAttemptId=request.getCurrentTaskAttemptID();
-  List<TezEvent> tezEvents=pendingEvents.remove(taskAttemptId.toString());
-  if (tezEvents == null) {
+  String taskAttemptIdString=taskAttemptId.toString();
+  updateHeartbeatInfo(taskAttemptIdString);
+  List<TezEvent> tezEvents=null;
+  PendingEventData pendingEventData=pendingEvents.remove(taskAttemptIdString);
+  if (pendingEventData == null) {
     tezEvents=Collections.emptyList();
+    if (!registeredTasks.containsKey(taskAttemptIdString)) {
+      LOG.info("Unexpected heartbeat from " + taskAttemptIdString);
+      response.setShouldDie();
+      return response;
+    }
+  }
+ else {
+    tezEvents=pendingEventData.tezEvents;
+    registeredTasks.put(taskAttemptIdString,pendingEventData.heartbeatInfo);
   }
   response.setLastRequestId(request.getRequestId());
   response.setNextFromEventId(0);
   response.setNextPreRoutedEventId(0);
   response.setEvents(tezEvents);
-  return response;
+  List<TezEvent> inEvents=request.getEvents();
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Heartbeat from " + taskAttemptIdString + " events: "+ (inEvents != null ? inEvents.size() : -1));
+  }
+  for (  TezEvent tezEvent : ListUtils.emptyIfNull(inEvents)) {
+    EventType eventType=tezEvent.getEventType();
+switch (eventType) {
+case TASK_ATTEMPT_COMPLETED_EVENT:
+      LOG.debug("Task completed event for " + taskAttemptIdString);
+    registeredTasks.remove(taskAttemptIdString);
+  break;
+case TASK_ATTEMPT_FAILED_EVENT:
+LOG.debug("Task failed event for " + taskAttemptIdString);
+registeredTasks.remove(taskAttemptIdString);
+break;
+case TASK_STATUS_UPDATE_EVENT:
+LOG.debug("Task update event for " + taskAttemptIdString);
+break;
+default :
+LOG.warn("Unhandled event type " + eventType);
+break;
+}
+}
+try {
+if (responder != null) {
+responder.heartbeat(request);
+}
+}
+ catch (Exception err) {
+LOG.error("Error during responder execution",err);
+}
+return response;
 }
