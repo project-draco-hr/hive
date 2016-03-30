@@ -1,0 +1,103 @@
+{
+  byte[] data=null;
+  Timer timer=new Timer();
+  FTPClient ftp=this.ftp;
+  if (currentThreadCnt.getAndIncrement() > 0) {
+    ftp=openConnection(null);
+  }
+  while (true) {
+    String file=filesQueue.poll();
+    if (file == null) {
+      break;
+    }
+    int num=currentFileCnt.getAndIncrement();
+    FTPFile ftpFile=filesMap.get(file);
+    long ftpSizeInBytes=ftpFile.getSize();
+    String fmtSizeInBytes=Utils.formatSizeInBytes(ftpSizeInBytes);
+    String targetFile=getTargetFileName(file);
+    if (info) {
+      info(null,"  " + file + " - started ("+ num+ " of "+ fileCnt+ ", "+ fmtSizeInBytes+ ")");
+    }
+    try {
+      InputStream in=ftp.retrieveFileStream(file);
+      OutputStream out=null;
+      java.io.File targetLocalFile=null;
+      File targetHdfsFile=null;
+      if (local) {
+        targetLocalFile=new java.io.File(targetFile);
+        if (!targetLocalFile.exists()) {
+          targetLocalFile.getParentFile().mkdirs();
+          targetLocalFile.createNewFile();
+        }
+        out=new FileOutputStream(targetLocalFile,false);
+      }
+ else {
+        targetHdfsFile=new File();
+        out=targetHdfsFile.create(targetFile,true);
+      }
+      if (data == null) {
+        data=new byte[3 * 1024 * 1024];
+      }
+      int bytesRead=-1;
+      long bytesReadAll=0;
+      long start=timer.start();
+      long prev=start;
+      long readTime=0;
+      long writeTime=0;
+      long cur, cur2, cur3;
+      while (true) {
+        cur=timer.current();
+        bytesRead=in.read(data);
+        cur2=timer.current();
+        readTime+=(cur2 - cur);
+        if (bytesRead == -1) {
+          break;
+        }
+        out.write(data,0,bytesRead);
+        out.flush();
+        cur3=timer.current();
+        writeTime+=(cur3 - cur2);
+        bytesReadAll+=bytesRead;
+        if (info) {
+          cur=timer.current();
+          if (cur - prev > 13000) {
+            long elapsed=cur - start;
+            info(null,"  " + file + " - in progress ("+ Utils.formatSizeInBytes(bytesReadAll)+ " of "+ fmtSizeInBytes+ ", "+ Utils.formatPercent(bytesReadAll,ftpSizeInBytes)+ ", "+ Utils.formatTime(elapsed)+ ", "+ Utils.formatBytesPerSec(bytesReadAll,elapsed)+ ", "+ Utils.formatBytesPerSec(bytesReadAll,readTime)+ " read, "+ Utils.formatBytesPerSec(bytesReadAll,writeTime)+ " write)");
+            prev=cur;
+          }
+        }
+      }
+      if (ftp.completePendingCommand()) {
+        in.close();
+        cur=timer.current();
+        out.close();
+        readTime+=(timer.current() - cur);
+        bytesTransferredAll.addAndGet(bytesReadAll);
+        fileCntSuccess.incrementAndGet();
+        if (info) {
+          long elapsed=timer.stop();
+          info(null,"  " + file + " - complete ("+ Utils.formatSizeInBytes(bytesReadAll)+ ", "+ Utils.formatTime(elapsed)+ ", "+ Utils.formatBytesPerSec(bytesReadAll,elapsed)+ ", "+ Utils.formatBytesPerSec(bytesReadAll,readTime)+ " read, "+ Utils.formatBytesPerSec(bytesReadAll,writeTime)+ " write)");
+        }
+      }
+ else {
+        in.close();
+        out.close();
+        if (info) {
+          info(null,"  " + file + " - failed");
+        }
+        exec.signal(Signal.Type.SQLEXCEPTION,"File transfer failed: " + file);
+      }
+    }
+ catch (    IOException e) {
+      exec.signal(e);
+    }
+  }
+  try {
+    if (ftp.isConnected()) {
+      ftp.logout();
+      ftp.disconnect();
+    }
+  }
+ catch (  IOException e) {
+  }
+}
