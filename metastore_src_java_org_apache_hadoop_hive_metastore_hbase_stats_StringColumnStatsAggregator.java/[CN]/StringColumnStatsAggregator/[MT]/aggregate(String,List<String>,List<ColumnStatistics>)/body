@@ -1,0 +1,59 @@
+{
+  ColumnStatisticsObj statsObj=null;
+  boolean doAllPartitionContainStats=partNames.size() == css.size();
+  boolean isNDVBitVectorSet=true;
+  String colType=null;
+  for (  ColumnStatistics cs : css) {
+    if (cs.getStatsObjSize() != 1) {
+      throw new MetaException("The number of columns should be exactly one in aggrStats, but found " + cs.getStatsObjSize());
+    }
+    ColumnStatisticsObj cso=cs.getStatsObjIterator().next();
+    if (statsObj == null) {
+      colType=cso.getColType();
+      statsObj=ColumnStatsAggregatorFactory.newColumnStaticsObj(colName,colType,cso.getStatsData().getSetField());
+    }
+    if (numBitVectors <= 0 || !cso.getStatsData().getStringStats().isSetBitVectors() || cso.getStatsData().getStringStats().getBitVectors().length() == 0) {
+      isNDVBitVectorSet=false;
+      break;
+    }
+  }
+  ColumnStatisticsData columnStatisticsData=new ColumnStatisticsData();
+  if (doAllPartitionContainStats && isNDVBitVectorSet) {
+    StringColumnStatsData aggregateData=null;
+    NumDistinctValueEstimator ndvEstimator=new NumDistinctValueEstimator(numBitVectors);
+    for (    ColumnStatistics cs : css) {
+      ColumnStatisticsObj cso=cs.getStatsObjIterator().next();
+      StringColumnStatsData newData=cso.getStatsData().getStringStats();
+      ndvEstimator.mergeEstimators(new NumDistinctValueEstimator(newData.getBitVectors(),ndvEstimator.getnumBitVectors()));
+      if (aggregateData == null) {
+        aggregateData=newData.deepCopy();
+      }
+ else {
+        aggregateData.setMaxColLen(Math.max(aggregateData.getMaxColLen(),newData.getMaxColLen()));
+        aggregateData.setAvgColLen(Math.max(aggregateData.getAvgColLen(),newData.getAvgColLen()));
+        aggregateData.setNumNulls(aggregateData.getNumNulls() + newData.getNumNulls());
+      }
+    }
+    aggregateData.setNumDVs(ndvEstimator.estimateNumDistinctValues());
+    columnStatisticsData.setStringStats(aggregateData);
+  }
+ else {
+    StringColumnStatsData aggregateData=null;
+    for (    ColumnStatistics cs : css) {
+      ColumnStatisticsObj cso=cs.getStatsObjIterator().next();
+      StringColumnStatsData newData=cso.getStatsData().getStringStats();
+      if (aggregateData == null) {
+        aggregateData=newData.deepCopy();
+      }
+ else {
+        aggregateData.setMaxColLen(Math.max(aggregateData.getMaxColLen(),newData.getMaxColLen()));
+        aggregateData.setAvgColLen(Math.max(aggregateData.getAvgColLen(),newData.getAvgColLen()));
+        aggregateData.setNumNulls(aggregateData.getNumNulls() + newData.getNumNulls());
+        aggregateData.setNumDVs(Math.max(aggregateData.getNumDVs(),newData.getNumDVs()));
+      }
+    }
+    columnStatisticsData.setStringStats(aggregateData);
+  }
+  statsObj.setStatsData(columnStatisticsData);
+  return statsObj;
+}

@@ -1,20 +1,29 @@
 {
   List<String> groupList=new ArrayList<String>();
-  String searchFilter="(" + DN_ATTR + "="+ userDN+ ")";
+  String user=extractName(userDN);
+  String searchFilter="(&(objectClass=" + groupClass_attr + ")(|("+ groupMembership_attr+ "="+ userDN+ ")("+ groupMembership_attr+ "="+ user+ ")))";
   SearchControls searchControls=new SearchControls();
+  NamingEnumeration<SearchResult> results=null;
+  SearchResult result=null;
+  String groupBase=null;
   LOG.debug("getGroupsForUser:searchFilter=" + searchFilter);
-  String[] attrIDs={"memberOf"};
+  String[] attrIDs=new String[0];
   searchControls.setSearchScope(SearchControls.SUBTREE_SCOPE);
   searchControls.setReturningAttributes(attrIDs);
-  NamingEnumeration<SearchResult> results=ctx.search(userDN.split(",",2)[1],searchFilter,searchControls);
-  while (results.hasMoreElements()) {
-    NamingEnumeration<? extends Attribute> groups=results.next().getAttributes().getAll();
-    while (groups.hasMore()) {
-      Attribute attr=groups.next();
-      NamingEnumeration<?> list=attr.getAll();
-      while (list.hasMore()) {
-        groupList.add((String)list.next());
+  ListIterator<String> listIter=groupBases.listIterator();
+  while (listIter.hasNext()) {
+    try {
+      groupBase=listIter.next().split(",",2)[1];
+      LOG.debug("Searching for groups under " + groupBase);
+      results=ctx.search(groupBase,searchFilter,searchControls);
+      while (results.hasMoreElements()) {
+        result=results.nextElement();
+        LOG.debug("Found Group:" + result.getNameInNamespace());
+        groupList.add(result.getNameInNamespace());
       }
+    }
+ catch (    NamingException e) {
+      LOG.warn("Exception searching for user groups",e);
     }
   }
   return groupList;

@@ -1,18 +1,31 @@
 {
-  VectorizedRowBatch b=getBatchTimestampDecimal();
+  HiveDecimal[] hiveDecimalValues=new HiveDecimal[500];
+  VectorizedRowBatch b=getBatchTimestampDecimal(hiveDecimalValues);
   VectorExpression expr=new CastTimestampToDecimal(0,1);
   TimestampColumnVector inT=(TimestampColumnVector)b.cols[0];
-  inT.set(1,new PisaTimestamp(0,-1990000000L));
   expr.evaluate(b);
   DecimalColumnVector r=(DecimalColumnVector)b.cols[1];
-  assertTrue(r.vector[0].getHiveDecimal().equals(HiveDecimal.create("0.00")));
-  assertTrue(r.vector[1].getHiveDecimal().equals(HiveDecimal.create("-1.99")));
-  assertTrue(r.vector[2].getHiveDecimal().equals(HiveDecimal.create("100000.00")));
-  b=getBatchTimestampDecimalPrec5Scale2();
+  for (int i=0; i < hiveDecimalValues.length; i++) {
+    HiveDecimal hiveDecimal=r.vector[i].getHiveDecimal();
+    HiveDecimal expectedHiveDecimal=hiveDecimalValues[i];
+    if (!hiveDecimal.equals(expectedHiveDecimal)) {
+      assertTrue(false);
+    }
+  }
+  b.cols[1]=r=new DecimalColumnVector(hiveDecimalValues.length,5,2);
   expr.evaluate(b);
   r=(DecimalColumnVector)b.cols[1];
-  assertFalse(r.noNulls);
-  assertFalse(r.isNull[0]);
-  assertFalse(r.isNull[1]);
-  assertTrue(r.isNull[2]);
+  for (int i=0; i < hiveDecimalValues.length; i++) {
+    HiveDecimal hiveDecimal=r.vector[i].getHiveDecimal();
+    HiveDecimal expectedHiveDecimal=hiveDecimalValues[i];
+    if (HiveDecimal.enforcePrecisionScale(expectedHiveDecimal,5,2) == null) {
+      assertTrue(r.isNull[i]);
+    }
+ else {
+      assertTrue(!r.isNull[i]);
+      if (!hiveDecimal.equals(expectedHiveDecimal)) {
+        assertTrue(false);
+      }
+    }
+  }
 }

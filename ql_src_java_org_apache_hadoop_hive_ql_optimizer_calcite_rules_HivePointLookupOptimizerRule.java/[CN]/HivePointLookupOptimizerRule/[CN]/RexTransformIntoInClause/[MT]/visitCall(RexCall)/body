@@ -1,0 +1,44 @@
+{
+  RexNode node;
+switch (call.getKind()) {
+case AND:
+    ImmutableList<RexNode> operands=RexUtil.flattenAnd(((RexCall)call).getOperands());
+  List<RexNode> newOperands=new ArrayList<RexNode>();
+for (RexNode operand : operands) {
+  RexNode newOperand;
+  if (operand.getKind() == SqlKind.OR) {
+    try {
+      newOperand=transformIntoInClauseCondition(rexBuilder,filterOp.getRowType(),operand,min);
+      if (newOperand == null) {
+        return call;
+      }
+    }
+ catch (    SemanticException e) {
+      LOG.error("Exception in HivePointLookupOptimizerRule",e);
+      return call;
+    }
+  }
+ else {
+    newOperand=operand;
+  }
+  newOperands.add(newOperand);
+}
+node=RexUtil.composeConjunction(rexBuilder,newOperands,false);
+break;
+case OR:
+try {
+node=transformIntoInClauseCondition(rexBuilder,filterOp.getRowType(),call,min);
+if (node == null) {
+return call;
+}
+}
+ catch (SemanticException e) {
+LOG.error("Exception in HivePointLookupOptimizerRule",e);
+return call;
+}
+break;
+default :
+return super.visitCall(call);
+}
+return node;
+}

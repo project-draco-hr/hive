@@ -4,7 +4,7 @@
   }
   LongColumnVector inputColVector1=(LongColumnVector)batch.cols[colNum1];
   LongColumnVector inputColVector2=(LongColumnVector)batch.cols[colNum2];
-  TimestampColumnVector outputColVector=(TimestampColumnVector)batch.cols[outputColumn];
+  IntervalDayTimeColumnVector outputColVector=(IntervalDayTimeColumnVector)batch.cols[outputColumn];
   int[] sel=batch.selected;
   int n=batch.size;
   long[] vector1=inputColVector1.vector;
@@ -14,36 +14,46 @@
   }
   outputColVector.isRepeating=inputColVector1.isRepeating && inputColVector2.isRepeating || inputColVector1.isRepeating && !inputColVector1.noNulls && inputColVector1.isNull[0] || inputColVector2.isRepeating && !inputColVector2.noNulls && inputColVector2.isNull[0];
   NullUtil.propagateNullsColCol(inputColVector1,inputColVector2,outputColVector,sel,n,batch.selectedInUse);
+  HiveIntervalDayTime resultIntervalDayTime=outputColVector.getScratchIntervalDayTime();
   if (inputColVector1.isRepeating && inputColVector2.isRepeating) {
-    outputColVector.subtract(scratchPisaTimestamp1.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector1[0])),scratchPisaTimestamp2.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector2[0])),0);
+    scratchTimestamp1.setTime(DateWritable.daysToMillis((int)vector1[0]));
+    scratchTimestamp2.setTime(DateWritable.daysToMillis((int)vector2[0]));
+    dtm.subtract(scratchTimestamp1,scratchTimestamp2,outputColVector.getScratchIntervalDayTime());
+    outputColVector.setFromScratchIntervalDayTime(0);
   }
  else   if (inputColVector1.isRepeating) {
+    scratchTimestamp1.setTime(DateWritable.daysToMillis((int)vector1[0]));
     if (batch.selectedInUse) {
-      scratchPisaTimestamp1.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector1[0]));
       for (int j=0; j != n; j++) {
         int i=sel[j];
-        outputColVector.subtract(scratchPisaTimestamp1,scratchPisaTimestamp2.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector2[i])),i);
+        scratchTimestamp2.setTime(DateWritable.daysToMillis((int)vector2[i]));
+        dtm.subtract(scratchTimestamp1,scratchTimestamp2,outputColVector.getScratchIntervalDayTime());
+        outputColVector.setFromScratchIntervalDayTime(i);
       }
     }
  else {
-      scratchPisaTimestamp1.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector1[0]));
       for (int i=0; i != n; i++) {
-        outputColVector.subtract(scratchPisaTimestamp1,scratchPisaTimestamp2.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector2[i])),i);
+        scratchTimestamp2.setTime(DateWritable.daysToMillis((int)vector2[i]));
+        dtm.subtract(scratchTimestamp1,scratchTimestamp2,outputColVector.getScratchIntervalDayTime());
+        outputColVector.setFromScratchIntervalDayTime(i);
       }
     }
   }
  else   if (inputColVector2.isRepeating) {
+    scratchTimestamp2.setTime(DateWritable.daysToMillis((int)vector2[0]));
     if (batch.selectedInUse) {
-      scratchPisaTimestamp2.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector2[0]));
       for (int j=0; j != n; j++) {
         int i=sel[j];
-        outputColVector.subtract(scratchPisaTimestamp1.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector1[i])),scratchPisaTimestamp2,i);
+        scratchTimestamp1.setTime(DateWritable.daysToMillis((int)vector1[i]));
+        dtm.subtract(scratchTimestamp1,scratchTimestamp2,outputColVector.getScratchIntervalDayTime());
+        outputColVector.setFromScratchIntervalDayTime(i);
       }
     }
  else {
-      scratchPisaTimestamp2.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector2[0]));
       for (int i=0; i != n; i++) {
-        outputColVector.subtract(scratchPisaTimestamp1.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector1[i])),scratchPisaTimestamp2,i);
+        scratchTimestamp1.setTime(DateWritable.daysToMillis((int)vector1[i]));
+        dtm.subtract(scratchTimestamp1,scratchTimestamp2,outputColVector.getScratchIntervalDayTime());
+        outputColVector.setFromScratchIntervalDayTime(i);
       }
     }
   }
@@ -51,14 +61,20 @@
     if (batch.selectedInUse) {
       for (int j=0; j != n; j++) {
         int i=sel[j];
-        outputColVector.subtract(scratchPisaTimestamp1.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector1[i])),scratchPisaTimestamp2.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector2[i])),i);
+        scratchTimestamp1.setTime(DateWritable.daysToMillis((int)vector1[i]));
+        scratchTimestamp2.setTime(DateWritable.daysToMillis((int)vector2[i]));
+        dtm.subtract(scratchTimestamp1,scratchTimestamp2,outputColVector.getScratchIntervalDayTime());
+        outputColVector.setFromScratchIntervalDayTime(i);
       }
     }
  else {
       for (int i=0; i != n; i++) {
-        outputColVector.subtract(scratchPisaTimestamp1.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector1[i])),scratchPisaTimestamp2.updateFromTimestampMilliseconds(DateWritable.daysToMillis((int)vector2[i])),i);
+        scratchTimestamp1.setTime(DateWritable.daysToMillis((int)vector1[i]));
+        scratchTimestamp2.setTime(DateWritable.daysToMillis((int)vector2[i]));
+        dtm.subtract(scratchTimestamp1,scratchTimestamp2,outputColVector.getScratchIntervalDayTime());
+        outputColVector.setFromScratchIntervalDayTime(i);
       }
     }
   }
-  NullUtil.setNullDataEntriesTimestamp(outputColVector,batch.selectedInUse,sel,n);
+  NullUtil.setNullDataEntriesIntervalDayTime(outputColVector,batch.selectedInUse,sel,n);
 }
