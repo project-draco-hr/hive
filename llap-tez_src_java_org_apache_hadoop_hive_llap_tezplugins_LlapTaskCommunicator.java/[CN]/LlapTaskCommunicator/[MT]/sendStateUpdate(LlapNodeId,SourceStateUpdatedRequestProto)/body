@@ -1,0 +1,19 @@
+{
+  communicator.sendSourceStateUpdate(request,nodeId,new LlapProtocolClientProxy.ExecuteRequestCallback<SourceStateUpdatedResponseProto>(){
+    @Override public void setResponse(    SourceStateUpdatedResponseProto response){
+    }
+    @Override public void indicateError(    Throwable t){
+      LOG.error("Failed to send state update to node: {}, Killing all attempts running on node. Attempted StateUpdate={}",nodeId,request,t);
+      BiMap<ContainerId,TezTaskAttemptID> biMap=entityTracker.getContainerAttemptMapForNode(nodeId);
+      if (biMap != null) {
+synchronized (biMap) {
+          for (          Map.Entry<ContainerId,TezTaskAttemptID> entry : biMap.entrySet()) {
+            LOG.info("Sending a kill for attempt {}, due to a communication failure while sending a finishable state update",entry.getValue());
+            getContext().taskKilled(entry.getValue(),TaskAttemptEndReason.NODE_FAILED,"Failed to send finishable state update to node " + nodeId);
+          }
+        }
+      }
+    }
+  }
+);
+}

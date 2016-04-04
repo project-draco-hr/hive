@@ -2,12 +2,28 @@
   int rpcPort=0;
   int mngPort=0;
   int shufflePort=0;
+  int webPort=0;
   boolean usePortsFromConf=conf.getBoolean("minillap.usePortsFromConf",false);
+  LOG.info("MiniLlap configured to use ports from conf: {}",usePortsFromConf);
   if (usePortsFromConf) {
     rpcPort=HiveConf.getIntVar(conf,HiveConf.ConfVars.LLAP_DAEMON_RPC_PORT);
     mngPort=HiveConf.getIntVar(conf,HiveConf.ConfVars.LLAP_MANAGEMENT_RPC_PORT);
     shufflePort=conf.getInt(ShuffleHandler.SHUFFLE_PORT_CONFIG_KEY,ShuffleHandler.DEFAULT_SHUFFLE_PORT);
+    webPort=HiveConf.getIntVar(conf,ConfVars.LLAP_DAEMON_WEB_PORT);
   }
-  llapDaemon=new LlapDaemon(conf,numExecutorsPerService,execBytesPerService,llapIoEnabled,ioIsDirect,ioBytesPerService,localDirs,rpcPort,mngPort,shufflePort);
-  llapDaemon.init(conf);
+  if (ownZkCluster) {
+    miniZooKeeperCluster=new MiniZooKeeperCluster();
+    miniZooKeeperCluster.startup(zkWorkDir);
+  }
+ else {
+  }
+  conf.set(ConfVars.LLAP_DAEMON_SERVICE_HOSTS.varname,"@" + clusterNameTrimmed);
+  conf.set(ConfVars.HIVE_ZOOKEEPER_QUORUM.varname,"localhost");
+  conf.setInt(ConfVars.HIVE_ZOOKEEPER_CLIENT_PORT.varname,miniZooKeeperCluster.getClientPort());
+  LOG.info("Initializing {} llap instances for MiniLlapCluster with name={}",numInstances,clusterNameTrimmed);
+  for (int i=0; i < numInstances; i++) {
+    llapDaemons[i]=new LlapDaemon(conf,numExecutorsPerService,execBytesPerService,llapIoEnabled,ioIsDirect,ioBytesPerService,localDirs,rpcPort,mngPort,shufflePort,webPort);
+    llapDaemons[i].init(new Configuration(conf));
+  }
+  LOG.info("Initialized {} llap instances for MiniLlapCluster with name={}",numInstances,clusterNameTrimmed);
 }
