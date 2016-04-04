@@ -21,14 +21,30 @@
       LOG.debug("Going to execute update <" + s + ">");
       stmt.executeUpdate(s);
       long now=getDbTime(dbConn);
-      s="insert into TXNS (txn_id, txn_state, txn_started, " + "txn_last_heartbeat, txn_user, txn_host) values (?, 'o', " + now + ", "+ now+ ", '"+ rqst.getUser()+ "', '"+ rqst.getHostname()+ "')";
-      LOG.debug("Going to prepare statement <" + s + ">");
-      PreparedStatement ps=dbConn.prepareStatement(s);
       List<Long> txnIds=new ArrayList<Long>(numTxns);
+      ArrayList<String> queries=new ArrayList<String>();
+      String query;
+      String insertClause="insert into TXNS (txn_id, txn_state, txn_started, txn_last_heartbeat, txn_user, txn_host) values ";
+      StringBuilder valuesClause=new StringBuilder();
       for (long i=first; i < first + numTxns; i++) {
-        ps.setLong(1,i);
-        ps.executeUpdate();
         txnIds.add(i);
+        if (i > first && (i - first) % conf.getIntVar(HiveConf.ConfVars.METASTORE_DIRECT_SQL_MAX_ELEMENTS_VALUES_CLAUSE) == 0) {
+          query=insertClause + valuesClause.toString();
+          queries.add(query);
+          valuesClause.setLength(0);
+          valuesClause.append("(").append(i).append(", 'o', ").append(now).append(", ").append(now).append(", '").append(rqst.getUser()).append("', '").append(rqst.getHostname()).append("')");
+          continue;
+        }
+        if (i > first) {
+          valuesClause.append(", ");
+        }
+        valuesClause.append("(").append(i).append(", 'o', ").append(now).append(", ").append(now).append(", '").append(rqst.getUser()).append("', '").append(rqst.getHostname()).append("')");
+      }
+      query=insertClause + valuesClause.toString();
+      queries.add(query);
+      for (      String q : queries) {
+        LOG.debug("Going to execute update <" + q + ">");
+        stmt.execute(q);
       }
       LOG.debug("Going to commit");
       dbConn.commit();

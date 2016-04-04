@@ -1,0 +1,40 @@
+{
+  Set<String> cteAlias=new HashSet<>();
+  if (ast.getChildCount() > 0 && HiveParser.TOK_CTE == ((ASTNode)ast.getChild(0)).getToken().getType()) {
+    ASTNode cte=(ASTNode)ast.getChild(0);
+    for (int index=cte.getChildCount() - 1; index >= 0; index--) {
+      ASTNode subq=(ASTNode)cte.getChild(index);
+      String alias=unescapeIdentifier(subq.getChild(1).getText());
+      if (cteAlias.contains(alias)) {
+        throw new SemanticException("Duplicate definition of " + alias);
+      }
+ else {
+        cteAlias.add(alias);
+        walkASTMarkTABREF(subq,cteAlias);
+      }
+    }
+    for (int index=1; index < ast.getChildCount(); index++) {
+      walkASTMarkTABREF((ASTNode)ast.getChild(index),cteAlias);
+    }
+  }
+ else {
+    walkASTMarkTABREF(ast,cteAlias);
+  }
+  if (tableMask.needsRewrite()) {
+    tableMask.applyTableMasking(ctx.getTokenRewriteStream());
+    String rewrittenQuery=ctx.getTokenRewriteStream().toString(ast.getTokenStartIndex(),ast.getTokenStopIndex());
+    ASTNode rewrittenTree;
+    ParseDriver pd=new ParseDriver();
+    try {
+      rewrittenTree=pd.parse(rewrittenQuery);
+    }
+ catch (    ParseException e) {
+      throw new SemanticException(e);
+    }
+    rewrittenTree=ParseUtils.findRootNonNullToken(rewrittenTree);
+    return rewrittenTree;
+  }
+ else {
+    return ast;
+  }
+}

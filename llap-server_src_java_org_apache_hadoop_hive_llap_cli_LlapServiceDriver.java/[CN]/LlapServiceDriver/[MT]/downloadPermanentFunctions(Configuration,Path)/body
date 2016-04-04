@@ -1,0 +1,29 @@
+{
+  Map<String,String> udfs=new HashMap<String,String>();
+  Hive hive=Hive.get(false);
+  ResourceDownloader resourceDownloader=new ResourceDownloader(conf,udfDir.toUri().normalize().getPath());
+  List<Function> fns=hive.getAllFunctions();
+  Set<URI> srcUris=new HashSet<>();
+  for (  Function fn : fns) {
+    String fqfn=fn.getDbName() + "." + fn.getFunctionName();
+    if (udfs.containsKey(fn.getClassName())) {
+      LOG.warn("Duplicate function names found for " + fn.getClassName() + " with "+ fqfn+ " and "+ udfs.get(fn.getClassName()));
+    }
+    udfs.put(fn.getClassName(),fqfn);
+    List<ResourceUri> resources=fn.getResourceUris();
+    if (resources == null || resources.isEmpty()) {
+      LOG.warn("Missing resources for " + fqfn);
+      continue;
+    }
+    for (    ResourceUri resource : resources) {
+      srcUris.add(ResourceDownloader.createURI(resource.getUri()));
+    }
+  }
+  for (  URI srcUri : srcUris) {
+    List<URI> localUris=resourceDownloader.downloadExternal(srcUri,null,false);
+    for (    URI dst : localUris) {
+      LOG.warn("Downloaded " + dst + " from "+ srcUri);
+    }
+  }
+  return udfs.keySet();
+}

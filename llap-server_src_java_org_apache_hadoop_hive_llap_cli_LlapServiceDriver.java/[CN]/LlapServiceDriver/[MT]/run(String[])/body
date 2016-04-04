@@ -80,6 +80,7 @@
   }
   Path libDir=new Path(tmpDir,"lib");
   Path tezDir=new Path(libDir,"tez");
+  Path udfDir=new Path(libDir,"udfs");
   String tezLibs=conf.get(TezConfiguration.TEZ_LIB_URIS);
   if (tezLibs == null) {
     LOG.warn("Missing tez.lib.uris in tez-site.xml");
@@ -130,6 +131,13 @@
       }
     }
   }
+  final Set<String> allowedUdfs;
+  if (HiveConf.getBoolVar(conf,HiveConf.ConfVars.LLAP_ALLOW_PERMANENT_FNS)) {
+    allowedUdfs=downloadPermanentFunctions(conf,udfDir);
+  }
+ else {
+    allowedUdfs=Collections.emptySet();
+  }
   String java_home;
   if (options.getJavaPath() == null || options.getJavaPath().isEmpty()) {
     java_home=System.getenv("JAVA_HOME");
@@ -164,6 +172,11 @@
   createLlapDaemonConfig(lfs,confPath,conf,propsDirectOptions,options.getConfig());
   InputStream loggerContent=logger.openStream();
   IOUtils.copyBytes(loggerContent,lfs.create(new Path(confPath,"llap-daemon-log4j2.properties"),true),conf,true);
+  PrintWriter udfStream=new PrintWriter(lfs.create(new Path(confPath,StaticPermanentFunctionChecker.PERMANENT_FUNCTIONS_LIST)));
+  for (  String udfClass : allowedUdfs) {
+    udfStream.println(udfClass);
+  }
+  udfStream.close();
   JSONObject configs=new JSONObject();
   configs.put("java.home",java_home);
   configs.put(ConfVars.LLAP_DAEMON_YARN_CONTAINER_MB.varname,HiveConf.getIntVar(conf,ConfVars.LLAP_DAEMON_YARN_CONTAINER_MB));

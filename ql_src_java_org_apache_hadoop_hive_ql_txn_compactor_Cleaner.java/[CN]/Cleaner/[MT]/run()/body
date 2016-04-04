@@ -4,9 +4,28 @@
   }
   do {
     boolean setLooped=!looped.get();
-    long startedAt=System.currentTimeMillis();
+    TxnStore.MutexAPI.LockHandle handle=null;
+    long startedAt=-1;
     try {
+      handle=txnHandler.getMutexAPI().acquireLock(TxnStore.MUTEX_KEY.Cleaner.name());
+      startedAt=System.currentTimeMillis();
       List<CompactionInfo> toClean=txnHandler.findReadyToClean();
+{
+        Set<Long> currentToCleanSet=new HashSet<>();
+        for (        CompactionInfo ci : toClean) {
+          currentToCleanSet.add(ci.id);
+        }
+        Set<Long> cleanPerformedByOthers=new HashSet<>();
+        for (        long id : compactId2CompactInfoMap.keySet()) {
+          if (!currentToCleanSet.contains(id)) {
+            cleanPerformedByOthers.add(id);
+          }
+        }
+        for (        long id : cleanPerformedByOthers) {
+          compactId2CompactInfoMap.remove(id);
+          compactId2LockMap.remove(id);
+        }
+      }
       if (toClean.size() > 0 || compactId2LockMap.size() > 0) {
         ShowLocksResponse locksResponse=txnHandler.showLocks(new ShowLocksRequest());
         for (        CompactionInfo ci : toClean) {
@@ -53,6 +72,11 @@
     }
  catch (    Throwable t) {
       LOG.error("Caught an exception in the main loop of compactor cleaner, " + StringUtils.stringifyException(t));
+    }
+ finally {
+      if (handle != null) {
+        handle.releaseLocks();
+      }
     }
     if (setLooped) {
       looped.set(true);

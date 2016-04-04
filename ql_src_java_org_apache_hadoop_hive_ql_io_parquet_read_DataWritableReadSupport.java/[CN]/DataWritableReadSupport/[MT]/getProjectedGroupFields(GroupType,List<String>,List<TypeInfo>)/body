@@ -1,26 +1,15 @@
 {
   List<Type> schemaTypes=new ArrayList<Type>();
-  ListIterator columnIterator=colNames.listIterator();
+  ListIterator<String> columnIterator=colNames.listIterator();
   while (columnIterator.hasNext()) {
     TypeInfo colType=colTypes.get(columnIterator.nextIndex());
-    String colName=(String)columnIterator.next();
+    String colName=columnIterator.next();
     Type fieldType=getFieldTypeIgnoreCase(schema,colName);
-    if (fieldType != null) {
-      if (colType.getCategory() == ObjectInspector.Category.STRUCT) {
-        if (fieldType.isPrimitive()) {
-          throw new IllegalStateException("Invalid schema data type, found: PRIMITIVE, expected: STRUCT");
-        }
-        GroupType groupFieldType=fieldType.asGroupType();
-        List<Type> groupFields=getProjectedGroupFields(groupFieldType,((StructTypeInfo)colType).getAllStructFieldNames(),((StructTypeInfo)colType).getAllStructFieldTypeInfos());
-        Type[] typesArray=groupFields.toArray(new Type[0]);
-        schemaTypes.add(Types.buildGroup(groupFieldType.getRepetition()).addFields(typesArray).named(fieldType.getName()));
-      }
- else {
-        schemaTypes.add(fieldType);
-      }
+    if (fieldType == null) {
+      schemaTypes.add(Types.optional(PrimitiveTypeName.BINARY).named(colName));
     }
  else {
-      schemaTypes.add(Types.optional(PrimitiveTypeName.BINARY).named(colName));
+      schemaTypes.add(getProjectedType(colType,fieldType));
     }
   }
   return schemaTypes;

@@ -1,0 +1,39 @@
+{
+  HiveIntervalDayTime result=null;
+  if (strVal == null) {
+    throw new IllegalArgumentException("Interval day-time string was null");
+  }
+  Matcher patternMatcher=PATTERN_MATCHER.get();
+  patternMatcher.reset(strVal);
+  if (patternMatcher.matches()) {
+    try {
+      int sign=1;
+      String field=patternMatcher.group(1);
+      if (field != null && field.equals("-")) {
+        sign=-1;
+      }
+      int days=sign * IntervalDayTimeUtils.parseNumericValueWithRange("day",patternMatcher.group(2),0,Integer.MAX_VALUE);
+      byte hours=(byte)(sign * IntervalDayTimeUtils.parseNumericValueWithRange("hour",patternMatcher.group(3),0,23));
+      byte minutes=(byte)(sign * IntervalDayTimeUtils.parseNumericValueWithRange("minute",patternMatcher.group(4),0,59));
+      int seconds=0;
+      int nanos=0;
+      field=patternMatcher.group(5);
+      if (field != null) {
+        BigDecimal bdSeconds=new BigDecimal(field);
+        if (bdSeconds.compareTo(IntervalDayTimeUtils.MAX_INT_BD) > 0) {
+          throw new IllegalArgumentException("seconds value of " + bdSeconds + " too large");
+        }
+        seconds=sign * bdSeconds.intValue();
+        nanos=sign * bdSeconds.subtract(new BigDecimal(bdSeconds.toBigInteger())).multiply(IntervalDayTimeUtils.NANOS_PER_SEC_BD).intValue();
+      }
+      result=new HiveIntervalDayTime(days,hours,minutes,seconds,nanos);
+    }
+ catch (    Exception err) {
+      throw new IllegalArgumentException("Error parsing interval day-time string: " + strVal,err);
+    }
+  }
+ else {
+    throw new IllegalArgumentException("Interval string does not match day-time format of 'd h:m:s.n': " + strVal);
+  }
+  return result;
+}

@@ -45,27 +45,24 @@
       List<Long> txnids=new ArrayList<>();
       while (rs.next())       txnids.add(rs.getLong(1));
       if (txnids.size() > 0) {
-        StringBuilder buf=new StringBuilder();
-        buf.append("delete from TXN_COMPONENTS where tc_txnid in (");
-        boolean first=true;
-        for (        long id : txnids) {
-          if (first)           first=false;
- else           buf.append(", ");
-          buf.append(id);
-        }
-        buf.append(") and tc_database = '");
-        buf.append(info.dbname);
-        buf.append("' and tc_table = '");
-        buf.append(info.tableName);
-        buf.append("'");
+        List<String> queries=new ArrayList<String>();
+        StringBuilder prefix=new StringBuilder();
+        StringBuilder suffix=new StringBuilder();
+        prefix.append("delete from TXN_COMPONENTS where ");
+        suffix.append(" and tc_database = ");
+        suffix.append(quoteString(info.dbname));
+        suffix.append(" and tc_table = ");
+        suffix.append(quoteString(info.tableName));
         if (info.partName != null) {
-          buf.append(" and tc_partition = '");
-          buf.append(info.partName);
-          buf.append("'");
+          suffix.append(" and tc_partition = ");
+          suffix.append(quoteString(info.partName));
         }
-        LOG.debug("Going to execute update <" + buf.toString() + ">");
-        int rc=stmt.executeUpdate(buf.toString());
-        LOG.debug("Removed " + rc + " records from txn_components");
+        TxnUtils.buildQueryWithINClause(conf,queries,prefix,suffix,txnids,"tc_txnid",true,false);
+        for (        String query : queries) {
+          LOG.debug("Going to execute update <" + query + ">");
+          int rc=stmt.executeUpdate(query);
+          LOG.debug("Removed " + rc + " records from txn_components");
+        }
       }
       LOG.debug("Going to commit");
       dbConn.commit();

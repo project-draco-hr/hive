@@ -17,8 +17,19 @@
     }
     serverNode=serverHosts.get(randomizer.nextInt(serverHosts.size()));
     connParams.setCurrentHostZnodePath(serverNode);
-    String serverConfStr=new String(zooKeeperClient.getData().forPath("/" + zooKeeperNamespace + "/"+ serverNode),Charset.forName("UTF-8"));
-    applyConfs(serverConfStr,connParams);
+    String dataStr=new String(zooKeeperClient.getData().forPath("/" + zooKeeperNamespace + "/"+ serverNode),Charset.forName("UTF-8"));
+    Matcher matcher=kvPattern.matcher(dataStr);
+    if ((dataStr != null) && (!matcher.find())) {
+      String[] split=dataStr.split(":");
+      if (split.length != 2) {
+        throw new ZooKeeperHiveClientException("Unable to read HiveServer2 uri from ZooKeeper: " + dataStr);
+      }
+      connParams.setHost(split[0]);
+      connParams.setPort(Integer.parseInt(split[1]));
+    }
+ else {
+      applyConfs(dataStr,connParams);
+    }
   }
  catch (  Exception e) {
     throw new ZooKeeperHiveClientException("Unable to read HiveServer2 configs from ZooKeeper",e);

@@ -1,0 +1,52 @@
+{
+  Queue<Node> queue=new LinkedList<>();
+  queue.add(ast);
+  while (!queue.isEmpty()) {
+    ASTNode astNode=(ASTNode)queue.poll();
+    if (astNode.getToken().getType() == HiveParser.TOK_TABREF) {
+      int aliasIndex=0;
+      StringBuffer additionalTabInfo=new StringBuffer();
+      for (int index=1; index < astNode.getChildCount(); index++) {
+        ASTNode ct=(ASTNode)astNode.getChild(index);
+        if (ct.getToken().getType() == HiveParser.TOK_TABLEBUCKETSAMPLE || ct.getToken().getType() == HiveParser.TOK_TABLESPLITSAMPLE || ct.getToken().getType() == HiveParser.TOK_TABLEPROPERTIES) {
+          additionalTabInfo.append(ctx.getTokenRewriteStream().toString(ct.getTokenStartIndex(),ct.getTokenStopIndex()));
+        }
+ else {
+          aliasIndex=index;
+        }
+      }
+      ASTNode tableTree=(ASTNode)(astNode.getChild(0));
+      String tabIdName=getUnescapedName(tableTree);
+      String alias;
+      if (aliasIndex != 0) {
+        alias=unescapeIdentifier(astNode.getChild(aliasIndex).getText());
+      }
+ else {
+        alias=getUnescapedUnqualifiedTableName(tableTree);
+      }
+      if (cteAlias.contains(tabIdName)) {
+        continue;
+      }
+      String replacementText=null;
+      Table table=null;
+      try {
+        table=getMetaDataTableObjectByName(tabIdName);
+      }
+ catch (      HiveException e) {
+        throw new SemanticException("Table " + tabIdName + " is not found.");
+      }
+      if (tableMask.needTransform(table.getDbName(),table.getTableName())) {
+        replacementText=tableMask.create(table,additionalTabInfo.toString(),alias);
+      }
+      if (replacementText != null) {
+        tableMask.setNeedsRewrite(true);
+        tableMask.addTableMasking(astNode,replacementText);
+      }
+    }
+    if (astNode.getChildCount() > 0 && !ignoredTokens.contains(astNode.getToken().getType())) {
+      for (      Node child : astNode.getChildren()) {
+        queue.offer(child);
+      }
+    }
+  }
+}
