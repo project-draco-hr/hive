@@ -1,6 +1,7 @@
 {
   Queue<Node> queue=new LinkedList<>();
   queue.add(ast);
+  Map<HivePrivilegeObject,MaskAndFilterInfo> basicInfos=new LinkedHashMap<>();
   while (!queue.isEmpty()) {
     ASTNode astNode=(ASTNode)queue.poll();
     if (astNode.getToken().getType() == HiveParser.TOK_TABREF) {
@@ -35,18 +36,27 @@
  catch (      HiveException e) {
         throw new SemanticException("Table " + tabIdName + " is not found.");
       }
-      if (tableMask.needTransform(table.getDbName(),table.getTableName())) {
-        replacementText=tableMask.create(table,additionalTabInfo.toString(),alias);
+      List<String> columns=new ArrayList<>();
+      for (      FieldSchema col : table.getAllCols()) {
+        columns.add(col.getName());
       }
-      if (replacementText != null) {
-        tableMask.setNeedsRewrite(true);
-        tableMask.addTableMasking(astNode,replacementText);
-      }
+      basicInfos.put(new HivePrivilegeObject(table.getDbName(),table.getTableName(),columns),new MaskAndFilterInfo(additionalTabInfo.toString(),alias,astNode));
     }
     if (astNode.getChildCount() > 0 && !ignoredTokens.contains(astNode.getToken().getType())) {
       for (      Node child : astNode.getChildren()) {
         queue.offer(child);
       }
+    }
+  }
+  List<HivePrivilegeObject> basicPrivObjs=new ArrayList<>();
+  basicPrivObjs.addAll(basicInfos.keySet());
+  List<HivePrivilegeObject> needRewritePrivObjs=tableMask.applyRowFilterAndColumnMasking(basicPrivObjs);
+  if (needRewritePrivObjs != null && !needRewritePrivObjs.isEmpty()) {
+    tableMask.setNeedsRewrite(true);
+    for (    HivePrivilegeObject privObj : needRewritePrivObjs) {
+      MaskAndFilterInfo info=basicInfos.get(privObj);
+      String replacementText=tableMask.create(privObj,info);
+      tableMask.addTableMasking(info.astNode,replacementText);
     }
   }
 }
