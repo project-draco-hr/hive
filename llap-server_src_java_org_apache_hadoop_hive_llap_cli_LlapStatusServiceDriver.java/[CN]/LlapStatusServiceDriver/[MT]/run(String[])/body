@@ -1,0 +1,77 @@
+{
+  SliderClient sliderClient=null;
+  try {
+    LlapStatusOptionsProcessor optionsProcessor=new LlapStatusOptionsProcessor();
+    LlapStatusOptions options;
+    try {
+      options=optionsProcessor.processOptions(args);
+    }
+ catch (    Exception e) {
+      LOG.info("Failed to parse arguments",e);
+      return ExitCode.INCORRECT_USAGE.getInt();
+    }
+    for (    String f : LlapDaemonConfiguration.DAEMON_CONFIGS) {
+      conf.addResource(f);
+    }
+    conf.reloadConfiguration();
+    try {
+      sliderClient=createSliderClient();
+    }
+ catch (    LlapStatusCliException e) {
+      logError(e);
+      return e.getExitCode().getInt();
+    }
+    ApplicationReport appReport=null;
+    try {
+      appReport=getAppReport(options,sliderClient,FIND_YARN_APP_TIMEOUT);
+    }
+ catch (    LlapStatusCliException e) {
+      logError(e);
+      return e.getExitCode().getInt();
+    }
+    ExitCode ret;
+    try {
+      ret=processAppReport(appReport,appStatusBuilder);
+    }
+ catch (    LlapStatusCliException e) {
+      logError(e);
+      return e.getExitCode().getInt();
+    }
+    if (ret != ExitCode.SUCCESS) {
+      return ret.getInt();
+    }
+ else     if (EnumSet.of(State.APP_NOT_FOUND,State.COMPLETE,State.LAUNCHING).contains(appStatusBuilder.getState())) {
+      return ExitCode.SUCCESS.getInt();
+    }
+ else {
+      try {
+        ret=populateAppStatusFromSlider(options,sliderClient,appStatusBuilder);
+      }
+ catch (      LlapStatusCliException e) {
+        logError(e);
+        return e.getExitCode().getInt();
+      }
+    }
+    if (ret != ExitCode.SUCCESS) {
+      return ret.getInt();
+    }
+ else {
+      try {
+        ret=populateAppStatusFromLlapRegistry(options,appStatusBuilder);
+      }
+ catch (      LlapStatusCliException e) {
+        logError(e);
+        return e.getExitCode().getInt();
+      }
+    }
+    return ret.getInt();
+  }
+  finally {
+    if (LOG.isTraceEnabled()) {
+      LOG.trace("Final AppState: " + appStatusBuilder.toString());
+    }
+    if (sliderClient != null) {
+      sliderClient.stop();
+    }
+  }
+}
