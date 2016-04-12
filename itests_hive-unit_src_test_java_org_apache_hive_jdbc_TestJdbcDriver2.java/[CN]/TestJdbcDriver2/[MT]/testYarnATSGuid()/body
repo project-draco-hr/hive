@@ -1,0 +1,55 @@
+{
+  String udfName=SleepUDF.class.getName();
+  Statement stmt1=con.createStatement();
+  stmt1.execute("create temporary function sleepUDF as '" + udfName + "'");
+  stmt1.close();
+  final Statement stmt=con.createStatement();
+  final Holder<Boolean> yarnATSGuidSet=new Holder<Boolean>(){
+    public Boolean b=false;
+    public void set(    Boolean b){
+      this.b=b;
+    }
+    public Boolean get(){
+      return this.b;
+    }
+  }
+;
+  Thread tExecute=new Thread(new Runnable(){
+    @Override public void run(){
+      try {
+        System.out.println("Executing query: ");
+        stmt.executeQuery("select sleepUDF(t1.under_col) as u0, t1.under_col as u1, " + "t2.under_col as u2 from " + tableName + " t1 join "+ tableName+ " t2 on t1.under_col = t2.under_col");
+      }
+ catch (      SQLException e) {
+      }
+    }
+  }
+);
+  Thread tGuid=new Thread(new Runnable(){
+    @Override public void run(){
+      try {
+        Thread.sleep(10000);
+      }
+ catch (      InterruptedException e) {
+        e.printStackTrace();
+      }
+      String atsGuid=((HiveStatement)stmt).getYarnATSGuid();
+      if (atsGuid != null) {
+        yarnATSGuidSet.set(true);
+        System.out.println("Yarn ATS GUID: " + atsGuid);
+      }
+ else {
+        yarnATSGuidSet.set(false);
+      }
+    }
+  }
+);
+  tExecute.start();
+  tGuid.start();
+  tExecute.join();
+  tGuid.join();
+  if (!yarnATSGuidSet.get()) {
+    fail("Failed to set the YARN ATS Guid");
+  }
+  stmt.close();
+}
