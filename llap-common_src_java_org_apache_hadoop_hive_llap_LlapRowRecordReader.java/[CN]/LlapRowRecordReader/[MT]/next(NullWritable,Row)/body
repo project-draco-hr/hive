@@ -1,0 +1,44 @@
+{
+  Preconditions.checkArgument(value != null);
+  if (serde == null) {
+    try {
+      serde=initSerDe(conf);
+    }
+ catch (    SerDeException err) {
+      throw new IOException(err);
+    }
+  }
+  boolean hasNext=reader.next(key,textData);
+  if (hasNext) {
+    Object rowObj;
+    try {
+      StructObjectInspector rowOI=(StructObjectInspector)serde.getObjectInspector();
+      rowObj=serde.deserialize(textData);
+      List<? extends StructField> colFields=rowOI.getAllStructFieldRefs();
+      for (int idx=0; idx < colFields.size(); ++idx) {
+        StructField field=colFields.get(idx);
+        Object colValue=rowOI.getStructFieldData(rowObj,field);
+        Preconditions.checkState(field.getFieldObjectInspector().getCategory() == Category.PRIMITIVE,"Cannot handle non-primitive column type " + field.getFieldObjectInspector().getTypeName());
+        PrimitiveObjectInspector poi=(PrimitiveObjectInspector)field.getFieldObjectInspector();
+switch (poi.getPrimitiveCategory()) {
+case CHAR:
+          value.setValue(idx,((HiveCharWritable)poi.getPrimitiveWritableObject(colValue)).getPaddedValue());
+        break;
+case VARCHAR:
+      value.setValue(idx,((HiveVarcharWritable)poi.getPrimitiveWritableObject(colValue)).getTextValue());
+    break;
+default :
+  value.setValue(idx,(Writable)poi.getPrimitiveWritableObject(colValue));
+break;
+}
+}
+}
+ catch (SerDeException err) {
+if (LOG.isDebugEnabled()) {
+LOG.debug("Error deserializing row from text: " + textData);
+}
+throw new IOException("Error deserializing row data",err);
+}
+}
+return hasNext;
+}
