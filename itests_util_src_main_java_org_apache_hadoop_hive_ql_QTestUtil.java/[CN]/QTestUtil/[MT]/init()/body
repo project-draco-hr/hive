@@ -1,12 +1,37 @@
 {
+  LOG.info("init");
   testWarehouse=conf.getVar(HiveConf.ConfVars.METASTOREWAREHOUSE);
+  LOG.info("TestWarehouseDir set to: [{}]",testWarehouse);
+  if (attemptingCacheUsage) {
+    String metaStoreConnectUrl=conf.getVar(ConfVars.METASTORECONNECTURLKEY);
+    LOG.info("MetastoreConnectUrl: " + metaStoreConnectUrl);
+    metaStorePathString=getDerbyDbPath(metaStoreConnectUrl);
+    if (metaStorePathString == null) {
+      LOG.warn("Disabling attempted cache usage since metastore path cannot be determined from {}",metaStoreConnectUrl);
+      attemptingCacheUsage=false;
+    }
+ else {
+      LOG.info("Metastore url path: " + metaStorePathString);
+      metaStorePath=new Path(metaStorePathString);
+      if (metaStorePath.isAbsolute() && metaStorePathString.split(File.separator).length >= 3) {
+        localFs=FileSystem.getLocal(conf).getRaw();
+        assert(TEST_BUILD_DIR != null);
+        cachedDataPath=new Path(TEST_BUILD_DIR,CACHED_DATA_DIR_NAME);
+        cachedDataPath=new Path(cachedDataPath,driverName);
+        LOG.info("Using cachedDataPath: " + cachedDataPath);
+      }
+ else {
+        LOG.warn("Disableing attempted cache usage since metastore path may not be absolute, or depth is < 3. MetaStorePath={}",metaStorePathString);
+        metaStorePath=null;
+        attemptingCacheUsage=false;
+      }
+    }
+  }
   String execEngine=conf.get("hive.execution.engine");
   conf.set("hive.execution.engine","mr");
   SessionState.start(conf);
   conf.set("hive.execution.engine",execEngine);
-  db=Hive.get(conf);
-  drv=new Driver(conf);
-  drv.init();
-  pd=new ParseDriver();
-  sem=new SemanticAnalyzer(conf);
+  if (!attemptingCacheUsage) {
+    setupDbsEtc(true,true);
+  }
 }

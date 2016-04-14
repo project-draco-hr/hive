@@ -6,31 +6,11 @@
   if (System.getenv(QTEST_LEAVE_FILES) != null) {
     return;
   }
-  clearTablesCreatedDuringTests();
-  clearKeysCreatedInTests();
-  File cleanupFile=new File(cleanupScript);
-  if (cleanupFile.isFile()) {
-    String cleanupCommands=readEntireFileIntoString(cleanupFile);
-    LOG.info("Cleanup (" + cleanupScript + "):\n"+ cleanupCommands);
-    if (cliDriver == null) {
-      cliDriver=new CliDriver();
-    }
-    SessionState.get().getConf().setBoolean("hive.test.shutdown.phase",true);
-    cliDriver.processLine(cleanupCommands);
-    SessionState.get().getConf().setBoolean("hive.test.shutdown.phase",false);
+  if (!attemptingCacheUsage) {
+    cleanupNonCacheUsage();
   }
  else {
-    LOG.info("No cleanup script detected. Skipping.");
-  }
-  Path p=new Path(testWarehouse);
-  FileSystem fs=p.getFileSystem(conf);
-  try {
-    FileStatus[] ls=fs.listStatus(p);
-    for (int i=0; (ls != null) && (i < ls.length); i++) {
-      fs.delete(ls[i].getPath(),true);
-    }
-  }
- catch (  FileNotFoundException e) {
+    cleanupCacheUsage();
   }
   FunctionRegistry.unregisterTemporaryUDF("test_udaf");
   FunctionRegistry.unregisterTemporaryUDF("test_error");

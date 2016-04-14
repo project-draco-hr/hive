@@ -1,0 +1,45 @@
+{
+  Path cachedWarehousePath=new Path(cachedDataPath,"warehouse");
+  Path cachedMetaStorePtah=new Path(cachedDataPath,"metastore");
+  if (localFs.exists(cachedDataPath)) {
+    if (localFs.exists(cachedWarehousePath) && localFs.exists(cachedMetaStorePtah)) {
+      LOG.info("Cached data found in {}. Attempting to use it",cachedDataPath);
+      Path warehousePath=new Path(testWarehouse);
+      FileSystem warehouseFs=warehousePath.getFileSystem(conf);
+      try {
+        warehouseFs.delete(warehousePath,false);
+      }
+ catch (      FileNotFoundException e) {
+      }
+      warehouseFs.copyFromLocalFile(false,cachedWarehousePath,warehousePath);
+      try {
+        localFs.delete(metaStorePath,false);
+      }
+ catch (      IOException e) {
+      }
+      localFs.copyFromLocalFile(false,cachedMetaStorePtah,metaStorePath);
+      setupDbsEtc(true,false);
+      cliDriver.processLine("set test.data.dir=" + testFiles + ";");
+      conf.setBoolean("hive.test.init.phase",true);
+      return;
+    }
+ else {
+      LOG.info("Partial or no cached data found at {}. Cache will be created",cachedDataPath);
+      localFs.delete(cachedDataPath,true);
+    }
+  }
+ else {
+    LOG.info("No cached data found at {}. Cache will be created",cachedDataPath);
+  }
+  setupDbsEtc(true,true);
+  cliDriver.processLine("set test.data.dir=" + testFiles + ";");
+  conf.setBoolean("hive.test.init.phase",true);
+  createSourcesNonCached(scriptFile);
+  Hive.closeCurrent();
+  localFs.mkdirs(cachedDataPath);
+  Path warehousePath=new Path(testWarehouse);
+  FileSystem warehouseFs=warehousePath.getFileSystem(conf);
+  warehouseFs.copyToLocalFile(false,warehousePath,cachedWarehousePath,true);
+  localFs.copyToLocalFile(false,metaStorePath,cachedMetaStorePtah,true);
+  setupDbsEtc(true,false);
+}
