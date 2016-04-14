@@ -1,8 +1,4 @@
 {
-  ObjectInspector inspector;
-synchronized (TestVectorOrcFile.class) {
-    inspector=ObjectInspectorFactory.getReflectionObjectInspector(Timestamp.class,ObjectInspectorFactory.ObjectInspectorOptions.JAVA);
-  }
   TypeDescription schema=TypeDescription.createTimestamp();
   Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).setSchema(schema).stripeSize(100000).bufferSize(10000).version(org.apache.orc.OrcFile.Version.V_0_11));
   List<Timestamp> tslist=Lists.newArrayList();
@@ -30,11 +26,14 @@ synchronized (TestVectorOrcFile.class) {
   writer.addRowBatch(batch);
   writer.close();
   Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf).filesystem(fs));
-  RecordReader rows=reader.rows(null);
+  RecordReader rows=reader.rows();
+  batch=reader.getSchema().createRowBatch();
+  TimestampColumnVector timestamps=(TimestampColumnVector)batch.cols[0];
   int idx=0;
-  while (rows.hasNext()) {
-    Object row=rows.next(null);
-    assertEquals(tslist.get(idx++).getNanos(),((TimestampWritable)row).getNanos());
+  while (rows.nextBatch(batch)) {
+    for (int r=0; r < batch.size; ++r) {
+      assertEquals(tslist.get(idx++).getNanos(),timestamps.asScratchTimestamp(r).getNanos());
+    }
   }
   assertEquals(tslist.size(),rows.getRowNumber());
   assertEquals(0,writer.getSchema().getMaximumId());

@@ -37,32 +37,36 @@
   writer.close();
   Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf));
   RecordReader rows=reader.rows();
-  OrcStruct row=null;
+  batch=reader.getSchema().createRowBatch();
+  map=(MapColumnVector)batch.cols[0];
+  rows.nextBatch(batch);
+  assertEquals(1024,batch.size);
   for (int r=0; r < 1024; ++r) {
-    assertEquals(true,rows.hasNext());
-    row=(OrcStruct)rows.next(row);
-    Map inner=(Map)row.getFieldValue(0);
+    StringBuilder buffer=new StringBuilder();
+    map.stringifyValue(buffer,r);
+    String actual=buffer.toString();
     if (r < 200) {
-      assertEquals("row " + r,null,inner);
+      assertEquals("row " + r,"null",actual);
     }
  else     if (r < 300) {
-      assertEquals("row " + r,"{" + (r - 200) + "="+ ((r - 200) * 10)+ "}",inner.toString());
+      assertEquals("row " + r,"[{\"key\": " + (r - 200) + ", \"value\": "+ ((r - 200) * 10)+ "}]",actual);
     }
  else     if (r < 400) {
-      assertEquals("row " + r,null,inner);
+      assertEquals("row " + r,"null",actual);
     }
  else     if (r < 500) {
-      assertEquals("row " + r,"{" + (r - 300) + "="+ ((r - 300) * 10)+ "}",inner.toString());
+      assertEquals("row " + r,"[{\"key\": " + (r - 300) + ", \"value\": "+ ((r - 300) * 10)+ "}]",actual);
     }
  else     if (r < 600) {
-      assertEquals("row " + r,null,inner);
+      assertEquals("row " + r,"null",actual);
     }
  else     if (r < 700) {
-      assertEquals("row " + r,"{" + r + "="+ (r * 10)+ ", "+ (r + 1)+ "="+ (10 * (r + 1))+ "}",inner.toString());
+      assertEquals("row " + r,"[{\"key\": " + r + ", \"value\": "+ (r * 10)+ "}, {\"key\": "+ (r + 1)+ ", \"value\": "+ (10 * (r + 1))+ "}]",actual);
     }
  else {
-      assertEquals("row " + r,null,inner);
+      assertEquals("row " + r,"null",actual);
     }
   }
-  assertEquals(false,rows.hasNext());
+  rows.nextBatch(batch);
+  assertEquals(0,batch.size);
 }
