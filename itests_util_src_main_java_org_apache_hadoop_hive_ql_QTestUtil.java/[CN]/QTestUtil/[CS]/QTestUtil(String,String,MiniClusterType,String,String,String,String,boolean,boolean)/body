@@ -1,3 +1,83 @@
 {
-  this(outDir,logDir,clusterType,confDir,hadoopVer,initScript,cleanupScript,useHBaseMetastore,withLlapIo,null);
+  this.outDir=outDir;
+  this.logDir=logDir;
+  this.useHBaseMetastore=useHBaseMetastore;
+  if (confDir != null && !confDir.isEmpty()) {
+    HiveConf.setHiveSiteLocation(new URL("file://" + new File(confDir).toURI().getPath() + "/hive-site.xml"));
+    System.out.println("Setting hive-site: " + HiveConf.getHiveSiteLocation());
+  }
+  if (useHBaseMetastore) {
+    startMiniHBaseCluster();
+  }
+ else {
+    conf=new HiveConf(Driver.class);
+  }
+  this.hadoopVer=getHadoopMainVersion(hadoopVer);
+  qMap=new TreeMap<String,String>();
+  qSkipSet=new HashSet<String>();
+  qSortSet=new HashSet<String>();
+  qSortQuerySet=new HashSet<String>();
+  qHashQuerySet=new HashSet<String>();
+  qSortNHashQuerySet=new HashSet<String>();
+  qNoSessionReuseQuerySet=new HashSet<String>();
+  qJavaVersionSpecificOutput=new HashSet<String>();
+  QTestUtil.clusterType=clusterType;
+  HadoopShims shims=ShimLoader.getHadoopShims();
+  int numberOfDataNodes=4;
+  if (clusterType != MiniClusterType.none && clusterType != MiniClusterType.spark) {
+    FileSystem fs=null;
+    if (clusterType == MiniClusterType.encrypted) {
+      conf.set(SECURITY_KEY_PROVIDER_URI_NAME,getKeyProviderURI());
+      conf.setInt("fs.trash.interval",50);
+      dfs=shims.getMiniDfs(conf,numberOfDataNodes,true,null);
+      fs=dfs.getFileSystem();
+      hes=shims.createHdfsEncryptionShim(fs,conf);
+      LOG.info("key provider is initialized");
+    }
+ else {
+      dfs=shims.getMiniDfs(conf,numberOfDataNodes,true,null);
+      fs=dfs.getFileSystem();
+    }
+    setup=new QTestSetup();
+    setup.preTest(conf);
+    String uriString=WindowsPathUtil.getHdfsUriString(fs.getUri().toString());
+    if (clusterType == MiniClusterType.tez) {
+      if (confDir != null && !confDir.isEmpty()) {
+        conf.addResource(new URL("file://" + new File(confDir).toURI().getPath() + "/tez-site.xml"));
+      }
+      mr=shims.getMiniTezCluster(conf,4,uriString);
+    }
+ else     if (clusterType == MiniClusterType.llap) {
+      llapCluster=LlapItUtils.startAndGetMiniLlapCluster(conf,setup.zooKeeperCluster,confDir);
+      mr=shims.getMiniTezCluster(conf,2,uriString);
+    }
+ else     if (clusterType == MiniClusterType.miniSparkOnYarn) {
+      mr=shims.getMiniSparkCluster(conf,4,uriString,1);
+    }
+ else {
+      mr=shims.getMiniMrCluster(conf,4,uriString,1);
+    }
+  }
+ else {
+    setup=new QTestSetup();
+    setup.preTest(conf);
+  }
+  initConf();
+  if (withLlapIo && clusterType == MiniClusterType.none) {
+    LOG.info("initializing llap IO");
+    LlapProxy.initializeLlapIo(conf);
+  }
+  String dataDir=conf.get("test.data.files");
+  if (dataDir == null) {
+    dataDir=new File(".").getAbsolutePath() + "/data/files";
+  }
+  testFiles=dataDir;
+  String scriptsDir=conf.get("test.data.scripts");
+  if (scriptsDir == null) {
+    scriptsDir=new File(".").getAbsolutePath() + "/data/scripts";
+  }
+  this.initScript=scriptsDir + File.separator + initScript;
+  this.cleanupScript=scriptsDir + File.separator + cleanupScript;
+  overWrite="true".equalsIgnoreCase(System.getProperty("test.output.overwrite"));
+  init();
 }
