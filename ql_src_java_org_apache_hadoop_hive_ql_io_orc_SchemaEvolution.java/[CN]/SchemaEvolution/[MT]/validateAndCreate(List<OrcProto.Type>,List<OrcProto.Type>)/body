@@ -1,0 +1,49 @@
+{
+  final boolean isAcid=checkAcidSchema(fileTypes);
+  final List<OrcProto.Type> rowSchema;
+  int rowSubtype;
+  if (isAcid) {
+    rowSubtype=OrcRecordUpdater.ROW + 1;
+    rowSchema=fileTypes.subList(rowSubtype,fileTypes.size());
+  }
+ else {
+    rowSubtype=0;
+    rowSchema=fileTypes;
+  }
+  int numFileColumns=rowSchema.get(0).getSubtypesCount();
+  int numDesiredColumns=schemaTypes.get(0).getSubtypesCount();
+  int numReadColumns=Math.min(numFileColumns,numDesiredColumns);
+  for (int i=0; i < numReadColumns; i++) {
+    OrcProto.Type fColType=fileTypes.get(rowSubtype + i);
+    OrcProto.Type rColType=schemaTypes.get(i);
+    if (!fColType.getKind().equals(rColType.getKind())) {
+      boolean ok=false;
+      if (fColType.getKind().equals(OrcProto.Type.Kind.SHORT)) {
+        if (rColType.getKind().equals(OrcProto.Type.Kind.INT) || rColType.getKind().equals(OrcProto.Type.Kind.LONG)) {
+          ok=true;
+        }
+      }
+ else       if (fColType.getKind().equals(OrcProto.Type.Kind.INT)) {
+        if (rColType.getKind().equals(OrcProto.Type.Kind.LONG)) {
+          ok=true;
+        }
+      }
+      if (!ok) {
+        throw new IOException("ORC does not support type conversion from " + fColType.getKind().name() + " to "+ rColType.getKind().name());
+      }
+    }
+  }
+  List<OrcProto.Type> fullSchemaTypes;
+  if (isAcid) {
+    fullSchemaTypes=new ArrayList<OrcProto.Type>();
+    for (int i=0; i < rowSubtype; i++) {
+      fullSchemaTypes.add(fileTypes.get(i).toBuilder().build());
+    }
+    OrcUtils.appendOrcTypesRebuildSubtypes(fullSchemaTypes,schemaTypes,0);
+  }
+ else {
+    fullSchemaTypes=schemaTypes;
+  }
+  int innerStructSubtype=rowSubtype;
+  return new TreeReaderSchema().fileTypes(fileTypes).schemaTypes(fullSchemaTypes).innerStructSubtype(innerStructSubtype);
+}
