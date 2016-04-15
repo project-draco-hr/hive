@@ -26,7 +26,53 @@
     int beBackoffSlotLength=(int)hiveConf.getTimeVar(HiveConf.ConfVars.HIVE_SERVER2_THRIFT_LOGIN_BEBACKOFF_SLOT_LENGTH,TimeUnit.MILLISECONDS);
     TThreadPoolServer.Args sargs=new TThreadPoolServer.Args(serverSocket).processorFactory(processorFactory).transportFactory(transportFactory).protocolFactory(new TBinaryProtocol.Factory()).inputProtocolFactory(new TBinaryProtocol.Factory(true,true,maxMessageSize,maxMessageSize)).requestTimeout(requestTimeout).requestTimeoutUnit(TimeUnit.SECONDS).beBackoffSlotLength(beBackoffSlotLength).beBackoffSlotLengthUnit(TimeUnit.MILLISECONDS).executorService(executorService);
     server=new TThreadPoolServer(sargs);
-    server.setServerEventHandler(serverEventHandler);
+    server.setServerEventHandler(new TServerEventHandler(){
+      @Override public ServerContext createContext(      TProtocol input,      TProtocol output){
+        Metrics metrics=MetricsFactory.getInstance();
+        if (metrics != null) {
+          try {
+            metrics.incrementCounter(MetricsConstant.OPEN_CONNECTIONS);
+            metrics.incrementCounter(MetricsConstant.CUMULATIVE_CONNECTION_COUNT);
+          }
+ catch (          Exception e) {
+            LOG.warn("Error Reporting JDO operation to Metrics system",e);
+          }
+        }
+        return new ThriftCLIServerContext();
+      }
+      @Override public void deleteContext(      ServerContext serverContext,      TProtocol input,      TProtocol output){
+        Metrics metrics=MetricsFactory.getInstance();
+        if (metrics != null) {
+          try {
+            metrics.decrementCounter(MetricsConstant.OPEN_CONNECTIONS);
+          }
+ catch (          Exception e) {
+            LOG.warn("Error Reporting JDO operation to Metrics system",e);
+          }
+        }
+        ThriftCLIServerContext context=(ThriftCLIServerContext)serverContext;
+        SessionHandle sessionHandle=context.getSessionHandle();
+        if (sessionHandle != null) {
+          LOG.info("Session disconnected without closing properly. ");
+          try {
+            boolean close=cliService.getSessionManager().getSession(sessionHandle).getHiveConf().getBoolVar(ConfVars.HIVE_SERVER2_CLOSE_SESSION_ON_DISCONNECT);
+            LOG.info((close ? "" : "Not ") + "Closing the session: " + sessionHandle);
+            if (close) {
+              cliService.closeSession(sessionHandle);
+            }
+          }
+ catch (          HiveSQLException e) {
+            LOG.warn("Failed to close session: " + e,e);
+          }
+        }
+      }
+      @Override public void preServe(){
+      }
+      @Override public void processContext(      ServerContext serverContext,      TTransport input,      TTransport output){
+        currentServerContext.set(serverContext);
+      }
+    }
+);
     String msg="Starting " + ThriftBinaryCLIService.class.getSimpleName() + " on port "+ portNum+ " with "+ minWorkerThreads+ "..."+ maxWorkerThreads+ " worker threads";
     LOG.info(msg);
     server.serve();
