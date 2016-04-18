@@ -9,6 +9,7 @@
     droneResults.add(mExecutor.submit(new Callable<Void>(){
       @Override public Void call() throws Exception {
         TestBatch batch=null;
+        Stopwatch sw=Stopwatch.createUnstarted();
         try {
           do {
             batch=parallelWorkQueue.poll(mNumPollSeconds,TimeUnit.SECONDS);
@@ -17,8 +18,16 @@
               return null;
             }
             if (batch != null) {
-              if (!executeTestBatch(drone,batch,failedTestResults)) {
-                failedTestResults.add(batch);
+              numParallelBatchesProcessed++;
+              sw.reset().start();
+              try {
+                if (!executeTestBatch(drone,batch,failedTestResults)) {
+                  failedTestResults.add(batch);
+                }
+              }
+  finally {
+                sw.stop();
+                mLogger.info("Finished processing parallel batch [{}] on host {}. ElapsedTime(seconds)={}",new Object[]{batch.getName(),getHost().toShortString(),sw.elapsed(TimeUnit.SECONDS)});
               }
             }
           }
@@ -44,12 +53,21 @@
   mLogger.info("Starting isolated execution on " + mHost.getName());
   for (  Drone drone : ImmutableList.copyOf(mDrones)) {
     TestBatch batch=null;
+    Stopwatch sw=Stopwatch.createUnstarted();
     try {
       do {
         batch=isolatedWorkQueue.poll(mNumPollSeconds,TimeUnit.SECONDS);
         if (batch != null) {
-          if (!executeTestBatch(drone,batch,failedTestResults)) {
-            failedTestResults.add(batch);
+          numIsolatedBatchesProcessed++;
+          sw.reset().start();
+          try {
+            if (!executeTestBatch(drone,batch,failedTestResults)) {
+              failedTestResults.add(batch);
+            }
+          }
+  finally {
+            sw.stop();
+            mLogger.info("Finished processing isolated batch [{}] on host {}. ElapsedTime(seconds)={}",new Object[]{batch.getName(),getHost().toShortString(),sw.elapsed(TimeUnit.SECONDS)});
           }
         }
       }
