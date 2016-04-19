@@ -15,17 +15,20 @@
   writer.close();
   Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf));
   RecordReader rows=reader.rows();
-  OrcStruct row=null;
+  batch=reader.getSchema().createRowBatch();
+  rows.nextBatch(batch);
+  assertEquals(1024,batch.size);
+  StructColumnVector inner=(StructColumnVector)batch.cols[0];
+  LongColumnVector vec=(LongColumnVector)inner.fields[0];
   for (int r=0; r < 1024; ++r) {
-    assertEquals(true,rows.hasNext());
-    row=(OrcStruct)rows.next(row);
-    OrcStruct inner=(OrcStruct)row.getFieldValue(0);
     if (r < 200 || (r >= 400 && r < 600) || r >= 800) {
-      assertEquals("row " + r,null,inner);
+      assertEquals("row " + r,true,inner.isNull[r]);
     }
  else {
-      assertEquals("row " + r,"{" + r + "}",inner.toString());
+      assertEquals("row " + r,false,inner.isNull[r]);
+      assertEquals("row " + r,r,vec.vector[r]);
     }
   }
-  assertEquals(false,rows.hasNext());
+  rows.nextBatch(batch);
+  assertEquals(0,batch.size);
 }

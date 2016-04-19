@@ -1,0 +1,64 @@
+{
+  long numRows=stats.getNumRows();
+  ExprNodeGenericFuncDesc fd=(ExprNodeGenericFuncDesc)pred;
+  List<ExprNodeDesc> children=fd.getChildren();
+  List<ExprNodeDesc> columns=Lists.newArrayList();
+  List<ColStatistics> columnStats=Lists.newArrayList();
+  List<Set<ExprNodeDescEqualityWrapper>> values=Lists.newArrayList();
+  ExprNodeDesc columnsChild=children.get(0);
+  boolean multiColumn;
+  if (columnsChild instanceof ExprNodeGenericFuncDesc && ((ExprNodeGenericFuncDesc)columnsChild).getGenericUDF() instanceof GenericUDFStruct) {
+    for (int j=0; j < columnsChild.getChildren().size(); j++) {
+      ExprNodeDesc columnChild=columnsChild.getChildren().get(j);
+      if (!(columnChild instanceof ExprNodeColumnDesc)) {
+        return numRows / 2;
+      }
+      columns.add(columnChild);
+      final String columnName=((ExprNodeColumnDesc)columnChild).getColumn();
+      if (neededCols != null && !neededCols.contains(columnName)) {
+        return numRows / 2;
+      }
+      columnStats.add(stats.getColumnStatisticsFromColName(columnName));
+      values.add(Sets.<ExprNodeDescEqualityWrapper>newHashSet());
+    }
+    multiColumn=true;
+  }
+ else {
+    if (!(columnsChild instanceof ExprNodeColumnDesc)) {
+      return numRows / 2;
+    }
+    columns.add(columnsChild);
+    final String columnName=((ExprNodeColumnDesc)columnsChild).getColumn();
+    if (neededCols != null && !neededCols.contains(columnName)) {
+      return numRows / 2;
+    }
+    columnStats.add(stats.getColumnStatisticsFromColName(columnName));
+    values.add(Sets.<ExprNodeDescEqualityWrapper>newHashSet());
+    multiColumn=false;
+  }
+  for (int i=1; i < children.size(); i++) {
+    ExprNodeDesc child=children.get(i);
+    if (!(child instanceof ExprNodeConstantDesc)) {
+      return numRows / 2;
+    }
+    if (multiColumn) {
+      ExprNodeConstantDesc constantChild=(ExprNodeConstantDesc)child;
+      List<?> items=(List<?>)constantChild.getWritableObjectInspector().getWritableConstantValue();
+      List<TypeInfo> structTypes=((StructTypeInfo)constantChild.getTypeInfo()).getAllStructFieldTypeInfos();
+      for (int j=0; j < structTypes.size(); j++) {
+        ExprNodeConstantDesc constant=new ExprNodeConstantDesc(structTypes.get(j),items.get(j));
+        values.get(j).add(new ExprNodeDescEqualityWrapper(constant));
+      }
+    }
+ else {
+      values.get(0).add(new ExprNodeDescEqualityWrapper(child));
+    }
+  }
+  float factor=1;
+  for (int i=0; i < columnStats.size(); i++) {
+    long dvs=columnStats.get(i) == null ? 0 : columnStats.get(i).getCountDistint();
+    float columnFactor=dvs == 0 ? 0.5f : ((float)dvs / numRows) * values.get(i).size();
+    factor*=columnFactor;
+  }
+  return Math.round((double)numRows * factor);
+}

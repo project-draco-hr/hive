@@ -1,0 +1,24 @@
+{
+  configureImpersonation(conf);
+  MiniDFSCluster miniDFSCluster;
+  if (isHA) {
+    MiniDFSNNTopology topo=new MiniDFSNNTopology().addNameservice(new MiniDFSNNTopology.NSConf("minidfs").addNN(new MiniDFSNNTopology.NNConf("nn1")).addNN(new MiniDFSNNTopology.NNConf("nn2")));
+    miniDFSCluster=new MiniDFSCluster.Builder(conf).numDataNodes(numDataNodes).format(format).racks(racks).nnTopology(topo).build();
+    miniDFSCluster.waitActive();
+    miniDFSCluster.transitionToActive(0);
+  }
+ else {
+    miniDFSCluster=new MiniDFSCluster.Builder(conf).numDataNodes(numDataNodes).format(format).racks(racks).build();
+  }
+  KeyProviderCryptoExtension keyProvider=miniDFSCluster.getNameNode(0).getNamesystem().getProvider();
+  if (keyProvider != null) {
+    try {
+      setKeyProvider(miniDFSCluster.getFileSystem(0).getClient(),keyProvider);
+    }
+ catch (    Exception err) {
+      throw new IOException(err);
+    }
+  }
+  cluster=new MiniDFSShim(miniDFSCluster);
+  return cluster;
+}

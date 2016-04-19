@@ -1,0 +1,47 @@
+{
+  final BytesColumnVector result=(BytesColumnVector)previousVector;
+  int offset;
+  int length;
+  super.nextVector(result,isNull,batchSize);
+  if (dictionaryBuffer != null) {
+    if (dictionaryBufferInBytesCache == null) {
+      dictionaryBufferInBytesCache=dictionaryBuffer.get();
+    }
+    scratchlcv.isNull=result.isNull;
+    scratchlcv.ensureSize((int)batchSize,false);
+    reader.nextVector(scratchlcv,scratchlcv.vector,batchSize);
+    if (!scratchlcv.isRepeating) {
+      for (int i=0; i < batchSize; i++) {
+        if (!scratchlcv.isNull[i]) {
+          offset=dictionaryOffsets[(int)scratchlcv.vector[i]];
+          length=getDictionaryEntryLength((int)scratchlcv.vector[i],offset);
+          result.setRef(i,dictionaryBufferInBytesCache,offset,length);
+        }
+ else {
+          result.setRef(i,dictionaryBufferInBytesCache,0,0);
+        }
+      }
+    }
+ else {
+      offset=dictionaryOffsets[(int)scratchlcv.vector[0]];
+      length=getDictionaryEntryLength((int)scratchlcv.vector[0],offset);
+      result.setRef(0,dictionaryBufferInBytesCache,offset,length);
+    }
+    result.isRepeating=scratchlcv.isRepeating;
+  }
+ else {
+    if (dictionaryOffsets == null) {
+      result.isRepeating=true;
+      result.noNulls=false;
+      result.isNull[0]=true;
+      result.setRef(0,EMPTY_BYTE_ARRAY,0,0);
+    }
+ else {
+      for (int i=0; i < batchSize; i++) {
+        if (!result.isNull[i]) {
+          result.setRef(i,EMPTY_BYTE_ARRAY,0,0);
+        }
+      }
+    }
+  }
+}

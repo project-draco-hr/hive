@@ -2,7 +2,7 @@
   this.useSSL=HiveConf.getBoolVar(conf,ConfVars.LLAP_DAEMON_WEB_SSL);
   this.useSPNEGO=HiveConf.getBoolVar(conf,ConfVars.LLAP_WEB_AUTO_AUTH);
   String bindAddress="0.0.0.0";
-  HttpServer.Builder builder=new HttpServer.Builder().setName("llap").setPort(this.port).setHost(bindAddress);
+  HttpServer.Builder builder=new HttpServer.Builder("llap").setPort(this.port).setHost(bindAddress);
   builder.setConf(new HiveConf(conf,HiveConf.class));
   if (UserGroupInformation.isSecurityEnabled()) {
     LOG.info("LLAP UI useSSL=" + this.useSSL + ", auto-auth/SPNEGO="+ this.useSPNEGO+ ", port="+ this.port);
@@ -13,8 +13,12 @@
       builder.setSPNEGOKeytab(HiveConf.getVar(conf,ConfVars.LLAP_KERBEROS_KEYTAB_FILE));
     }
   }
+  builder.setContextAttribute(REGISTRY_ATTRIBUTE,registry);
+  builder.setContextAttribute(PARENT_ATTRIBUTE,parent);
   try {
     this.http=builder.build();
+    this.http.addServlet("status","/status",LlapStatusServlet.class);
+    this.http.addServlet("peers","/peers",LlapPeerRegistryServlet.class);
   }
  catch (  IOException e) {
     LOG.warn("LLAP web service failed to come up",e);

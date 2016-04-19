@@ -1,0 +1,57 @@
+{
+  JsonGenerator jg=null;
+  PrintWriter writer=null;
+  final ServletContext context=getServletContext();
+  final LlapRegistryService registry=(LlapRegistryService)context.getAttribute(REGISTRY_ATTRIBUTE);
+  try {
+    if (!HttpServer.isInstrumentationAccessAllowed(context,request,response)) {
+      return;
+    }
+    try {
+      writer=response.getWriter();
+      response.setContentType("application/json; charset=utf8");
+      response.setHeader(ACCESS_CONTROL_ALLOW_METHODS,"GET");
+      response.setHeader(ACCESS_CONTROL_ALLOW_ORIGIN,"*");
+      jg=jsonFactory.createJsonGenerator(writer);
+      jg.disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);
+      jg.useDefaultPrettyPrinter();
+      jg.writeStartObject();
+      if (registry.isDynamic()) {
+        jg.writeBooleanField("dynamic",true);
+      }
+      jg.writeStringField("identity",registry.getWorkerIdentity());
+      jg.writeArrayFieldStart("peers");
+      for (      ServiceInstance s : registry.getInstances().getAllInstancesOrdered()) {
+        jg.writeStartObject();
+        jg.writeStringField("identity",s.getWorkerIdentity());
+        jg.writeStringField("host",s.getHost());
+        jg.writeNumberField("management-port",s.getManagementPort());
+        jg.writeNumberField("rpc-port",s.getRpcPort());
+        jg.writeNumberField("shuffle-port",s.getShufflePort());
+        Resource r=s.getResource();
+        if (r != null) {
+          jg.writeObjectFieldStart("resource");
+          jg.writeNumberField("vcores",r.getVirtualCores());
+          jg.writeNumberField("memory",r.getMemory());
+          jg.writeEndObject();
+        }
+        jg.writeStringField("host",s.getHost());
+        jg.writeEndObject();
+      }
+      jg.writeEndArray();
+      jg.writeEndObject();
+    }
+  finally {
+      if (jg != null) {
+        jg.close();
+      }
+      if (writer != null) {
+        writer.close();
+      }
+    }
+  }
+ catch (  IOException e) {
+    LOG.error("Caught an exception while processing /status request",e);
+    response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+  }
+}

@@ -1,0 +1,87 @@
+{
+  Options opts=createOptions();
+  CommandLine cli=new GnuParser().parse(opts,args);
+  if (cli.hasOption('h')) {
+    HelpFormatter formatter=new HelpFormatter();
+    formatter.printHelp("cleardanglingscratchdir" + " (clear scratch dir left behind by dead HiveCli or HiveServer2)",opts);
+    return;
+  }
+  boolean dryRun=false;
+  boolean verbose=false;
+  if (cli.hasOption("r")) {
+    dryRun=true;
+  }
+  if (cli.hasOption("v")) {
+    verbose=true;
+  }
+  HiveConf conf=new HiveConf();
+  Path rootHDFSDirPath;
+  if (cli.hasOption("s")) {
+    rootHDFSDirPath=new Path(cli.getOptionValue("s"));
+  }
+ else {
+    rootHDFSDirPath=new Path(HiveConf.getVar(conf,HiveConf.ConfVars.SCRATCHDIR));
+  }
+  FileSystem fs=FileSystem.get(rootHDFSDirPath.toUri(),conf);
+  FileStatus[] userHDFSDirList=fs.listStatus(rootHDFSDirPath);
+  List<Path> scratchDirToRemove=new ArrayList<Path>();
+  for (  FileStatus userHDFSDir : userHDFSDirList) {
+    FileStatus[] scratchDirList=fs.listStatus(userHDFSDir.getPath());
+    for (    FileStatus scratchDir : scratchDirList) {
+      Path lockFilePath=new Path(scratchDir.getPath(),SessionState.LOCK_FILE_NAME);
+      if (!fs.exists(lockFilePath)) {
+        String message="Skipping " + scratchDir.getPath() + " since it does not contain "+ SessionState.LOCK_FILE_NAME;
+        if (verbose) {
+          SessionState.getConsole().printInfo(message);
+        }
+ else {
+          SessionState.getConsole().logInfo(message);
+        }
+        continue;
+      }
+      try {
+        IOUtils.closeStream(fs.append(lockFilePath));
+        scratchDirToRemove.add(scratchDir.getPath());
+      }
+ catch (      RemoteException e) {
+        if (AlreadyBeingCreatedException.class.getName().equals(e.getClassName())) {
+          String message=scratchDir.getPath() + " is being used by live process";
+          if (verbose) {
+            SessionState.getConsole().printInfo(message);
+          }
+ else {
+            SessionState.getConsole().logInfo(message);
+          }
+        }
+ else {
+          throw e;
+        }
+      }
+    }
+  }
+  if (scratchDirToRemove.size() == 0) {
+    SessionState.getConsole().printInfo("Cannot find any scratch directory to clear");
+    return;
+  }
+  SessionState.getConsole().printInfo("Removing " + scratchDirToRemove.size() + " scratch directories");
+  for (  Path scratchDir : scratchDirToRemove) {
+    if (dryRun) {
+      System.out.println(scratchDir);
+    }
+ else {
+      boolean succ=fs.delete(scratchDir,true);
+      if (!succ) {
+        SessionState.getConsole().printInfo("Cannot remove " + scratchDir);
+      }
+ else {
+        String message=scratchDir + " removed";
+        if (verbose) {
+          SessionState.getConsole().printInfo(message);
+        }
+ else {
+          SessionState.getConsole().logInfo(message);
+        }
+      }
+    }
+  }
+}

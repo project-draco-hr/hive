@@ -1,0 +1,68 @@
+{
+  Configuration llapRegistryConf=new Configuration(conf);
+  llapRegistryConf.set(HiveConf.ConfVars.LLAP_DAEMON_SERVICE_HOSTS.varname,"@" + options.getName());
+  LlapRegistryService llapRegistry;
+  try {
+    llapRegistry=LlapRegistryService.getClient(llapRegistryConf);
+  }
+ catch (  Exception e) {
+    throw new LlapStatusCliException(ExitCode.LLAP_REGISTRY_ERROR,"Failed to create llap registry client",e);
+  }
+  try {
+    Map<String,ServiceInstance> serviceInstanceMap;
+    try {
+      serviceInstanceMap=llapRegistry.getInstances().getAll();
+    }
+ catch (    IOException e) {
+      throw new LlapStatusCliException(ExitCode.LLAP_REGISTRY_ERROR,"Failed to get instances from llap registry",e);
+    }
+    if (serviceInstanceMap == null || serviceInstanceMap.isEmpty()) {
+      LOG.info("No information found in the LLAP registry");
+      appStatusBuilder.setLiveInstances(0);
+      appStatusBuilder.setState(State.LAUNCHING);
+      appStatusBuilder.clearLlapInstances();
+      return ExitCode.SUCCESS;
+    }
+ else {
+      List<LlapInstance> validatedInstances=new LinkedList<>();
+      List<String> llapExtraInstances=new LinkedList<>();
+      for (      Map.Entry<String,ServiceInstance> serviceInstanceEntry : serviceInstanceMap.entrySet()) {
+        ServiceInstance serviceInstance=serviceInstanceEntry.getValue();
+        String containerIdString=serviceInstance.getProperties().get(HiveConf.ConfVars.LLAP_DAEMON_CONTAINER_ID.varname);
+        LlapInstance llapInstance=appStatusBuilder.removeAndgetLlapInstanceForContainer(containerIdString);
+        if (llapInstance != null) {
+          llapInstance.setMgmtPort(serviceInstance.getManagementPort());
+          llapInstance.setRpcPort(serviceInstance.getRpcPort());
+          llapInstance.setShufflePort(serviceInstance.getShufflePort());
+          llapInstance.setWebUrl(serviceInstance.getServicesAddress());
+          llapInstance.setStatusUrl(serviceInstance.getServicesAddress() + "/status");
+          validatedInstances.add(llapInstance);
+        }
+ else {
+          llapExtraInstances.add(containerIdString);
+        }
+      }
+      appStatusBuilder.setLiveInstances(validatedInstances.size());
+      if (validatedInstances.size() >= appStatusBuilder.getDesiredInstances()) {
+        appStatusBuilder.setState(State.RUNNING_ALL);
+        if (validatedInstances.size() > appStatusBuilder.getDesiredInstances()) {
+          LOG.warn("Found more entries in LLAP registry, as compared to desired entries");
+        }
+      }
+ else {
+        appStatusBuilder.setState(State.RUNNING_PARTIAL);
+      }
+      if (appStatusBuilder.allInstances().size() > 0) {
+        LOG.debug("Potential instances starting up: {}",appStatusBuilder.allInstances());
+      }
+      if (llapExtraInstances.size() > 0) {
+        LOG.debug("Instances likely to shutdown soon: {}",llapExtraInstances);
+      }
+      appStatusBuilder.clearAndAddPreviouslyKnownInstances(validatedInstances);
+    }
+    return ExitCode.SUCCESS;
+  }
+  finally {
+    llapRegistry.stop();
+  }
+}

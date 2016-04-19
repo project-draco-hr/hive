@@ -14,12 +14,28 @@
   writer.close();
   Reader reader=OrcFile.createReader(file,OrcFile.readerOptions(conf));
   RecordReader rows=reader.rows();
-  OrcStruct row=null;
+  batch=reader.getSchema().createRowBatch(1000);
+  TimestampColumnVector times=(TimestampColumnVector)batch.cols[0];
+  LongColumnVector dates=(LongColumnVector)batch.cols[1];
   for (int year=minYear; year < maxYear; ++year) {
+    rows.nextBatch(batch);
+    assertEquals(1000,batch.size);
     for (int ms=1000; ms < 2000; ++ms) {
-      row=(OrcStruct)rows.next(row);
-      assertEquals(new TimestampWritable(Timestamp.valueOf(year + "-05-05 12:34:56." + ms)),row.getFieldValue(0));
-      assertEquals(new DateWritable(new Date(year - 1900,11,25)),row.getFieldValue(1));
+      StringBuilder buffer=new StringBuilder();
+      times.stringifyValue(buffer,ms - 1000);
+      String expected=Integer.toString(year) + "-05-05 12:34:56.";
+      int roundedMs=ms;
+      for (int round=1000; round > 0; round/=10) {
+        if (ms % round == 0) {
+          roundedMs=ms / round;
+          break;
+        }
+      }
+      expected+=roundedMs;
+      assertEquals(expected,buffer.toString());
+      assertEquals(Integer.toString(year) + "-12-25",new DateWritable((int)dates.vector[ms - 1000]).toString());
     }
   }
+  rows.nextBatch(batch);
+  assertEquals(0,batch.size);
 }
