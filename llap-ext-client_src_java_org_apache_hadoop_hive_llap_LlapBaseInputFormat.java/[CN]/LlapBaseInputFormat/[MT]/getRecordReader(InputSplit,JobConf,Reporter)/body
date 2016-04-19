@@ -1,4 +1,32 @@
 {
   LlapInputSplit llapSplit=(LlapInputSplit)split;
-  return llapSplit.getInputFormat().getRecordReader(llapSplit.getSplit(),job,reporter);
+  HiveConf.setVar(job,HiveConf.ConfVars.LLAP_ZK_REGISTRY_USER,llapSplit.getLlapUser());
+  SubmitWorkInfo submitWorkInfo=SubmitWorkInfo.fromBytes(llapSplit.getPlanBytes());
+  ServiceInstance serviceInstance=getServiceInstance(job,llapSplit);
+  String host=serviceInstance.getHost();
+  int llapSubmitPort=serviceInstance.getRpcPort();
+  LOG.info("Found service instance for host " + host + " with rpc port "+ llapSubmitPort+ " and outputformat port "+ serviceInstance.getOutputFormatPort());
+  LlapRecordReaderTaskUmbilicalExternalResponder umbilicalResponder=new LlapRecordReaderTaskUmbilicalExternalResponder();
+  LlapTaskUmbilicalExternalClient llapClient=new LlapTaskUmbilicalExternalClient(job,submitWorkInfo.getTokenIdentifier(),submitWorkInfo.getToken(),umbilicalResponder);
+  llapClient.init(job);
+  llapClient.start();
+  SubmitWorkRequestProto submitWorkRequestProto=constructSubmitWorkRequestProto(submitWorkInfo,llapSplit.getSplitNum(),llapClient.getAddress(),submitWorkInfo.getToken());
+  TezEvent tezEvent=new TezEvent();
+  DataInputBuffer dib=new DataInputBuffer();
+  dib.reset(llapSplit.getFragmentBytes(),0,llapSplit.getFragmentBytes().length);
+  tezEvent.readFields(dib);
+  List<TezEvent> tezEventList=Lists.newArrayList();
+  tezEventList.add(tezEvent);
+  llapClient.submitWork(submitWorkRequestProto,host,llapSubmitPort,tezEventList);
+  String id=HiveConf.getVar(job,HiveConf.ConfVars.HIVEQUERYID) + "_" + llapSplit.getSplitNum();
+  HiveConf conf=new HiveConf();
+  Socket socket=new Socket(host,serviceInstance.getOutputFormatPort());
+  LOG.debug("Socket connected");
+  socket.getOutputStream().write(id.getBytes());
+  socket.getOutputStream().write(0);
+  socket.getOutputStream().flush();
+  LOG.info("Registered id: " + id);
+  LlapBaseRecordReader recordReader=new LlapBaseRecordReader(socket.getInputStream(),llapSplit.getSchema(),Text.class);
+  umbilicalResponder.setRecordReader(recordReader);
+  return recordReader;
 }
