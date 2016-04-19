@@ -1,0 +1,87 @@
+{
+  if (!MetaStoreUtils.validateName(tbl.getTableName(),hiveConf)) {
+    throw new InvalidObjectException(tbl.getTableName() + " is not a valid object name");
+  }
+  String validate=MetaStoreUtils.validateTblColumns(tbl.getSd().getCols());
+  if (validate != null) {
+    throw new InvalidObjectException("Invalid column " + validate);
+  }
+  if (tbl.getPartitionKeys() != null) {
+    validate=MetaStoreUtils.validateTblColumns(tbl.getPartitionKeys());
+    if (validate != null) {
+      throw new InvalidObjectException("Invalid partition column " + validate);
+    }
+  }
+  SkewedInfo skew=tbl.getSd().getSkewedInfo();
+  if (skew != null) {
+    validate=MetaStoreUtils.validateSkewedColNames(skew.getSkewedColNames());
+    if (validate != null) {
+      throw new InvalidObjectException("Invalid skew column " + validate);
+    }
+    validate=MetaStoreUtils.validateSkewedColNamesSubsetCol(skew.getSkewedColNames(),tbl.getSd().getCols());
+    if (validate != null) {
+      throw new InvalidObjectException("Invalid skew column " + validate);
+    }
+  }
+  Path tblPath=null;
+  boolean success=false, madeDir=false;
+  try {
+    firePreEvent(new PreCreateTableEvent(tbl,this));
+    ms.openTransaction();
+    Database db=ms.getDatabase(tbl.getDbName());
+    if (db == null) {
+      throw new NoSuchObjectException("The database " + tbl.getDbName() + " does not exist");
+    }
+    if (is_table_exists(ms,tbl.getDbName(),tbl.getTableName())) {
+      throw new AlreadyExistsException("Table " + tbl.getTableName() + " already exists");
+    }
+    if (!TableType.VIRTUAL_VIEW.toString().equals(tbl.getTableType())) {
+      if (tbl.getSd().getLocation() == null || tbl.getSd().getLocation().isEmpty()) {
+        tblPath=wh.getTablePath(ms.getDatabase(tbl.getDbName()),tbl.getTableName());
+      }
+ else {
+        if (!isExternal(tbl) && !MetaStoreUtils.isNonNativeTable(tbl)) {
+          LOG.warn("Location: " + tbl.getSd().getLocation() + " specified for non-external table:"+ tbl.getTableName());
+        }
+        tblPath=wh.getDnsPath(new Path(tbl.getSd().getLocation()));
+      }
+      tbl.getSd().setLocation(tblPath.toString());
+    }
+    if (tblPath != null) {
+      if (!wh.isDir(tblPath)) {
+        if (!wh.mkdirs(tblPath,true)) {
+          throw new MetaException(tblPath + " is not a directory or unable to create one");
+        }
+        madeDir=true;
+      }
+    }
+    if (HiveConf.getBoolVar(hiveConf,HiveConf.ConfVars.HIVESTATSAUTOGATHER) && !MetaStoreUtils.isView(tbl)) {
+      MetaStoreUtils.updateTableStatsFast(db,tbl,wh,madeDir,envContext);
+    }
+    long time=System.currentTimeMillis() / 1000;
+    tbl.setCreateTime((int)time);
+    if (tbl.getParameters() == null || tbl.getParameters().get(hive_metastoreConstants.DDL_TIME) == null) {
+      tbl.putToParameters(hive_metastoreConstants.DDL_TIME,Long.toString(time));
+    }
+    if (primaryKeys == null && foreignKeys == null) {
+      ms.createTable(tbl);
+    }
+ else {
+      ms.createTableWithConstraints(tbl,primaryKeys,foreignKeys);
+    }
+    success=ms.commitTransaction();
+  }
+  finally {
+    if (!success) {
+      ms.rollbackTransaction();
+      if (madeDir) {
+        wh.deleteDir(tblPath,true);
+      }
+    }
+    for (    MetaStoreEventListener listener : listeners) {
+      CreateTableEvent createTableEvent=new CreateTableEvent(tbl,success,this);
+      createTableEvent.setEnvironmentContext(envContext);
+      listener.onCreateTable(createTableEvent);
+    }
+  }
+}

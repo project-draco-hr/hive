@@ -1,0 +1,67 @@
+{
+  boolean commited=false;
+  List<SQLForeignKey> foreignKeys=null;
+  Collection<?> constraints=null;
+  Query query=null;
+  Map<String,String> tblToConstraint=new HashMap<String,String>();
+  try {
+    openTransaction();
+    String queryText=(parent_tbl_name != null ? "parentTable.tableName == parent_tbl_name &&" : "") + (parent_db_name != null ? "parentTable.database.name == parent_db_name &&" : "") + (foreign_tbl_name != null ? "childTable.tableName == foreign_tbl_name &&" : "")+ (parent_db_name != null ? "childTable.database.name == foreign_db_name &&" : "")+ "constraintType == MConstraint.FOREIGN_KEY_CONSTRAINT";
+    queryText=queryText.trim();
+    query=pm.newQuery(MConstraint.class,queryText);
+    String paramText=(parent_tbl_name == null ? "" : "java.lang.String parent_tbl_name,") + (parent_db_name == null ? "" : " java.lang.String parent_db_name, ") + (foreign_tbl_name == null ? "" : "java.lang.String foreign_tbl_name,")+ (foreign_db_name == null ? "" : " java.lang.String foreign_db_name");
+    paramText=paramText.trim();
+    if (paramText.endsWith(",")) {
+      paramText=paramText.substring(0,paramText.length() - 1);
+    }
+    query.declareParameters(paramText);
+    List<String> params=new ArrayList<String>();
+    if (parent_tbl_name != null) {
+      params.add(parent_tbl_name);
+    }
+    if (parent_db_name != null) {
+      params.add(parent_db_name);
+    }
+    if (foreign_tbl_name != null) {
+      params.add(foreign_tbl_name);
+    }
+    if (parent_db_name != null) {
+      params.add(foreign_db_name);
+    }
+    if (params.size() == 0) {
+      constraints=(Collection<?>)query.execute();
+    }
+ else {
+      constraints=(Collection<?>)query.executeWithArray(params);
+    }
+    pm.retrieveAll(constraints);
+    foreignKeys=new ArrayList<SQLForeignKey>();
+    for (Iterator<?> i=constraints.iterator(); i.hasNext(); ) {
+      MConstraint currPKFK=(MConstraint)i.next();
+      int enableValidateRely=currPKFK.getEnableValidateRely();
+      boolean enable=(enableValidateRely & 4) != 0;
+      boolean validate=(enableValidateRely & 2) != 0;
+      boolean rely=(enableValidateRely & 1) != 0;
+      String consolidatedtblName=currPKFK.getParentTable().getDatabase().getName() + "." + currPKFK.getParentTable().getTableName();
+      String pkName;
+      if (tblToConstraint.containsKey(consolidatedtblName)) {
+        pkName=tblToConstraint.get(consolidatedtblName);
+      }
+ else {
+        pkName=getPrimaryKeyConstraintName(currPKFK.getParentTable().getDatabase().getName(),currPKFK.getParentTable().getDatabase().getName());
+        tblToConstraint.put(consolidatedtblName,pkName);
+      }
+      foreignKeys.add(new SQLForeignKey(currPKFK.getParentTable().getDatabase().getName(),currPKFK.getParentTable().getDatabase().getName(),currPKFK.getParentColumn().getCols().get(0).getName(),currPKFK.getChildTable().getDatabase().getName(),currPKFK.getChildTable().getTableName(),currPKFK.getChildColumn().getCols().get(0).getName(),currPKFK.getPosition(),currPKFK.getUpdateRule(),currPKFK.getDeleteRule(),currPKFK.getConstraintName(),pkName,enable,validate,rely));
+    }
+    commited=commitTransaction();
+  }
+  finally {
+    if (!commited) {
+      rollbackTransaction();
+    }
+    if (query != null) {
+      query.closeAll();
+    }
+  }
+  return foreignKeys;
+}
