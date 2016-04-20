@@ -18,14 +18,22 @@
   if (cli.hasOption('n')) {
     numSplits=cli.getOptionValue("n");
   }
+  Properties configProps=cli.getOptionProperties("hiveconf");
   if (cli.getArgs().length > 0) {
     query=cli.getArgs()[0];
   }
   System.out.println("url: " + url);
   System.out.println("user: " + user);
   System.out.println("query: " + query);
-  LlapBaseInputFormat format=new LlapBaseInputFormat(url,user,pwd,query);
+  LlapRowInputFormat format=new LlapRowInputFormat();
   JobConf job=new JobConf();
+  job.set(LlapBaseInputFormat.URL_KEY,url);
+  job.set(LlapBaseInputFormat.USER_KEY,user);
+  job.set(LlapBaseInputFormat.PWD_KEY,pwd);
+  job.set(LlapBaseInputFormat.QUERY_KEY,query);
+  for (  String key : configProps.stringPropertyNames()) {
+    job.set(key,configProps.getProperty(key));
+  }
   InputSplit[] splits=format.getSplits(job,Integer.parseInt(numSplits));
   if (splits.length == 0) {
     System.out.println("No splits returned - empty scan");
@@ -35,9 +43,9 @@
     boolean first=true;
     for (    InputSplit s : splits) {
       LOG.info("Processing input split s from " + Arrays.toString(s.getLocations()));
-      RecordReader<NullWritable,Text> reader=format.getRecordReader(s,job,null);
-      if (reader instanceof LlapBaseRecordReader && first) {
-        Schema schema=((LlapBaseRecordReader)reader).getSchema();
+      RecordReader<NullWritable,Row> reader=format.getRecordReader(s,job,null);
+      if (reader instanceof LlapRowRecordReader && first) {
+        Schema schema=((LlapRowRecordReader)reader).getSchema();
         System.out.println("" + schema);
       }
       if (first) {
@@ -45,9 +53,9 @@
         System.out.println("");
         first=false;
       }
-      Text value=reader.createValue();
+      Row value=reader.createValue();
       while (reader.next(NullWritable.get(),value)) {
-        System.out.println(value);
+        printRow(value);
       }
     }
     System.exit(0);
