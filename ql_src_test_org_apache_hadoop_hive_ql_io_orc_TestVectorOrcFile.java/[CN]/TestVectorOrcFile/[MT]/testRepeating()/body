@@ -58,7 +58,8 @@
     ((DoubleColumnVector)batch.cols[4]).vector[r]=1.125 * r;
     ((DoubleColumnVector)batch.cols[5]).vector[r]=0.0009765625 * r;
     ((LongColumnVector)batch.cols[6]).vector[r]=new DateWritable(new Date(111,6,1)).getDays() + r;
-    Timestamp ts=new Timestamp(115,9,25,10,11,59 + r,999999999);
+    Timestamp ts=new Timestamp(115,9,23,10,11,59,999999999);
+    ts.setTime(ts.getTime() + r * 1000);
     ((TimestampColumnVector)batch.cols[7]).set(r,ts);
     ((DecimalColumnVector)batch.cols[8]).vector[r]=new HiveDecimalWritable("1.234567");
     ((BytesColumnVector)batch.cols[9]).setVal(r,Integer.toString(r).getBytes());
@@ -105,101 +106,84 @@
   assertEquals("ff80",((StringColumnStatistics)stats[12]).getMaximum());
   assertEquals(14813,((StringColumnStatistics)stats[12]).getSum());
   RecordReader rows=reader.rows();
-  batch=reader.getSchema().createRowBatch(1024);
-  BytesColumnVector bins=(BytesColumnVector)batch.cols[0];
-  LongColumnVector bools=(LongColumnVector)batch.cols[1];
-  LongColumnVector bytes=(LongColumnVector)batch.cols[2];
-  LongColumnVector longs=(LongColumnVector)batch.cols[3];
-  DoubleColumnVector floats=(DoubleColumnVector)batch.cols[4];
-  DoubleColumnVector doubles=(DoubleColumnVector)batch.cols[5];
-  LongColumnVector dates=(LongColumnVector)batch.cols[6];
-  TimestampColumnVector times=(TimestampColumnVector)batch.cols[7];
-  DecimalColumnVector decs=(DecimalColumnVector)batch.cols[8];
-  BytesColumnVector strs=(BytesColumnVector)batch.cols[9];
-  BytesColumnVector chars=(BytesColumnVector)batch.cols[10];
-  BytesColumnVector vcs=(BytesColumnVector)batch.cols[11];
-  StructColumnVector structs=(StructColumnVector)batch.cols[12];
-  UnionColumnVector unions=(UnionColumnVector)batch.cols[13];
-  ListColumnVector lists=(ListColumnVector)batch.cols[14];
-  MapColumnVector maps=(MapColumnVector)batch.cols[15];
-  LongColumnVector structInts=(LongColumnVector)structs.fields[0];
-  LongColumnVector unionInts=(LongColumnVector)unions.fields[1];
-  LongColumnVector listInts=(LongColumnVector)lists.child;
-  BytesColumnVector mapKeys=(BytesColumnVector)maps.keys;
-  BytesColumnVector mapValues=(BytesColumnVector)maps.values;
-  assertEquals(true,rows.nextBatch(batch));
-  assertEquals(1024,batch.size);
-  for (int f=0; f < batch.cols.length; ++f) {
-    assertEquals("field " + f,true,batch.cols[f].isRepeating);
-    assertEquals("field " + f,false,batch.cols[f].noNulls);
-    assertEquals("field " + f,true,batch.cols[f].isNull[0]);
-  }
-  assertEquals(true,rows.nextBatch(batch));
-  assertEquals(1024,batch.size);
+  OrcStruct row=null;
   for (int r=0; r < 1024; ++r) {
-    assertEquals("row " + r,"Horton",bins.toString(r));
-    assertEquals("row " + r,1,bools.vector[r]);
-    assertEquals("row " + r,-126,bytes.vector[r]);
-    assertEquals("row " + r,1311768467463790320L,longs.vector[r]);
-    assertEquals("row " + r,1.125,floats.vector[r],0.00001);
-    assertEquals("row " + r,9.765625E-4,doubles.vector[r],0.000001);
-    assertEquals("row " + r,"2011-07-01",new DateWritable((int)dates.vector[r]).toString());
-    assertEquals("row " + r,"2015-10-23 10:11:59.999999999",times.asScratchTimestamp(r).toString());
-    assertEquals("row " + r,"1.234567",decs.vector[r].toString());
-    assertEquals("row " + r,"Echelon",strs.toString(r));
-    assertEquals("row " + r,"Juggernaut",chars.toString(r));
-    assertEquals("row " + r,"Dreadnaugh",vcs.toString(r));
-    assertEquals("row " + r,123,structInts.vector[r]);
-    assertEquals("row " + r,1,unions.tags[r]);
-    assertEquals("row " + r,1234,unionInts.vector[r]);
-    assertEquals("row " + r,3,lists.lengths[r]);
-    assertEquals("row " + r,true,listInts.isRepeating);
-    assertEquals("row " + r,31415,listInts.vector[0]);
-    assertEquals("row " + r,3,maps.lengths[r]);
-    assertEquals("row " + r,"ORC",mapKeys.toString((int)maps.offsets[r]));
-    assertEquals("row " + r,"Hive",mapKeys.toString((int)maps.offsets[r] + 1));
-    assertEquals("row " + r,"LLAP",mapKeys.toString((int)maps.offsets[r] + 2));
-    assertEquals("row " + r,"fast",mapValues.toString((int)maps.offsets[r]));
-    assertEquals("row " + r,"fast",mapValues.toString((int)maps.offsets[r] + 1));
-    assertEquals("row " + r,"fast",mapValues.toString((int)maps.offsets[r] + 2));
+    assertEquals(true,rows.hasNext());
+    row=(OrcStruct)rows.next(row);
+    for (int f=0; f < row.getNumFields(); ++f) {
+      assertEquals("non-null on row " + r + " field "+ f,null,row.getFieldValue(f));
+    }
   }
-  assertEquals(true,rows.nextBatch(batch));
-  assertEquals(1024,batch.size);
-  for (int f=0; f < batch.cols.length; ++f) {
-    assertEquals("field " + f,true,batch.cols[f].isRepeating);
-    assertEquals("field " + f,false,batch.cols[f].noNulls);
-    assertEquals("field " + f,true,batch.cols[f].isNull[0]);
-  }
-  assertEquals(true,rows.nextBatch(batch));
-  assertEquals(1024,batch.size);
   for (int r=0; r < 1024; ++r) {
-    String hex=Integer.toHexString(r);
-    assertEquals("row " + r,hex,bins.toString(r));
-    assertEquals("row " + r,r % 2 == 1 ? 1 : 0,bools.vector[r]);
-    assertEquals("row " + r,(byte)(r % 255),bytes.vector[r]);
-    assertEquals("row " + r,31415L * r,longs.vector[r]);
-    assertEquals("row " + r,1.125F * r,floats.vector[r],0.0001);
-    assertEquals("row " + r,0.0009765625 * r,doubles.vector[r],0.000001);
-    assertEquals("row " + r,new DateWritable(new Date(111,6,1 + r)),new DateWritable((int)dates.vector[r]));
-    assertEquals("row " + r,new Timestamp(115,9,25,10,11,59 + r,999999999),times.asScratchTimestamp(r));
-    assertEquals("row " + r,"1.234567",decs.vector[r].toString());
-    assertEquals("row " + r,Integer.toString(r),strs.toString(r));
-    assertEquals("row " + r,Integer.toHexString(r),chars.toString(r));
-    assertEquals("row " + r,Integer.toHexString(r * 128),vcs.toString(r));
-    assertEquals("row " + r,r + 13,structInts.vector[r]);
-    assertEquals("row " + r,1,unions.tags[r]);
-    assertEquals("row " + r,r + 42,unionInts.vector[r]);
-    assertEquals("row " + r,3,lists.lengths[r]);
-    assertEquals("row " + r,31415,listInts.vector[(int)lists.offsets[r]]);
-    assertEquals("row " + r,31416,listInts.vector[(int)lists.offsets[r] + 1]);
-    assertEquals("row " + r,31417,listInts.vector[(int)lists.offsets[r] + 2]);
-    assertEquals("row " + r,3,maps.lengths[3]);
-    assertEquals("row " + r,Integer.toHexString(3 * r),mapKeys.toString((int)maps.offsets[r]));
-    assertEquals("row " + r,Integer.toString(3 * r),mapValues.toString((int)maps.offsets[r]));
-    assertEquals("row " + r,Integer.toHexString(3 * r + 1),mapKeys.toString((int)maps.offsets[r] + 1));
-    assertEquals("row " + r,Integer.toString(3 * r + 1),mapValues.toString((int)maps.offsets[r] + 1));
-    assertEquals("row " + r,Integer.toHexString(3 * r + 2),mapKeys.toString((int)maps.offsets[r] + 2));
-    assertEquals("row " + r,Integer.toString(3 * r + 2),mapValues.toString((int)maps.offsets[r] + 2));
+    assertEquals(true,rows.hasNext());
+    row=(OrcStruct)rows.next(row);
+    assertEquals("row " + r,"48 6f 72 74 6f 6e",row.getFieldValue(0).toString());
+    assertEquals("row " + r,"true",row.getFieldValue(1).toString());
+    assertEquals("row " + r,"-126",row.getFieldValue(2).toString());
+    assertEquals("row " + r,"1311768467463790320",row.getFieldValue(3).toString());
+    assertEquals("row " + r,"1.125",row.getFieldValue(4).toString());
+    assertEquals("row " + r,"9.765625E-4",row.getFieldValue(5).toString());
+    assertEquals("row " + r,"2011-07-01",row.getFieldValue(6).toString());
+    assertEquals("row " + r,"2015-10-23 10:11:59.999999999",row.getFieldValue(7).toString());
+    assertEquals("row " + r,"1.234567",row.getFieldValue(8).toString());
+    assertEquals("row " + r,"Echelon",row.getFieldValue(9).toString());
+    assertEquals("row " + r,"Juggernaut",row.getFieldValue(10).toString());
+    assertEquals("row " + r,"Dreadnaugh",row.getFieldValue(11).toString());
+    assertEquals("row " + r,"{123}",row.getFieldValue(12).toString());
+    assertEquals("row " + r,"union(1, 1234)",row.getFieldValue(13).toString());
+    assertEquals("row " + r,"[31415, 31415, 31415]",row.getFieldValue(14).toString());
+    assertEquals("row " + r,"{ORC=fast, Hive=fast, LLAP=fast}",row.getFieldValue(15).toString());
   }
-  assertEquals(false,rows.nextBatch(batch));
+  for (int r=0; r < 1024; ++r) {
+    assertEquals(true,rows.hasNext());
+    row=(OrcStruct)rows.next(row);
+    for (int f=0; f < row.getNumFields(); ++f) {
+      assertEquals("non-null on row " + r + " field "+ f,null,row.getFieldValue(f));
+    }
+  }
+  for (int r=0; r < 1024; ++r) {
+    assertEquals(true,rows.hasNext());
+    row=(OrcStruct)rows.next(row);
+    byte[] hex=Integer.toHexString(r).getBytes();
+    StringBuilder expected=new StringBuilder();
+    for (int i=0; i < hex.length; ++i) {
+      if (i != 0) {
+        expected.append(' ');
+      }
+      expected.append(Integer.toHexString(hex[i]));
+    }
+    assertEquals("row " + r,expected.toString(),row.getFieldValue(0).toString());
+    assertEquals("row " + r,r % 2 == 1 ? "true" : "false",row.getFieldValue(1).toString());
+    assertEquals("row " + r,Integer.toString((byte)(r % 255)),row.getFieldValue(2).toString());
+    assertEquals("row " + r,Long.toString(31415L * r),row.getFieldValue(3).toString());
+    assertEquals("row " + r,Float.toString(1.125F * r),row.getFieldValue(4).toString());
+    assertEquals("row " + r,Double.toString(0.0009765625 * r),row.getFieldValue(5).toString());
+    assertEquals("row " + r,new Date(111,6,1 + r).toString(),row.getFieldValue(6).toString());
+    Timestamp ts=new Timestamp(115,9,23,10,11,59,999999999);
+    ts.setTime(ts.getTime() + r * 1000);
+    assertEquals("row " + r,ts.toString(),row.getFieldValue(7).toString());
+    assertEquals("row " + r,"1.234567",row.getFieldValue(8).toString());
+    assertEquals("row " + r,Integer.toString(r),row.getFieldValue(9).toString());
+    assertEquals("row " + r,pad(Integer.toHexString(r),10),row.getFieldValue(10).toString());
+    assertEquals("row " + r,Integer.toHexString(r * 128),row.getFieldValue(11).toString());
+    assertEquals("row " + r,"{" + Integer.toString(r + 13) + "}",row.getFieldValue(12).toString());
+    assertEquals("row " + r,"union(1, " + Integer.toString(r + 42) + ")",row.getFieldValue(13).toString());
+    assertEquals("row " + r,"[31415, 31416, 31417]",row.getFieldValue(14).toString());
+    expected=new StringBuilder();
+    expected.append('{');
+    expected.append(Integer.toHexString(3 * r));
+    expected.append('=');
+    expected.append(3 * r);
+    expected.append(", ");
+    expected.append(Integer.toHexString(3 * r + 1));
+    expected.append('=');
+    expected.append(3 * r + 1);
+    expected.append(", ");
+    expected.append(Integer.toHexString(3 * r + 2));
+    expected.append('=');
+    expected.append(3 * r + 2);
+    expected.append('}');
+    assertEquals("row " + r,expected.toString(),row.getFieldValue(15).toString());
+  }
+  assertEquals(false,rows.hasNext());
 }

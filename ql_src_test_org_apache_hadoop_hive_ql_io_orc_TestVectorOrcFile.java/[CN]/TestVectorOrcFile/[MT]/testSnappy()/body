@@ -13,21 +13,15 @@
   }
   writer.close();
   Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf).filesystem(fs));
-  assertEquals(CompressionKind.SNAPPY,reader.getCompressionKind());
   RecordReader rows=reader.rows();
-  batch=reader.getSchema().createRowBatch(1000);
   rand=new Random(12);
-  LongColumnVector longs=(LongColumnVector)batch.cols[0];
-  BytesColumnVector strs=(BytesColumnVector)batch.cols[1];
-  for (int b=0; b < 10; ++b) {
-    rows.nextBatch(batch);
-    assertEquals(1000,batch.size);
-    for (int r=0; r < batch.size; ++r) {
-      assertEquals(rand.nextInt(),longs.vector[r]);
-      assertEquals(Integer.toHexString(rand.nextInt()),strs.toString(r));
-    }
+  OrcStruct row=null;
+  for (int i=0; i < 10000; ++i) {
+    assertEquals(true,rows.hasNext());
+    row=(OrcStruct)rows.next(row);
+    assertEquals(rand.nextInt(),((IntWritable)row.getFieldValue(0)).get());
+    assertEquals(Integer.toHexString(rand.nextInt()),row.getFieldValue(1).toString());
   }
-  rows.nextBatch(batch);
-  assertEquals(0,batch.size);
+  assertEquals(false,rows.hasNext());
   rows.close();
 }

@@ -34,42 +34,32 @@
   writer.close();
   Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf));
   RecordReader rows=reader.rows();
-  batch=reader.getSchema().createRowBatch(1024);
-  UnionColumnVector union=(UnionColumnVector)batch.cols[0];
-  LongColumnVector ints=(LongColumnVector)union.fields[0];
-  LongColumnVector longs=(LongColumnVector)union.fields[1];
-  assertEquals(true,rows.nextBatch(batch));
-  assertEquals(1024,batch.size);
+  OrcStruct row=null;
   for (int r=0; r < 1024; ++r) {
+    assertEquals(true,rows.hasNext());
+    row=(OrcStruct)rows.next(row);
+    OrcUnion inner=(OrcUnion)row.getFieldValue(0);
     if (r < 200) {
-      assertEquals("row " + r,true,union.isNull[r]);
+      assertEquals("row " + r,null,inner);
     }
  else     if (r < 300) {
-      assertEquals("row " + r,false,union.isNull[r]);
-      assertEquals("row " + r,0,union.tags[r]);
-      assertEquals("row " + r,r,ints.vector[r]);
+      assertEquals("row " + r,"union(0, " + r + ")",inner.toString());
     }
  else     if (r < 400) {
-      assertEquals("row " + r,false,union.isNull[r]);
-      assertEquals("row " + r,1,union.tags[r]);
-      assertEquals("row " + r,-r,longs.vector[r]);
+      assertEquals("row " + r,"union(1, " + -r + ")",inner.toString());
     }
  else     if (r < 600) {
-      assertEquals("row " + r,true,union.isNull[r]);
+      assertEquals("row " + r,null,inner);
     }
  else     if (r < 800) {
-      assertEquals("row " + r,false,union.isNull[r]);
-      assertEquals("row " + r,1,union.tags[r]);
-      assertEquals("row " + r,-r,longs.vector[r]);
+      assertEquals("row " + r,"union(1, " + -r + ")",inner.toString());
     }
  else     if (r < 1000) {
-      assertEquals("row " + r,true,union.isNull[r]);
+      assertEquals("row " + r,null,inner);
     }
  else {
-      assertEquals("row " + r,false,union.isNull[r]);
-      assertEquals("row " + r,1,union.tags[r]);
-      assertEquals("row " + r,-r,longs.vector[r]);
+      assertEquals("row " + r,"union(1, " + -r + ")",inner.toString());
     }
   }
-  assertEquals(false,rows.nextBatch(batch));
+  assertEquals(false,rows.hasNext());
 }

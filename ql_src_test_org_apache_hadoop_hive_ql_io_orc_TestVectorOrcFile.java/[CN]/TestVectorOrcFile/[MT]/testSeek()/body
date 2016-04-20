@@ -44,16 +44,24 @@
     OrcProto.RowIndex colIndex=index.getRowGroupIndex()[c];
     assertEquals(1000,colIndex.getEntry(0).getStatistics().getNumberOfValues());
   }
-  batch=reader.getSchema().createRowBatch();
-  int nextRowInBatch=-1;
-  for (int i=COUNT - 1; i >= 0; --i, --nextRowInBatch) {
-    if (nextRowInBatch < 0) {
-      long base=Math.max(i - 1023,0);
-      rows.seekToRow(base);
-      assertEquals("row " + i,true,rows.nextBatch(batch));
-      nextRowInBatch=batch.size - 1;
-    }
-    checkRandomRow(batch,intValues,doubleValues,stringValues,byteValues,words,i,nextRowInBatch);
+  OrcStruct row=null;
+  for (int i=COUNT - 1; i >= 0; --i) {
+    rows.seekToRow(i);
+    row=(OrcStruct)rows.next(row);
+    BigRow expected=createRandomRow(intValues,doubleValues,stringValues,byteValues,words,i);
+    assertEquals(expected.boolean1.booleanValue(),((BooleanWritable)row.getFieldValue(0)).get());
+    assertEquals(expected.byte1.byteValue(),((ByteWritable)row.getFieldValue(1)).get());
+    assertEquals(expected.short1.shortValue(),((ShortWritable)row.getFieldValue(2)).get());
+    assertEquals(expected.int1.intValue(),((IntWritable)row.getFieldValue(3)).get());
+    assertEquals(expected.long1.longValue(),((LongWritable)row.getFieldValue(4)).get());
+    assertEquals(expected.float1,((FloatWritable)row.getFieldValue(5)).get(),0.0001);
+    assertEquals(expected.double1,((DoubleWritable)row.getFieldValue(6)).get(),0.0001);
+    assertEquals(expected.bytes1,row.getFieldValue(7));
+    assertEquals(expected.string1,row.getFieldValue(8));
+    List<InnerStruct> expectedList=expected.middle.list;
+    List<OrcStruct> actualList=(List<OrcStruct>)((OrcStruct)row.getFieldValue(9)).getFieldValue(0);
+    compareList(expectedList,actualList,"middle list " + i);
+    compareList(expected.list,(List<OrcStruct>)row.getFieldValue(10),"list " + i);
   }
   rows.close();
   Iterator<StripeInformation> stripeIterator=reader.getStripes().iterator();
@@ -78,13 +86,11 @@
   columns[9]=true;
   rows=reader.rowsOptions(new Reader.Options().range(offsetOfStripe2,offsetOfStripe4 - offsetOfStripe2).include(columns));
   rows.seekToRow(lastRowOfStripe2);
-  batch=reader.getSchema().createRowBatch(2);
-  assertEquals(true,rows.nextBatch(batch));
-  assertEquals(1,batch.size);
-  assertEquals(intValues[(int)lastRowOfStripe2],getLong(batch,0));
-  assertEquals(stringValues[(int)lastRowOfStripe2],getText(batch,0).toString());
-  assertEquals(true,rows.nextBatch(batch));
-  assertEquals(intValues[(int)lastRowOfStripe2 + 1],getLong(batch,0));
-  assertEquals(stringValues[(int)lastRowOfStripe2 + 1],getText(batch,0).toString());
+  for (int i=0; i < 2; ++i) {
+    row=(OrcStruct)rows.next(row);
+    BigRow expected=createRandomRow(intValues,doubleValues,stringValues,byteValues,words,(int)(lastRowOfStripe2 + i));
+    assertEquals(expected.long1.longValue(),((LongWritable)row.getFieldValue(4)).get());
+    assertEquals(expected.string1,row.getFieldValue(8));
+  }
   rows.close();
 }

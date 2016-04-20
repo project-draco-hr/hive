@@ -1,21 +1,26 @@
 {
   try {
+    final VectorizedRowBatch result;
     if (rowInStripe >= rowCountInStripe) {
       currentStripe+=1;
-      if (currentStripe >= stripes.size()) {
-        batch.size=0;
-        return false;
-      }
       readStripe();
     }
-    int batchSize=computeBatchSize(batch.getMaxSize());
+    final int batchSize=computeBatchSize(VectorizedRowBatch.DEFAULT_SIZE);
     rowInStripe+=batchSize;
-    reader.setVectorColumnCount(batch.getDataColumnCount());
-    reader.nextBatch(batch,batchSize);
-    batch.size=(int)batchSize;
-    batch.selectedInUse=false;
+    if (previous == null) {
+      ColumnVector[] cols=(ColumnVector[])reader.nextVector(null,(int)batchSize);
+      result=new VectorizedRowBatch(cols.length);
+      result.cols=cols;
+    }
+ else {
+      result=previous;
+      result.selectedInUse=false;
+      reader.setVectorColumnCount(result.getDataColumnCount());
+      reader.nextVector(result.cols,batchSize);
+    }
+    result.size=batchSize;
     advanceToNextRow(reader,rowInStripe + rowBaseInStripe,true);
-    return batch.size != 0;
+    return result;
   }
  catch (  IOException e) {
     throw new IOException("Error reading file: " + path,e);
