@@ -1,7 +1,10 @@
 {
   HBaseSplit hbaseSplit=(HBaseSplit)split;
   TableSplit tableSplit=hbaseSplit.getTableSplit();
-  setHTable(HiveHBaseInputFormatUtil.getTable(jobConf));
+  if (conn == null) {
+    conn=ConnectionFactory.createConnection(HBaseConfiguration.create(jobConf));
+  }
+  initializeTable(conn,tableSplit.getTable());
   setScan(HiveHBaseInputFormatUtil.getScan(jobConf));
   Job job=new Job(jobConf);
   TaskAttemptContext tac=ShimLoader.getHadoopShims().newTaskAttemptContext(job.getConfiguration(),reporter);
@@ -11,12 +14,20 @@
   }
  catch (  InterruptedException e) {
     closeTable();
+    if (conn != null) {
+      conn.close();
+      conn=null;
+    }
     throw new IOException("Failed to initialize RecordReader",e);
   }
   return new RecordReader<ImmutableBytesWritable,ResultWritable>(){
     @Override public void close() throws IOException {
       recordReader.close();
       closeTable();
+      if (conn != null) {
+        conn.close();
+        conn=null;
+      }
     }
     @Override public ImmutableBytesWritable createKey(){
       return new ImmutableBytesWritable();
