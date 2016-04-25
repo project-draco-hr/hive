@@ -1,0 +1,41 @@
+{
+  String[] qualifiedTabName=getQualifiedTableName((ASTNode)parent.getChild(0));
+  boolean userSpecifiedConstraintName=child.getChildCount() == 11;
+  int fkIndex=userSpecifiedConstraintName ? 2 : 1;
+  int pkIndex=userSpecifiedConstraintName ? 6 : 5;
+  int ptIndex=userSpecifiedConstraintName ? 4 : 3;
+  int relyIndex=child.getChildCount() == 11 ? 8 : 7;
+  if (child.getChildCount() <= fkIndex || child.getChildCount() <= pkIndex || child.getChildCount() <= ptIndex) {
+    throw new SemanticException(ErrorMsg.INVALID_FK_SYNTAX.getMsg());
+  }
+  String[] parentDBTbl=getQualifiedTableName((ASTNode)child.getChild(ptIndex));
+  if (child.getChild(fkIndex).getChildCount() != child.getChild(pkIndex).getChildCount()) {
+    throw new SemanticException(ErrorMsg.INVALID_FK_SYNTAX.getMsg(" The number of foreign key columns should be same as number of parent key columns "));
+  }
+  for (int j=0; j < child.getChild(fkIndex).getChildCount(); j++) {
+    SQLForeignKey sqlForeignKey=new SQLForeignKey();
+    Tree fkgrandChild=child.getChild(fkIndex).getChild(j);
+    boolean rely=child.getChild(relyIndex).getType() == HiveParser.TOK_VALIDATE;
+    boolean enable=child.getChild(relyIndex + 1).getType() == HiveParser.TOK_ENABLE;
+    boolean validate=child.getChild(relyIndex + 2).getType() == HiveParser.TOK_VALIDATE;
+    if (enable) {
+      throw new SemanticException(ErrorMsg.INVALID_FK_SYNTAX.getMsg(" ENABLE feature not supported yet"));
+    }
+    if (validate) {
+      throw new SemanticException(ErrorMsg.INVALID_FK_SYNTAX.getMsg(" VALIDATE feature not supported yet"));
+    }
+    sqlForeignKey.setRely_cstr(rely);
+    sqlForeignKey.setPktable_db(parentDBTbl[0]);
+    sqlForeignKey.setPktable_name(parentDBTbl[1]);
+    sqlForeignKey.setFktable_db(qualifiedTabName[0]);
+    sqlForeignKey.setFktable_name(qualifiedTabName[1]);
+    sqlForeignKey.setFkcolumn_name(unescapeIdentifier(fkgrandChild.getText().toLowerCase()));
+    Tree pkgrandChild=child.getChild(pkIndex).getChild(j);
+    sqlForeignKey.setPkcolumn_name(unescapeIdentifier(pkgrandChild.getText().toLowerCase()));
+    sqlForeignKey.setKey_seq(j + 1);
+    if (userSpecifiedConstraintName) {
+      sqlForeignKey.setFk_name(unescapeIdentifier(child.getChild(0).getText().toLowerCase()));
+    }
+    foreignKeys.add(sqlForeignKey);
+  }
+}
