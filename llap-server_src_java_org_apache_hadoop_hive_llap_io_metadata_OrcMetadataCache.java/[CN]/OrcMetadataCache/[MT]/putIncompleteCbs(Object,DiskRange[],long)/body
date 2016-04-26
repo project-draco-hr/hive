@@ -1,0 +1,29 @@
+{
+  if (estimateErrors == null)   return;
+  OrcFileEstimateErrors errorData=estimateErrors.get(fileKey);
+  boolean isNew=false;
+  if (errorData == null) {
+    errorData=new OrcFileEstimateErrors(fileKey);
+    for (    DiskRange range : ranges) {
+      errorData.addError(range.getOffset(),range.getLength(),baseOffset);
+    }
+    long memUsage=errorData.estimateMemoryUsage();
+    memoryManager.reserveMemory(memUsage,false);
+    OrcFileEstimateErrors old=estimateErrors.putIfAbsent(fileKey,errorData);
+    if (old != null) {
+      errorData=old;
+      memoryManager.releaseMemory(memUsage);
+      policy.notifyLock(errorData);
+    }
+ else {
+      isNew=true;
+      policy.cache(errorData,Priority.NORMAL);
+    }
+  }
+  if (!isNew) {
+    for (    DiskRange range : ranges) {
+      errorData.addError(range.getOffset(),range.getLength(),baseOffset);
+    }
+  }
+  policy.notifyUnlock(errorData);
+}
