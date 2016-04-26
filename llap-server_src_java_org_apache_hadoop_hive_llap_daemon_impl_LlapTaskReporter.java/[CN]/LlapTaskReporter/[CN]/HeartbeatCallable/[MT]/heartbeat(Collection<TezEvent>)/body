@@ -5,7 +5,7 @@
   TezEvent updateEvent=null;
   List<TezEvent> events=new ArrayList<TezEvent>();
   eventsToSend.drainTo(events);
-  if (!task.isTaskDone() && !task.hadFatalError()) {
+  if (!task.isTaskDone() && !task.wasErrorReported()) {
     boolean sendCounters=false;
     if ((nonOobHeartbeatCounter.get() - prevCounterSendHeartbeatNum) * pollInterval >= sendCounterInterval) {
       sendCounters=true;
@@ -17,7 +17,8 @@
   long requestId=requestCounter.incrementAndGet();
   int fromEventId=task.getNextFromEventId();
   int fromPreRoutedEventId=task.getNextPreRoutedEventId();
-  TezHeartbeatRequest request=new TezHeartbeatRequest(requestId,events,fromPreRoutedEventId,containerIdStr,task.getTaskAttemptID(),fromEventId,maxEventsToGet);
+  int maxEvents=Math.min(maxEventsToGet,task.getMaxEventsToHandle());
+  TezHeartbeatRequest request=new TezHeartbeatRequest(requestId,events,fromPreRoutedEventId,containerIdStr,task.getTaskAttemptID(),fromEventId,maxEvents);
   if (LOG.isDebugEnabled()) {
     LOG.debug("Sending heartbeat to AM, request=" + request);
   }
@@ -35,7 +36,7 @@
     throw new TezException("AM and Task out of sync" + ", responseReqId=" + response.getLastRequestId() + ", expectedReqId="+ requestId);
   }
   int numEventsReceived=0;
-  if (task.isTaskDone() || task.hadFatalError()) {
+  if (task.isTaskDone() || task.wasErrorReported()) {
     if (response.getEvents() != null && !response.getEvents().isEmpty()) {
       LOG.warn("Current task already complete, Ignoring all event in" + " heartbeat response, eventCount=" + response.getEvents().size());
     }

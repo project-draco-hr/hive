@@ -1,0 +1,28 @@
+{
+  if (!finalEventQueued.getAndSet(true)) {
+    List<TezEvent> tezEvents=new ArrayList<>();
+    if (diagnostics == null) {
+      diagnostics=ExceptionUtils.getStackTrace(t);
+    }
+ else {
+      diagnostics=diagnostics + ":" + ExceptionUtils.getStackTrace(t);
+    }
+    if (isKilled) {
+      tezEvents.add(new TezEvent(new TaskAttemptKilledEvent(diagnostics),srcMeta == null ? updateEventMetadata : srcMeta));
+    }
+ else {
+      tezEvents.add(new TezEvent(new TaskAttemptFailedEvent(diagnostics,taskFailureType),srcMeta == null ? updateEventMetadata : srcMeta));
+    }
+    try {
+      tezEvents.add(new TezEvent(getStatusUpdateEvent(true),updateEventMetadata));
+    }
+ catch (    Exception e) {
+      LOG.warn("Error when get constructing TaskStatusUpdateEvent. Not sending it out");
+    }
+    return !heartbeat(tezEvents).shouldDie;
+  }
+ else {
+    LOG.warn("A final task state event has already been sent. Not sending again");
+    return askedToDie.get();
+  }
+}
