@@ -1,0 +1,44 @@
+{
+  if (cOffset > current.getOffset()) {
+    current=current.split(cOffset).next;
+  }
+  long currentOffset=cOffset;
+  CacheChunk lastUncompressed=null;
+  while (true) {
+    DiskRangeList next=null;
+    if (current instanceof CacheChunk) {
+      CacheChunk cc=(CacheChunk)current;
+      if (isTracingEnabled) {
+        LOG.trace("Locking " + cc.getBuffer() + " due to reuse");
+      }
+      cacheWrapper.reuseBuffer(cc.getBuffer());
+      columnStreamData.getCacheBuffers().add(cc.getBuffer());
+      currentOffset=cc.getEnd();
+      if (isTracingEnabled) {
+        LOG.trace("Adding an already-uncompressed buffer " + cc.getBuffer());
+      }
+      ponderReleaseInitialRefcount(unlockUntilCOffset,streamOffset,cc);
+      lastUncompressed=cc;
+      next=current.next;
+    }
+ else     if (current instanceof IncompleteCb) {
+      if (isTracingEnabled) {
+        LOG.trace("Cannot read " + current);
+      }
+      next=null;
+      currentOffset=-1;
+    }
+ else {
+      BufferChunk bc=(BufferChunk)current;
+      ProcCacheChunk newCached=addOneCompressionBuffer(bc,columnStreamData.getCacheBuffers(),toDecompress,toRelease,badEstimates);
+      lastUncompressed=(newCached == null) ? lastUncompressed : newCached;
+      next=(newCached != null) ? newCached.next : null;
+      currentOffset=(next != null) ? next.getOffset() : -1;
+    }
+    if (next == null || (endCOffset >= 0 && currentOffset >= endCOffset)) {
+      break;
+    }
+    current=next;
+  }
+  return lastUncompressed;
+}

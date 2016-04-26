@@ -7,6 +7,19 @@
   boolean isCStats=pCtx.getQueryProperties().isAnalyzeRewrite();
   int outerQueryLimit=pCtx.getQueryProperties().getOuterQueryLimit();
   if (pCtx.getFetchTask() != null) {
+    if (pCtx.getFetchTask().getTblDesc() == null) {
+      return;
+    }
+    pCtx.getFetchTask().getWork().setHiveServerQuery(SessionState.get().isHiveServerQuery());
+    TableDesc resultTab=pCtx.getFetchTask().getTblDesc();
+    if (!resultTab.getSerdeClassName().equalsIgnoreCase(ThriftJDBCBinarySerDe.class.getName())) {
+      if (SessionState.get().isHiveServerQuery()) {
+        conf.set(SerDeUtils.LIST_SINK_OUTPUT_FORMATTER,ThriftFormatter.class.getName());
+      }
+ else {
+        conf.set(SerDeUtils.LIST_SINK_OUTPUT_FORMATTER,DefaultFetchFormatter.class.getName());
+      }
+    }
     return;
   }
   optimizeOperatorPlan(pCtx,inputs,outputs);
@@ -17,12 +30,25 @@
     LoadFileDesc loadFileDesc=loadFileWork.get(0);
     String cols=loadFileDesc.getColumns();
     String colTypes=loadFileDesc.getColumnTypes();
+    String resFileFormat;
     TableDesc resultTab=pCtx.getFetchTableDesc();
     if (resultTab == null) {
-      String resFileFormat=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEQUERYRESULTFILEFORMAT);
-      resultTab=PlanUtils.getDefaultQueryOutputTableDesc(cols,colTypes,resFileFormat);
+      resFileFormat=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEQUERYRESULTFILEFORMAT);
+      if (SessionState.get().isHiveServerQuery() && (conf.getBoolVar(HiveConf.ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_SERIALIZE_IN_TASKS)) && (resFileFormat.equalsIgnoreCase("SequenceFile"))) {
+        resultTab=PlanUtils.getDefaultQueryOutputTableDesc(cols,colTypes,resFileFormat,ThriftJDBCBinarySerDe.class);
+        conf.set(SerDeUtils.LIST_SINK_OUTPUT_FORMATTER,NoOpFetchFormatter.class.getName());
+      }
+ else {
+        resultTab=PlanUtils.getDefaultQueryOutputTableDesc(cols,colTypes,resFileFormat,LazySimpleSerDe.class);
+      }
+    }
+ else {
+      if (resultTab.getProperties().getProperty(serdeConstants.SERIALIZATION_LIB).equalsIgnoreCase(ThriftJDBCBinarySerDe.class.getName())) {
+        conf.set(SerDeUtils.LIST_SINK_OUTPUT_FORMATTER,NoOpFetchFormatter.class.getName());
+      }
     }
     FetchWork fetch=new FetchWork(loadFileDesc.getSourcePath(),resultTab,outerQueryLimit);
+    fetch.setHiveServerQuery(SessionState.get().isHiveServerQuery());
     fetch.setSource(pCtx.getFetchSource());
     fetch.setSink(pCtx.getFetchSink());
     pCtx.setFetchTask((FetchTask)TaskFactory.get(fetch,conf));

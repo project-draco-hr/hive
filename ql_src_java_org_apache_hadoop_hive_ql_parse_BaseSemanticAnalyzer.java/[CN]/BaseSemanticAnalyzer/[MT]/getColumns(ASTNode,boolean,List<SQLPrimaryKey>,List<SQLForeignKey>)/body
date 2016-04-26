@@ -1,0 +1,38 @@
+{
+  List<FieldSchema> colList=new ArrayList<FieldSchema>();
+  int numCh=ast.getChildCount();
+  List<PKInfo> pkInfos=new ArrayList<PKInfo>();
+  Map<String,FieldSchema> nametoFS=new HashMap<String,FieldSchema>();
+  Tree parent=ast.getParent();
+  for (int i=0; i < numCh; i++) {
+    FieldSchema col=new FieldSchema();
+    ASTNode child=(ASTNode)ast.getChild(i);
+    if (child.getToken().getType() == HiveParser.TOK_PRIMARY_KEY) {
+      processPrimaryKeyInfos(child,pkInfos);
+    }
+ else     if (child.getToken().getType() == HiveParser.TOK_FOREIGN_KEY) {
+      processForeignKeys((ASTNode)parent,child,foreignKeys);
+    }
+ else {
+      Tree grandChild=child.getChild(0);
+      if (grandChild != null) {
+        String name=grandChild.getText();
+        if (lowerCase) {
+          name=name.toLowerCase();
+        }
+        col.setName(unescapeIdentifier(name));
+        ASTNode typeChild=(ASTNode)(child.getChild(1));
+        col.setType(getTypeStringFromAST(typeChild));
+        if (child.getChildCount() == 3) {
+          col.setComment(unescapeSQLString(child.getChild(2).getText()));
+        }
+      }
+      nametoFS.put(col.getName(),col);
+      colList.add(col);
+    }
+  }
+  if (!pkInfos.isEmpty()) {
+    processPrimaryKeys((ASTNode)parent,pkInfos,primaryKeys,nametoFS);
+  }
+  return colList;
+}
