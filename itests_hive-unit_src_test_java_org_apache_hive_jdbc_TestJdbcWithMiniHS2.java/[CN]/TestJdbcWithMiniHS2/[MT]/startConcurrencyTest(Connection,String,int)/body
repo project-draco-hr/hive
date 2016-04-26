@@ -1,0 +1,42 @@
+{
+  int POOL_SIZE=100;
+  int TASK_COUNT=numTasks;
+  SynchronousQueue<Runnable> executorQueue=new SynchronousQueue<Runnable>();
+  ExecutorService workers=new ThreadPoolExecutor(1,POOL_SIZE,20,TimeUnit.SECONDS,executorQueue);
+  List<Future<Boolean>> list=new ArrayList<Future<Boolean>>();
+  int i=0;
+  while (i < TASK_COUNT) {
+    try {
+      Future<Boolean> future=workers.submit(new JDBCTask(conn,i,tableName));
+      list.add(future);
+      i++;
+    }
+ catch (    RejectedExecutionException ree) {
+      try {
+        TimeUnit.MILLISECONDS.sleep(100);
+      }
+ catch (      InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+    }
+  }
+  for (  Future<Boolean> future : list) {
+    try {
+      Boolean result=future.get(30,TimeUnit.SECONDS);
+      assertTrue(result);
+    }
+ catch (    ExecutionException ee) {
+      fail("Concurrent Statement failed: " + ee.getCause());
+    }
+catch (    TimeoutException te) {
+      System.out.println("Task was timeout after 30 second: " + te);
+    }
+catch (    CancellationException ce) {
+      System.out.println("Task was interrupted: " + ce);
+    }
+catch (    InterruptedException ie) {
+      System.out.println("Thread was interrupted: " + ie);
+    }
+  }
+  workers.shutdown();
+}
