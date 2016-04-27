@@ -20,14 +20,18 @@
  else {
     this.forceLocation=false;
   }
+  this.timeoutMonitor=new SchedulerTimeoutMonitor();
+  this.timeout=HiveConf.getTimeVar(conf,ConfVars.LLAP_DAEMON_TASK_SCHEDULER_TIMEOUT_SECONDS,TimeUnit.MILLISECONDS);
+  this.timeoutExecutor=Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder().setDaemon(true).setNameFormat("LlapTaskSchedulerTimeoutMonitor").build());
+  this.timeoutFuture=null;
   int memoryPerExecutor=(int)(memoryPerInstance / (float)executorsPerInstance);
   int coresPerExecutor=(int)(coresPerInstance / (float)executorsPerInstance);
   this.resourcePerExecutor=Resource.newInstance(memoryPerExecutor,coresPerExecutor);
   String instanceId=HiveConf.getTrimmedVar(conf,ConfVars.LLAP_DAEMON_SERVICE_HOSTS);
   Preconditions.checkNotNull(instanceId,ConfVars.LLAP_DAEMON_SERVICE_HOSTS.varname + " must be defined");
-  ExecutorService executorServiceRaw=Executors.newFixedThreadPool(1,new ThreadFactoryBuilder().setDaemon(true).setNameFormat("LlapSchedulerNodeEnabler").build());
+  ExecutorService executorServiceRaw=Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setDaemon(true).setNameFormat("LlapSchedulerNodeEnabler").build());
   nodeEnabledExecutor=MoreExecutors.listeningDecorator(executorServiceRaw);
-  ExecutorService schedulerExecutorServiceRaw=Executors.newFixedThreadPool(1,new ThreadFactoryBuilder().setDaemon(true).setNameFormat("LlapScheduler").build());
+  ExecutorService schedulerExecutorServiceRaw=Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setDaemon(true).setNameFormat("LlapScheduler").build());
   schedulerExecutor=MoreExecutors.listeningDecorator(schedulerExecutorServiceRaw);
   LOG.info("Running with configuration: " + "memoryPerInstance=" + memoryPerInstance + ", vCoresPerInstance="+ coresPerInstance+ ", executorsPerInstance="+ executorsPerInstance+ ", resourcePerInstanceInferred="+ resourcePerExecutor+ ", nodeBlacklistConf="+ nodeBlacklistConf+ ", forceLocation="+ forceLocation);
 }
