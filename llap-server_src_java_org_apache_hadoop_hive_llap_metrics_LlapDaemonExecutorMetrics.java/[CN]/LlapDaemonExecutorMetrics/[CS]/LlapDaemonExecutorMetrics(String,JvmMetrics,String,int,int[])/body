@@ -1,0 +1,29 @@
+{
+  this.name=displayName;
+  this.jvmMetrics=jm;
+  this.sessionId=sessionId;
+  this.registry=new MetricsRegistry("LlapDaemonExecutorRegistry");
+  this.registry.tag(ProcessName,MetricsUtils.METRICS_PROCESS_NAME).tag(SessionId,sessionId);
+  this.numExecutors=numExecutors;
+  this.threadMXBean=ManagementFactory.getThreadMXBean();
+  this.executorThreadCpuTime=new MutableGaugeLong[numExecutors];
+  this.executorThreadUserTime=new MutableGaugeLong[numExecutors];
+  this.cpuMetricsInfoMap=new ConcurrentHashMap<>();
+  this.userMetricsInfoMap=new ConcurrentHashMap<>();
+  final int len=intervals == null ? 0 : intervals.length;
+  this.percentileTimeToKill=new MutableQuantiles[len];
+  this.percentileTimeLost=new MutableQuantiles[len];
+  for (int i=0; i < len; i++) {
+    int interval=intervals[i];
+    percentileTimeToKill[i]=registry.newQuantiles(LlapDaemonExecutorInfo.ExecutorMaxPreemptionTimeToKill.name() + "_" + interval+ "s",LlapDaemonExecutorInfo.ExecutorMaxPreemptionTimeToKill.description(),"ops","latency",interval);
+    percentileTimeLost[i]=registry.newQuantiles(LlapDaemonExecutorInfo.ExecutorMaxPreemptionTimeLost.name() + "_" + interval+ "s",LlapDaemonExecutorInfo.ExecutorMaxPreemptionTimeLost.description(),"ops","latency",interval);
+  }
+  for (int i=0; i < numExecutors; i++) {
+    MetricsInfo mic=new LlapDaemonCustomMetricsInfo(ExecutorThreadCPUTime.name() + "_" + i,ExecutorThreadCPUTime.description());
+    MetricsInfo miu=new LlapDaemonCustomMetricsInfo(ExecutorThreadUserTime.name() + "_" + i,ExecutorThreadUserTime.description());
+    this.cpuMetricsInfoMap.put(i,mic);
+    this.userMetricsInfoMap.put(i,miu);
+    this.executorThreadCpuTime[i]=registry.newGauge(mic,0L);
+    this.executorThreadUserTime[i]=registry.newGauge(miu,0L);
+  }
+}

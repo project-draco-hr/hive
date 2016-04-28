@@ -3,10 +3,15 @@
 switch (result.getEndReason()) {
 case SUCCESS:
     LOG.debug("Successfully finished {}",requestId);
-  metrics.incrExecutorTotalSuccess();
+  if (metrics != null) {
+    metrics.incrExecutorTotalSuccess();
+  }
 break;
 case CONTAINER_STOP_REQUESTED:
 LOG.info("Received container stop request (AM preemption) for {}",requestId);
+if (metrics != null) {
+metrics.incrExecutorTotalKilled();
+}
 break;
 case KILL_REQUESTED:
 LOG.info("Killed task {}",requestId);
@@ -14,21 +19,29 @@ if (killtimerWatch.isRunning()) {
 killtimerWatch.stop();
 long elapsed=killtimerWatch.elapsedMillis();
 LOG.info("Time to die for task {}",elapsed);
+if (metrics != null) {
+metrics.addMetricsPreemptionTimeToKill(elapsed);
 }
-metrics.incrPreemptionTimeLost(runtimeWatch.elapsedMillis());
+}
+if (metrics != null) {
+metrics.addMetricsPreemptionTimeLost(runtimeWatch.elapsedMillis());
 metrics.incrExecutorTotalKilled();
+}
 break;
 case COMMUNICATION_FAILURE:
 LOG.info("Failed to run {} due to communication failure",requestId);
+if (metrics != null) {
 metrics.incrExecutorTotalExecutionFailed();
+}
 break;
 case TASK_ERROR:
 LOG.info("Failed to run {} due to task error",requestId);
+if (metrics != null) {
 metrics.incrExecutorTotalExecutionFailed();
+}
 break;
 }
 fragmentCompletionHanler.fragmentComplete(fragmentInfo);
 taskRunnerCallable.shutdown();
 HistoryLogger.logFragmentEnd(request.getApplicationIdString(),request.getContainerIdString(),executionContext.getHostName(),request.getFragmentSpec().getDagName(),fragmentInfo.getQueryInfo().getDagIdentifier(),request.getFragmentSpec().getVertexName(),request.getFragmentSpec().getFragmentNumber(),request.getFragmentSpec().getAttemptNumber(),taskRunnerCallable.threadName,taskRunnerCallable.startTime,true);
-metrics.decrExecutorNumQueuedRequests();
 }
