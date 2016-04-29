@@ -1,22 +1,28 @@
 {
-  if (isNative ^ function.isNative()) {
-    throw new RuntimeException("Function " + functionName + " is not for this registry");
-  }
-  functionName=functionName.toLowerCase();
-  FunctionInfo prev=mFunctions.get(functionName);
-  if (prev != null) {
-    if (isBuiltInFunc(prev.getFunctionClass())) {
-      throw new RuntimeException("Function " + functionName + " is hive builtin function, "+ "which cannot be overriden.");
+  lock.lock();
+  try {
+    if (isNative != function.isNative()) {
+      throw new RuntimeException("Function " + functionName + " is not for this registry");
     }
-    prev.discarded();
+    functionName=functionName.toLowerCase();
+    FunctionInfo prev=mFunctions.get(functionName);
+    if (prev != null) {
+      if (isBuiltInFunc(prev.getFunctionClass())) {
+        throw new RuntimeException("Function " + functionName + " is hive builtin function, "+ "which cannot be overriden.");
+      }
+      prev.discarded();
+    }
+    mFunctions.put(functionName,function);
+    if (function.isBuiltIn()) {
+      builtIns.add(function.getFunctionClass());
+    }
+ else     if (function.isPersistent()) {
+      Class<?> functionClass=getPermanentUdfClass(function);
+      Integer refCount=persistent.get(functionClass);
+      persistent.put(functionClass,Integer.valueOf(refCount == null ? 1 : refCount + 1));
+    }
   }
-  mFunctions.put(functionName,function);
-  if (function.isBuiltIn()) {
-    builtIns.add(function.getFunctionClass());
-  }
- else   if (function.isPersistent()) {
-    Class<?> functionClass=getPermanentUdfClass(function);
-    Integer refCount=persistent.get(functionClass);
-    persistent.put(functionClass,Integer.valueOf(refCount == null ? 1 : refCount + 1));
+  finally {
+    lock.unlock();
   }
 }

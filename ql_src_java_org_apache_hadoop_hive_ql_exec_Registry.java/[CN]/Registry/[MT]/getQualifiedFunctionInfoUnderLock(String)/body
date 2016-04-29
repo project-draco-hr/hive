@@ -10,5 +10,19 @@
   if (isNative && info != null && info.isPersistent()) {
     return registerToSessionRegistry(qualifiedName,info);
   }
-  return info;
+  if (info != null || !isNative) {
+    return info;
+  }
+  SessionState ss=SessionState.get();
+  HiveConf conf=(ss == null) ? null : ss.getConf();
+  if (conf == null || !HiveConf.getBoolVar(conf,ConfVars.HIVE_ALLOW_UDF_LOAD_ON_DEMAND)) {
+    return null;
+  }
+  lock.unlock();
+  try {
+    return getFunctionInfoFromMetastoreNoLock(qualifiedName,conf);
+  }
+  finally {
+    lock.lock();
+  }
 }
