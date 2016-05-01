@@ -1,0 +1,28 @@
+{
+  FunctionInfo info=mFunctions.get(qualifiedName);
+  if (info != null && info.isBlockedFunction()) {
+    throw new SemanticException("UDF " + qualifiedName + " is not allowed");
+  }
+  if (!isNative && info != null && info.isDiscarded()) {
+    mFunctions.remove(qualifiedName);
+    return null;
+  }
+  if (isNative && info != null && info.isPersistent()) {
+    return registerToSessionRegistry(qualifiedName,info);
+  }
+  if (info != null || !isNative) {
+    return info;
+  }
+  SessionState ss=SessionState.get();
+  HiveConf conf=(ss == null) ? null : ss.getConf();
+  if (conf == null || !HiveConf.getBoolVar(conf,ConfVars.HIVE_ALLOW_UDF_LOAD_ON_DEMAND)) {
+    return null;
+  }
+  lock.unlock();
+  try {
+    return getFunctionInfoFromMetastoreNoLock(qualifiedName,conf);
+  }
+  finally {
+    lock.lock();
+  }
+}
