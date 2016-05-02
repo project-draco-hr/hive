@@ -14,6 +14,25 @@
       conf.addResource(f);
     }
     conf.reloadConfiguration();
+    for (    Map.Entry<Object,Object> props : options.getConf().entrySet()) {
+      conf.set((String)props.getKey(),(String)props.getValue());
+    }
+    String appName;
+    appName=options.getName();
+    if (StringUtils.isEmpty(appName)) {
+      appName=HiveConf.getVar(conf,HiveConf.ConfVars.LLAP_DAEMON_SERVICE_HOSTS);
+      if (appName.startsWith("@") && appName.length() > 1) {
+        appName=appName.substring(1);
+      }
+ else {
+        appName=null;
+      }
+    }
+    if (StringUtils.isEmpty(appName)) {
+      String message="Invalid app name. This must be setup via config or passed in as a parameter." + " This tool works with clusters deployed by Slider/YARN";
+      LOG.info(message);
+      return ExitCode.INCORRECT_USAGE.getInt();
+    }
     try {
       sliderClient=createSliderClient();
     }
@@ -23,7 +42,7 @@
     }
     ApplicationReport appReport=null;
     try {
-      appReport=getAppReport(options,sliderClient,FIND_YARN_APP_TIMEOUT);
+      appReport=getAppReport(appName,sliderClient,options.getFindAppTimeoutMs());
     }
  catch (    LlapStatusCliException e) {
       logError(e);
@@ -45,7 +64,7 @@
     }
  else {
       try {
-        ret=populateAppStatusFromSlider(options,sliderClient,appStatusBuilder);
+        ret=populateAppStatusFromSlider(appName,sliderClient,appStatusBuilder);
       }
  catch (      LlapStatusCliException e) {
         logError(e);
@@ -67,8 +86,8 @@
     return ret.getInt();
   }
   finally {
-    if (LOG.isTraceEnabled()) {
-      LOG.trace("Final AppState: " + appStatusBuilder.toString());
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Final AppState: " + appStatusBuilder.toString());
     }
     if (sliderClient != null) {
       sliderClient.stop();
