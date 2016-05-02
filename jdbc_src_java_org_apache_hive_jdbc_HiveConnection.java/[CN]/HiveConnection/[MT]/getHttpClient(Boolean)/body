@@ -48,22 +48,23 @@
     String sslTrustStorePath=sessConfMap.get(JdbcConnectionParams.SSL_TRUST_STORE);
     String sslTrustStorePassword=sessConfMap.get(JdbcConnectionParams.SSL_TRUST_STORE_PASSWORD);
     KeyStore sslTrustStore;
-    SSLSocketFactory socketFactory;
+    SSLConnectionSocketFactory socketFactory;
+    SSLContext sslContext;
     try {
       if (useTwoWaySSL != null && useTwoWaySSL.equalsIgnoreCase(JdbcConnectionParams.TRUE)) {
         socketFactory=getTwoWaySSLSocketFactory();
       }
  else       if (sslTrustStorePath == null || sslTrustStorePath.isEmpty()) {
-        socketFactory=SSLSocketFactory.getSocketFactory();
+        socketFactory=SSLConnectionSocketFactory.getSocketFactory();
       }
  else {
         sslTrustStore=KeyStore.getInstance(JdbcConnectionParams.SSL_TRUST_STORE_TYPE);
         try (FileInputStream fis=new FileInputStream(sslTrustStorePath)){
           sslTrustStore.load(fis,sslTrustStorePassword.toCharArray());
         }
-         socketFactory=new SSLSocketFactory(sslTrustStore);
+         sslContext=SSLContexts.custom().loadTrustMaterial(sslTrustStore,null).build();
+        socketFactory=new SSLConnectionSocketFactory(sslContext,new DefaultHostnameVerifier(null));
       }
-      socketFactory.setHostnameVerifier(SSLSocketFactory.ALLOW_ALL_HOSTNAME_VERIFIER);
       final Registry<ConnectionSocketFactory> registry=RegistryBuilder.<ConnectionSocketFactory>create().register("https",socketFactory).build();
       httpClientBuilder.setConnectionManager(new BasicHttpClientConnectionManager(registry));
     }
