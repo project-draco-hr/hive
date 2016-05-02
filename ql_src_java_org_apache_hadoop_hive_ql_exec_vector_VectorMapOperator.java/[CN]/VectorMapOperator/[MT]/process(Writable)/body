@@ -3,16 +3,59 @@
   if (context != null && context.inputFileChanged()) {
     cleanUpInputFileChanged();
   }
-  try {
-    int childrenDone=0;
-    for (    MapOpCtx current : currentCtxs) {
-      if (!current.forward(value)) {
-        childrenDone++;
+  if (!oneRootOperator.getDone()) {
+    try {
+      if (currentReadType == VectorMapOperatorReadType.VECTORIZED_INPUT_FILE_FORMAT) {
+        batchCounter++;
+        oneRootOperator.process(value,0);
+        if (oneRootOperator.getDone()) {
+          setDone(true);
+          return;
+        }
       }
-    }
-    rowsForwarded(childrenDone,((VectorizedRowBatch)value).size);
-  }
- catch (  Exception e) {
-    throw new HiveException("Hive Runtime Error while processing row ",e);
-  }
+ else {
+        Preconditions.checkState(currentReadType == VectorMapOperatorReadType.VECTOR_DESERIALIZE || currentReadType == VectorMapOperatorReadType.ROW_DESERIALIZE);
+        if (deserializerBatch.size == deserializerBatch.DEFAULT_SIZE) {
+          batchCounter++;
+          oneRootOperator.process(deserializerBatch,0);
+          for (int c=0; c < currentDataColumnCount; c++) {
+            deserializerBatch.cols[c].reset();
+            deserializerBatch.cols[c].init();
+          }
+          deserializerBatch.selectedInUse=false;
+          deserializerBatch.size=0;
+          deserializerBatch.endOfFile=false;
+          if (oneRootOperator.getDone()) {
+            setDone(true);
+            return;
+          }
+        }
+switch (currentReadType) {
+case VECTOR_DESERIALIZE:
+{
+            BinaryComparable binComp=(BinaryComparable)value;
+            currentDeserializeRead.set(binComp.getBytes(),0,binComp.getLength());
+            currentVectorDeserializeRow.deserialize(deserializerBatch,deserializerBatch.size++);
+          }
+        break;
+case ROW_DESERIALIZE:
+{
+        Object deserialized=currentPartDeserializer.deserialize(value);
+        List<Object> standardObjects=new ArrayList<Object>();
+        ObjectInspectorUtils.copyToStandardObject(standardObjects,deserialized,currentPartRawRowObjectInspector,ObjectInspectorCopyOption.WRITABLE);
+        if (standardObjects.size() < currentDataColumnCount) {
+          throw new HiveException("Input File Format returned row with too few columns");
+        }
+        currentVectorAssign.assignRow(deserializerBatch,deserializerBatch.size++,standardObjects,currentDataColumnCount);
+      }
+    break;
+default :
+  throw new RuntimeException("Unexpected vector MapOperator read type " + currentReadType.name());
+}
+}
+}
+ catch (Exception e) {
+throw new HiveException("Hive Runtime Error while processing row ",e);
+}
+}
 }

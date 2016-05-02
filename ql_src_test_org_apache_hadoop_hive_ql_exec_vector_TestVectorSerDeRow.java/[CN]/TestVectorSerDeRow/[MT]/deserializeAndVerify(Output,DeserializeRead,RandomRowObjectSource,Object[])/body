@@ -11,7 +11,7 @@
 switch (primitiveCategory) {
 case BOOLEAN:
 {
-        Boolean value=deserializeRead.readBoolean();
+        Boolean value=deserializeRead.currentBoolean;
         BooleanWritable expectedWritable=(BooleanWritable)expected;
         if (!value.equals(expectedWritable.get())) {
           TestCase.fail("Boolean field mismatch (expected " + expected + " found "+ value+ ")");
@@ -20,7 +20,7 @@ case BOOLEAN:
     break;
 case BYTE:
 {
-    Byte value=deserializeRead.readByte();
+    Byte value=deserializeRead.currentByte;
     ByteWritable expectedWritable=(ByteWritable)expected;
     if (!value.equals(expectedWritable.get())) {
       TestCase.fail("Byte field mismatch (expected " + (int)expected + " found "+ (int)value+ ")");
@@ -29,7 +29,7 @@ case BYTE:
 break;
 case SHORT:
 {
-Short value=deserializeRead.readShort();
+Short value=deserializeRead.currentShort;
 ShortWritable expectedWritable=(ShortWritable)expected;
 if (!value.equals(expectedWritable.get())) {
   TestCase.fail("Short field mismatch (expected " + expected + " found "+ value+ ")");
@@ -38,7 +38,7 @@ if (!value.equals(expectedWritable.get())) {
 break;
 case INT:
 {
-Integer value=deserializeRead.readInt();
+Integer value=deserializeRead.currentInt;
 IntWritable expectedWritable=(IntWritable)expected;
 if (!value.equals(expectedWritable.get())) {
 TestCase.fail("Int field mismatch (expected " + expected + " found "+ value+ ")");
@@ -47,7 +47,7 @@ TestCase.fail("Int field mismatch (expected " + expected + " found "+ value+ ")"
 break;
 case LONG:
 {
-Long value=deserializeRead.readLong();
+Long value=deserializeRead.currentLong;
 LongWritable expectedWritable=(LongWritable)expected;
 if (!value.equals(expectedWritable.get())) {
 TestCase.fail("Long field mismatch (expected " + expected + " found "+ value+ ")");
@@ -56,18 +56,16 @@ TestCase.fail("Long field mismatch (expected " + expected + " found "+ value+ ")
 break;
 case DATE:
 {
-DeserializeRead.ReadDateResults readDateResults=deserializeRead.createReadDateResults();
-deserializeRead.readDate(readDateResults);
-Date value=readDateResults.getDate();
+DateWritable value=deserializeRead.currentDateWritable;
 DateWritable expectedWritable=(DateWritable)expected;
-if (!value.equals(expectedWritable.get())) {
+if (!value.equals(expectedWritable)) {
 TestCase.fail("Date field mismatch (expected " + expected.toString() + " found "+ value.toString()+ ")");
 }
 }
 break;
 case FLOAT:
 {
-Float value=deserializeRead.readFloat();
+Float value=deserializeRead.currentFloat;
 FloatWritable expectedWritable=(FloatWritable)expected;
 if (!value.equals(expectedWritable.get())) {
 TestCase.fail("Float field mismatch (expected " + expected + " found "+ value+ ")");
@@ -76,7 +74,7 @@ TestCase.fail("Float field mismatch (expected " + expected + " found "+ value+ "
 break;
 case DOUBLE:
 {
-Double value=deserializeRead.readDouble();
+Double value=deserializeRead.currentDouble;
 DoubleWritable expectedWritable=(DoubleWritable)expected;
 if (!value.equals(expectedWritable.get())) {
 TestCase.fail("Double field mismatch (expected " + expected + " found "+ value+ ")");
@@ -84,31 +82,25 @@ TestCase.fail("Double field mismatch (expected " + expected + " found "+ value+ 
 }
 break;
 case STRING:
+case CHAR:
+case VARCHAR:
+case BINARY:
 {
-DeserializeRead.ReadStringResults readStringResults=deserializeRead.createReadStringResults();
-deserializeRead.readString(readStringResults);
-char[] charsBuffer=new char[readStringResults.bytes.length];
-for (int c=0; c < charsBuffer.length; c++) {
-charsBuffer[c]=(char)(readStringResults.bytes[c] & 0xFF);
-}
-byte[] stringBytes=Arrays.copyOfRange(readStringResults.bytes,readStringResults.start,readStringResults.start + readStringResults.length);
-char[] charsRange=new char[stringBytes.length];
-for (int c=0; c < charsRange.length; c++) {
-charsRange[c]=(char)(stringBytes[c] & 0xFF);
-}
+byte[] stringBytes=Arrays.copyOfRange(deserializeRead.currentBytes,deserializeRead.currentBytesStart,deserializeRead.currentBytesStart + deserializeRead.currentBytesLength);
 Text text=new Text(stringBytes);
-String value=text.toString();
+String string=text.toString();
+switch (primitiveCategory) {
+case STRING:
+{
 Text expectedWritable=(Text)expected;
-if (!value.equals(expectedWritable.toString())) {
-TestCase.fail("String field mismatch (expected '" + expectedWritable.toString() + "' found '"+ value+ "')");
+if (!string.equals(expectedWritable.toString())) {
+TestCase.fail("String field mismatch (expected '" + expectedWritable.toString() + "' found '"+ string+ "')");
 }
 }
 break;
 case CHAR:
 {
-DeserializeRead.ReadHiveCharResults readHiveCharResults=deserializeRead.createReadHiveCharResults();
-deserializeRead.readHiveChar(readHiveCharResults);
-HiveChar hiveChar=readHiveCharResults.getHiveChar();
+HiveChar hiveChar=new HiveChar(string,((CharTypeInfo)primitiveTypeInfo).getLength());
 HiveCharWritable expectedWritable=(HiveCharWritable)expected;
 if (!hiveChar.equals(expectedWritable.getHiveChar())) {
 TestCase.fail("Char field mismatch (expected '" + expectedWritable.getHiveChar() + "' found '"+ hiveChar+ "')");
@@ -117,20 +109,35 @@ TestCase.fail("Char field mismatch (expected '" + expectedWritable.getHiveChar()
 break;
 case VARCHAR:
 {
-DeserializeRead.ReadHiveVarcharResults readHiveVarcharResults=deserializeRead.createReadHiveVarcharResults();
-deserializeRead.readHiveVarchar(readHiveVarcharResults);
-HiveVarchar hiveVarchar=readHiveVarcharResults.getHiveVarchar();
+HiveVarchar hiveVarchar=new HiveVarchar(string,((VarcharTypeInfo)primitiveTypeInfo).getLength());
 HiveVarcharWritable expectedWritable=(HiveVarcharWritable)expected;
 if (!hiveVarchar.equals(expectedWritable.getHiveVarchar())) {
 TestCase.fail("Varchar field mismatch (expected '" + expectedWritable.getHiveVarchar() + "' found '"+ hiveVarchar+ "')");
 }
 }
 break;
+case BINARY:
+{
+BytesWritable expectedWritable=(BytesWritable)expected;
+if (stringBytes.length != expectedWritable.getLength()) {
+TestCase.fail("Byte Array field mismatch (expected " + expected + " found "+ stringBytes+ ")");
+}
+byte[] expectedBytes=expectedWritable.getBytes();
+for (int b=0; b < stringBytes.length; b++) {
+if (stringBytes[b] != expectedBytes[b]) {
+TestCase.fail("Byte Array field mismatch (expected " + expected + " found "+ stringBytes+ ")");
+}
+}
+}
+break;
+default :
+throw new HiveException("Unexpected primitive category " + primitiveCategory);
+}
+}
+break;
 case DECIMAL:
 {
-DeserializeRead.ReadDecimalResults readDecimalResults=deserializeRead.createReadDecimalResults();
-deserializeRead.readHiveDecimal(readDecimalResults);
-HiveDecimal value=readDecimalResults.getHiveDecimal();
+HiveDecimal value=deserializeRead.currentHiveDecimalWritable.getHiveDecimal();
 if (value == null) {
 TestCase.fail("Decimal field evaluated to NULL");
 }
@@ -145,9 +152,7 @@ TestCase.fail("Decimal field mismatch (expected " + expectedWritable.getHiveDeci
 break;
 case TIMESTAMP:
 {
-DeserializeRead.ReadTimestampResults readTimestampResults=deserializeRead.createReadTimestampResults();
-deserializeRead.readTimestamp(readTimestampResults);
-Timestamp value=readTimestampResults.getTimestamp();
+Timestamp value=deserializeRead.currentTimestampWritable.getTimestamp();
 TimestampWritable expectedWritable=(TimestampWritable)expected;
 if (!value.equals(expectedWritable.getTimestamp())) {
 TestCase.fail("Timestamp field mismatch (expected " + expectedWritable.getTimestamp() + " found "+ value.toString()+ ")");
@@ -156,9 +161,7 @@ TestCase.fail("Timestamp field mismatch (expected " + expectedWritable.getTimest
 break;
 case INTERVAL_YEAR_MONTH:
 {
-DeserializeRead.ReadIntervalYearMonthResults readIntervalYearMonthResults=deserializeRead.createReadIntervalYearMonthResults();
-deserializeRead.readIntervalYearMonth(readIntervalYearMonthResults);
-HiveIntervalYearMonth value=readIntervalYearMonthResults.getHiveIntervalYearMonth();
+HiveIntervalYearMonth value=deserializeRead.currentHiveIntervalYearMonthWritable.getHiveIntervalYearMonth();
 HiveIntervalYearMonthWritable expectedWritable=(HiveIntervalYearMonthWritable)expected;
 HiveIntervalYearMonth expectedValue=expectedWritable.getHiveIntervalYearMonth();
 if (!value.equals(expectedValue)) {
@@ -168,30 +171,11 @@ TestCase.fail("HiveIntervalYearMonth field mismatch (expected " + expectedValue 
 break;
 case INTERVAL_DAY_TIME:
 {
-DeserializeRead.ReadIntervalDayTimeResults readIntervalDayTimeResults=deserializeRead.createReadIntervalDayTimeResults();
-deserializeRead.readIntervalDayTime(readIntervalDayTimeResults);
-HiveIntervalDayTime value=readIntervalDayTimeResults.getHiveIntervalDayTime();
+HiveIntervalDayTime value=deserializeRead.currentHiveIntervalDayTimeWritable.getHiveIntervalDayTime();
 HiveIntervalDayTimeWritable expectedWritable=(HiveIntervalDayTimeWritable)expected;
 HiveIntervalDayTime expectedValue=expectedWritable.getHiveIntervalDayTime();
 if (!value.equals(expectedValue)) {
 TestCase.fail("HiveIntervalDayTime field mismatch (expected " + expectedValue + " found "+ value.toString()+ ")");
-}
-}
-break;
-case BINARY:
-{
-DeserializeRead.ReadBinaryResults readBinaryResults=deserializeRead.createReadBinaryResults();
-deserializeRead.readBinary(readBinaryResults);
-byte[] byteArray=Arrays.copyOfRange(readBinaryResults.bytes,readBinaryResults.start,readBinaryResults.start + readBinaryResults.length);
-BytesWritable expectedWritable=(BytesWritable)expected;
-if (byteArray.length != expectedWritable.getLength()) {
-TestCase.fail("Byte Array field mismatch (expected " + expected + " found "+ byteArray+ ")");
-}
-byte[] expectedBytes=expectedWritable.getBytes();
-for (int b=0; b < byteArray.length; b++) {
-if (byteArray[b] != expectedBytes[b]) {
-TestCase.fail("Byte Array field mismatch (expected " + expected + " found "+ byteArray+ ")");
-}
 }
 }
 break;

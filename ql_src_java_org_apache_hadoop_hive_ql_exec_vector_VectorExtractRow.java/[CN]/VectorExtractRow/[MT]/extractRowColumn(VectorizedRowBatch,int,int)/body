@@ -1,0 +1,116 @@
+{
+  final int projectionColumnNum=projectionColumnNums[logicalColumnIndex];
+  ColumnVector colVector=batch.cols[projectionColumnNum];
+  if (colVector == null) {
+    return null;
+  }
+  int adjustedIndex=(colVector.isRepeating ? 0 : batchIndex);
+  if (!colVector.noNulls && colVector.isNull[adjustedIndex]) {
+    return null;
+  }
+  Category category=categories[logicalColumnIndex];
+switch (category) {
+case PRIMITIVE:
+{
+      Writable primitiveWritable=primitiveWritables[logicalColumnIndex];
+      PrimitiveCategory primitiveCategory=primitiveCategories[logicalColumnIndex];
+switch (primitiveCategory) {
+case VOID:
+        return null;
+case BOOLEAN:
+      ((BooleanWritable)primitiveWritable).set(((LongColumnVector)batch.cols[projectionColumnNum]).vector[adjustedIndex] == 0 ? false : true);
+    return primitiveWritable;
+case BYTE:
+  ((ByteWritable)primitiveWritable).set((byte)((LongColumnVector)batch.cols[projectionColumnNum]).vector[adjustedIndex]);
+return primitiveWritable;
+case SHORT:
+((ShortWritable)primitiveWritable).set((short)((LongColumnVector)batch.cols[projectionColumnNum]).vector[adjustedIndex]);
+return primitiveWritable;
+case INT:
+((IntWritable)primitiveWritable).set((int)((LongColumnVector)batch.cols[projectionColumnNum]).vector[adjustedIndex]);
+return primitiveWritable;
+case LONG:
+((LongWritable)primitiveWritable).set(((LongColumnVector)batch.cols[projectionColumnNum]).vector[adjustedIndex]);
+return primitiveWritable;
+case TIMESTAMP:
+((TimestampWritable)primitiveWritable).set(((TimestampColumnVector)batch.cols[projectionColumnNum]).asScratchTimestamp(adjustedIndex));
+return primitiveWritable;
+case DATE:
+((DateWritable)primitiveWritable).set((int)((LongColumnVector)batch.cols[projectionColumnNum]).vector[adjustedIndex]);
+return primitiveWritable;
+case FLOAT:
+((FloatWritable)primitiveWritable).set((float)((DoubleColumnVector)batch.cols[projectionColumnNum]).vector[adjustedIndex]);
+return primitiveWritable;
+case DOUBLE:
+((DoubleWritable)primitiveWritable).set(((DoubleColumnVector)batch.cols[projectionColumnNum]).vector[adjustedIndex]);
+return primitiveWritable;
+case BINARY:
+{
+BytesColumnVector bytesColVector=((BytesColumnVector)batch.cols[projectionColumnNum]);
+byte[] bytes=bytesColVector.vector[adjustedIndex];
+int start=bytesColVector.start[adjustedIndex];
+int length=bytesColVector.length[adjustedIndex];
+if (bytes == null) {
+LOG.info("null binary entry: batchIndex " + batchIndex + " projection column num "+ projectionColumnNum);
+}
+BytesWritable bytesWritable=(BytesWritable)primitiveWritable;
+bytesWritable.set(bytes,start,length);
+return primitiveWritable;
+}
+case STRING:
+{
+BytesColumnVector bytesColVector=((BytesColumnVector)batch.cols[projectionColumnNum]);
+byte[] bytes=bytesColVector.vector[adjustedIndex];
+int start=bytesColVector.start[adjustedIndex];
+int length=bytesColVector.length[adjustedIndex];
+if (bytes == null) {
+LOG.info("null string entry: batchIndex " + batchIndex + " projection column num "+ projectionColumnNum);
+}
+((Text)primitiveWritable).set(bytes,start,length);
+return primitiveWritable;
+}
+case VARCHAR:
+{
+BytesColumnVector bytesColVector=((BytesColumnVector)batch.cols[projectionColumnNum]);
+byte[] bytes=bytesColVector.vector[adjustedIndex];
+int start=bytesColVector.start[adjustedIndex];
+int length=bytesColVector.length[adjustedIndex];
+if (bytes == null) {
+LOG.info("null varchar entry: batchIndex " + batchIndex + " projection column num "+ projectionColumnNum);
+}
+int adjustedLength=StringExpr.truncate(bytes,start,length,maxLengths[logicalColumnIndex]);
+HiveVarcharWritable hiveVarcharWritable=(HiveVarcharWritable)primitiveWritable;
+hiveVarcharWritable.set(new String(bytes,start,adjustedLength,Charsets.UTF_8),-1);
+return primitiveWritable;
+}
+case CHAR:
+{
+BytesColumnVector bytesColVector=((BytesColumnVector)batch.cols[projectionColumnNum]);
+byte[] bytes=bytesColVector.vector[adjustedIndex];
+int start=bytesColVector.start[adjustedIndex];
+int length=bytesColVector.length[adjustedIndex];
+if (bytes == null) {
+LOG.info("null char entry: batchIndex " + batchIndex + " projection column num "+ projectionColumnNum);
+}
+int adjustedLength=StringExpr.rightTrimAndTruncate(bytes,start,length,maxLengths[logicalColumnIndex]);
+HiveCharWritable hiveCharWritable=(HiveCharWritable)primitiveWritable;
+hiveCharWritable.set(new String(bytes,start,adjustedLength,Charsets.UTF_8),-1);
+return primitiveWritable;
+}
+case DECIMAL:
+((HiveDecimalWritable)primitiveWritable).set(((DecimalColumnVector)batch.cols[projectionColumnNum]).vector[adjustedIndex].getHiveDecimal());
+return primitiveWritable;
+case INTERVAL_YEAR_MONTH:
+((HiveIntervalYearMonthWritable)primitiveWritable).set((int)((LongColumnVector)batch.cols[projectionColumnNum]).vector[adjustedIndex]);
+return primitiveWritable;
+case INTERVAL_DAY_TIME:
+((HiveIntervalDayTimeWritable)primitiveWritable).set(((IntervalDayTimeColumnVector)batch.cols[projectionColumnNum]).asScratchIntervalDayTime(adjustedIndex));
+return primitiveWritable;
+default :
+throw new RuntimeException("Primitive category " + primitiveCategory.name() + " not supported");
+}
+}
+default :
+throw new RuntimeException("Category " + category.name() + " not supported");
+}
+}

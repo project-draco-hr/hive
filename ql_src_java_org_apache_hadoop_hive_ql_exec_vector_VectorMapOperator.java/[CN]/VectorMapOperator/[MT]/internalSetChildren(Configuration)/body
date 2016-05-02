@@ -1,0 +1,36 @@
+{
+  currentReadType=VectorMapOperatorReadType.NONE;
+  determineColumnsToInclude(hconf);
+  batchContext=conf.getVectorizedRowBatchCtx();
+  vectorizedInputFileFormatBatch=batchContext.createVectorizedRowBatch(columnsToIncludeTruncated);
+  conf.setVectorizedRowBatch(vectorizedInputFileFormatBatch);
+  deserializerBatch=batchContext.createVectorizedRowBatch(columnsToIncludeTruncated);
+  batchCounter=0;
+  dataColumnCount=batchContext.getDataColumnCount();
+  partitionColumnCount=batchContext.getPartitionColumnCount();
+  partitionValues=new Object[partitionColumnCount];
+  tableStructTypeInfo=TypeInfoFactory.getStructTypeInfo(Arrays.asList(batchContext.getRowColumnNames()),Arrays.asList(batchContext.getRowColumnTypeInfos()));
+  tableStandardStructObjectInspector=(StandardStructObjectInspector)TypeInfoUtils.getStandardWritableObjectInspectorFromTypeInfo(tableStructTypeInfo);
+  tableRowTypeInfos=batchContext.getRowColumnTypeInfos();
+  fileToPartitionContextMap=new HashMap<String,VectorPartitionContext>();
+  HashMap<PartitionDesc,VectorPartitionContext> partitionContextMap=new HashMap<PartitionDesc,VectorPartitionContext>();
+  for (  Map.Entry<String,ArrayList<String>> entry : conf.getPathToAliases().entrySet()) {
+    String path=entry.getKey();
+    PartitionDesc partDesc=conf.getPathToPartitionInfo().get(path);
+    ArrayList<String> aliases=entry.getValue();
+    VectorPartitionDesc vectorPartDesc=partDesc.getVectorPartitionDesc();
+    LOG.info("VectorMapOperator path: " + path + ", read type "+ vectorPartDesc.getVectorMapOperatorReadType().name()+ ", vector deserialize type "+ vectorPartDesc.getVectorDeserializeType().name()+ ", aliases "+ aliases);
+    VectorPartitionContext vectorPartitionContext;
+    if (!partitionContextMap.containsKey(partDesc)) {
+      vectorPartitionContext=createAndInitPartitionContext(partDesc,hconf);
+      partitionContextMap.put(partDesc,vectorPartitionContext);
+    }
+ else {
+      vectorPartitionContext=partitionContextMap.get(partDesc);
+    }
+    fileToPartitionContextMap.put(path,vectorPartitionContext);
+  }
+  List<Operator<? extends OperatorDesc>> children=new ArrayList<Operator<? extends OperatorDesc>>();
+  children.add(oneRootOperator);
+  setChildOperators(children);
+}

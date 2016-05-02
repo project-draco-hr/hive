@@ -1,0 +1,63 @@
+{
+  currentVectorPartContext=fileToPartitionContextMap.get(nominalPath);
+  PartitionDesc partDesc=currentVectorPartContext.getPartDesc();
+  VectorPartitionDesc vectorPartDesc=partDesc.getVectorPartitionDesc();
+  currentReadType=vectorPartDesc.getVectorMapOperatorReadType();
+  if (currentReadType == VectorMapOperatorReadType.VECTORIZED_INPUT_FILE_FORMAT) {
+    currentDataColumnCount=0;
+    currentDeserializeRead=null;
+    currentVectorDeserializeRow=null;
+    currentPartDeserializer=null;
+    currentPartRawRowObjectInspector=null;
+    currentVectorAssign=null;
+  }
+ else {
+    Preconditions.checkState(currentReadType == VectorMapOperatorReadType.VECTOR_DESERIALIZE || currentReadType == VectorMapOperatorReadType.ROW_DESERIALIZE);
+    if (deserializerBatch.size > 0) {
+      batchCounter++;
+      oneRootOperator.process(deserializerBatch,0);
+      deserializerBatch.reset();
+      if (oneRootOperator.getDone()) {
+        setDone(true);
+        return;
+      }
+    }
+    currentDataColumnCount=currentVectorPartContext.getReaderDataColumnCount();
+    if (currentDataColumnCount < dataColumnCount) {
+      for (int i=currentDataColumnCount; i < dataColumnCount; i++) {
+        ColumnVector colVector=deserializerBatch.cols[i];
+        colVector.isNull[0]=true;
+        colVector.noNulls=false;
+        colVector.isRepeating=true;
+      }
+    }
+    if (batchContext.getPartitionColumnCount() > 0) {
+      VectorizedRowBatchCtx.getPartitionValues(batchContext,partDesc,partitionValues);
+      batchContext.addPartitionColsToBatch(deserializerBatch,partitionValues);
+    }
+switch (currentReadType) {
+case VECTOR_DESERIALIZE:
+{
+        VectorDeserializePartitionContext vectorDeserPartContext=(VectorDeserializePartitionContext)currentVectorPartContext;
+        currentDeserializeRead=vectorDeserPartContext.getDeserializeRead();
+        currentVectorDeserializeRow=vectorDeserPartContext.getVectorDeserializeRow();
+        currentPartDeserializer=null;
+        currentPartRawRowObjectInspector=null;
+        currentVectorAssign=null;
+      }
+    break;
+case ROW_DESERIALIZE:
+{
+    RowDeserializePartitionContext rowDeserPartContext=(RowDeserializePartitionContext)currentVectorPartContext;
+    currentDeserializeRead=null;
+    currentVectorDeserializeRow=null;
+    currentPartDeserializer=rowDeserPartContext.getPartDeserializer();
+    currentPartRawRowObjectInspector=rowDeserPartContext.getPartRawRowObjectInspector();
+    currentVectorAssign=rowDeserPartContext.getVectorAssign();
+  }
+break;
+default :
+throw new RuntimeException("Unexpected VectorMapOperator read type " + currentReadType.name());
+}
+}
+}
