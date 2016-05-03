@@ -1,0 +1,35 @@
+{
+  String inputFileFormatClassName=pd.getInputFileFormatClassName();
+  if (isAcidTable || useVectorizedInputFileFormat) {
+    if (Utilities.isInputFileFormatVectorized(pd)) {
+      if (!useVectorizedInputFileFormat) {
+        LOG.info("ACID tables con only be vectorized for the input file format -- " + "i.e. when Hive Configuration option " + HiveConf.ConfVars.HIVE_VECTORIZATION_USE_VECTORIZED_INPUT_FILE_FORMAT.varname + "=true");
+        return false;
+      }
+      pd.setVectorPartitionDesc(VectorPartitionDesc.createVectorizedInputFileFormat(inputFileFormatClassName,Utilities.isInputFileFormatSelfDescribing(pd)));
+      return true;
+    }
+    Preconditions.checkState(!isAcidTable);
+  }
+  if (!(isSchemaEvolution || isAcidTable) && (useVectorDeserialize || useRowDeserialize)) {
+    LOG.info("Input format: " + inputFileFormatClassName + " cannot be vectorized"+ " when both "+ HiveConf.ConfVars.HIVE_SCHEMA_EVOLUTION.varname+ "=false and "+ " ACID table is "+ isAcidTable+ " and "+ " given the Hive Configuration options "+ getHiveOptionsString());
+    return false;
+  }
+  String deserializerClassName=pd.getDeserializerClassName();
+  if (useVectorDeserialize) {
+    if (inputFileFormatClassName.equals(TextInputFormat.class.getName()) && deserializerClassName.equals(LazySimpleSerDe.class.getName())) {
+      pd.setVectorPartitionDesc(VectorPartitionDesc.createVectorDeserialize(inputFileFormatClassName,VectorDeserializeType.LAZY_SIMPLE));
+      return true;
+    }
+ else     if (inputFileFormatClassName.equals(SequenceFileInputFormat.class.getName()) && deserializerClassName.equals(LazyBinarySerDe.class.getName())) {
+      pd.setVectorPartitionDesc(VectorPartitionDesc.createVectorDeserialize(inputFileFormatClassName,VectorDeserializeType.LAZY_BINARY));
+      return true;
+    }
+  }
+  if (useRowDeserialize) {
+    pd.setVectorPartitionDesc(VectorPartitionDesc.createRowDeserialize(inputFileFormatClassName,Utilities.isInputFileFormatSelfDescribing(pd),deserializerClassName));
+    return true;
+  }
+  LOG.info("Input format: " + inputFileFormatClassName + " cannot be vectorized"+ " given the Hive Configuration options "+ getHiveOptionsString());
+  return false;
+}

@@ -1,0 +1,56 @@
+{
+  ClusterDescription clusterDescription;
+  try {
+    clusterDescription=sliderClient.getClusterDescription(appName);
+  }
+ catch (  SliderException e) {
+    throw new LlapStatusCliException(ExitCode.SLIDER_CLIENT_ERROR_OTHER,"Failed to get cluster description from slider. SliderErrorCode=" + (e).getExitCode(),e);
+  }
+catch (  Exception e) {
+    throw new LlapStatusCliException(ExitCode.SLIDER_CLIENT_ERROR_OTHER,"Failed to get cluster description from slider",e);
+  }
+  if (clusterDescription == null) {
+    LOG.info("Slider ClusterDescription not available");
+    return ExitCode.SLIDER_CLIENT_ERROR_OTHER;
+  }
+ else {
+    appStatusBuilder.setOriginalConfigurationPath(clusterDescription.originConfigurationPath);
+    appStatusBuilder.setGeneratedConfigurationPath(clusterDescription.generatedConfigurationPath);
+    appStatusBuilder.setAppStartTime(clusterDescription.createTime);
+    appStatusBuilder.maybeCreateAndGetAmInfo().setAmWebUrl(clusterDescription.getInfo(StatusKeys.INFO_AM_WEB_URL));
+    appStatusBuilder.maybeCreateAndGetAmInfo().setHostname(clusterDescription.getInfo(StatusKeys.INFO_AM_HOSTNAME));
+    appStatusBuilder.maybeCreateAndGetAmInfo().setContainerId(clusterDescription.getInfo(StatusKeys.INFO_AM_CONTAINER_ID));
+    if (clusterDescription.statistics != null) {
+      Map<String,Integer> llapStats=clusterDescription.statistics.get(LLAP_KEY);
+      if (llapStats != null) {
+        int desiredContainers=llapStats.get(StatusKeys.STATISTICS_CONTAINERS_DESIRED);
+        int liveContainers=llapStats.get(StatusKeys.STATISTICS_CONTAINERS_LIVE);
+        appStatusBuilder.setDesiredInstances(desiredContainers);
+        appStatusBuilder.setLiveInstances(liveContainers);
+      }
+ else {
+        throw new LlapStatusCliException(ExitCode.SLIDER_CLIENT_ERROR_OTHER,"Failed to get statistics for LLAP");
+      }
+    }
+ else {
+      throw new LlapStatusCliException(ExitCode.SLIDER_CLIENT_ERROR_OTHER,"Failed to get statistics");
+    }
+    if (clusterDescription.status != null) {
+      Object liveObject=clusterDescription.status.get(ClusterDescriptionKeys.KEY_CLUSTER_LIVE);
+      if (liveObject != null) {
+        Map<String,Map<String,Map<String,Object>>> liveEntity=(Map<String,Map<String,Map<String,Object>>>)liveObject;
+        Map<String,Map<String,Object>> llapEntity=liveEntity.get(LLAP_KEY);
+        if (llapEntity != null) {
+          for (          Map.Entry<String,Map<String,Object>> containerEntry : llapEntity.entrySet()) {
+            String containerIdString=containerEntry.getKey();
+            Map<String,Object> containerParams=containerEntry.getValue();
+            String host=(String)containerParams.get("host");
+            LlapInstance llapInstance=new LlapInstance(host,containerIdString);
+            appStatusBuilder.addNewLlapInstance(llapInstance);
+          }
+        }
+      }
+    }
+    return ExitCode.SUCCESS;
+  }
+}

@@ -1,0 +1,23 @@
+{
+  Configuration serverConf=conf;
+  boolean isSecurityEnabled=conf.getBoolean(CommonConfigurationKeysPublic.HADOOP_SECURITY_AUTHORIZATION,false);
+  if (isSecurityEnabled) {
+    for (    ConfVars acl : aclVars) {
+      if (conf.get(acl.varname) != null)       continue;
+      if (serverConf == conf) {
+        serverConf=new Configuration(conf);
+      }
+      serverConf.set(acl.varname,HiveConf.getVar(serverConf,acl));
+    }
+  }
+  RPC.setProtocolEngine(serverConf,pbProtocol,ProtobufRpcEngine.class);
+  RPC.Builder builder=new RPC.Builder(serverConf).setProtocol(pbProtocol).setInstance(blockingService).setBindAddress(addr.getHostName()).setPort(addr.getPort()).setNumHandlers(numHandlers);
+  if (zkSecretManager != null) {
+    builder=builder.setSecretManager(zkSecretManager);
+  }
+  RPC.Server server=builder.build();
+  if (isSecurityEnabled) {
+    server.refreshServiceAcl(serverConf,new LlapDaemonPolicyProvider());
+  }
+  return server;
+}

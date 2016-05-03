@@ -12,23 +12,166 @@
     }
     nullByte=bytes[offset++];
   }
-  if ((nullByte & (1 << (fieldIndex % 8))) != 0) {
+  boolean isNull;
+  if ((nullByte & (1 << (fieldIndex % 8))) == 0) {
+    isNull=true;
+  }
+ else {
+    isNull=false;
     if (offset >= end) {
       warnBeyondEof();
     }
-    if (((PrimitiveTypeInfo)typeInfos[fieldIndex]).getPrimitiveCategory() != PrimitiveCategory.DECIMAL) {
-      return false;
-    }
-    return earlyReadHiveDecimal();
-  }
-  fieldIndex++;
-  if (fieldIndex < fieldCount) {
-    if ((fieldIndex % 8) == 0) {
-      if (offset >= end) {
-        warnBeyondEof();
-      }
-      nullByte=bytes[offset++];
-    }
-  }
-  return true;
+switch (primitiveCategories[fieldIndex]) {
+case BOOLEAN:
+      currentBoolean=(bytes[offset++] != 0);
+    break;
+case BYTE:
+  currentByte=bytes[offset++];
+break;
+case SHORT:
+if (offset + 2 > end) {
+warnBeyondEof();
+}
+currentShort=LazyBinaryUtils.byteArrayToShort(bytes,offset);
+offset+=2;
+break;
+case INT:
+LazyBinaryUtils.readVInt(bytes,offset,tempVInt);
+offset+=tempVInt.length;
+if (offset > end) {
+warnBeyondEof();
+}
+currentInt=tempVInt.value;
+break;
+case LONG:
+LazyBinaryUtils.readVLong(bytes,offset,tempVLong);
+offset+=tempVLong.length;
+if (offset > end) {
+warnBeyondEof();
+}
+currentLong=tempVLong.value;
+break;
+case FLOAT:
+if (offset + 4 > end) {
+warnBeyondEof();
+}
+currentFloat=Float.intBitsToFloat(LazyBinaryUtils.byteArrayToInt(bytes,offset));
+offset+=4;
+break;
+case DOUBLE:
+if (offset + 8 > end) {
+warnBeyondEof();
+}
+currentDouble=Double.longBitsToDouble(LazyBinaryUtils.byteArrayToLong(bytes,offset));
+offset+=8;
+break;
+case BINARY:
+case STRING:
+case CHAR:
+case VARCHAR:
+{
+LazyBinaryUtils.readVInt(bytes,offset,tempVInt);
+offset+=tempVInt.length;
+if (offset > end) {
+warnBeyondEof();
+}
+int saveStart=offset;
+int length=tempVInt.value;
+offset+=length;
+if (offset > end) {
+warnBeyondEof();
+}
+currentBytes=bytes;
+currentBytesStart=saveStart;
+currentBytesLength=length;
+}
+break;
+case DATE:
+LazyBinaryUtils.readVInt(bytes,offset,tempVInt);
+offset+=tempVInt.length;
+if (offset > end) {
+warnBeyondEof();
+}
+currentDateWritable.set(tempVInt.value);
+break;
+case TIMESTAMP:
+{
+int length=TimestampWritable.getTotalLength(bytes,offset);
+int saveStart=offset;
+offset+=length;
+if (offset > end) {
+warnBeyondEof();
+}
+currentTimestampWritable.set(bytes,saveStart);
+}
+break;
+case INTERVAL_YEAR_MONTH:
+LazyBinaryUtils.readVInt(bytes,offset,tempVInt);
+offset+=tempVInt.length;
+if (offset > end) {
+warnBeyondEof();
+}
+currentHiveIntervalYearMonthWritable.set(tempVInt.value);
+break;
+case INTERVAL_DAY_TIME:
+LazyBinaryUtils.readVLong(bytes,offset,tempVLong);
+offset+=tempVLong.length;
+if (offset >= end) {
+warnBeyondEof();
+}
+LazyBinaryUtils.readVInt(bytes,offset,tempVInt);
+offset+=tempVInt.length;
+if (offset > end) {
+warnBeyondEof();
+}
+currentHiveIntervalDayTimeWritable.set(tempVLong.value,tempVInt.value);
+break;
+case DECIMAL:
+{
+LazyBinaryUtils.readVInt(bytes,offset,tempVInt);
+int saveStart=offset;
+offset+=tempVInt.length;
+if (offset >= end) {
+warnBeyondEof();
+}
+LazyBinaryUtils.readVInt(bytes,offset,tempVInt);
+offset+=tempVInt.length;
+if (offset >= end) {
+warnBeyondEof();
+}
+offset+=tempVInt.value;
+if (offset > end) {
+warnBeyondEof();
+}
+int length=offset - saveStart;
+LazyBinarySerDe.setFromBytes(bytes,saveStart,length,currentHiveDecimalWritable);
+DecimalTypeInfo decimalTypeInfo=(DecimalTypeInfo)typeInfos[fieldIndex];
+int precision=decimalTypeInfo.getPrecision();
+int scale=decimalTypeInfo.getScale();
+HiveDecimal decimal=currentHiveDecimalWritable.getHiveDecimal(precision,scale);
+if (decimal == null) {
+isNull=true;
+}
+ else {
+currentHiveDecimalWritable.set(decimal);
+}
+}
+break;
+default :
+throw new Error("Unexpected primitive category " + primitiveCategories[fieldIndex].name());
+}
+if (columnsToInclude != null && !columnsToInclude[fieldIndex]) {
+isNull=true;
+}
+}
+fieldIndex++;
+if (fieldIndex < fieldCount) {
+if ((fieldIndex % 8) == 0) {
+if (offset >= end) {
+warnBeyondEof();
+}
+nullByte=bytes[offset++];
+}
+}
+return isNull;
 }
