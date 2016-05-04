@@ -4,11 +4,15 @@
   try {
     LlapDaemonConfiguration daemonConf=new LlapDaemonConfiguration();
     String containerIdStr=System.getenv(ApplicationConstants.Environment.CONTAINER_ID.name());
+    String appName=null;
     if (containerIdStr != null && !containerIdStr.isEmpty()) {
       daemonConf.set(ConfVars.LLAP_DAEMON_CONTAINER_ID.varname,containerIdStr);
+      appName=ConverterUtils.toContainerId(containerIdStr).getApplicationAttemptId().getApplicationId().toString();
     }
  else {
       daemonConf.unset(ConfVars.LLAP_DAEMON_CONTAINER_ID.varname);
+      LOG.error("Cannot find " + ApplicationConstants.Environment.CONTAINER_ID.toString() + "; LLAP tokens may grant access to subsequent instances of the cluster with"+ " the same name");
+      appName=null;
     }
     int numExecutors=HiveConf.getIntVar(daemonConf,ConfVars.LLAP_DAEMON_NUM_EXECUTORS);
     String localDirList=LlapUtil.getDaemonLocalDirList(daemonConf);
@@ -21,7 +25,7 @@
     long ioMemoryBytes=HiveConf.getSizeVar(daemonConf,ConfVars.LLAP_IO_MEMORY_MAX_SIZE);
     boolean isDirectCache=HiveConf.getBoolVar(daemonConf,ConfVars.LLAP_ALLOCATOR_DIRECT);
     boolean isLlapIo=HiveConf.getBoolVar(daemonConf,HiveConf.ConfVars.LLAP_IO_ENABLED,true);
-    llapDaemon=new LlapDaemon(daemonConf,numExecutors,executorMemoryBytes,isLlapIo,isDirectCache,ioMemoryBytes,localDirs,rpcPort,mngPort,shufflePort,webPort);
+    llapDaemon=new LlapDaemon(daemonConf,numExecutors,executorMemoryBytes,isLlapIo,isDirectCache,ioMemoryBytes,localDirs,rpcPort,mngPort,shufflePort,webPort,appName);
     LOG.info("Adding shutdown hook for LlapDaemon");
     ShutdownHookManager.addShutdownHook(new CompositeServiceShutdownHook(llapDaemon),1);
     llapDaemon.init(daemonConf);

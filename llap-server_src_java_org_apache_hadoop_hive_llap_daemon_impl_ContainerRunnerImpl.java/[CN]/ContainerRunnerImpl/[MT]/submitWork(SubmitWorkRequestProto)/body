@@ -1,36 +1,39 @@
 {
-  HistoryLogger.logFragmentStart(request.getApplicationIdString(),request.getContainerIdString(),localAddress.get().getHostName(),request.getFragmentSpec().getDagName(),request.getFragmentSpec().getDagId(),request.getFragmentSpec().getVertexName(),request.getFragmentSpec().getFragmentNumber(),request.getFragmentSpec().getAttemptNumber());
+  SignableVertexSpec vertex=request.getWorkSpec().getVertex();
   if (LOG.isInfoEnabled()) {
-    LOG.info("Queueing container for execution: " + stringifySubmitRequest(request));
+    LOG.info("Queueing container for execution: " + stringifySubmitRequest(request,vertex));
   }
-  String ndcContextString=request.getFragmentSpec().getFragmentIdentifierString();
-  NDC.push(ndcContextString);
+  VertexIdentifier vId=vertex.getVertexIdentifier();
+  TezTaskAttemptID attemptId=Converters.createTaskAttemptId(vId,request.getFragmentNumber(),request.getAttemptNumber());
+  String fragmentIdString=attemptId.toString();
+  HistoryLogger.logFragmentStart(vId.getApplicationIdString(),request.getContainerIdString(),localAddress.get().getHostName(),vertex.getDagName(),vId.getDagId(),vertex.getVertexName(),request.getFragmentNumber(),request.getAttemptNumber());
+  NDC.push(fragmentIdString);
   Scheduler.SubmissionState submissionState;
   SubmitWorkResponseProto.Builder responseBuilder=SubmitWorkResponseProto.newBuilder();
   try {
     Map<String,String> env=new HashMap<>();
     env.putAll(localEnv);
-    env.put(ApplicationConstants.Environment.USER.name(),request.getUser());
-    FragmentSpecProto fragmentSpec=request.getFragmentSpec();
-    TezTaskAttemptID taskAttemptId=TezTaskAttemptID.fromString(fragmentSpec.getFragmentIdentifierString());
+    env.put(ApplicationConstants.Environment.USER.name(),vertex.getUser());
+    TezTaskAttemptID taskAttemptId=TezTaskAttemptID.fromString(fragmentIdString);
     int dagIdentifier=taskAttemptId.getTaskID().getVertexID().getDAGId().getId();
-    QueryIdentifier queryIdentifier=new QueryIdentifier(request.getApplicationIdString(),dagIdentifier);
+    QueryIdentifier queryIdentifier=new QueryIdentifier(vId.getApplicationIdString(),dagIdentifier);
     Credentials credentials=new Credentials();
     DataInputBuffer dib=new DataInputBuffer();
     byte[] tokenBytes=request.getCredentialsBinary().toByteArray();
     dib.reset(tokenBytes,tokenBytes.length);
     credentials.readTokenStorageStream(dib);
     Token<JobTokenIdentifier> jobToken=TokenCache.getSessionToken(credentials);
-    QueryFragmentInfo fragmentInfo=queryTracker.registerFragment(queryIdentifier,request.getApplicationIdString(),fragmentSpec.getDagName(),dagIdentifier,fragmentSpec.getVertexName(),fragmentSpec.getFragmentNumber(),fragmentSpec.getAttemptNumber(),request.getUser(),request.getFragmentSpec(),jobToken);
+    QueryFragmentInfo fragmentInfo=queryTracker.registerFragment(queryIdentifier,vId.getApplicationIdString(),vertex.getDagName(),dagIdentifier,vertex.getVertexName(),request.getFragmentNumber(),request.getAttemptNumber(),vertex.getUser(),vertex,jobToken,fragmentIdString);
     String[] localDirs=fragmentInfo.getLocalDirs();
     Preconditions.checkNotNull(localDirs);
     if (LOG.isDebugEnabled()) {
       LOG.debug("Dirs are: " + Arrays.toString(localDirs));
     }
-    TaskRunnerCallable callable=new TaskRunnerCallable(request,fragmentInfo,new Configuration(getConfig()),new LlapExecutionContext(localAddress.get().getHostName(),queryTracker),env,credentials,memoryPerExecutor,amReporter,confParams,metrics,killedTaskHandler,this,tezHadoopShim);
+    Configuration callableConf=new Configuration(getConfig());
+    TaskRunnerCallable callable=new TaskRunnerCallable(request,fragmentInfo,callableConf,new LlapExecutionContext(localAddress.get().getHostName(),queryTracker),env,credentials,memoryPerExecutor,amReporter,confParams,metrics,killedTaskHandler,this,tezHadoopShim,attemptId);
     submissionState=executorService.schedule(callable);
     if (LOG.isInfoEnabled()) {
-      LOG.info("SubmissionState for {} : {} ",ndcContextString,submissionState);
+      LOG.info("SubmissionState for {} : {} ",fragmentIdString,submissionState);
     }
     if (submissionState.equals(Scheduler.SubmissionState.REJECTED)) {
       fragmentComplete(fragmentInfo);

@@ -1,22 +1,15 @@
 {
   TaskSpec taskSpec=submitWorkInfo.getTaskSpec();
   ApplicationId appId=submitWorkInfo.getFakeAppId();
-  SubmitWorkRequestProto.Builder builder=SubmitWorkRequestProto.newBuilder();
-  LOG.info("Setting user in submitWorkRequest to: " + System.getenv(ApplicationConstants.Environment.USER.name()));
-  builder.setUser(System.getenv(ApplicationConstants.Environment.USER.name()));
-  builder.setApplicationIdString(appId.toString());
-  builder.setAppAttemptNumber(0);
-  builder.setTokenIdentifier(appId.toString());
+  int attemptId=taskSpec.getTaskAttemptID().getId();
+  String user=System.getenv(ApplicationConstants.Environment.USER.name());
+  LOG.info("Setting user in submitWorkRequest to: " + user);
+  SignableVertexSpec svs=Converters.convertTaskSpecToProto(taskSpec,attemptId,appId.toString(),null,user);
   ContainerId containerId=ContainerId.newInstance(ApplicationAttemptId.newInstance(appId,0),taskNum);
-  builder.setContainerIdString(containerId.toString());
-  builder.setAmHost(address.getHostName());
-  builder.setAmPort(address.getPort());
   Credentials taskCredentials=new Credentials();
   Credentials credentials=new Credentials();
   TokenCache.setSessionToken(token,credentials);
   ByteBuffer credentialsBinary=serializeCredentials(credentials);
-  builder.setCredentialsBinary(ByteString.copyFrom(credentialsBinary));
-  builder.setFragmentSpec(Converters.convertTaskSpecToProto(taskSpec));
   FragmentRuntimeInfo.Builder runtimeInfo=FragmentRuntimeInfo.newBuilder();
   runtimeInfo.setCurrentAttemptStartTime(System.currentTimeMillis());
   runtimeInfo.setWithinDagPriority(0);
@@ -24,6 +17,14 @@
   runtimeInfo.setFirstAttemptStartTime(submitWorkInfo.getCreationTime());
   runtimeInfo.setNumSelfAndUpstreamTasks(taskSpec.getVertexParallelism());
   runtimeInfo.setNumSelfAndUpstreamCompletedTasks(0);
+  SubmitWorkRequestProto.Builder builder=SubmitWorkRequestProto.newBuilder();
+  builder.setWorkSpec(VertexOrBinary.newBuilder().setVertex(svs).build());
+  builder.setFragmentNumber(taskSpec.getTaskAttemptID().getTaskID().getId());
+  builder.setAttemptNumber(0);
+  builder.setContainerIdString(containerId.toString());
+  builder.setAmHost(address.getHostName());
+  builder.setAmPort(address.getPort());
+  builder.setCredentialsBinary(ByteString.copyFrom(credentialsBinary));
   builder.setFragmentRuntimeInfo(runtimeInfo.build());
   return builder.build();
 }
