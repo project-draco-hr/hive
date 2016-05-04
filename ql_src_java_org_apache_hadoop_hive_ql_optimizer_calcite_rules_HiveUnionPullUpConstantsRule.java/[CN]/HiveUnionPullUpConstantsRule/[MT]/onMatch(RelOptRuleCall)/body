@@ -1,0 +1,49 @@
+{
+  final Union union=call.rel(0);
+  final int count=union.getRowType().getFieldCount();
+  if (count == 1) {
+    return;
+  }
+  final RexBuilder rexBuilder=union.getCluster().getRexBuilder();
+  final RelMetadataQuery mq=RelMetadataQuery.instance();
+  final RelOptPredicateList predicates=mq.getPulledUpPredicates(union);
+  if (predicates == null) {
+    return;
+  }
+  Map<RexNode,RexNode> constants=HiveReduceExpressionsRule.predicateConstants(RexNode.class,rexBuilder,predicates);
+  if (constants.isEmpty()) {
+    return;
+  }
+  if (count == constants.size()) {
+    final Map<RexNode,RexNode> map=new HashMap<>(constants);
+    map.remove(map.keySet().iterator().next());
+    constants=map;
+  }
+  List<RelDataTypeField> fields=union.getRowType().getFieldList();
+  List<Pair<RexNode,String>> newChildExprs=new ArrayList<>();
+  List<RexNode> topChildExprs=new ArrayList<>();
+  List<String> topChildExprsFields=new ArrayList<>();
+  for (int i=0; i < count; i++) {
+    RexNode expr=rexBuilder.makeInputRef(union,i);
+    RelDataTypeField field=fields.get(i);
+    if (constants.containsKey(expr)) {
+      topChildExprs.add(constants.get(expr));
+      topChildExprsFields.add(field.getName());
+    }
+ else {
+      newChildExprs.add(Pair.<RexNode,String>of(expr,field.getName()));
+      topChildExprs.add(expr);
+      topChildExprsFields.add(field.getName());
+    }
+  }
+  final Mappings.TargetMapping mapping=RelOptUtil.permutation(Pair.left(newChildExprs),union.getInput(0).getRowType()).inverse();
+  topChildExprs=ImmutableList.copyOf(RexUtil.apply(mapping,topChildExprs));
+  final RelBuilder relBuilder=call.builder();
+  for (int i=0; i < union.getInputs().size(); i++) {
+    relBuilder.push(union.getInput(i));
+    relBuilder.project(Pair.left(newChildExprs),Pair.right(newChildExprs));
+  }
+  relBuilder.union(union.all,union.getInputs().size());
+  relBuilder.project(topChildExprs,topChildExprsFields);
+  call.transformTo(relBuilder.build());
+}
