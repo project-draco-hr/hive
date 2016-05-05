@@ -7,14 +7,15 @@
   if (LlapIoImpl.LOG.isInfoEnabled()) {
     LlapIoImpl.LOG.info("Buddy allocator with " + (isDirect ? "direct" : "byte") + " buffers; allocation sizes "+ minAllocation+ " - "+ maxAllocation+ ", arena size "+ arenaSizeVal+ ". total size "+ maxSizeVal);
   }
+  String minName=ConfVars.LLAP_ALLOCATOR_MIN_ALLOC.varname, maxName=ConfVars.LLAP_ALLOCATOR_MAX_ALLOC.varname;
   if (minAllocation < 8) {
-    throw new AssertionError("Min allocation must be at least 8 bytes: " + minAllocation);
+    throw new RuntimeException(minName + " must be at least 8 bytes: " + minAllocation);
   }
-  if (maxSizeVal < arenaSizeVal || maxAllocation < minAllocation) {
-    throw new AssertionError("Inconsistent sizes of cache, arena and allocations: " + minAllocation + ", "+ maxAllocation+ ", "+ arenaSizeVal+ ", "+ maxSizeVal);
+  if (maxSizeVal < maxAllocation || maxAllocation < minAllocation) {
+    throw new RuntimeException("Inconsistent sizes; expecting " + minName + " <= "+ maxName+ " <= "+ ConfVars.LLAP_IO_MEMORY_MAX_SIZE.varname+ "; configured with min="+ minAllocation+ ", max="+ maxAllocation+ " and total="+ maxSizeVal);
   }
   if ((Integer.bitCount(minAllocation) != 1) || (Integer.bitCount(maxAllocation) != 1)) {
-    throw new AssertionError("Allocation sizes must be powers of two: " + minAllocation + ", "+ maxAllocation);
+    throw new RuntimeException("Allocation sizes must be powers of two; configured with " + minName + "="+ minAllocation+ ", "+ maxName+ "="+ maxAllocation);
   }
   if ((arenaSizeVal % maxAllocation) > 0) {
     long oldArenaSize=arenaSizeVal;
@@ -28,7 +29,7 @@
     LlapIoImpl.LOG.warn("Rounding cache size to " + maxSizeVal + " from "+ oldMaxSize+ " to be divisible by arena size "+ arenaSize);
   }
   if ((maxSizeVal / arenaSize) > Integer.MAX_VALUE) {
-    throw new AssertionError("Too many arenas needed to allocate the cache: " + arenaSize + ","+ maxSizeVal);
+    throw new RuntimeException("Too many arenas needed to allocate the cache: " + arenaSize + ", "+ maxSizeVal);
   }
   maxSize=maxSizeVal;
   memoryManager.updateMaxSize(maxSize);
