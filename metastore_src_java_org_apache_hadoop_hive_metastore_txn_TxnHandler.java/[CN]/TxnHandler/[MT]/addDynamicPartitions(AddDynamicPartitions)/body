@@ -2,6 +2,7 @@
   Connection dbConn=null;
   Statement stmt=null;
   ResultSet lockHandle=null;
+  ResultSet rs=null;
   try {
     try {
       lockInternal();
@@ -12,18 +13,16 @@
         ensureValidTxn(dbConn,rqst.getTxnid(),stmt);
         shouldNeverHappen(rqst.getTxnid());
       }
+      String findOperationType=" tc_operation_type from TXN_COMPONENTS where tc_txnid=" + rqst.getTxnid() + " and tc_database="+ quoteString(rqst.getDbname())+ " and tc_table="+ quoteString(rqst.getTablename());
+      rs=stmt.executeQuery(addLimitClause(1,findOperationType));
+      if (!rs.next()) {
+        throw new IllegalStateException("Unable to determine tc_operation_type for " + JavaUtils.txnIdToString(rqst.getTxnid()));
+      }
+      OpertaionType ot=OpertaionType.fromString(rs.getString(1).charAt(0));
+      String deleteSql="delete from TXN_COMPONENTS where tc_txnid=" + rqst.getTxnid() + " and tc_database="+ quoteString(rqst.getDbname())+ " and tc_table="+ quoteString(rqst.getTablename());
+      stmt.executeUpdate(deleteSql);
       for (      String partName : rqst.getPartitionnames()) {
-        StringBuilder buff=new StringBuilder();
-        buff.append("insert into TXN_COMPONENTS (tc_txnid, tc_database, tc_table, tc_partition) values (");
-        buff.append(rqst.getTxnid());
-        buff.append(", '");
-        buff.append(rqst.getDbname());
-        buff.append("', '");
-        buff.append(rqst.getTablename());
-        buff.append("', '");
-        buff.append(partName);
-        buff.append("')");
-        String s=buff.toString();
+        String s="insert into TXN_COMPONENTS (tc_txnid, tc_database, tc_table, tc_partition, tc_operation_type) values (" + rqst.getTxnid() + ","+ quoteString(rqst.getDbname())+ ","+ quoteString(rqst.getTablename())+ ","+ quoteString(partName)+ ","+ quoteChar(ot.sqlConst)+ ")";
         LOG.debug("Going to execute update <" + s + ">");
         stmt.executeUpdate(s);
       }
