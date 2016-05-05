@@ -1,0 +1,43 @@
+{
+  StringBuilder sql=new StringBuilder();
+  String name=identCtx.getText();
+  String managedName=null;
+  Token last=identCtx.getStop();
+  if (optCtx != null) {
+    last=optCtx.stop;
+  }
+  if (conf.tempTables == Conf.TempTables.NATIVE) {
+    sql.append("CREATE TEMPORARY TABLE " + name);
+    sql.append(createTableDefinition(defCtx,last));
+  }
+ else   if (conf.tempTables == Conf.TempTables.MANAGED) {
+    managedName=name + "_" + UUID.randomUUID().toString().replace("-","");
+    if (!conf.tempTablesSchema.isEmpty()) {
+      managedName=conf.tempTablesSchema + "." + managedName;
+    }
+    sql.append("CREATE TABLE " + managedName);
+    sql.append(createTableDefinition(defCtx,last));
+    if (!conf.tempTablesLocation.isEmpty()) {
+      sql.append("\nLOCATION '" + conf.tempTablesLocation + "/"+ managedName+ "'");
+    }
+    if (trace) {
+      trace(null,"Managed table name: " + managedName);
+    }
+  }
+  if (trace) {
+    trace(null,sql.toString());
+  }
+  if (sql != null) {
+    Query query=exec.executeSql(null,sql.toString(),exec.conf.defaultConnection);
+    if (query.error()) {
+      exec.signal(query);
+      return 1;
+    }
+    if (managedName != null) {
+      exec.addManagedTable(name,managedName);
+    }
+    exec.setSqlSuccess();
+    exec.closeQuery(query,exec.conf.defaultConnection);
+  }
+  return 0;
+}

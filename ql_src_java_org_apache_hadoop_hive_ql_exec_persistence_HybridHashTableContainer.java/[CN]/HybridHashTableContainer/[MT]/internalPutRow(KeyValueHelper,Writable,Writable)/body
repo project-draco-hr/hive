@@ -1,16 +1,14 @@
 {
+  boolean putToSidefile=false;
   int keyHash=keyValueHelper.getHashFromKey();
   int partitionId=keyHash & (hashPartitions.length - 1);
   HashPartition hashPartition=hashPartitions[partitionId];
   bloom1.addLong(keyHash);
   if (isOnDisk(partitionId) || isHashMapSpilledOnCreation(partitionId)) {
-    KeyValueContainer kvContainer=hashPartition.getSidefileKVContainer();
-    kvContainer.add((HiveKey)currentKey,(BytesWritable)currentValue);
+    putToSidefile=true;
   }
  else {
-    hashPartition.hashMap.put(keyValueHelper,keyHash);
-    totalInMemRowCount++;
-    if ((totalInMemRowCount & (this.memoryCheckFrequency - 1)) == 0 && !lastPartitionInMem) {
+    if (!lastPartitionInMem && (hashPartition.size() == 0 || (totalInMemRowCount & (this.memoryCheckFrequency - 1)) == 0)) {
       if (isMemoryFull()) {
         if ((numPartitionsSpilled == hashPartitions.length - 1)) {
           LOG.warn("This LAST partition in memory won't be spilled!");
@@ -21,16 +19,31 @@
             int biggest=biggestPartition();
             spillPartition(biggest);
             this.setSpill(true);
+            if (partitionId == biggest) {
+              putToSidefile=true;
+            }
           }
  else {
             LOG.info("N-way spilling: spill tail partition from previously loaded small tables");
+            int biggest=nwayConf.getNextSpillPartition();
             memoryThreshold+=nwayConf.spill();
+            if (biggest != 0 && partitionId == biggest) {
+              putToSidefile=true;
+            }
             LOG.info("Memory threshold has been increased to: " + memoryThreshold);
           }
           numPartitionsSpilled++;
         }
       }
     }
+  }
+  if (putToSidefile) {
+    KeyValueContainer kvContainer=hashPartition.getSidefileKVContainer();
+    kvContainer.add((HiveKey)currentKey,(BytesWritable)currentValue);
+  }
+ else {
+    hashPartition.hashMap.put(keyValueHelper,keyHash);
+    totalInMemRowCount++;
   }
   return null;
 }
