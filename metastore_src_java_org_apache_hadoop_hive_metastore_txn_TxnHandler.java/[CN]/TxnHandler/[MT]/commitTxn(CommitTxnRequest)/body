@@ -4,14 +4,47 @@
     Connection dbConn=null;
     Statement stmt=null;
     ResultSet lockHandle=null;
+    ResultSet commitIdRs=null, rs;
     try {
       lockInternal();
       dbConn=getDbConn(Connection.TRANSACTION_READ_COMMITTED);
       stmt=dbConn.createStatement();
+      commitIdRs=stmt.executeQuery(addForUpdateClause("select ntxn_next - 1 from NEXT_TXN_ID"));
+      if (!commitIdRs.next()) {
+        throw new IllegalStateException("No rows found in NEXT_TXN_ID");
+      }
+      long commitId=commitIdRs.getLong(1);
       lockHandle=lockTransactionRecord(stmt,txnid,TXN_OPEN);
       if (lockHandle == null) {
         ensureValidTxn(dbConn,txnid,stmt);
         shouldNeverHappen(txnid);
+      }
+      Savepoint undoWriteSetForCurrentTxn=dbConn.setSavepoint();
+      int numCompsWritten=stmt.executeUpdate("insert into WRITE_SET (ws_database, ws_table, ws_partition, ws_txnid, ws_commit_id, ws_operation_type)" + " select tc_database, tc_table, tc_partition, tc_txnid, " + commitId + ", tc_operation_type "+ "from TXN_COMPONENTS where tc_txnid="+ txnid+ " and tc_operation_type IN("+ quoteChar(OpertaionType.UPDATE.sqlConst)+ ","+ quoteChar(OpertaionType.DELETE.sqlConst)+ ")");
+      if (numCompsWritten == 0) {
+      }
+ else {
+        rs=stmt.executeQuery(addLimitClause(1,"committed.ws_txnid, committed.ws_commit_id, committed.ws_database," + "committed.ws_table, committed.ws_partition, cur.ws_commit_id " + "from WRITE_SET committed INNER JOIN WRITE_SET cur "+ "ON committed.ws_database=cur.ws_database and committed.ws_table=cur.ws_table "+ "and (committed.ws_partition=cur.ws_partition or (committed.ws_partition is null and cur.ws_partition is null)) "+ "where cur.ws_txnid <= committed.ws_commit_id"+ " and cur.ws_txnid=" + txnid + " and committed.ws_txnid <> "+ txnid+ " and (committed.ws_operation_type="+ quoteChar(OpertaionType.UPDATE.sqlConst)+ " OR cur.ws_operation_type="+ quoteChar(OpertaionType.UPDATE.sqlConst)+ ")"));
+        if (rs.next()) {
+          String committedTxn="[" + JavaUtils.txnIdToString(rs.getLong(1)) + ","+ rs.getLong(2)+ "]";
+          StringBuilder resource=new StringBuilder(rs.getString(3)).append("/").append(rs.getString(4));
+          String partitionName=rs.getString(5);
+          if (partitionName != null) {
+            resource.append('/').append(partitionName);
+          }
+          String msg="Aborting [" + JavaUtils.txnIdToString(txnid) + ","+ rs.getLong(6)+ "]"+ " due to a write conflict on "+ resource+ " committed by "+ committedTxn;
+          close(rs);
+          dbConn.rollback(undoWriteSetForCurrentTxn);
+          LOG.info(msg);
+          if (abortTxns(dbConn,Collections.singletonList(txnid)) != 1) {
+            throw new IllegalStateException(msg + " FAILED!");
+          }
+          dbConn.commit();
+          close(null,stmt,dbConn);
+          throw new TxnAbortedException(msg);
+        }
+ else {
+        }
       }
       String s="insert into COMPLETED_TXN_COMPONENTS select tc_txnid, tc_database, tc_table, " + "tc_partition from TXN_COMPONENTS where tc_txnid = " + txnid;
       LOG.debug("Going to execute insert <" + s + ">");
@@ -37,6 +70,7 @@
       throw new MetaException("Unable to update transaction database " + StringUtils.stringifyException(e));
     }
  finally {
+      close(commitIdRs);
       close(lockHandle,stmt,dbConn);
       unlockInternal();
     }

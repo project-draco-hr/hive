@@ -1,40 +1,53 @@
 {
-  if (dbConn.getTransactionIsolation() != Connection.TRANSACTION_SERIALIZABLE) {
-    throw new IllegalStateException("Unexpected Isolation Level: " + dbConn.getTransactionIsolation());
-  }
-  List<LockInfo> locksBeingChecked=getLockInfoFromLockId(dbConn,extLockId);
+  TxnStore.MutexAPI.LockHandle handle=null;
+  Statement stmt=null;
+  ResultSet rs=null;
   LockResponse response=new LockResponse();
-  response.setLockid(extLockId);
-  LOG.debug("checkLock(): Setting savepoint. extLockId=" + JavaUtils.lockIdToString(extLockId));
-  Savepoint save=dbConn.setSavepoint();
-  StringBuilder query=new StringBuilder("select hl_lock_ext_id, " + "hl_lock_int_id, hl_db, hl_table, hl_partition, hl_lock_state, " + "hl_lock_type, hl_txnid from HIVE_LOCKS where hl_db in (");
-  Set<String> strings=new HashSet<String>(locksBeingChecked.size());
-  for (  LockInfo info : locksBeingChecked) {
-    strings.add(info.db);
-  }
-  boolean first=true;
-  for (  String s : strings) {
-    if (first)     first=false;
- else     query.append(", ");
-    query.append('\'');
-    query.append(s);
-    query.append('\'');
-  }
-  query.append(")");
-  boolean sawNull=false;
-  strings.clear();
-  for (  LockInfo info : locksBeingChecked) {
-    if (info.table == null) {
-      sawNull=true;
-      break;
+  boolean isPartOfDynamicPartitionInsert=true;
+  try {
+    handle=getMutexAPI().acquireLock(MUTEX_KEY.CheckLock.name());
+    List<LockInfo> locksBeingChecked=getLockInfoFromLockId(dbConn,extLockId);
+    response.setLockid(extLockId);
+    LOG.debug("checkLock(): Setting savepoint. extLockId=" + JavaUtils.lockIdToString(extLockId));
+    Savepoint save=dbConn.setSavepoint();
+    StringBuilder query=new StringBuilder("select hl_lock_ext_id, " + "hl_lock_int_id, hl_db, hl_table, hl_partition, hl_lock_state, " + "hl_lock_type, hl_txnid from HIVE_LOCKS where hl_db in (");
+    Set<String> strings=new HashSet<String>(locksBeingChecked.size());
+    List<LockInfo> writeSet=new ArrayList<>();
+    for (    LockInfo info : locksBeingChecked) {
+      strings.add(info.db);
+      if (!isPartOfDynamicPartitionInsert && info.type == LockType.SHARED_WRITE) {
+        writeSet.add(info);
+      }
     }
- else {
-      strings.add(info.table);
+    if (!writeSet.isEmpty()) {
+      if (writeSet.get(0).txnId == 0) {
+        throw new IllegalStateException("Found Write lock for " + JavaUtils.lockIdToString(extLockId) + " but no txnid");
+      }
+      stmt=dbConn.createStatement();
+      StringBuilder sb=new StringBuilder(" ws_database, ws_table, ws_partition, " + "ws_txnid, ws_commit_id " + "from WRITE_SET where ws_commit_id >= " + writeSet.get(0).txnId + " and (");
+      for (      LockInfo info : writeSet) {
+        sb.append("(ws_database = ").append(quoteString(info.db)).append(" and ws_table = ").append(quoteString(info.table)).append(" and ws_partition ").append(info.partition == null ? "is null" : "= " + quoteString(info.partition)).append(") or ");
+      }
+      sb.setLength(sb.length() - 4);
+      sb.append(")");
+      rs=stmt.executeQuery(addLimitClause(1,sb.toString()));
+      if (rs.next()) {
+        String resourceName=rs.getString(1) + '/' + rs.getString(2);
+        String partName=rs.getString(3);
+        if (partName != null) {
+          resourceName+='/' + partName;
+        }
+        String msg="Aborting " + JavaUtils.txnIdToString(writeSet.get(0).txnId) + " since a concurrent committed transaction ["+ JavaUtils.txnIdToString(rs.getLong(4))+ ","+ rs.getLong(5)+ "] has already updated resouce '"+ resourceName+ "'";
+        LOG.info(msg);
+        if (abortTxns(dbConn,Collections.singletonList(writeSet.get(0).txnId)) != 1) {
+          throw new IllegalStateException(msg + " FAILED!");
+        }
+        dbConn.commit();
+        throw new TxnAbortedException(msg);
+      }
+      close(rs,stmt,null);
     }
-  }
-  if (!sawNull) {
-    query.append(" and (hl_table is null or hl_table in(");
-    first=true;
+    boolean first=true;
     for (    String s : strings) {
       if (first)       first=false;
  else       query.append(", ");
@@ -42,20 +55,20 @@
       query.append(s);
       query.append('\'');
     }
-    query.append("))");
-    sawNull=false;
+    query.append(")");
+    boolean sawNull=false;
     strings.clear();
     for (    LockInfo info : locksBeingChecked) {
-      if (info.partition == null) {
+      if (info.table == null) {
         sawNull=true;
         break;
       }
  else {
-        strings.add(info.partition);
+        strings.add(info.table);
       }
     }
     if (!sawNull) {
-      query.append(" and (hl_partition is null or hl_partition in(");
+      query.append(" and (hl_table is null or hl_table in(");
       first=true;
       for (      String s : strings) {
         if (first)         first=false;
@@ -65,13 +78,32 @@
         query.append('\'');
       }
       query.append("))");
+      sawNull=false;
+      strings.clear();
+      for (      LockInfo info : locksBeingChecked) {
+        if (info.partition == null) {
+          sawNull=true;
+          break;
+        }
+ else {
+          strings.add(info.partition);
+        }
+      }
+      if (!sawNull) {
+        query.append(" and (hl_partition is null or hl_partition in(");
+        first=true;
+        for (        String s : strings) {
+          if (first)           first=false;
+ else           query.append(", ");
+          query.append('\'');
+          query.append(s);
+          query.append('\'');
+        }
+        query.append("))");
+      }
     }
-  }
-  query.append(" and hl_lock_ext_id <= ").append(extLockId);
-  LOG.debug("Going to execute query <" + query.toString() + ">");
-  Statement stmt=null;
-  ResultSet rs=null;
-  try {
+    query.append(" and hl_lock_ext_id <= ").append(extLockId);
+    LOG.debug("Going to execute query <" + query.toString() + ">");
     stmt=dbConn.createStatement();
     rs=stmt.executeQuery(query.toString());
     SortedSet<LockInfo> lockSet=new TreeSet<LockInfo>(new LockInfoComparator());
@@ -147,6 +179,9 @@ response.setState(LockState.ACQUIRED);
 }
   finally {
 close(rs,stmt,null);
+if (handle != null) {
+handle.releaseLocks();
+}
 }
 return response;
 }

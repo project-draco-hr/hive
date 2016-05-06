@@ -1,28 +1,38 @@
 {
-  Connection conn=null;
-  Statement stmt=null;
-  try {
-    conn=getConnection();
-    stmt=conn.createStatement();
+  int retryCount=0;
+  while (++retryCount <= 3) {
+    boolean success=true;
+    Connection conn=null;
+    Statement stmt=null;
     try {
-      stmt.execute("DROP INDEX HL_TXNID_INDEX");
+      conn=getConnection();
+      stmt=conn.createStatement();
+      try {
+        stmt.execute("DROP INDEX HL_TXNID_INDEX");
+      }
+ catch (      SQLException e) {
+        if (!("42X65".equals(e.getSQLState()) && 30000 == e.getErrorCode())) {
+          LOG.error("Unable to drop index HL_TXNID_INDEX " + e.getMessage() + "State="+ e.getSQLState()+ " code="+ e.getErrorCode()+ " retryCount="+ retryCount);
+          success=false;
+        }
+      }
+      success&=dropTable(stmt,"TXN_COMPONENTS",retryCount);
+      success&=dropTable(stmt,"COMPLETED_TXN_COMPONENTS",retryCount);
+      success&=dropTable(stmt,"TXNS",retryCount);
+      success&=dropTable(stmt,"NEXT_TXN_ID",retryCount);
+      success&=dropTable(stmt,"HIVE_LOCKS",retryCount);
+      success&=dropTable(stmt,"NEXT_LOCK_ID",retryCount);
+      success&=dropTable(stmt,"COMPACTION_QUEUE",retryCount);
+      success&=dropTable(stmt,"NEXT_COMPACTION_QUEUE_ID",retryCount);
+      success&=dropTable(stmt,"COMPLETED_COMPACTIONS",retryCount);
+      success&=dropTable(stmt,"AUX_TABLE",retryCount);
+      success&=dropTable(stmt,"WRITE_SET",retryCount);
     }
- catch (    Exception e) {
-      System.err.println("Unable to drop index HL_TXNID_INDEX " + e.getMessage());
-    }
-    dropTable(stmt,"TXN_COMPONENTS");
-    dropTable(stmt,"COMPLETED_TXN_COMPONENTS");
-    dropTable(stmt,"TXNS");
-    dropTable(stmt,"NEXT_TXN_ID");
-    dropTable(stmt,"HIVE_LOCKS");
-    dropTable(stmt,"NEXT_LOCK_ID");
-    dropTable(stmt,"COMPACTION_QUEUE");
-    dropTable(stmt,"NEXT_COMPACTION_QUEUE_ID");
-    dropTable(stmt,"COMPLETED_COMPACTIONS");
-    dropTable(stmt,"AUX_TABLE");
-    conn.commit();
-  }
   finally {
-    closeResources(conn,stmt,null);
+      closeResources(conn,stmt,null);
+    }
+    if (success) {
+      return;
+    }
   }
 }
