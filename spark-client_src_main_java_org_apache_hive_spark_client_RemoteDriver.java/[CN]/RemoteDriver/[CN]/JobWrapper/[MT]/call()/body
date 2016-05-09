@@ -8,18 +8,24 @@
     }
 );
     T result=req.job.call(jc);
-synchronized (completed) {
-      while (completed.get() < jobs.size()) {
-        LOG.debug("Client job {} finished, {} of {} Spark jobs finished.",req.id,completed.get(),jobs.size());
-        completed.wait();
+    for (    JavaFutureAction<?> future : jobs) {
+      future.get();
+      completed++;
+      LOG.debug("Client job {}: {} of {} Spark jobs finished.",req.id,completed,jobs.size());
+    }
+    if (sparkJobId != null) {
+      SparkJobInfo sparkJobInfo=jc.sc().statusTracker().getJobInfo(sparkJobId);
+      if (sparkJobInfo != null && sparkJobInfo.stageIds() != null && sparkJobInfo.stageIds().length > 0) {
+synchronized (jobEndReceived) {
+          while (jobEndReceived.get() < jobs.size()) {
+            jobEndReceived.wait();
+          }
+        }
       }
     }
     SparkCounters counters=null;
     if (sparkCounters != null) {
       counters=sparkCounters.snapshot();
-    }
-    for (    JavaFutureAction<?> future : jobs) {
-      future.get();
     }
     protocol.jobFinished(req.id,result,null,counters);
   }
