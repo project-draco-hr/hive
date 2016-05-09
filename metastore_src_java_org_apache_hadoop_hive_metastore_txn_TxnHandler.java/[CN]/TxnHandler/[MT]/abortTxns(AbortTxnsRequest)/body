@@ -1,0 +1,27 @@
+{
+  List<Long> txnids=rqst.getTxn_ids();
+  try {
+    Connection dbConn=null;
+    try {
+      dbConn=getDbConn(Connection.TRANSACTION_READ_COMMITTED);
+      int numAborted=abortTxns(dbConn,txnids,false);
+      if (numAborted != txnids.size()) {
+        LOG.warn("Abort Transactions command only abort " + numAborted + " out of "+ txnids.size()+ " transactions. It's possible that the other "+ (txnids.size() - numAborted)+ " transactions have been aborted or committed, or the transaction ids are invalid.");
+      }
+      LOG.debug("Going to commit");
+      dbConn.commit();
+    }
+ catch (    SQLException e) {
+      LOG.debug("Going to rollback");
+      rollbackDBConn(dbConn);
+      checkRetryable(dbConn,e,"abortTxns(" + rqst + ")");
+      throw new MetaException("Unable to update transaction database " + StringUtils.stringifyException(e));
+    }
+ finally {
+      closeDbConn(dbConn);
+    }
+  }
+ catch (  RetryException e) {
+    abortTxns(rqst);
+  }
+}
