@@ -1,5 +1,6 @@
 {
-  MPartition mpart=null;
+  List<MPartition> mparts=null;
+  MPartition ret=null;
   boolean commited=false;
   Query query=null;
   try {
@@ -14,10 +15,23 @@
     String name=Warehouse.makePartName(convertToFieldSchemas(mtbl.getPartitionKeys()),part_vals);
     query=pm.newQuery(MPartition.class,"table.tableName == t1 && table.database.name == t2 && partitionName == t3");
     query.declareParameters("java.lang.String t1, java.lang.String t2, java.lang.String t3");
-    query.setUnique(true);
-    mpart=(MPartition)query.execute(tableName,dbName,name);
-    pm.retrieve(mpart);
+    mparts=(List<MPartition>)query.execute(tableName,dbName,name);
+    pm.retrieveAll(mparts);
     commited=commitTransaction();
+    if (mparts != null && mparts.size() > 0) {
+      if (mparts.size() > 1) {
+        throw new MetaException("Expecting only one partition but more than one partitions are found.");
+      }
+ else {
+        MPartition mpart=mparts.get(0);
+        if (name.equals(mpart.getPartitionName())) {
+          ret=mpart;
+        }
+ else {
+          throw new MetaException("Expecting a partition with name " + name + ", but metastore is returning a partition with name "+ mpart.getPartitionName()+ ".");
+        }
+      }
+    }
   }
   finally {
     if (!commited) {
@@ -27,5 +41,5 @@
       query.closeAll();
     }
   }
-  return mpart;
+  return ret;
 }
