@@ -51,11 +51,19 @@
     }
     if (oldPart == null) {
       newTPart.getTPartition().setParameters(new HashMap<String,String>());
+      if (this.getConf().getBoolVar(HiveConf.ConfVars.HIVESTATSAUTOGATHER)) {
+        StatsSetupConst.setBasicStatsStateForCreateTable(newTPart.getParameters(),StatsSetupConst.TRUE);
+      }
       MetaStoreUtils.populateQuickStats(HiveStatsUtils.getFileStatusRecurse(newPartPath,-1,newPartPath.getFileSystem(conf)),newTPart.getParameters());
       getMSC().add_partition(newTPart.getTPartition());
     }
  else {
-      alterPartition(tbl.getDbName(),tbl.getTableName(),new Partition(tbl,newTPart.getTPartition()),null);
+      EnvironmentContext environmentContext=null;
+      if (hasFollowingStatsTask) {
+        environmentContext=new EnvironmentContext();
+        environmentContext.putToProperties(StatsSetupConst.DO_NOT_UPDATE_STATS,StatsSetupConst.TRUE);
+      }
+      alterPartition(tbl.getDbName(),tbl.getTableName(),new Partition(tbl,newTPart.getTPartition()),environmentContext);
     }
     return newTPart;
   }
