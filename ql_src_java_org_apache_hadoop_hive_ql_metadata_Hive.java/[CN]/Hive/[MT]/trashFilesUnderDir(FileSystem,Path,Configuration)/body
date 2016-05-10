@@ -1,0 +1,28 @@
+{
+  FileStatus[] statuses=fs.listStatus(f,FileUtils.HIDDEN_FILES_PATH_FILTER);
+  boolean result=true;
+  final List<Future<Boolean>> futures=new LinkedList<>();
+  final ExecutorService pool=Executors.newFixedThreadPool(conf.getInt(ConfVars.HIVE_MOVE_FILES_THREAD_COUNT.varname,25),new ThreadFactoryBuilder().setDaemon(true).setNameFormat("Delete-Thread-%d").build());
+  final SessionState parentSession=SessionState.get();
+  for (  final FileStatus status : statuses) {
+    futures.add(pool.submit(new Callable<Boolean>(){
+      @Override public Boolean call() throws Exception {
+        SessionState.setCurrentSessionState(parentSession);
+        return FileUtils.moveToTrash(fs,status.getPath(),conf);
+      }
+    }
+));
+  }
+  pool.shutdown();
+  for (  Future<Boolean> future : futures) {
+    try {
+      result&=future.get();
+    }
+ catch (    InterruptedException|ExecutionException e) {
+      LOG.error("Failed to delete: ",e);
+      pool.shutdownNow();
+      throw new IOException(e);
+    }
+  }
+  return result;
+}
