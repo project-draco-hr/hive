@@ -1,0 +1,63 @@
+{
+  String dbName=oldTable.getDbName().toLowerCase();
+  String tableName=HiveStringUtils.normalizeIdentifier(oldTable.getTableName());
+  String newDbName=newTable.getDbName().toLowerCase();
+  String newTableName=HiveStringUtils.normalizeIdentifier(newTable.getTableName());
+  try {
+    List<FieldSchema> oldCols=oldTable.getSd().getCols();
+    List<FieldSchema> newCols=newTable.getSd().getCols();
+    List<ColumnStatisticsObj> newStatsObjs=new ArrayList<ColumnStatisticsObj>();
+    ColumnStatistics colStats=null;
+    boolean updateColumnStats=true;
+    if (newDbName.equals(dbName) && newTableName.equals(tableName) && MetaStoreUtils.areSameColumns(oldCols,newCols)) {
+      updateColumnStats=false;
+    }
+    if (updateColumnStats) {
+      List<String> oldColNames=new ArrayList<String>(oldCols.size());
+      for (      FieldSchema oldCol : oldCols) {
+        oldColNames.add(oldCol.getName());
+      }
+      colStats=msdb.getTableColumnStatistics(dbName,tableName,oldColNames);
+      if (colStats == null) {
+        updateColumnStats=false;
+      }
+ else {
+        List<ColumnStatisticsObj> statsObjs=colStats.getStatsObj();
+        if (statsObjs != null) {
+          for (          ColumnStatisticsObj statsObj : statsObjs) {
+            boolean found=false;
+            for (            FieldSchema newCol : newCols) {
+              if (statsObj.getColName().equalsIgnoreCase(newCol.getName()) && statsObj.getColType().equals(newCol.getType())) {
+                found=true;
+                break;
+              }
+            }
+            if (found) {
+              if (!newDbName.equals(dbName) || !newTableName.equals(tableName)) {
+                msdb.deleteTableColumnStatistics(dbName,tableName,statsObj.getColName());
+                newStatsObjs.add(statsObj);
+              }
+            }
+ else {
+              msdb.deleteTableColumnStatistics(dbName,tableName,statsObj.getColName());
+            }
+          }
+        }
+      }
+    }
+    msdb.alterTable(dbName,tableName,newTable);
+    if (updateColumnStats && !newStatsObjs.isEmpty()) {
+      ColumnStatisticsDesc statsDesc=colStats.getStatsDesc();
+      statsDesc.setDbName(newDbName);
+      statsDesc.setTableName(newTableName);
+      colStats.setStatsObj(newStatsObjs);
+      msdb.updateTableColumnStatistics(colStats);
+    }
+  }
+ catch (  NoSuchObjectException nsoe) {
+    LOG.debug("Could not find db entry." + nsoe);
+  }
+catch (  InvalidInputException e) {
+    throw new InvalidObjectException("Invalid inputs to update table column stats: " + e);
+  }
+}
