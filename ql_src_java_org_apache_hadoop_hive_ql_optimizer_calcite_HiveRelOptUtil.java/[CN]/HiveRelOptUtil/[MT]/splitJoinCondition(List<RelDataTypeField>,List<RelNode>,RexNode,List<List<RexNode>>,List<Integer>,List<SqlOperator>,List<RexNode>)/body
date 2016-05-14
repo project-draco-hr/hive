@@ -2,20 +2,6 @@
   final int sysFieldCount=sysFieldList.size();
   final RelOptCluster cluster=inputs.get(0).getCluster();
   final RexBuilder rexBuilder=cluster.getRexBuilder();
-  final ImmutableBitSet[] inputsRange=new ImmutableBitSet[inputs.size()];
-  int totalFieldCount=0;
-  for (int i=0; i < inputs.size(); i++) {
-    final int firstField=totalFieldCount + sysFieldCount;
-    totalFieldCount=firstField + inputs.get(i).getRowType().getFieldCount();
-    inputsRange[i]=ImmutableBitSet.range(firstField,totalFieldCount);
-  }
-  int[] adjustments=new int[totalFieldCount];
-  for (int i=0; i < inputs.size(); i++) {
-    final int adjustment=inputsRange[i].nextSetBit(0);
-    for (int j=adjustment; j < inputsRange[i].length(); j++) {
-      adjustments[j]=-adjustment;
-    }
-  }
   if (condition instanceof RexCall) {
     RexCall call=(RexCall)condition;
     if (call.getOperator() == SqlStdOperatorTable.AND) {
@@ -38,6 +24,13 @@
       RexNode op1=operands.get(1);
       final ImmutableBitSet projRefs0=InputFinder.bits(op0);
       final ImmutableBitSet projRefs1=InputFinder.bits(op1);
+      final ImmutableBitSet[] inputsRange=new ImmutableBitSet[inputs.size()];
+      int totalFieldCount=0;
+      for (int i=0; i < inputs.size(); i++) {
+        final int firstField=totalFieldCount + sysFieldCount;
+        totalFieldCount=firstField + inputs.get(i).getRowType().getFieldCount();
+        inputsRange[i]=ImmutableBitSet.range(firstField,totalFieldCount);
+      }
       boolean foundBothInputs=false;
       for (int i=0; i < inputs.size() && !foundBothInputs; i++) {
         if (projRefs0.intersects(inputsRange[i]) && projRefs0.union(inputsRange[i]).equals(inputsRange[i])) {
@@ -69,6 +62,13 @@
         }
       }
       if ((leftKey != null) && (rightKey != null)) {
+        int[] adjustments=new int[totalFieldCount];
+        for (int i=0; i < inputs.size(); i++) {
+          final int adjustment=inputsRange[i].nextSetBit(0);
+          for (int j=adjustment; j < inputsRange[i].length(); j++) {
+            adjustments[j]=-adjustment;
+          }
+        }
         rightKey=rightKey.accept(new RelOptUtil.RexInputConverter(rexBuilder,rightFields,rightFields,adjustments));
         leftKey=leftKey.accept(new RelOptUtil.RexInputConverter(rexBuilder,leftFields,leftFields,adjustments));
         RelDataType leftKeyType=leftKey.getType();

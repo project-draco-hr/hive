@@ -10,25 +10,25 @@
   if (predicates == null) {
     return;
   }
-  Map<RexNode,RexNode> constants=HiveReduceExpressionsRule.predicateConstants(RexNode.class,rexBuilder,predicates);
+  Map<RexNode,RexNode> conditionsExtracted=HiveReduceExpressionsRule.predicateConstants(RexNode.class,rexBuilder,predicates);
+  Map<RexNode,RexNode> constants=new HashMap<>();
+  for (int i=0; i < count; i++) {
+    RexNode expr=rexBuilder.makeInputRef(union,i);
+    if (conditionsExtracted.containsKey(expr)) {
+      constants.put(expr,conditionsExtracted.get(expr));
+    }
+  }
   if (constants.isEmpty()) {
     return;
   }
-  if (count == constants.size()) {
-    final Map<RexNode,RexNode> map=new HashMap<>(constants);
-    map.remove(map.keySet().iterator().next());
-    constants=map;
-  }
-  boolean atLeastOneConstant=false;
-  List<RelDataTypeField> fields=union.getRowType().getFieldList();
   List<Pair<RexNode,String>> newChildExprs=new ArrayList<>();
+  List<RelDataTypeField> fields=union.getRowType().getFieldList();
   List<RexNode> topChildExprs=new ArrayList<>();
   List<String> topChildExprsFields=new ArrayList<>();
   for (int i=0; i < count; i++) {
     RexNode expr=rexBuilder.makeInputRef(union,i);
     RelDataTypeField field=fields.get(i);
     if (constants.containsKey(expr)) {
-      atLeastOneConstant=true;
       topChildExprs.add(constants.get(expr));
       topChildExprsFields.add(field.getName());
     }
@@ -38,8 +38,8 @@
       topChildExprsFields.add(field.getName());
     }
   }
-  if (!atLeastOneConstant) {
-    return;
+  if (newChildExprs.isEmpty()) {
+    newChildExprs.add(Pair.<RexNode,String>of(topChildExprs.get(0),topChildExprsFields.get(0)));
   }
   final Mappings.TargetMapping mapping=RelOptUtil.permutation(Pair.left(newChildExprs),union.getInput(0).getRowType()).inverse();
   topChildExprs=ImmutableList.copyOf(RexUtil.apply(mapping,topChildExprs));

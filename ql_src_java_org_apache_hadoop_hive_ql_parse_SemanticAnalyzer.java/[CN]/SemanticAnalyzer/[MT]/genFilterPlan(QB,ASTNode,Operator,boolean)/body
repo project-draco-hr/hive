@@ -1,7 +1,17 @@
 {
   OpParseContext inputCtx=opParseCtx.get(input);
   RowResolver inputRR=inputCtx.getRowResolver();
-  Operator output=putOpInsertMap(OperatorFactory.getAndMakeChild(new FilterDesc(genExprNodeDesc(condn,inputRR,useCaching,isCBOExecuted()),false),new RowSchema(inputRR.getColumnInfos()),input),inputRR);
+  ExprNodeDesc filterCond=genExprNodeDesc(condn,inputRR,useCaching,isCBOExecuted());
+  if (filterCond instanceof ExprNodeConstantDesc) {
+    ExprNodeConstantDesc c=(ExprNodeConstantDesc)filterCond;
+    if (Boolean.TRUE.equals(c.getValue())) {
+      return input;
+    }
+    if (ExprNodeDescUtils.isNullConstant(c)) {
+      filterCond=new ExprNodeConstantDesc(TypeInfoFactory.booleanTypeInfo,false);
+    }
+  }
+  Operator output=putOpInsertMap(OperatorFactory.getAndMakeChild(new FilterDesc(filterCond,false),new RowSchema(inputRR.getColumnInfos()),input),inputRR);
   if (LOG.isDebugEnabled()) {
     LOG.debug("Created Filter Plan for " + qb.getId() + " row schema: "+ inputRR.toString());
   }

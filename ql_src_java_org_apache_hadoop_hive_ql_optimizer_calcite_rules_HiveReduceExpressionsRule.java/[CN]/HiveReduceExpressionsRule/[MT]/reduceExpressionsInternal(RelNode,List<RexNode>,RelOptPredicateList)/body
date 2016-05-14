@@ -1,0 +1,45 @@
+{
+  RexBuilder rexBuilder=rel.getCluster().getRexBuilder();
+  new CaseShuttle().mutate(expList);
+  final List<RexNode> constExps=Lists.newArrayList();
+  List<Boolean> addCasts=Lists.newArrayList();
+  final List<RexNode> removableCasts=Lists.newArrayList();
+  final ImmutableMap<RexNode,RexNode> constants=predicateConstants(RexNode.class,rexBuilder,predicates);
+  findReducibleExps(rel.getCluster().getTypeFactory(),expList,constants,constExps,addCasts,removableCasts);
+  if (constExps.isEmpty() && removableCasts.isEmpty()) {
+    return false;
+  }
+  if (!removableCasts.isEmpty()) {
+    final List<RexNode> reducedExprs=Lists.newArrayList();
+    for (    RexNode exp : removableCasts) {
+      RexCall call=(RexCall)exp;
+      reducedExprs.add(call.getOperands().get(0));
+    }
+    RexReplacer replacer=new RexReplacer(rexBuilder,removableCasts,reducedExprs,Collections.nCopies(removableCasts.size(),false));
+    replacer.mutate(expList);
+  }
+  if (constExps.isEmpty()) {
+    return true;
+  }
+  final List<RexNode> constExps2=Lists.newArrayList(constExps);
+  if (!constants.isEmpty()) {
+    final List<Map.Entry<RexNode,RexNode>> pairs=(List<Map.Entry<RexNode,RexNode>>)(List)Lists.newArrayList(constants.entrySet());
+    RexReplacer replacer=new RexReplacer(rexBuilder,Pair.left(pairs),Pair.right(pairs),Collections.nCopies(pairs.size(),false));
+    replacer.mutate(constExps2);
+  }
+  RelOptPlanner.Executor executor=rel.getCluster().getPlanner().getExecutor();
+  if (executor == null) {
+    return false;
+  }
+  final List<RexNode> reducedValues=Lists.newArrayList();
+  executor.reduce(rexBuilder,constExps2,reducedValues);
+  if (Lists.transform(constExps,HiveCalciteUtil.REX_STR_FN).equals(Lists.transform(reducedValues,HiveCalciteUtil.REX_STR_FN))) {
+    return false;
+  }
+  if (rel instanceof Project) {
+    addCasts=Collections.nCopies(reducedValues.size(),true);
+  }
+  RexReplacer replacer=new RexReplacer(rexBuilder,constExps,reducedValues,addCasts);
+  replacer.mutate(expList);
+  return true;
+}

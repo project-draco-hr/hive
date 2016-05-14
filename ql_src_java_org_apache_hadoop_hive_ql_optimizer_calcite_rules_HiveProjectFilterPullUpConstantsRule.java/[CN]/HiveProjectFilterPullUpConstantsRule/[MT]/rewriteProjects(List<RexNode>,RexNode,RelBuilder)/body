@@ -1,0 +1,29 @@
+{
+  final List<RexNode> conjunctions=RelOptUtil.conjunctions(newPushedCondition);
+  final Map<String,RexNode> conditions=new HashMap<String,RexNode>();
+  for (  RexNode conjunction : conjunctions) {
+    if (!(conjunction instanceof RexCall)) {
+      continue;
+    }
+    RexCall conjCall=(RexCall)conjunction;
+switch (conjCall.getOperator().getKind()) {
+case EQUALS:
+      if (!(RexUtil.isConstant(conjCall.operands.get(0))) && RexUtil.isConstant(conjCall.operands.get(1))) {
+        conditions.put(conjCall.operands.get(0).toString(),conjCall.operands.get(1));
+      }
+ else       if (!(RexUtil.isConstant(conjCall.operands.get(1))) && RexUtil.isConstant(conjCall.operands.get(0))) {
+        conditions.put(conjCall.operands.get(1).toString(),conjCall.operands.get(0));
+      }
+    break;
+case IS_NULL:
+  conditions.put(conjCall.operands.get(0).toString(),relBuilder.getRexBuilder().makeNullLiteral(conjCall.operands.get(0).getType().getSqlTypeName()));
+}
+}
+RexReplacer replacer=new RexReplacer(relBuilder.getRexBuilder(),conditions);
+List<RexNode> newProjects=Lists.newArrayList(projects);
+replacer.mutate(newProjects);
+if (replacer.replaced) {
+return newProjects;
+}
+return null;
+}

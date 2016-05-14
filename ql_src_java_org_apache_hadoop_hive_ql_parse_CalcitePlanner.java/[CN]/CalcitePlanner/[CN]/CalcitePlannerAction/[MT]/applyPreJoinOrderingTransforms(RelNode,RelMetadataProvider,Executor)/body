@@ -21,6 +21,7 @@
   rules.add(HiveFilterJoinRule.FILTER_ON_JOIN);
   rules.add(new HiveFilterAggregateTransposeRule(Filter.class,HiveRelFactories.HIVE_FILTER_FACTORY,Aggregate.class));
   rules.add(new FilterMergeRule(HiveRelFactories.HIVE_FILTER_FACTORY));
+  rules.add(HiveProjectFilterPullUpConstantsRule.INSTANCE);
   rules.add(HiveReduceExpressionsRule.PROJECT_INSTANCE);
   rules.add(HiveReduceExpressionsRule.FILTER_INSTANCE);
   rules.add(HiveReduceExpressionsRule.JOIN_INSTANCE);
@@ -35,6 +36,7 @@
   rules.add(HiveSortMergeRule.INSTANCE);
   rules.add(HiveSortLimitPullUpConstantsRule.INSTANCE);
   rules.add(HiveUnionPullUpConstantsRule.INSTANCE);
+  rules.add(HiveAggregatePullUpConstantsRule.INSTANCE);
   perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
   basePlan=hepPlan(basePlan,true,mdProvider,executorProvider,HepMatchOrder.BOTTOM_UP,rules.toArray(new RelOptRule[rules.size()]));
   perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, PPD, not null predicates, transitive inference, constant folding");
@@ -57,10 +59,10 @@
   basePlan=fieldTrimmer.trim(basePlan);
   perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, Projection Pruning");
   perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
-  basePlan=hepPlan(basePlan,false,mdProvider,null,new ProjectMergeRule(true,HiveRelFactories.HIVE_PROJECT_FACTORY));
+  basePlan=hepPlan(basePlan,false,mdProvider,null,HiveProjectMergeRule.INSTANCE,ProjectRemoveRule.INSTANCE);
   perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, Merge Project-Project");
   perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
-  basePlan=hepPlan(basePlan,true,mdProvider,null,new HiveFilterProjectTSTransposeRule(Filter.class,HiveRelFactories.HIVE_FILTER_FACTORY,HiveProject.class,HiveRelFactories.HIVE_PROJECT_FACTORY,HiveTableScan.class));
+  basePlan=hepPlan(basePlan,true,mdProvider,null,new HiveFilterProjectTSTransposeRule(Filter.class,HiveRelFactories.HIVE_FILTER_FACTORY,HiveProject.class,HiveRelFactories.HIVE_PROJECT_FACTORY,HiveTableScan.class),HiveProjectFilterPullUpConstantsRule.INSTANCE);
   perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, Rerun PPD");
   return basePlan;
 }
