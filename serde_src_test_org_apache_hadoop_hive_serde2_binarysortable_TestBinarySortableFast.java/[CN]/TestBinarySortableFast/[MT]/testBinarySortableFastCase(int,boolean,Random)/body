@@ -1,0 +1,66 @@
+{
+  RandomRowObjectSource source=new RandomRowObjectSource();
+  source.init(r);
+  int rowCount=1000;
+  Object[][] rows=source.randomRows(rowCount);
+  if (doNonRandomFill) {
+    MyTestClass.nonRandomRowFill(rows,source.primitiveCategories());
+  }
+  source.sort(rows);
+  StructObjectInspector rowStructObjectInspector=source.rowStructObjectInspector();
+  PrimitiveTypeInfo[] primitiveTypeInfos=source.primitiveTypeInfos();
+  int columnCount=primitiveTypeInfos.length;
+  int writeColumnCount=columnCount;
+  StructObjectInspector writeRowStructObjectInspector=rowStructObjectInspector;
+  boolean doWriteFewerColumns=r.nextBoolean();
+  if (doWriteFewerColumns) {
+    writeColumnCount=1 + r.nextInt(columnCount);
+    if (writeColumnCount == columnCount) {
+      doWriteFewerColumns=false;
+    }
+ else {
+      writeRowStructObjectInspector=source.partialRowStructObjectInspector(writeColumnCount);
+    }
+  }
+  String fieldNames=ObjectInspectorUtils.getFieldNames(rowStructObjectInspector);
+  String fieldTypes=ObjectInspectorUtils.getFieldTypes(rowStructObjectInspector);
+  String order;
+  order=StringUtils.leftPad("",columnCount,'+');
+  String nullOrder;
+  nullOrder=StringUtils.leftPad("",columnCount,'a');
+  SerDe serde_ascending=TestBinarySortableSerDe.getSerDe(fieldNames,fieldTypes,order,nullOrder);
+  SerDe serde_ascending_fewer=null;
+  if (doWriteFewerColumns) {
+    String partialFieldNames=ObjectInspectorUtils.getFieldNames(writeRowStructObjectInspector);
+    String partialFieldTypes=ObjectInspectorUtils.getFieldTypes(writeRowStructObjectInspector);
+    serde_ascending_fewer=TestBinarySortableSerDe.getSerDe(partialFieldNames,partialFieldTypes,order,nullOrder);
+  }
+  order=StringUtils.leftPad("",columnCount,'-');
+  nullOrder=StringUtils.leftPad("",columnCount,'z');
+  SerDe serde_descending=TestBinarySortableSerDe.getSerDe(fieldNames,fieldTypes,order,nullOrder);
+  SerDe serde_descending_fewer=null;
+  if (doWriteFewerColumns) {
+    String partialFieldNames=ObjectInspectorUtils.getFieldNames(writeRowStructObjectInspector);
+    String partialFieldTypes=ObjectInspectorUtils.getFieldTypes(writeRowStructObjectInspector);
+    serde_descending_fewer=TestBinarySortableSerDe.getSerDe(partialFieldNames,partialFieldTypes,order,nullOrder);
+  }
+  boolean[] columnSortOrderIsDesc=new boolean[columnCount];
+  Arrays.fill(columnSortOrderIsDesc,false);
+  byte[] columnNullMarker=new byte[columnCount];
+  Arrays.fill(columnNullMarker,BinarySortableSerDe.ZERO);
+  byte[] columnNotNullMarker=new byte[columnCount];
+  Arrays.fill(columnNotNullMarker,BinarySortableSerDe.ONE);
+  testBinarySortableFast(source,rows,columnSortOrderIsDesc,columnNullMarker,columnNotNullMarker,serde_ascending,rowStructObjectInspector,serde_ascending_fewer,writeRowStructObjectInspector,true,primitiveTypeInfos,false,false,r);
+  testBinarySortableFast(source,rows,columnSortOrderIsDesc,columnNullMarker,columnNotNullMarker,serde_ascending,rowStructObjectInspector,serde_ascending_fewer,writeRowStructObjectInspector,true,primitiveTypeInfos,true,false,r);
+  if (doWriteFewerColumns) {
+    testBinarySortableFast(source,rows,columnSortOrderIsDesc,columnNullMarker,columnNotNullMarker,serde_ascending,rowStructObjectInspector,serde_ascending_fewer,writeRowStructObjectInspector,true,primitiveTypeInfos,false,true,r);
+    testBinarySortableFast(source,rows,columnSortOrderIsDesc,columnNullMarker,columnNotNullMarker,serde_ascending,rowStructObjectInspector,serde_ascending_fewer,writeRowStructObjectInspector,true,primitiveTypeInfos,true,true,r);
+  }
+  Arrays.fill(columnSortOrderIsDesc,true);
+  testBinarySortableFast(source,rows,columnSortOrderIsDesc,columnNullMarker,columnNotNullMarker,serde_descending,rowStructObjectInspector,serde_ascending_fewer,writeRowStructObjectInspector,false,primitiveTypeInfos,false,false,r);
+  testBinarySortableFast(source,rows,columnSortOrderIsDesc,columnNullMarker,columnNotNullMarker,serde_descending,rowStructObjectInspector,serde_ascending_fewer,writeRowStructObjectInspector,false,primitiveTypeInfos,true,false,r);
+  if (doWriteFewerColumns) {
+    testBinarySortableFast(source,rows,columnSortOrderIsDesc,columnNullMarker,columnNotNullMarker,serde_descending,rowStructObjectInspector,serde_descending_fewer,writeRowStructObjectInspector,false,primitiveTypeInfos,false,true,r);
+    testBinarySortableFast(source,rows,columnSortOrderIsDesc,columnNullMarker,columnNotNullMarker,serde_descending,rowStructObjectInspector,serde_descending_fewer,writeRowStructObjectInspector,false,primitiveTypeInfos,true,true,r);
+  }
+}

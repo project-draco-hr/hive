@@ -1,0 +1,43 @@
+{
+  RandomRowObjectSource source=new RandomRowObjectSource();
+  source.init(r);
+  int rowCount=1000;
+  Object[][] rows=source.randomRows(rowCount);
+  if (doNonRandomFill) {
+    MyTestClass.nonRandomRowFill(rows,source.primitiveCategories());
+  }
+  StructObjectInspector rowStructObjectInspector=source.rowStructObjectInspector();
+  PrimitiveTypeInfo[] primitiveTypeInfos=source.primitiveTypeInfos();
+  int columnCount=primitiveTypeInfos.length;
+  int writeColumnCount=columnCount;
+  StructObjectInspector writeRowStructObjectInspector=rowStructObjectInspector;
+  boolean doWriteFewerColumns=r.nextBoolean();
+  if (doWriteFewerColumns) {
+    writeColumnCount=1 + r.nextInt(columnCount);
+    if (writeColumnCount == columnCount) {
+      doWriteFewerColumns=false;
+    }
+ else {
+      writeRowStructObjectInspector=source.partialRowStructObjectInspector(writeColumnCount);
+    }
+  }
+  String fieldNames=ObjectInspectorUtils.getFieldNames(rowStructObjectInspector);
+  String fieldTypes=ObjectInspectorUtils.getFieldTypes(rowStructObjectInspector);
+  LazySimpleSerDe serde=getSerDe(fieldNames,fieldTypes);
+  LazySerDeParameters serdeParams=getSerDeParams(fieldNames,fieldTypes);
+  LazySimpleSerDe serde_fewer=null;
+  LazySerDeParameters serdeParams_fewer=null;
+  if (doWriteFewerColumns) {
+    String partialFieldNames=ObjectInspectorUtils.getFieldNames(writeRowStructObjectInspector);
+    String partialFieldTypes=ObjectInspectorUtils.getFieldTypes(writeRowStructObjectInspector);
+    serde_fewer=getSerDe(fieldNames,fieldTypes);
+    serdeParams_fewer=getSerDeParams(partialFieldNames,partialFieldTypes);
+  }
+  byte separator=(byte)'\t';
+  testLazySimpleFast(source,rows,serde,rowStructObjectInspector,serde_fewer,writeRowStructObjectInspector,separator,serdeParams,serdeParams_fewer,primitiveTypeInfos,false,false,r);
+  testLazySimpleFast(source,rows,serde,rowStructObjectInspector,serde_fewer,writeRowStructObjectInspector,separator,serdeParams,serdeParams_fewer,primitiveTypeInfos,true,false,r);
+  if (doWriteFewerColumns) {
+    testLazySimpleFast(source,rows,serde,rowStructObjectInspector,serde_fewer,writeRowStructObjectInspector,separator,serdeParams,serdeParams_fewer,primitiveTypeInfos,false,true,r);
+    testLazySimpleFast(source,rows,serde,rowStructObjectInspector,serde_fewer,writeRowStructObjectInspector,separator,serdeParams,serdeParams_fewer,primitiveTypeInfos,true,true,r);
+  }
+}

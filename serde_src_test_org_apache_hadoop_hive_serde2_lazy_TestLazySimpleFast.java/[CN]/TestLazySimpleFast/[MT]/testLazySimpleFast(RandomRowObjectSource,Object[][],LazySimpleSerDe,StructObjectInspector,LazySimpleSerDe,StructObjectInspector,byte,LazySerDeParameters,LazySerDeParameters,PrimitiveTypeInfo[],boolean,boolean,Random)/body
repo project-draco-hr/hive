@@ -1,0 +1,133 @@
+{
+  int rowCount=rows.length;
+  int columnCount=primitiveTypeInfos.length;
+  boolean[] columnsToInclude=null;
+  if (useIncludeColumns) {
+    columnsToInclude=new boolean[columnCount];
+    for (int i=0; i < columnCount; i++) {
+      columnsToInclude[i]=r.nextBoolean();
+    }
+  }
+  int writeColumnCount=columnCount;
+  PrimitiveTypeInfo[] writePrimitiveTypeInfos=primitiveTypeInfos;
+  if (doWriteFewerColumns) {
+    writeColumnCount=writeRowOI.getAllStructFieldRefs().size();
+    writePrimitiveTypeInfos=Arrays.copyOf(primitiveTypeInfos,writeColumnCount);
+  }
+  BytesWritable serializeWriteBytes[]=new BytesWritable[rowCount];
+  for (int i=0; i < rowCount; i++) {
+    Object[] row=rows[i];
+    Output output=new Output();
+    LazySimpleSerializeWrite lazySimpleSerializeWrite=new LazySimpleSerializeWrite(columnCount,separator,serdeParams);
+    lazySimpleSerializeWrite.set(output);
+    for (int index=0; index < columnCount; index++) {
+      Writable writable=(Writable)row[index];
+      VerifyFast.serializeWrite(lazySimpleSerializeWrite,primitiveTypeInfos[index],writable);
+    }
+    BytesWritable bytesWritable=new BytesWritable();
+    bytesWritable.set(output.getData(),0,output.getLength());
+    serializeWriteBytes[i]=bytesWritable;
+  }
+  for (int i=0; i < rowCount; i++) {
+    Object[] row=rows[i];
+    LazySimpleDeserializeRead lazySimpleDeserializeRead=new LazySimpleDeserializeRead(writePrimitiveTypeInfos,separator,serdeParams);
+    if (useIncludeColumns) {
+      lazySimpleDeserializeRead.setColumnsToInclude(columnsToInclude);
+    }
+    BytesWritable bytesWritable=serializeWriteBytes[i];
+    byte[] bytes=bytesWritable.getBytes();
+    int length=bytesWritable.getLength();
+    lazySimpleDeserializeRead.set(bytes,0,length);
+    char[] chars=new char[length];
+    for (int c=0; c < chars.length; c++) {
+      chars[c]=(char)(bytes[c] & 0xFF);
+    }
+    for (int index=0; index < columnCount; index++) {
+      if (index >= writeColumnCount || (useIncludeColumns && !columnsToInclude[index])) {
+        VerifyFast.verifyDeserializeRead(lazySimpleDeserializeRead,primitiveTypeInfos[index],null);
+      }
+ else {
+        Writable writable=(Writable)row[index];
+        VerifyFast.verifyDeserializeRead(lazySimpleDeserializeRead,primitiveTypeInfos[index],writable);
+      }
+    }
+    lazySimpleDeserializeRead.extraFieldsCheck();
+    TestCase.assertTrue(!lazySimpleDeserializeRead.readBeyondConfiguredFieldsWarned());
+    if (doWriteFewerColumns) {
+      TestCase.assertTrue(lazySimpleDeserializeRead.readBeyondBufferRangeWarned());
+    }
+ else {
+      TestCase.assertTrue(!lazySimpleDeserializeRead.readBeyondBufferRangeWarned());
+    }
+    TestCase.assertTrue(!lazySimpleDeserializeRead.bufferRangeHasExtraDataWarned());
+  }
+  for (int i=0; i < rowCount; i++) {
+    BytesWritable bytesWritable=serializeWriteBytes[i];
+    LazyStruct lazySimpleStruct=(LazyStruct)serde.deserialize(bytesWritable);
+    Object[] row=rows[i];
+    for (int index=0; index < columnCount; index++) {
+      PrimitiveTypeInfo primitiveTypeInfo=primitiveTypeInfos[index];
+      Writable writable=(Writable)row[index];
+      LazyPrimitive lazyPrimitive=(LazyPrimitive)lazySimpleStruct.getField(index);
+      Object object;
+      if (lazyPrimitive != null) {
+        object=lazyPrimitive.getWritableObject();
+      }
+ else {
+        object=null;
+      }
+      if (writable == null || object == null) {
+        if (writable != null || object != null) {
+          fail("SerDe deserialized NULL column mismatch");
+        }
+      }
+ else {
+        if (!object.equals(writable)) {
+          fail("SerDe deserialized value does not match");
+        }
+      }
+    }
+  }
+  byte[][] serdeBytes=new byte[rowCount][];
+  Object[] serdeRow=new Object[columnCount];
+  for (int i=0; i < rowCount; i++) {
+    Object[] row=rows[i];
+    for (int index=0; index < columnCount; index++) {
+      serdeRow[index]=row[index];
+    }
+    Text serialized=(Text)serde.serialize(serdeRow,rowOI);
+    byte[] bytes1=Arrays.copyOfRange(serialized.getBytes(),0,serialized.getLength());
+    byte[] bytes2=Arrays.copyOfRange(serializeWriteBytes[i].getBytes(),0,serializeWriteBytes[i].getLength());
+    if (!Arrays.equals(bytes1,bytes2)) {
+      fail("SerializeWrite and SerDe serialization does not match");
+    }
+    serdeBytes[i]=copyBytes(serialized);
+  }
+  for (int i=0; i < rowCount; i++) {
+    Object[] row=rows[i];
+    LazySimpleDeserializeRead lazySimpleDeserializeRead=new LazySimpleDeserializeRead(writePrimitiveTypeInfos,separator,serdeParams);
+    if (useIncludeColumns) {
+      lazySimpleDeserializeRead.setColumnsToInclude(columnsToInclude);
+    }
+    byte[] bytes=serdeBytes[i];
+    lazySimpleDeserializeRead.set(bytes,0,bytes.length);
+    for (int index=0; index < columnCount; index++) {
+      if (index >= writeColumnCount || (useIncludeColumns && !columnsToInclude[index])) {
+        VerifyFast.verifyDeserializeRead(lazySimpleDeserializeRead,primitiveTypeInfos[index],null);
+      }
+ else {
+        Writable writable=(Writable)row[index];
+        VerifyFast.verifyDeserializeRead(lazySimpleDeserializeRead,primitiveTypeInfos[index],writable);
+      }
+    }
+    lazySimpleDeserializeRead.extraFieldsCheck();
+    TestCase.assertTrue(!lazySimpleDeserializeRead.readBeyondConfiguredFieldsWarned());
+    if (doWriteFewerColumns) {
+      TestCase.assertTrue(lazySimpleDeserializeRead.readBeyondBufferRangeWarned());
+    }
+ else {
+      TestCase.assertTrue(!lazySimpleDeserializeRead.readBeyondBufferRangeWarned());
+    }
+    TestCase.assertTrue(!lazySimpleDeserializeRead.bufferRangeHasExtraDataWarned());
+  }
+}

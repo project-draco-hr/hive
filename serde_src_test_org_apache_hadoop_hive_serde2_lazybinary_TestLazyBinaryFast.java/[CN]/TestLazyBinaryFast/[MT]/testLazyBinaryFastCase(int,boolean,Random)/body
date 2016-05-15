@@ -1,0 +1,36 @@
+{
+  RandomRowObjectSource source=new RandomRowObjectSource();
+  source.init(r);
+  int rowCount=1000;
+  Object[][] rows=source.randomRows(rowCount);
+  if (doNonRandomFill) {
+    MyTestClass.nonRandomRowFill(rows,source.primitiveCategories());
+  }
+  StructObjectInspector rowStructObjectInspector=source.rowStructObjectInspector();
+  PrimitiveTypeInfo[] primitiveTypeInfos=source.primitiveTypeInfos();
+  int columnCount=primitiveTypeInfos.length;
+  int writeColumnCount=columnCount;
+  StructObjectInspector writeRowStructObjectInspector=rowStructObjectInspector;
+  boolean doWriteFewerColumns=r.nextBoolean();
+  if (doWriteFewerColumns) {
+    writeColumnCount=1 + r.nextInt(columnCount);
+    if (writeColumnCount == columnCount) {
+      doWriteFewerColumns=false;
+    }
+ else {
+      writeRowStructObjectInspector=source.partialRowStructObjectInspector(writeColumnCount);
+    }
+  }
+  String fieldNames=ObjectInspectorUtils.getFieldNames(rowStructObjectInspector);
+  String fieldTypes=ObjectInspectorUtils.getFieldTypes(rowStructObjectInspector);
+  SerDe serde=TestLazyBinarySerDe.getSerDe(fieldNames,fieldTypes);
+  SerDe serde_fewer=null;
+  if (doWriteFewerColumns) {
+    String partialFieldNames=ObjectInspectorUtils.getFieldNames(writeRowStructObjectInspector);
+    String partialFieldTypes=ObjectInspectorUtils.getFieldTypes(writeRowStructObjectInspector);
+    serde_fewer=TestLazyBinarySerDe.getSerDe(partialFieldNames,partialFieldTypes);
+    ;
+  }
+  testLazyBinaryFast(source,rows,serde,rowStructObjectInspector,serde_fewer,writeRowStructObjectInspector,primitiveTypeInfos,false,false,r);
+  testLazyBinaryFast(source,rows,serde,rowStructObjectInspector,serde_fewer,writeRowStructObjectInspector,primitiveTypeInfos,true,false,r);
+}
