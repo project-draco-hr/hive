@@ -15,11 +15,20 @@
         int updCnt=stmt.executeUpdate(s);
       }
  else {
-        throw new IllegalStateException("No record with CQ_ID=" + ci.id + " found in COMPACTION_QUEUE");
+        if (ci.id > 0) {
+          throw new IllegalStateException("No record with CQ_ID=" + ci.id + " found in COMPACTION_QUEUE");
+        }
+      }
+      if (ci.id == 0) {
+        ci.id=generateCompactionQueueId(stmt);
+        ci.state=ATTEMPTED_STATE;
+        ci.type=CompactionType.MINOR;
+      }
+ else {
+        ci.state=FAILED_STATE;
       }
       close(rs,stmt,null);
       pStmt=dbConn.prepareStatement("insert into COMPLETED_COMPACTIONS(CC_ID, CC_DATABASE, CC_TABLE, CC_PARTITION, CC_STATE, CC_TYPE, CC_WORKER_ID, CC_START, CC_END, CC_RUN_AS, CC_HIGHEST_TXN_ID, CC_META_INFO, CC_HADOOP_JOB_ID) VALUES(?,?,?,?,?, ?,?,?,?,?, ?,?,?)");
-      ci.state=FAILED_STATE;
       CompactionInfo.insertIntoCompletedCompactions(pStmt,ci,getDbTime(dbConn));
       int updCount=pStmt.executeUpdate();
       LOG.debug("Going to commit");
