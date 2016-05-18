@@ -2,27 +2,17 @@
   if (zkSecretManager == null) {
     throw new ServiceException("Operation not supported on unsecure cluster");
   }
-  UserGroupInformation ugi;
+  UserGroupInformation ugi=null;
+  Token<LlapTokenIdentifier> token=null;
   try {
     ugi=UserGroupInformation.getCurrentUser();
+    token=zkSecretManager.createLlapToken(request.getAppId(),null);
   }
  catch (  IOException e) {
     throw new ServiceException(e);
   }
   if (restrictedToUser != null && !restrictedToUser.equals(ugi.getShortUserName())) {
     throw new ServiceException("Management protocol ACL is too permissive. The access has been" + " automatically restricted to " + restrictedToUser + "; "+ ugi.getShortUserName()+ " is denied acccess. Please set "+ ConfVars.LLAP_VALIDATE_ACLS.varname+ " to false,"+ " or adjust "+ ConfVars.LLAP_MANAGEMENT_ACL.varname+ " and "+ ConfVars.LLAP_MANAGEMENT_ACL_DENY.varname+ " to a more restrictive ACL.");
-  }
-  String user=ugi.getUserName();
-  Text owner=new Text(user);
-  Text realUser=null;
-  if (ugi.getRealUser() != null) {
-    realUser=new Text(ugi.getRealUser().getUserName());
-  }
-  Text renewer=new Text(ugi.getShortUserName());
-  LlapTokenIdentifier llapId=new LlapTokenIdentifier(owner,renewer,realUser,daemonId.getClusterString(),request.hasAppId() ? request.getAppId() : null);
-  Token<LlapTokenIdentifier> token=new Token<LlapTokenIdentifier>(llapId,zkSecretManager);
-  if (LOG.isInfoEnabled()) {
-    LOG.info("Created LLAP token " + token);
   }
   ByteArrayDataOutput out=ByteStreams.newDataOutput();
   try {
