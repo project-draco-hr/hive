@@ -1,38 +1,39 @@
 {
   List<ExprNodeDesc> castedChildren=evaluateCastOnConstants(childExpr);
   childExpr=castedChildren;
+  VectorExpression ve=null;
   if (udf instanceof GenericUDFBetween && mode == Mode.FILTER) {
-    return getBetweenFilterExpression(childExpr,mode,returnType);
+    ve=getBetweenFilterExpression(childExpr,mode,returnType);
   }
  else   if (udf instanceof GenericUDFIn) {
-    return getInExpression(childExpr,mode,returnType);
+    ve=getInExpression(childExpr,mode,returnType);
   }
  else   if (udf instanceof GenericUDFOPPositive) {
-    return getIdentityExpression(childExpr);
+    ve=getIdentityExpression(childExpr);
   }
  else   if (udf instanceof GenericUDFCoalesce || udf instanceof GenericUDFNvl) {
-    return getCoalesceExpression(childExpr,returnType);
+    ve=getCoalesceExpression(childExpr,returnType);
   }
  else   if (udf instanceof GenericUDFElt) {
-    return getEltExpression(childExpr,returnType);
+    ve=getEltExpression(childExpr,returnType);
   }
  else   if (udf instanceof GenericUDFBridge) {
-    VectorExpression v=getGenericUDFBridgeVectorExpression((GenericUDFBridge)udf,childExpr,mode,returnType);
-    if (v != null) {
-      return v;
-    }
+    ve=getGenericUDFBridgeVectorExpression((GenericUDFBridge)udf,childExpr,mode,returnType);
   }
  else   if (udf instanceof GenericUDFToDecimal) {
-    return getCastToDecimal(childExpr,returnType);
+    ve=getCastToDecimal(childExpr,returnType);
   }
  else   if (udf instanceof GenericUDFToChar) {
-    return getCastToChar(childExpr,returnType);
+    ve=getCastToChar(childExpr,returnType);
   }
  else   if (udf instanceof GenericUDFToVarchar) {
-    return getCastToVarChar(childExpr,returnType);
+    ve=getCastToVarChar(childExpr,returnType);
   }
  else   if (udf instanceof GenericUDFTimestamp) {
-    return getCastToTimestamp((GenericUDFTimestamp)udf,childExpr,mode,returnType);
+    ve=getCastToTimestamp((GenericUDFTimestamp)udf,childExpr,mode,returnType);
+  }
+  if (ve != null) {
+    return ve;
   }
   Class<?> udfClass=udf.getClass();
   boolean isSubstituted=false;
@@ -40,9 +41,6 @@
     udfClass=((GenericUDFBridge)udf).getUdfClass();
     isSubstituted=true;
   }
-  VectorExpression ve=getVectorExpressionForUdf((!isSubstituted ? udf : null),udfClass,castedChildren,mode,returnType);
-  if (ve == null) {
-    throw new HiveException("Udf: " + udf.getClass().getSimpleName() + ", is not supported");
-  }
+  ve=getVectorExpressionForUdf((!isSubstituted ? udf : null),udfClass,castedChildren,mode,returnType);
   return ve;
 }
