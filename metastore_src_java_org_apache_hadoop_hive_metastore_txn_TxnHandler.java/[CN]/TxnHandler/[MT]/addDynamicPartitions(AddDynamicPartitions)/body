@@ -13,18 +13,16 @@
         ensureValidTxn(dbConn,rqst.getTxnid(),stmt);
         shouldNeverHappen(rqst.getTxnid());
       }
-      String findOperationType=" tc_operation_type from TXN_COMPONENTS where tc_txnid=" + rqst.getTxnid() + " and tc_database="+ quoteString(rqst.getDbname())+ " and tc_table="+ quoteString(rqst.getTablename());
-      rs=stmt.executeQuery(addLimitClause(1,findOperationType));
-      if (!rs.next()) {
-        throw new IllegalStateException("Unable to determine tc_operation_type for " + JavaUtils.txnIdToString(rqst.getTxnid()));
+      OpertaionType ot=OpertaionType.UPDATE;
+      if (rqst.isSetOperationType()) {
+        ot=OpertaionType.fromDataOperationType(rqst.getOperationType());
       }
-      OpertaionType ot=OpertaionType.fromString(rs.getString(1).charAt(0));
       String deleteSql="delete from TXN_COMPONENTS where tc_txnid=" + rqst.getTxnid() + " and tc_database="+ quoteString(rqst.getDbname())+ " and tc_table="+ quoteString(rqst.getTablename());
-      stmt.executeUpdate(deleteSql);
+      int modCount=stmt.executeUpdate(deleteSql);
       for (      String partName : rqst.getPartitionnames()) {
         String s="insert into TXN_COMPONENTS (tc_txnid, tc_database, tc_table, tc_partition, tc_operation_type) values (" + rqst.getTxnid() + ","+ quoteString(rqst.getDbname())+ ","+ quoteString(rqst.getTablename())+ ","+ quoteString(partName)+ ","+ quoteChar(ot.sqlConst)+ ")";
         LOG.debug("Going to execute update <" + s + ">");
-        stmt.executeUpdate(s);
+        modCount=stmt.executeUpdate(s);
       }
       LOG.debug("Going to commit");
       dbConn.commit();

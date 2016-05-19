@@ -18,15 +18,22 @@
   checkLock(LockType.SHARED_WRITE,LockState.ACQUIRED,"default","TAB1","p=two",locks.get(0));
   checkLock(LockType.SHARED_WRITE,LockState.ACQUIRED,"default","TAB1","p=one",locks.get(1));
   checkLock(LockType.SHARED_WRITE,LockState.WAITING,"default","TAB1","p=two",locks.get(2));
-  txnHandler.addDynamicPartitions(new AddDynamicPartitions(txnMgr2.getCurrentTxnId(),"default","tab1",Collections.singletonList("p=one")));
+  AddDynamicPartitions adp=new AddDynamicPartitions(txnMgr2.getCurrentTxnId(),"default","tab1",Collections.singletonList("p=one"));
+  adp.setOperationType(DataOperationType.UPDATE);
+  txnHandler.addDynamicPartitions(adp);
   txnMgr2.commitTxn();
   ((DbLockManager)txnMgr.getLockManager()).checkLock(locks.get(2).getLockid());
   locks=getLocks(txnMgr);
   Assert.assertEquals("Unexpected lock count",1,locks.size());
   checkLock(LockType.SHARED_WRITE,LockState.ACQUIRED,"default","TAB1","p=two",locks.get(0));
-  txnHandler.addDynamicPartitions(new AddDynamicPartitions(txnMgr.getCurrentTxnId(),"default","tab1",Collections.singletonList("p=two")));
+  adp=new AddDynamicPartitions(txnMgr.getCurrentTxnId(),"default","tab1",Collections.singletonList("p=two"));
+  adp.setOperationType(DataOperationType.DELETE);
+  txnHandler.addDynamicPartitions(adp);
   txnMgr.commitTxn();
+  Assert.assertEquals("WRITE_SET mismatch: " + TxnDbUtil.queryToString("select * from COMPLETED_TXN_COMPONENTS"),2,TxnDbUtil.countQueryAgent("select count(*) from COMPLETED_TXN_COMPONENTS where ctc_txnid=1  and ctc_table='tab1'"));
+  Assert.assertEquals("WRITE_SET mismatch: " + TxnDbUtil.queryToString("select * from COMPLETED_TXN_COMPONENTS"),1,TxnDbUtil.countQueryAgent("select count(*) from COMPLETED_TXN_COMPONENTS where ctc_txnid=2  and ctc_table='tab1' and ctc_partition='p=one'"));
+  Assert.assertEquals("WRITE_SET mismatch: " + TxnDbUtil.queryToString("select * from COMPLETED_TXN_COMPONENTS"),1,TxnDbUtil.countQueryAgent("select count(*) from COMPLETED_TXN_COMPONENTS where ctc_txnid=3  and ctc_table='tab1' and ctc_partition='p=two'"));
   Assert.assertEquals("WRITE_SET mismatch: " + TxnDbUtil.queryToString("select * from WRITE_SET"),1,TxnDbUtil.countQueryAgent("select count(*) from WRITE_SET where ws_partition='p=one' and ws_operation_type='u' and ws_table='tab1'"));
-  Assert.assertEquals("WRITE_SET mismatch: " + TxnDbUtil.queryToString("select * from WRITE_SET"),1,TxnDbUtil.countQueryAgent("select count(*) from WRITE_SET where ws_partition='p=two' and ws_operation_type='u' and ws_table='tab1'"));
+  Assert.assertEquals("WRITE_SET mismatch: " + TxnDbUtil.queryToString("select * from WRITE_SET"),1,TxnDbUtil.countQueryAgent("select count(*) from WRITE_SET where ws_partition='p=two' and ws_operation_type='d' and ws_table='tab1'"));
   Assert.assertEquals("COMPLETED_TXN_COMPONENTS mismatch: " + TxnDbUtil.queryToString("select * from COMPLETED_TXN_COMPONENTS"),4,TxnDbUtil.countQueryAgent("select count(*) from COMPLETED_TXN_COMPONENTS where ctc_table='tab1' and ctc_partition is not null"));
 }

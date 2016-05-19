@@ -31,31 +31,58 @@
       stmt.executeUpdate(s);
       if (txnid > 0) {
         for (        LockComponent lc : rqst.getComponent()) {
-          String dbName=lc.getDbname();
-          String tblName=lc.getTablename();
-          String partName=lc.getPartitionname();
-          s="insert into TXN_COMPONENTS " + "(tc_txnid, tc_database, tc_table, tc_partition, tc_operation_type) " + "values (" + txnid + ", '"+ dbName+ "', "+ (tblName == null ? "null" : "'" + tblName + "'")+ ", "+ (partName == null ? "null" : "'" + partName + "'")+ ","+ quoteString(OpertaionType.fromLockType(lc.getType()).toString())+ ")";
-          LOG.debug("Going to execute update <" + s + ">");
-          stmt.executeUpdate(s);
-        }
-      }
-      long intLockId=0;
-      for (      LockComponent lc : rqst.getComponent()) {
-        intLockId++;
-        String dbName=lc.getDbname();
-        String tblName=lc.getTablename();
-        String partName=lc.getPartitionname();
-        LockType lockType=lc.getType();
-        char lockChar='z';
+          if (lc.isSetIsAcid() && !lc.isIsAcid()) {
+            continue;
+          }
+          boolean updateTxnComponents;
+          if (!lc.isSetOperationType()) {
+            updateTxnComponents=true;
+          }
+ else {
+switch (lc.getOperationType()) {
+case INSERT:
+case UPDATE:
+case DELETE:
+              updateTxnComponents=true;
+            break;
+case SELECT:
+          updateTxnComponents=false;
+        break;
+default :
+      throw new IllegalStateException("Unexpected DataOperationType: " + lc.getOperationType() + " agentInfo="+ rqst.getAgentInfo()+ " "+ JavaUtils.txnIdToString(txnid));
+  }
+}
+if (!updateTxnComponents) {
+  continue;
+}
+String dbName=lc.getDbname();
+String tblName=lc.getTablename();
+String partName=lc.getPartitionname();
+s="insert into TXN_COMPONENTS " + "(tc_txnid, tc_database, tc_table, tc_partition, tc_operation_type) " + "values (" + txnid + ", '"+ dbName+ "', "+ (tblName == null ? "null" : "'" + tblName + "'")+ ", "+ (partName == null ? "null" : "'" + partName + "'")+ ","+ quoteString(OpertaionType.fromDataOperationType(lc.getOperationType()).toString())+ ")";
+LOG.debug("Going to execute update <" + s + ">");
+int modCount=stmt.executeUpdate(s);
+}
+}
+long intLockId=0;
+for (LockComponent lc : rqst.getComponent()) {
+if (lc.isSetOperationType() && lc.getOperationType() == DataOperationType.UNSET) {
+throw new IllegalStateException("Bug: operationType=" + lc.getOperationType() + " for component "+ lc+ " agentInfo="+ rqst.getAgentInfo());
+}
+intLockId++;
+String dbName=lc.getDbname();
+String tblName=lc.getTablename();
+String partName=lc.getPartitionname();
+LockType lockType=lc.getType();
+char lockChar='z';
 switch (lockType) {
 case EXCLUSIVE:
-          lockChar=LOCK_EXCLUSIVE;
-        break;
+lockChar=LOCK_EXCLUSIVE;
+break;
 case SHARED_READ:
-      lockChar=LOCK_SHARED;
-    break;
+lockChar=LOCK_SHARED;
+break;
 case SHARED_WRITE:
-  lockChar=LOCK_SEMI_SHARED;
+lockChar=LOCK_SEMI_SHARED;
 break;
 }
 long now=getDbTime(dbConn);
