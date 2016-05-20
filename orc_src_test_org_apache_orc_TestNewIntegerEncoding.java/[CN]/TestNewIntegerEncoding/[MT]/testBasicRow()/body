@@ -1,0 +1,19 @@
+{
+  TypeDescription schema=getRowSchema();
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).setSchema(schema).stripeSize(100000).compress(CompressionKind.NONE).bufferSize(10000).encodingStrategy(encodingStrategy));
+  VectorizedRowBatch batch=schema.createRowBatch();
+  appendRow(batch,111,1111L);
+  appendRow(batch,111,1111L);
+  appendRow(batch,111,1111L);
+  writer.addRowBatch(batch);
+  writer.close();
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf).filesystem(fs));
+  RecordReader rows=reader.rows();
+  batch=reader.getSchema().createRowBatch();
+  while (rows.nextBatch(batch)) {
+    for (int r=0; r < batch.size; ++r) {
+      assertEquals(111,((LongColumnVector)batch.cols[0]).vector[r]);
+      assertEquals(1111,((LongColumnVector)batch.cols[1]).vector[r]);
+    }
+  }
+}

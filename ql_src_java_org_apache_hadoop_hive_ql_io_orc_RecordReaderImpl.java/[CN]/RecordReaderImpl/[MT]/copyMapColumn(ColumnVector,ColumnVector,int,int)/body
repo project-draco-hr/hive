@@ -1,0 +1,38 @@
+{
+  MapColumnVector castedSource=(MapColumnVector)source;
+  MapColumnVector castedDestination=(MapColumnVector)destination;
+  castedDestination.isRepeating=castedSource.noNulls;
+  castedDestination.noNulls=castedSource.noNulls;
+  if (source.isRepeating) {
+    castedDestination.isNull[0]=castedSource.isNull[0];
+    castedDestination.offsets[0]=0;
+    castedDestination.lengths[0]=castedSource.lengths[0];
+    copyColumn(castedDestination.keys,castedSource.keys,(int)castedSource.offsets[0],(int)castedSource.lengths[0]);
+    copyColumn(castedDestination.values,castedSource.values,(int)castedSource.offsets[0],(int)castedSource.lengths[0]);
+  }
+ else {
+    if (!castedSource.noNulls) {
+      for (int r=0; r < length; ++r) {
+        castedDestination.isNull[r]=castedSource.isNull[sourceOffset + r];
+      }
+    }
+    int minOffset=Integer.MAX_VALUE;
+    int maxOffset=Integer.MIN_VALUE;
+    for (int r=0; r < length; ++r) {
+      int childOffset=(int)castedSource.offsets[r + sourceOffset];
+      int childLength=(int)castedSource.lengths[r + sourceOffset];
+      castedDestination.offsets[r]=childOffset;
+      castedDestination.lengths[r]=childLength;
+      minOffset=Math.min(minOffset,childOffset);
+      maxOffset=Math.max(maxOffset,childOffset + childLength);
+    }
+    if (minOffset <= maxOffset) {
+      castedDestination.childCount=maxOffset - minOffset + 1;
+      copyColumn(castedDestination.keys,castedSource.keys,minOffset,castedDestination.childCount);
+      copyColumn(castedDestination.values,castedSource.values,minOffset,castedDestination.childCount);
+    }
+ else {
+      castedDestination.childCount=0;
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  TypeDescription schema=createInnerSchema();
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).setSchema(schema).stripeSize(1000).compress(CompressionKind.NONE).bufferSize(100).rowIndexStride(1000));
+  VectorizedRowBatch batch=schema.createRowBatch();
+  Random r1=new Random(1);
+  Random r2=new Random(2);
+  int x;
+  int minInt=0, maxInt=0;
+  String y;
+  String minStr=null, maxStr=null;
+  batch.size=1000;
+  boolean first=true;
+  for (int b=0; b < 21; ++b) {
+    for (int r=0; r < 1000; ++r) {
+      x=r1.nextInt();
+      y=Long.toHexString(r2.nextLong());
+      if (first || x < minInt) {
+        minInt=x;
+      }
+      if (first || x > maxInt) {
+        maxInt=x;
+      }
+      if (first || y.compareTo(minStr) < 0) {
+        minStr=y;
+      }
+      if (first || y.compareTo(maxStr) > 0) {
+        maxStr=y;
+      }
+      first=false;
+      ((LongColumnVector)batch.cols[0]).vector[r]=x;
+      ((BytesColumnVector)batch.cols[1]).setVal(r,y.getBytes());
+    }
+    writer.addRowBatch(batch);
+  }
+  writer.close();
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf).filesystem(fs));
+  ColumnStatistics[] stats=reader.getStatistics();
+  assertEquals(3,stats.length);
+  for (  ColumnStatistics s : stats) {
+    assertEquals(21000,s.getNumberOfValues());
+    if (s instanceof IntegerColumnStatistics) {
+      assertEquals(minInt,((IntegerColumnStatistics)s).getMinimum());
+      assertEquals(maxInt,((IntegerColumnStatistics)s).getMaximum());
+    }
+ else     if (s instanceof StringColumnStatistics) {
+      assertEquals(maxStr,((StringColumnStatistics)s).getMaximum());
+      assertEquals(minStr,((StringColumnStatistics)s).getMinimum());
+    }
+  }
+  TypeDescription type=reader.getSchema();
+  assertEquals(TypeDescription.Category.STRUCT,type.getCategory());
+  assertEquals(2,type.getChildren().size());
+  TypeDescription type1=type.getChildren().get(0);
+  TypeDescription type2=type.getChildren().get(1);
+  assertEquals(TypeDescription.Category.INT,type1.getCategory());
+  assertEquals(TypeDescription.Category.STRING,type2.getCategory());
+  assertEquals("struct<int1:int,string1:string>",type.toString());
+  RecordReader rows1=reader.rows(new Reader.Options().include(new boolean[]{true,true,false}));
+  RecordReader rows2=reader.rows(new Reader.Options().include(new boolean[]{true,false,true}));
+  r1=new Random(1);
+  r2=new Random(2);
+  VectorizedRowBatch batch1=reader.getSchema().createRowBatch(1000);
+  VectorizedRowBatch batch2=reader.getSchema().createRowBatch(1000);
+  for (int i=0; i < 21000; i+=1000) {
+    Assert.assertEquals(true,rows1.nextBatch(batch1));
+    Assert.assertEquals(true,rows2.nextBatch(batch2));
+    assertEquals(1000,batch1.size);
+    assertEquals(1000,batch2.size);
+    for (int j=0; j < 1000; ++j) {
+      assertEquals(r1.nextInt(),((LongColumnVector)batch1.cols[0]).vector[j]);
+      assertEquals(Long.toHexString(r2.nextLong()),((BytesColumnVector)batch2.cols[1]).toString(j));
+    }
+  }
+  Assert.assertEquals(false,rows1.nextBatch(batch1));
+  Assert.assertEquals(false,rows2.nextBatch(batch2));
+  rows1.close();
+  rows2.close();
+}

@@ -1,0 +1,71 @@
+{
+  TypeDescription schema=createMyStruct();
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).setSchema(schema).stripeSize(100000).compress(CompressionKind.NONE).bufferSize(10000));
+  Random rand=new Random(100);
+  VectorizedRowBatch batch=schema.createRowBatch();
+  addRow(writer,batch,null,null,true,100);
+  for (int i=2; i < 20000; i++) {
+    addRow(writer,batch,rand.nextInt(1),"a",true,100);
+  }
+  addRow(writer,batch,null,null,true,100);
+  writer.addRowBatch(batch);
+  writer.close();
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf).filesystem(fs));
+  ColumnStatistics[] stats=reader.getStatistics();
+  assertEquals(20000,reader.getNumberOfRows());
+  assertEquals(20000,stats[0].getNumberOfValues());
+  assertEquals(0,((IntegerColumnStatistics)stats[1]).getMaximum());
+  assertEquals(0,((IntegerColumnStatistics)stats[1]).getMinimum());
+  assertEquals(true,((IntegerColumnStatistics)stats[1]).isSumDefined());
+  assertEquals(0,((IntegerColumnStatistics)stats[1]).getSum());
+  assertEquals("count: 19998 hasNull: true min: 0 max: 0 sum: 0",stats[1].toString());
+  assertEquals("a",((StringColumnStatistics)stats[2]).getMaximum());
+  assertEquals("a",((StringColumnStatistics)stats[2]).getMinimum());
+  assertEquals(19998,stats[2].getNumberOfValues());
+  assertEquals("count: 19998 hasNull: true min: a max: a sum: 19998",stats[2].toString());
+  assertEquals("struct<a:int,b:string,c:boolean,d:array<struct<z:int>>>",reader.getSchema().toString());
+  RecordReader rows=reader.rows();
+  List<Boolean> expected=Lists.newArrayList();
+  for (  StripeInformation sinfo : reader.getStripes()) {
+    expected.add(false);
+  }
+  expected.set(0,true);
+  expected.set(expected.size() - 1,true);
+  List<Boolean> got=Lists.newArrayList();
+  for (  StripeInformation sinfo : reader.getStripes()) {
+    OrcProto.StripeFooter sf=((RecordReaderImpl)rows).readStripeFooter(sinfo);
+    got.add(sf.toString().indexOf(OrcProto.Stream.Kind.PRESENT.toString()) != -1);
+  }
+  assertEquals(expected,got);
+  batch=reader.getSchema().createRowBatch();
+  LongColumnVector aColumn=(LongColumnVector)batch.cols[0];
+  BytesColumnVector bColumn=(BytesColumnVector)batch.cols[1];
+  LongColumnVector cColumn=(LongColumnVector)batch.cols[2];
+  ListColumnVector dColumn=(ListColumnVector)batch.cols[3];
+  LongColumnVector dElements=(LongColumnVector)(((StructColumnVector)dColumn.child).fields[0]);
+  assertEquals(true,rows.nextBatch(batch));
+  assertEquals(1024,batch.size);
+  assertEquals(true,aColumn.isNull[0]);
+  assertEquals(true,bColumn.isNull[0]);
+  assertEquals(1,cColumn.vector[0]);
+  assertEquals(0,dColumn.offsets[0]);
+  assertEquals(1,dColumn.lengths[1]);
+  assertEquals(100,dElements.vector[0]);
+  rows.seekToRow(19998);
+  rows.nextBatch(batch);
+  assertEquals(2,batch.size);
+  assertEquals(0,aColumn.vector[0]);
+  assertEquals("a",bColumn.toString(0));
+  assertEquals(1,cColumn.vector[0]);
+  assertEquals(0,dColumn.offsets[0]);
+  assertEquals(1,dColumn.lengths[0]);
+  assertEquals(100,dElements.vector[0]);
+  assertEquals(true,aColumn.isNull[1]);
+  assertEquals(true,bColumn.isNull[1]);
+  assertEquals(1,cColumn.vector[1]);
+  assertEquals(1,dColumn.offsets[1]);
+  assertEquals(1,dColumn.lengths[1]);
+  assertEquals(100,dElements.vector[1]);
+  assertEquals(false,rows.nextBatch(batch));
+  rows.close();
+}

@@ -1,0 +1,92 @@
+{
+  TypeDescription schema=TypeDescription.createStruct().addField("bytes1",TypeDescription.createBinary()).addField("string1",TypeDescription.createString());
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).setSchema(schema).rowIndexStride(1000).stripeSize(10000).bufferSize(10000));
+  VectorizedRowBatch batch=schema.createRowBatch(5000);
+  for (int i=0; i < 1000; i++) {
+    appendRow(batch,bytes(1,2,3),"RG1");
+  }
+  writer.addRowBatch(batch);
+  batch.reset();
+  for (int i=0; i < 1000; i++) {
+    appendRow(batch,bytes(1,2,3),null);
+  }
+  writer.addRowBatch(batch);
+  batch.reset();
+  for (int i=0; i < 1000; i++) {
+    appendRow(batch,bytes(1,2,3),"RG3");
+  }
+  writer.addRowBatch(batch);
+  batch.reset();
+  for (int i=0; i < 1000; i++) {
+    appendRow(batch,bytes(1,2,3),null);
+  }
+  writer.addRowBatch(batch);
+  batch.reset();
+  for (int i=0; i < 1000; i++) {
+    appendRow(batch,bytes(1,2,3),null);
+  }
+  writer.addRowBatch(batch);
+  batch.reset();
+  for (int i=0; i < 5000; i++) {
+    appendRow(batch,bytes(1,2,3),null);
+  }
+  writer.addRowBatch(batch);
+  batch.reset();
+  for (int i=0; i < 5000; i++) {
+    appendRow(batch,bytes(1,2,3),"STRIPE-3");
+  }
+  writer.addRowBatch(batch);
+  batch.reset();
+  for (int i=0; i < 5000; i++) {
+    appendRow(batch,bytes(1,2,3),null);
+  }
+  writer.addRowBatch(batch);
+  batch.reset();
+  writer.close();
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf).filesystem(fs));
+  ColumnStatistics[] stats=reader.getStatistics();
+  assertEquals(20000,stats[0].getNumberOfValues());
+  assertEquals(20000,stats[1].getNumberOfValues());
+  assertEquals(7000,stats[2].getNumberOfValues());
+  assertEquals(false,stats[0].hasNull());
+  assertEquals(false,stats[1].hasNull());
+  assertEquals(true,stats[2].hasNull());
+  List<StripeStatistics> stripeStats=reader.getStripeStatistics();
+  StripeStatistics ss1=stripeStats.get(0);
+  ColumnStatistics ss1_cs1=ss1.getColumnStatistics()[0];
+  ColumnStatistics ss1_cs2=ss1.getColumnStatistics()[1];
+  ColumnStatistics ss1_cs3=ss1.getColumnStatistics()[2];
+  assertEquals(false,ss1_cs1.hasNull());
+  assertEquals(false,ss1_cs2.hasNull());
+  assertEquals(true,ss1_cs3.hasNull());
+  StripeStatistics ss2=stripeStats.get(1);
+  ColumnStatistics ss2_cs1=ss2.getColumnStatistics()[0];
+  ColumnStatistics ss2_cs2=ss2.getColumnStatistics()[1];
+  ColumnStatistics ss2_cs3=ss2.getColumnStatistics()[2];
+  assertEquals(false,ss2_cs1.hasNull());
+  assertEquals(false,ss2_cs2.hasNull());
+  assertEquals(true,ss2_cs3.hasNull());
+  StripeStatistics ss3=stripeStats.get(2);
+  ColumnStatistics ss3_cs1=ss3.getColumnStatistics()[0];
+  ColumnStatistics ss3_cs2=ss3.getColumnStatistics()[1];
+  ColumnStatistics ss3_cs3=ss3.getColumnStatistics()[2];
+  assertEquals(false,ss3_cs1.hasNull());
+  assertEquals(false,ss3_cs2.hasNull());
+  assertEquals(false,ss3_cs3.hasNull());
+  StripeStatistics ss4=stripeStats.get(3);
+  ColumnStatistics ss4_cs1=ss4.getColumnStatistics()[0];
+  ColumnStatistics ss4_cs2=ss4.getColumnStatistics()[1];
+  ColumnStatistics ss4_cs3=ss4.getColumnStatistics()[2];
+  assertEquals(false,ss4_cs1.hasNull());
+  assertEquals(false,ss4_cs2.hasNull());
+  assertEquals(true,ss4_cs3.hasNull());
+  PrintStream origOut=System.out;
+  String outputFilename="orc-file-has-null.out";
+  FileOutputStream myOut=new FileOutputStream(workDir + File.separator + outputFilename);
+  System.setOut(new PrintStream(myOut));
+  FileDump.main(new String[]{testFilePath.toString(),"--rowindex=2"});
+  System.out.flush();
+  System.setOut(origOut);
+  assumeTrue(!System.getProperty("os.name").startsWith("Windows"));
+  TestFileDump.checkOutput(outputFilename,workDir + File.separator + outputFilename);
+}

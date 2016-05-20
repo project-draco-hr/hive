@@ -1,0 +1,205 @@
+{
+  TypeDescription schema=TypeDescription.createStruct().addField("bin",TypeDescription.createBinary()).addField("bool",TypeDescription.createBoolean()).addField("byte",TypeDescription.createByte()).addField("long",TypeDescription.createLong()).addField("float",TypeDescription.createFloat()).addField("double",TypeDescription.createDouble()).addField("date",TypeDescription.createDate()).addField("time",TypeDescription.createTimestamp()).addField("dec",TypeDescription.createDecimal().withPrecision(20).withScale(6)).addField("string",TypeDescription.createString()).addField("char",TypeDescription.createChar().withMaxLength(10)).addField("vc",TypeDescription.createVarchar().withMaxLength(10)).addField("struct",TypeDescription.createStruct().addField("sub1",TypeDescription.createInt())).addField("union",TypeDescription.createUnion().addUnionChild(TypeDescription.createString()).addUnionChild(TypeDescription.createInt())).addField("list",TypeDescription.createList(TypeDescription.createInt())).addField("map",TypeDescription.createMap(TypeDescription.createString(),TypeDescription.createString()));
+  VectorizedRowBatch batch=schema.createRowBatch();
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).setSchema(schema).rowIndexStride(1000));
+  batch.size=1024;
+  for (int c=0; c < batch.cols.length; ++c) {
+    batch.cols[c].setRepeating(true);
+    batch.cols[c].noNulls=false;
+    batch.cols[c].isNull[0]=true;
+  }
+  writer.addRowBatch(batch);
+  for (int c=0; c < batch.cols.length; ++c) {
+    batch.cols[c].isNull[0]=false;
+  }
+  ((BytesColumnVector)batch.cols[0]).setVal(0,"Horton".getBytes());
+  ((LongColumnVector)batch.cols[1]).vector[0]=1;
+  ((LongColumnVector)batch.cols[2]).vector[0]=130;
+  ((LongColumnVector)batch.cols[3]).vector[0]=0x123456789abcdef0L;
+  ((DoubleColumnVector)batch.cols[4]).vector[0]=1.125;
+  ((DoubleColumnVector)batch.cols[5]).vector[0]=0.0009765625;
+  ((LongColumnVector)batch.cols[6]).vector[0]=new DateWritable(new Date(111,6,1)).getDays();
+  ((TimestampColumnVector)batch.cols[7]).set(0,new Timestamp(115,9,23,10,11,59,999999999));
+  ((DecimalColumnVector)batch.cols[8]).vector[0]=new HiveDecimalWritable("1.234567");
+  ((BytesColumnVector)batch.cols[9]).setVal(0,"Echelon".getBytes());
+  ((BytesColumnVector)batch.cols[10]).setVal(0,"Juggernaut".getBytes());
+  ((BytesColumnVector)batch.cols[11]).setVal(0,"Dreadnaught".getBytes());
+  ((LongColumnVector)((StructColumnVector)batch.cols[12]).fields[0]).vector[0]=123;
+  ((UnionColumnVector)batch.cols[13]).tags[0]=1;
+  ((LongColumnVector)((UnionColumnVector)batch.cols[13]).fields[1]).vector[0]=1234;
+  ((ListColumnVector)batch.cols[14]).offsets[0]=0;
+  ((ListColumnVector)batch.cols[14]).lengths[0]=3;
+  ((ListColumnVector)batch.cols[14]).child.isRepeating=true;
+  ((LongColumnVector)((ListColumnVector)batch.cols[14]).child).vector[0]=31415;
+  ((MapColumnVector)batch.cols[15]).offsets[0]=0;
+  ((MapColumnVector)batch.cols[15]).lengths[0]=3;
+  ((MapColumnVector)batch.cols[15]).values.isRepeating=true;
+  ((BytesColumnVector)((MapColumnVector)batch.cols[15]).keys).setVal(0,"ORC".getBytes());
+  ((BytesColumnVector)((MapColumnVector)batch.cols[15]).keys).setVal(1,"Hive".getBytes());
+  ((BytesColumnVector)((MapColumnVector)batch.cols[15]).keys).setVal(2,"LLAP".getBytes());
+  ((BytesColumnVector)((MapColumnVector)batch.cols[15]).values).setVal(0,"fast".getBytes());
+  writer.addRowBatch(batch);
+  for (int c=0; c < batch.cols.length; ++c) {
+    batch.cols[c].setRepeating(false);
+    batch.cols[c].noNulls=false;
+    Arrays.fill(batch.cols[c].isNull,true);
+  }
+  writer.addRowBatch(batch);
+  batch.reset();
+  batch.size=1024;
+  ((ListColumnVector)batch.cols[14]).child.ensureSize(3 * 1024,false);
+  ((MapColumnVector)batch.cols[15]).keys.ensureSize(3 * 1024,false);
+  ((MapColumnVector)batch.cols[15]).values.ensureSize(3 * 1024,false);
+  for (int r=0; r < 1024; ++r) {
+    ((BytesColumnVector)batch.cols[0]).setVal(r,Integer.toHexString(r).getBytes());
+    ((LongColumnVector)batch.cols[1]).vector[r]=r % 2;
+    ((LongColumnVector)batch.cols[2]).vector[r]=(r % 255);
+    ((LongColumnVector)batch.cols[3]).vector[r]=31415L * r;
+    ((DoubleColumnVector)batch.cols[4]).vector[r]=1.125 * r;
+    ((DoubleColumnVector)batch.cols[5]).vector[r]=0.0009765625 * r;
+    ((LongColumnVector)batch.cols[6]).vector[r]=new DateWritable(new Date(111,6,1)).getDays() + r;
+    Timestamp ts=new Timestamp(115,9,25,10,11,59 + r,999999999);
+    ((TimestampColumnVector)batch.cols[7]).set(r,ts);
+    ((DecimalColumnVector)batch.cols[8]).vector[r]=new HiveDecimalWritable("1.234567");
+    ((BytesColumnVector)batch.cols[9]).setVal(r,Integer.toString(r).getBytes());
+    ((BytesColumnVector)batch.cols[10]).setVal(r,Integer.toHexString(r).getBytes());
+    ((BytesColumnVector)batch.cols[11]).setVal(r,Integer.toHexString(r * 128).getBytes());
+    ((LongColumnVector)((StructColumnVector)batch.cols[12]).fields[0]).vector[r]=r + 13;
+    ((UnionColumnVector)batch.cols[13]).tags[r]=1;
+    ((LongColumnVector)((UnionColumnVector)batch.cols[13]).fields[1]).vector[r]=r + 42;
+    ((ListColumnVector)batch.cols[14]).offsets[r]=3 * r;
+    ((ListColumnVector)batch.cols[14]).lengths[r]=3;
+    for (int i=0; i < 3; ++i) {
+      ((LongColumnVector)((ListColumnVector)batch.cols[14]).child).vector[3 * r + i]=31415 + i;
+    }
+    ((MapColumnVector)batch.cols[15]).offsets[r]=3 * r;
+    ((MapColumnVector)batch.cols[15]).lengths[r]=3;
+    for (int i=0; i < 3; ++i) {
+      ((BytesColumnVector)((MapColumnVector)batch.cols[15]).keys).setVal(3 * r + i,Integer.toHexString(3 * r + i).getBytes());
+      ((BytesColumnVector)((MapColumnVector)batch.cols[15]).values).setVal(3 * r + i,Integer.toString(3 * r + i).getBytes());
+    }
+  }
+  writer.addRowBatch(batch);
+  writer.close();
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf).filesystem(fs));
+  ColumnStatistics[] stats=reader.getStatistics();
+  assertEquals(4096,stats[0].getNumberOfValues());
+  assertEquals(false,stats[0].hasNull());
+  for (  TypeDescription colType : schema.getChildren()) {
+    assertEquals("count on " + colType.getId(),2048,stats[colType.getId()].getNumberOfValues());
+    assertEquals("hasNull on " + colType.getId(),true,stats[colType.getId()].hasNull());
+  }
+  assertEquals(8944,((BinaryColumnStatistics)stats[1]).getSum());
+  assertEquals(1536,((BooleanColumnStatistics)stats[2]).getTrueCount());
+  assertEquals(512,((BooleanColumnStatistics)stats[2]).getFalseCount());
+  assertEquals(false,((IntegerColumnStatistics)stats[4]).isSumDefined());
+  assertEquals(0,((IntegerColumnStatistics)stats[4]).getMinimum());
+  assertEquals(0x123456789abcdef0L,((IntegerColumnStatistics)stats[4]).getMaximum());
+  assertEquals("0",((StringColumnStatistics)stats[10]).getMinimum());
+  assertEquals("Echelon",((StringColumnStatistics)stats[10]).getMaximum());
+  assertEquals(10154,((StringColumnStatistics)stats[10]).getSum());
+  assertEquals("0         ",((StringColumnStatistics)stats[11]).getMinimum());
+  assertEquals("ff        ",((StringColumnStatistics)stats[11]).getMaximum());
+  assertEquals(20480,((StringColumnStatistics)stats[11]).getSum());
+  assertEquals("0",((StringColumnStatistics)stats[12]).getMinimum());
+  assertEquals("ff80",((StringColumnStatistics)stats[12]).getMaximum());
+  assertEquals(14813,((StringColumnStatistics)stats[12]).getSum());
+  RecordReader rows=reader.rows();
+  batch=reader.getSchema().createRowBatch(1024);
+  BytesColumnVector bins=(BytesColumnVector)batch.cols[0];
+  LongColumnVector bools=(LongColumnVector)batch.cols[1];
+  LongColumnVector bytes=(LongColumnVector)batch.cols[2];
+  LongColumnVector longs=(LongColumnVector)batch.cols[3];
+  DoubleColumnVector floats=(DoubleColumnVector)batch.cols[4];
+  DoubleColumnVector doubles=(DoubleColumnVector)batch.cols[5];
+  LongColumnVector dates=(LongColumnVector)batch.cols[6];
+  TimestampColumnVector times=(TimestampColumnVector)batch.cols[7];
+  DecimalColumnVector decs=(DecimalColumnVector)batch.cols[8];
+  BytesColumnVector strs=(BytesColumnVector)batch.cols[9];
+  BytesColumnVector chars=(BytesColumnVector)batch.cols[10];
+  BytesColumnVector vcs=(BytesColumnVector)batch.cols[11];
+  StructColumnVector structs=(StructColumnVector)batch.cols[12];
+  UnionColumnVector unions=(UnionColumnVector)batch.cols[13];
+  ListColumnVector lists=(ListColumnVector)batch.cols[14];
+  MapColumnVector maps=(MapColumnVector)batch.cols[15];
+  LongColumnVector structInts=(LongColumnVector)structs.fields[0];
+  LongColumnVector unionInts=(LongColumnVector)unions.fields[1];
+  LongColumnVector listInts=(LongColumnVector)lists.child;
+  BytesColumnVector mapKeys=(BytesColumnVector)maps.keys;
+  BytesColumnVector mapValues=(BytesColumnVector)maps.values;
+  Assert.assertEquals(true,rows.nextBatch(batch));
+  assertEquals(1024,batch.size);
+  for (int f=0; f < batch.cols.length; ++f) {
+    assertEquals("field " + f,true,batch.cols[f].isRepeating);
+    assertEquals("field " + f,false,batch.cols[f].noNulls);
+    assertEquals("field " + f,true,batch.cols[f].isNull[0]);
+  }
+  Assert.assertEquals(true,rows.nextBatch(batch));
+  assertEquals(1024,batch.size);
+  for (int r=0; r < 1024; ++r) {
+    assertEquals("row " + r,"Horton",bins.toString(r));
+    assertEquals("row " + r,1,bools.vector[r]);
+    assertEquals("row " + r,-126,bytes.vector[r]);
+    assertEquals("row " + r,1311768467463790320L,longs.vector[r]);
+    assertEquals("row " + r,1.125,floats.vector[r],0.00001);
+    assertEquals("row " + r,9.765625E-4,doubles.vector[r],0.000001);
+    assertEquals("row " + r,"2011-07-01",new DateWritable((int)dates.vector[r]).toString());
+    assertEquals("row " + r,"2015-10-23 10:11:59.999999999",times.asScratchTimestamp(r).toString());
+    assertEquals("row " + r,"1.234567",decs.vector[r].toString());
+    assertEquals("row " + r,"Echelon",strs.toString(r));
+    assertEquals("row " + r,"Juggernaut",chars.toString(r));
+    assertEquals("row " + r,"Dreadnaugh",vcs.toString(r));
+    assertEquals("row " + r,123,structInts.vector[r]);
+    assertEquals("row " + r,1,unions.tags[r]);
+    assertEquals("row " + r,1234,unionInts.vector[r]);
+    assertEquals("row " + r,3,lists.lengths[r]);
+    assertEquals("row " + r,true,listInts.isRepeating);
+    assertEquals("row " + r,31415,listInts.vector[0]);
+    assertEquals("row " + r,3,maps.lengths[r]);
+    assertEquals("row " + r,"ORC",mapKeys.toString((int)maps.offsets[r]));
+    assertEquals("row " + r,"Hive",mapKeys.toString((int)maps.offsets[r] + 1));
+    assertEquals("row " + r,"LLAP",mapKeys.toString((int)maps.offsets[r] + 2));
+    assertEquals("row " + r,"fast",mapValues.toString((int)maps.offsets[r]));
+    assertEquals("row " + r,"fast",mapValues.toString((int)maps.offsets[r] + 1));
+    assertEquals("row " + r,"fast",mapValues.toString((int)maps.offsets[r] + 2));
+  }
+  Assert.assertEquals(true,rows.nextBatch(batch));
+  assertEquals(1024,batch.size);
+  for (int f=0; f < batch.cols.length; ++f) {
+    assertEquals("field " + f,true,batch.cols[f].isRepeating);
+    assertEquals("field " + f,false,batch.cols[f].noNulls);
+    assertEquals("field " + f,true,batch.cols[f].isNull[0]);
+  }
+  Assert.assertEquals(true,rows.nextBatch(batch));
+  assertEquals(1024,batch.size);
+  for (int r=0; r < 1024; ++r) {
+    String hex=Integer.toHexString(r);
+    assertEquals("row " + r,hex,bins.toString(r));
+    assertEquals("row " + r,r % 2 == 1 ? 1 : 0,bools.vector[r]);
+    assertEquals("row " + r,(byte)(r % 255),bytes.vector[r]);
+    assertEquals("row " + r,31415L * r,longs.vector[r]);
+    assertEquals("row " + r,1.125F * r,floats.vector[r],0.0001);
+    assertEquals("row " + r,0.0009765625 * r,doubles.vector[r],0.000001);
+    assertEquals("row " + r,new DateWritable(new Date(111,6,1 + r)),new DateWritable((int)dates.vector[r]));
+    assertEquals("row " + r,new Timestamp(115,9,25,10,11,59 + r,999999999),times.asScratchTimestamp(r));
+    assertEquals("row " + r,"1.234567",decs.vector[r].toString());
+    assertEquals("row " + r,Integer.toString(r),strs.toString(r));
+    assertEquals("row " + r,Integer.toHexString(r),chars.toString(r));
+    assertEquals("row " + r,Integer.toHexString(r * 128),vcs.toString(r));
+    assertEquals("row " + r,r + 13,structInts.vector[r]);
+    assertEquals("row " + r,1,unions.tags[r]);
+    assertEquals("row " + r,r + 42,unionInts.vector[r]);
+    assertEquals("row " + r,3,lists.lengths[r]);
+    assertEquals("row " + r,31415,listInts.vector[(int)lists.offsets[r]]);
+    assertEquals("row " + r,31416,listInts.vector[(int)lists.offsets[r] + 1]);
+    assertEquals("row " + r,31417,listInts.vector[(int)lists.offsets[r] + 2]);
+    assertEquals("row " + r,3,maps.lengths[3]);
+    assertEquals("row " + r,Integer.toHexString(3 * r),mapKeys.toString((int)maps.offsets[r]));
+    assertEquals("row " + r,Integer.toString(3 * r),mapValues.toString((int)maps.offsets[r]));
+    assertEquals("row " + r,Integer.toHexString(3 * r + 1),mapKeys.toString((int)maps.offsets[r] + 1));
+    assertEquals("row " + r,Integer.toString(3 * r + 1),mapValues.toString((int)maps.offsets[r] + 1));
+    assertEquals("row " + r,Integer.toHexString(3 * r + 2),mapKeys.toString((int)maps.offsets[r] + 2));
+    assertEquals("row " + r,Integer.toString(3 * r + 2),mapValues.toString((int)maps.offsets[r] + 2));
+  }
+  Assert.assertEquals(false,rows.nextBatch(batch));
+}

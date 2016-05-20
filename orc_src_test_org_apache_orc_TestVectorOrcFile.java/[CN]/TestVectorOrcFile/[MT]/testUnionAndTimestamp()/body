@@ -1,0 +1,180 @@
+{
+  TypeDescription schema=TypeDescription.createStruct().addField("time",TypeDescription.createTimestamp()).addField("union",TypeDescription.createUnion().addUnionChild(TypeDescription.createInt()).addUnionChild(TypeDescription.createString())).addField("decimal",TypeDescription.createDecimal().withPrecision(38).withScale(18));
+  HiveDecimal maxValue=HiveDecimal.create("10000000000000000000");
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).setSchema(schema).stripeSize(1000).compress(CompressionKind.NONE).bufferSize(100).blockPadding(false));
+  VectorizedRowBatch batch=schema.createRowBatch();
+  batch.size=6;
+  setUnion(batch,0,Timestamp.valueOf("2000-03-12 15:00:00"),0,42,null,new HiveDecimalWritable("12345678.6547456"));
+  setUnion(batch,1,Timestamp.valueOf("2000-03-20 12:00:00.123456789"),1,null,"hello",new HiveDecimalWritable("-5643.234"));
+  setUnion(batch,2,null,null,null,null,null);
+  setUnion(batch,3,null,0,null,null,null);
+  setUnion(batch,4,null,1,null,null,null);
+  setUnion(batch,5,Timestamp.valueOf("1970-01-01 00:00:00"),0,200000,null,new HiveDecimalWritable("10000000000000000000"));
+  writer.addRowBatch(batch);
+  batch.reset();
+  Random rand=new Random(42);
+  for (int i=1970; i < 2038; ++i) {
+    Timestamp ts=Timestamp.valueOf(i + "-05-05 12:34:56." + i);
+    HiveDecimal dec=HiveDecimal.create(new BigInteger(64,rand),rand.nextInt(18));
+    if ((i & 1) == 0) {
+      setUnion(batch,batch.size++,ts,0,i * i,null,new HiveDecimalWritable(dec));
+    }
+ else {
+      setUnion(batch,batch.size++,ts,1,null,Integer.toString(i * i),new HiveDecimalWritable(dec));
+    }
+    if (maxValue.compareTo(dec) < 0) {
+      maxValue=dec;
+    }
+  }
+  writer.addRowBatch(batch);
+  batch.reset();
+  batch.size=1000;
+  for (int c=0; c < batch.cols.length; ++c) {
+    batch.cols[c].setRepeating(true);
+  }
+  ((UnionColumnVector)batch.cols[1]).fields[0].isRepeating=true;
+  setUnion(batch,0,null,0,1732050807,null,null);
+  for (int i=0; i < 5; ++i) {
+    writer.addRowBatch(batch);
+  }
+  batch.reset();
+  batch.size=3;
+  setUnion(batch,0,null,0,0,null,null);
+  setUnion(batch,1,null,0,10,null,null);
+  setUnion(batch,2,null,0,138,null,null);
+  writer.addRowBatch(batch);
+  writer.close();
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf).filesystem(fs));
+  schema=writer.getSchema();
+  assertEquals(5,schema.getMaximumId());
+  boolean[] expected=new boolean[]{false,false,false,false,false,false};
+  boolean[] included=OrcUtils.includeColumns("",schema);
+  assertEquals(true,Arrays.equals(expected,included));
+  expected=new boolean[]{false,true,false,false,false,true};
+  included=OrcUtils.includeColumns("time,decimal",schema);
+  assertEquals(true,Arrays.equals(expected,included));
+  expected=new boolean[]{false,false,true,true,true,false};
+  included=OrcUtils.includeColumns("union",schema);
+  assertEquals(true,Arrays.equals(expected,included));
+  Assert.assertEquals(false,reader.getMetadataKeys().iterator().hasNext());
+  Assert.assertEquals(5077,reader.getNumberOfRows());
+  DecimalColumnStatistics stats=(DecimalColumnStatistics)reader.getStatistics()[5];
+  assertEquals(71,stats.getNumberOfValues());
+  assertEquals(HiveDecimal.create("-5643.234"),stats.getMinimum());
+  assertEquals(maxValue,stats.getMaximum());
+  int stripeCount=0;
+  int rowCount=0;
+  long currentOffset=-1;
+  for (  StripeInformation stripe : reader.getStripes()) {
+    stripeCount+=1;
+    rowCount+=stripe.getNumberOfRows();
+    if (currentOffset < 0) {
+      currentOffset=stripe.getOffset() + stripe.getLength();
+    }
+ else {
+      assertEquals(currentOffset,stripe.getOffset());
+      currentOffset+=stripe.getLength();
+    }
+  }
+  Assert.assertEquals(reader.getNumberOfRows(),rowCount);
+  assertEquals(2,stripeCount);
+  Assert.assertEquals(reader.getContentLength(),currentOffset);
+  RecordReader rows=reader.rows();
+  Assert.assertEquals(0,rows.getRowNumber());
+  Assert.assertEquals(0.0,rows.getProgress(),0.000001);
+  schema=reader.getSchema();
+  batch=schema.createRowBatch(74);
+  Assert.assertEquals(0,rows.getRowNumber());
+  rows.nextBatch(batch);
+  assertEquals(74,batch.size);
+  Assert.assertEquals(74,rows.getRowNumber());
+  TimestampColumnVector ts=(TimestampColumnVector)batch.cols[0];
+  UnionColumnVector union=(UnionColumnVector)batch.cols[1];
+  LongColumnVector longs=(LongColumnVector)union.fields[0];
+  BytesColumnVector strs=(BytesColumnVector)union.fields[1];
+  DecimalColumnVector decs=(DecimalColumnVector)batch.cols[2];
+  assertEquals("struct<time:timestamp,union:uniontype<int,string>,decimal:decimal(38,18)>",schema.toString());
+  assertEquals("2000-03-12 15:00:00.0",ts.asScratchTimestamp(0).toString());
+  assertEquals(0,union.tags[0]);
+  assertEquals(42,longs.vector[0]);
+  assertEquals("12345678.6547456",decs.vector[0].toString());
+  assertEquals("2000-03-20 12:00:00.123456789",ts.asScratchTimestamp(1).toString());
+  assertEquals(1,union.tags[1]);
+  assertEquals("hello",strs.toString(1));
+  assertEquals("-5643.234",decs.vector[1].toString());
+  assertEquals(false,ts.noNulls);
+  assertEquals(false,union.noNulls);
+  assertEquals(false,decs.noNulls);
+  assertEquals(true,ts.isNull[2]);
+  assertEquals(true,union.isNull[2]);
+  assertEquals(true,decs.isNull[2]);
+  assertEquals(true,ts.isNull[3]);
+  assertEquals(false,union.isNull[3]);
+  assertEquals(0,union.tags[3]);
+  assertEquals(true,longs.isNull[3]);
+  assertEquals(true,decs.isNull[3]);
+  assertEquals(true,ts.isNull[4]);
+  assertEquals(false,union.isNull[4]);
+  assertEquals(1,union.tags[4]);
+  assertEquals(true,strs.isNull[4]);
+  assertEquals(true,decs.isNull[4]);
+  assertEquals(false,ts.isNull[5]);
+  assertEquals("1970-01-01 00:00:00.0",ts.asScratchTimestamp(5).toString());
+  assertEquals(false,union.isNull[5]);
+  assertEquals(0,union.tags[5]);
+  assertEquals(false,longs.isNull[5]);
+  assertEquals(200000,longs.vector[5]);
+  assertEquals(false,decs.isNull[5]);
+  assertEquals("10000000000000000000",decs.vector[5].toString());
+  rand=new Random(42);
+  for (int i=1970; i < 2038; ++i) {
+    int row=6 + i - 1970;
+    assertEquals(Timestamp.valueOf(i + "-05-05 12:34:56." + i),ts.asScratchTimestamp(row));
+    if ((i & 1) == 0) {
+      assertEquals(0,union.tags[row]);
+      assertEquals(i * i,longs.vector[row]);
+    }
+ else {
+      assertEquals(1,union.tags[row]);
+      assertEquals(Integer.toString(i * i),strs.toString(row));
+    }
+    assertEquals(new HiveDecimalWritable(HiveDecimal.create(new BigInteger(64,rand),rand.nextInt(18))),decs.vector[row]);
+  }
+  batch=schema.createRowBatch(1000);
+  ts=(TimestampColumnVector)batch.cols[0];
+  union=(UnionColumnVector)batch.cols[1];
+  longs=(LongColumnVector)union.fields[0];
+  strs=(BytesColumnVector)union.fields[1];
+  decs=(DecimalColumnVector)batch.cols[2];
+  for (int i=0; i < 5; ++i) {
+    rows.nextBatch(batch);
+    assertEquals("batch " + i,1000,batch.size);
+    assertEquals("batch " + i,false,union.isRepeating);
+    assertEquals("batch " + i,true,union.noNulls);
+    for (int r=0; r < batch.size; ++r) {
+      assertEquals("bad tag at " + i + "."+ r,0,union.tags[r]);
+    }
+    assertEquals("batch " + i,true,longs.isRepeating);
+    assertEquals("batch " + i,1732050807,longs.vector[0]);
+  }
+  rows.nextBatch(batch);
+  assertEquals(3,batch.size);
+  assertEquals(0,union.tags[0]);
+  assertEquals(0,longs.vector[0]);
+  assertEquals(0,union.tags[1]);
+  assertEquals(10,longs.vector[1]);
+  assertEquals(0,union.tags[2]);
+  assertEquals(138,longs.vector[2]);
+  rows.nextBatch(batch);
+  assertEquals(0,batch.size);
+  Assert.assertEquals(1.0,rows.getProgress(),0.00001);
+  Assert.assertEquals(reader.getNumberOfRows(),rows.getRowNumber());
+  rows.seekToRow(1);
+  rows.nextBatch(batch);
+  assertEquals(1000,batch.size);
+  assertEquals(Timestamp.valueOf("2000-03-20 12:00:00.123456789"),ts.asScratchTimestamp(0));
+  assertEquals(1,union.tags[0]);
+  assertEquals("hello",strs.toString(0));
+  assertEquals(new HiveDecimalWritable(HiveDecimal.create("-5643.234")),decs.vector[0]);
+  rows.close();
+}

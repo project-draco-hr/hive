@@ -1,0 +1,27 @@
+{
+  TypeDescription schema=TypeDescription.createStruct().addField("char",TypeDescription.createChar().withMaxLength(10)).addField("varchar",TypeDescription.createVarchar().withMaxLength(10));
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).setSchema(schema));
+  VectorizedRowBatch batch=schema.createRowBatch();
+  batch.size=4;
+  for (int c=0; c < batch.cols.length; ++c) {
+    ((BytesColumnVector)batch.cols[c]).setVal(0,"".getBytes());
+    ((BytesColumnVector)batch.cols[c]).setVal(1,"xyz".getBytes());
+    ((BytesColumnVector)batch.cols[c]).setVal(2,"0123456789".getBytes());
+    ((BytesColumnVector)batch.cols[c]).setVal(3,"0123456789abcdef".getBytes());
+  }
+  writer.addRowBatch(batch);
+  writer.close();
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf));
+  RecordReader rows=reader.rows();
+  batch=reader.getSchema().createRowBatch();
+  Assert.assertEquals(true,rows.nextBatch(batch));
+  assertEquals(4,batch.size);
+  assertEquals("",makeString((BytesColumnVector)batch.cols[0],0));
+  assertEquals("xyz",makeString((BytesColumnVector)batch.cols[0],1));
+  assertEquals("0123456789",makeString((BytesColumnVector)batch.cols[0],2));
+  assertEquals("0123456789",makeString((BytesColumnVector)batch.cols[0],3));
+  assertEquals("",makeString((BytesColumnVector)batch.cols[1],0));
+  assertEquals("xyz",makeString((BytesColumnVector)batch.cols[1],1));
+  assertEquals("0123456789",makeString((BytesColumnVector)batch.cols[1],2));
+  assertEquals("0123456789",makeString((BytesColumnVector)batch.cols[1],3));
+}

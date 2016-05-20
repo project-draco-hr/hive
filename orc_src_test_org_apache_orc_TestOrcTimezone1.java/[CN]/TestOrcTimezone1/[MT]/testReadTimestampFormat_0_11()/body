@@ -1,0 +1,20 @@
+{
+  TimeZone.setDefault(TimeZone.getTimeZone(readerTimeZone));
+  Path oldFilePath=new Path(getClass().getClassLoader().getSystemResource("orc-file-11-format.orc").getPath());
+  Reader reader=OrcFile.createReader(oldFilePath,OrcFile.readerOptions(conf).filesystem(fs));
+  TypeDescription schema=reader.getSchema();
+  int col=schema.getFieldNames().indexOf("ts");
+  VectorizedRowBatch batch=schema.createRowBatch(10);
+  TimestampColumnVector ts=(TimestampColumnVector)batch.cols[col];
+  boolean[] include=new boolean[schema.getMaximumId() + 1];
+  include[schema.getChildren().get(col).getId()]=true;
+  RecordReader rows=reader.rows(new Reader.Options().include(include));
+  assertEquals(true,rows.nextBatch(batch));
+  assertEquals(Timestamp.valueOf("2000-03-12 15:00:00"),ts.asScratchTimestamp(0));
+  rows.seekToRow(7499);
+  assertEquals(true,rows.nextBatch(batch));
+  assertEquals(1,batch.size);
+  assertEquals(Timestamp.valueOf("2000-03-12 15:00:01"),ts.asScratchTimestamp(0));
+  Assert.assertEquals(false,rows.nextBatch(batch));
+  rows.close();
+}

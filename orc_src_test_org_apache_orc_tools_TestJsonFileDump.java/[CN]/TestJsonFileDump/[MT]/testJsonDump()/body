@@ -1,0 +1,37 @@
+{
+  TypeDescription schema=TypeDescription.createStruct().addField("i",TypeDescription.createInt()).addField("l",TypeDescription.createLong()).addField("s",TypeDescription.createString());
+  conf.set(OrcConf.ENCODING_STRATEGY.getAttribute(),"COMPRESSION");
+  OrcFile.WriterOptions options=OrcFile.writerOptions(conf).fileSystem(fs).setSchema(schema).stripeSize(100000).compress(CompressionKind.ZLIB).bufferSize(10000).rowIndexStride(1000).bloomFilterColumns("s");
+  Writer writer=OrcFile.createWriter(testFilePath,options);
+  Random r1=new Random(1);
+  String[] words=new String[]{"It","was","the","best","of","times,","it","was","the","worst","of","times,","it","was","the","age","of","wisdom,","it","was","the","age","of","foolishness,","it","was","the","epoch","of","belief,","it","was","the","epoch","of","incredulity,","it","was","the","season","of","Light,","it","was","the","season","of","Darkness,","it","was","the","spring","of","hope,","it","was","the","winter","of","despair,","we","had","everything","before","us,","we","had","nothing","before","us,","we","were","all","going","direct","to","Heaven,","we","were","all","going","direct","the","other","way"};
+  VectorizedRowBatch batch=schema.createRowBatch(1000);
+  for (int i=0; i < 21000; ++i) {
+    ((LongColumnVector)batch.cols[0]).vector[batch.size]=r1.nextInt();
+    ((LongColumnVector)batch.cols[1]).vector[batch.size]=r1.nextLong();
+    if (i % 100 == 0) {
+      batch.cols[2].noNulls=false;
+      batch.cols[2].isNull[batch.size]=true;
+    }
+ else {
+      ((BytesColumnVector)batch.cols[2]).setVal(batch.size,words[r1.nextInt(words.length)].getBytes());
+    }
+    batch.size+=1;
+    if (batch.size == batch.getMaxSize()) {
+      writer.addRowBatch(batch);
+      batch.reset();
+    }
+  }
+  if (batch.size > 0) {
+    writer.addRowBatch(batch);
+  }
+  writer.close();
+  PrintStream origOut=System.out;
+  String outputFilename="orc-file-dump.json";
+  FileOutputStream myOut=new FileOutputStream(workDir + File.separator + outputFilename);
+  System.setOut(new PrintStream(myOut));
+  FileDump.main(new String[]{testFilePath.toString(),"-j","-p","--rowindex=3"});
+  System.out.flush();
+  System.setOut(origOut);
+  checkOutput(outputFilename,workDir + File.separator + outputFilename);
+}

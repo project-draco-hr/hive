@@ -1,11 +1,28 @@
 {
-  try {
-    final Object result=reader.next(previous);
-    rowInStripe+=1;
-    advanceToNextRow(reader,rowInStripe + rowBaseInStripe,true);
-    return result;
+  if (!ensureBatch()) {
+    return null;
   }
- catch (  IOException e) {
-    throw new IOException("Error reading file: " + path,e);
+  if (schema.getCategory() == TypeDescription.Category.STRUCT) {
+    OrcStruct result;
+    List<TypeDescription> children=schema.getChildren();
+    int numberOfChildren=children.size();
+    if (previous == null || previous.getClass() != OrcStruct.class) {
+      result=new OrcStruct(numberOfChildren);
+      previous=result;
+    }
+ else {
+      result=(OrcStruct)previous;
+      if (result.getNumFields() != numberOfChildren) {
+        result.setNumFields(numberOfChildren);
+      }
+    }
+    for (int i=0; i < numberOfChildren; ++i) {
+      result.setFieldValue(i,nextValue(batch.cols[i],rowInBatch,children.get(i),result.getFieldValue(i)));
+    }
   }
+ else {
+    previous=nextValue(batch.cols[0],rowInBatch,schema,previous);
+  }
+  rowInBatch+=1;
+  return previous;
 }

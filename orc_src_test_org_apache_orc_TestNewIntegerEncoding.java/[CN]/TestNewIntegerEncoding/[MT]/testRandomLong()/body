@@ -1,0 +1,24 @@
+{
+  TypeDescription schema=TypeDescription.createLong();
+  List<Long> input=Lists.newArrayList();
+  Random rand=new Random();
+  for (int i=0; i < 100000; i++) {
+    input.add(rand.nextLong());
+  }
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).setSchema(schema).stripeSize(100000).compress(CompressionKind.NONE).bufferSize(10000).encodingStrategy(encodingStrategy));
+  VectorizedRowBatch batch=schema.createRowBatch(100000);
+  for (  Long l : input) {
+    appendLong(batch,l);
+  }
+  writer.addRowBatch(batch);
+  writer.close();
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf).filesystem(fs));
+  RecordReader rows=reader.rows();
+  batch=reader.getSchema().createRowBatch();
+  int idx=0;
+  while (rows.nextBatch(batch)) {
+    for (int r=0; r < batch.size; ++r) {
+      assertEquals(input.get(idx++).longValue(),((LongColumnVector)batch.cols[0]).vector[r]);
+    }
+  }
+}

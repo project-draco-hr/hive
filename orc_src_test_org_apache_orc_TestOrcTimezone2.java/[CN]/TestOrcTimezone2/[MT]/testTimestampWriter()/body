@@ -1,0 +1,39 @@
+{
+  TypeDescription schema=TypeDescription.createTimestamp();
+  TimeZone.setDefault(TimeZone.getTimeZone(writerTimeZone));
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).setSchema(schema).stripeSize(100000).bufferSize(10000));
+  assertEquals(writerTimeZone,TimeZone.getDefault().getID());
+  List<String> ts=Lists.newArrayList();
+  ts.add("2003-01-01 01:00:00.000000222");
+  ts.add("1999-01-01 02:00:00.999999999");
+  ts.add("1995-01-02 03:00:00.688888888");
+  ts.add("2002-01-01 04:00:00.1");
+  ts.add("2010-03-02 05:00:00.000009001");
+  ts.add("2005-01-01 06:00:00.000002229");
+  ts.add("2006-01-01 07:00:00.900203003");
+  ts.add("2003-01-01 08:00:00.800000007");
+  ts.add("1996-08-02 09:00:00.723100809");
+  ts.add("1998-11-02 10:00:00.857340643");
+  ts.add("2008-10-02 11:00:00.0");
+  ts.add("2037-01-01 00:00:00.000999");
+  VectorizedRowBatch batch=schema.createRowBatch();
+  TimestampColumnVector tsc=(TimestampColumnVector)batch.cols[0];
+  for (  String t : ts) {
+    tsc.set(batch.size++,Timestamp.valueOf(t));
+  }
+  writer.addRowBatch(batch);
+  writer.close();
+  TimeZone.setDefault(TimeZone.getTimeZone(readerTimeZone));
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf).filesystem(fs));
+  assertEquals(readerTimeZone,TimeZone.getDefault().getID());
+  RecordReader rows=reader.rows();
+  int idx=0;
+  batch=reader.getSchema().createRowBatch();
+  tsc=(TimestampColumnVector)batch.cols[0];
+  while (rows.nextBatch(batch)) {
+    for (int r=0; r < batch.size; ++r) {
+      assertEquals(ts.get(idx++),tsc.asScratchTimestamp(r).toString());
+    }
+  }
+  rows.close();
+}

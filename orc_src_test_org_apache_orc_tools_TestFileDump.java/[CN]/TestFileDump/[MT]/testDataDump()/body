@@ -1,0 +1,22 @@
+{
+  TypeDescription schema=getAllTypesType();
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).fileSystem(fs).setSchema(schema).stripeSize(100000).compress(CompressionKind.NONE).bufferSize(10000).rowIndexStride(1000));
+  VectorizedRowBatch batch=schema.createRowBatch(1000);
+  Map<String,String> m=new HashMap<String,String>(2);
+  m.put("k1","v1");
+  appendAllTypes(batch,true,(byte)10,(short)100,1000,10000L,4.0f,20.0,new HiveDecimalWritable("4.2222"),new Timestamp(1416967764000L),new DateWritable(new Date(1416967764000L)),"string","hello","hello",m,Arrays.asList(100,200),10,"foo");
+  m.clear();
+  m.put("k3","v3");
+  appendAllTypes(batch,false,(byte)20,(short)200,2000,20000L,8.0f,40.0,new HiveDecimalWritable("2.2222"),new Timestamp(1416967364000L),new DateWritable(new Date(1411967764000L)),"abcd","world","world",m,Arrays.asList(200,300),20,"bar");
+  writer.addRowBatch(batch);
+  writer.close();
+  PrintStream origOut=System.out;
+  ByteArrayOutputStream myOut=new ByteArrayOutputStream();
+  System.setOut(new PrintStream(myOut));
+  FileDump.main(new String[]{testFilePath.toString(),"-d"});
+  System.out.flush();
+  System.setOut(origOut);
+  String[] lines=myOut.toString().split("\n");
+  Assert.assertEquals("{\"b\":true,\"bt\":10,\"s\":100,\"i\":1000,\"l\":10000,\"f\":4,\"d\":20,\"de\":\"4.2222\",\"t\":\"2014-11-25 18:09:24.0\",\"dt\":\"2014-11-25\",\"str\":\"string\",\"c\":\"hello\",\"vc\":\"hello\",\"m\":[{\"_key\":\"k1\",\"_value\":\"v1\"}],\"a\":[100,200],\"st\":{\"i\":10,\"s\":\"foo\"}}",lines[0]);
+  Assert.assertEquals("{\"b\":false,\"bt\":20,\"s\":200,\"i\":2000,\"l\":20000,\"f\":8,\"d\":40,\"de\":\"2.2222\",\"t\":\"2014-11-25 18:02:44.0\",\"dt\":\"2014-09-28\",\"str\":\"abcd\",\"c\":\"world\",\"vc\":\"world\",\"m\":[{\"_key\":\"k3\",\"_value\":\"v3\"}],\"a\":[200,300],\"st\":{\"i\":20,\"s\":\"bar\"}}",lines[1]);
+}

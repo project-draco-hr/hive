@@ -1,0 +1,42 @@
+{
+  TypeDescription schema=createInnerSchema();
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).setSchema(schema).stripeSize(5000).compress(CompressionKind.SNAPPY).bufferSize(1000).rowIndexStride(0));
+  VectorizedRowBatch batch=schema.createRowBatch();
+  Random rand=new Random(24);
+  batch.size=5;
+  for (int c=0; c < batch.cols.length; ++c) {
+    batch.cols[c].setRepeating(true);
+  }
+  for (int i=0; i < 10000; ++i) {
+    ((LongColumnVector)batch.cols[0]).vector[0]=rand.nextInt();
+    ((BytesColumnVector)batch.cols[1]).setVal(0,Integer.toBinaryString(rand.nextInt()).getBytes());
+    writer.addRowBatch(batch);
+  }
+  writer.close();
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf).filesystem(fs));
+  Assert.assertEquals(50000,reader.getNumberOfRows());
+  Assert.assertEquals(0,reader.getRowIndexStride());
+  StripeInformation stripe=reader.getStripes().iterator().next();
+  assertEquals(true,stripe.getDataLength() != 0);
+  assertEquals(0,stripe.getIndexLength());
+  RecordReader rows=reader.rows();
+  rand=new Random(24);
+  batch=reader.getSchema().createRowBatch(1000);
+  LongColumnVector longs=(LongColumnVector)batch.cols[0];
+  BytesColumnVector strs=(BytesColumnVector)batch.cols[1];
+  for (int i=0; i < 50; ++i) {
+    rows.nextBatch(batch);
+    assertEquals("batch " + i,1000,batch.size);
+    for (int j=0; j < 200; ++j) {
+      int intVal=rand.nextInt();
+      String strVal=Integer.toBinaryString(rand.nextInt());
+      for (int k=0; k < 5; ++k) {
+        assertEquals(intVal,longs.vector[j * 5 + k]);
+        assertEquals(strVal,strs.toString(j * 5 + k));
+      }
+    }
+  }
+  rows.nextBatch(batch);
+  assertEquals(0,batch.size);
+  rows.close();
+}

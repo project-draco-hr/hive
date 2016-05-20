@@ -1,0 +1,62 @@
+{
+  SchemaEvolution treeReaderSchema;
+  this.included=options.getInclude();
+  included[0]=true;
+  if (options.getSchema() == null) {
+    if (LOG.isInfoEnabled()) {
+      LOG.info("Schema on read not provided -- using file schema " + fileReader.getSchema());
+    }
+    treeReaderSchema=new SchemaEvolution(fileReader.getSchema(),included);
+  }
+ else {
+    treeReaderSchema=new SchemaEvolution(fileReader.getSchema(),options.getSchema(),included);
+  }
+  this.schema=treeReaderSchema.getReaderSchema();
+  this.path=fileReader.path;
+  this.codec=fileReader.codec;
+  this.types=fileReader.types;
+  this.bufferSize=fileReader.bufferSize;
+  this.rowIndexStride=fileReader.rowIndexStride;
+  SearchArgument sarg=options.getSearchArgument();
+  if (sarg != null && rowIndexStride != 0) {
+    sargApp=new SargApplier(sarg,options.getColumnNames(),rowIndexStride,types,included.length);
+  }
+ else {
+    sargApp=null;
+  }
+  long rows=0;
+  long skippedRows=0;
+  long offset=options.getOffset();
+  long maxOffset=options.getMaxOffset();
+  for (  StripeInformation stripe : fileReader.getStripes()) {
+    long stripeStart=stripe.getOffset();
+    if (offset > stripeStart) {
+      skippedRows+=stripe.getNumberOfRows();
+    }
+ else     if (stripeStart < maxOffset) {
+      this.stripes.add(stripe);
+      rows+=stripe.getNumberOfRows();
+    }
+  }
+  Boolean zeroCopy=options.getUseZeroCopy();
+  if (zeroCopy == null) {
+    zeroCopy=OrcConf.USE_ZEROCOPY.getBoolean(fileReader.conf);
+  }
+  if (options.getDataReader() != null) {
+    this.dataReader=options.getDataReader();
+  }
+ else {
+    this.dataReader=RecordReaderUtils.createDefaultDataReader(DataReaderProperties.builder().withBufferSize(bufferSize).withCompression(fileReader.compressionKind).withFileSystem(fileReader.fileSystem).withPath(fileReader.path).withTypeCount(types.size()).withZeroCopy(zeroCopy).build());
+  }
+  this.dataReader.open();
+  firstRow=skippedRows;
+  totalRowCount=rows;
+  Boolean skipCorrupt=options.getSkipCorruptRecords();
+  if (skipCorrupt == null) {
+    skipCorrupt=OrcConf.SKIP_CORRUPT_DATA.getBoolean(fileReader.conf);
+  }
+  reader=TreeReaderFactory.createTreeReader(treeReaderSchema.getReaderSchema(),treeReaderSchema,included,skipCorrupt);
+  indexes=new OrcProto.RowIndex[types.size()];
+  bloomFilterIndices=new OrcProto.BloomFilterIndex[types.size()];
+  advanceToNextRow(reader,0L,true);
+}
