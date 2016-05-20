@@ -1,0 +1,32 @@
+{
+  Connection dbConn=null;
+  Statement stmt=null;
+  ResultSet rs=null;
+  try {
+    try {
+      dbConn=getDbConn(Connection.TRANSACTION_READ_COMMITTED);
+      stmt=dbConn.createStatement();
+      String s="select count(*) from TXNS where txn_state = '" + TXN_OPEN + "'";
+      LOG.debug("Going to execute query <" + s + ">");
+      rs=stmt.executeQuery(s);
+      if (!rs.next()) {
+        LOG.error("Transaction database not properly configured, " + "can't find txn_state from TXNS.");
+      }
+ else {
+        numOpenTxns=rs.getLong(1);
+      }
+    }
+ catch (    SQLException e) {
+      LOG.debug("Going to rollback");
+      rollbackDBConn(dbConn);
+      LOG.info("Failed to update number of open transactions");
+      checkRetryable(dbConn,e,"countOpenTxns()");
+    }
+ finally {
+      close(rs,stmt,dbConn);
+    }
+  }
+ catch (  RetryException e) {
+    countOpenTxns();
+  }
+}

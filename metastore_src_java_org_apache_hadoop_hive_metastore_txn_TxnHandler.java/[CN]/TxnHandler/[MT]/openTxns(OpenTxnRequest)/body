@@ -1,4 +1,28 @@
 {
+  if (openTxnsCounter == null) {
+synchronized (TxnHandler.class) {
+      try {
+        if (openTxnsCounter == null) {
+          startHouseKeeperService(conf,Class.forName("org.apache.hadoop.hive.ql.txn.AcidOpenTxnsCounterService"));
+        }
+      }
+ catch (      ClassNotFoundException e) {
+        throw new MetaException(e.getMessage());
+      }
+    }
+  }
+  if (!tooManyOpenTxns && numOpenTxns >= maxOpenTxns) {
+    tooManyOpenTxns=true;
+  }
+  if (tooManyOpenTxns) {
+    if (numOpenTxns < maxOpenTxns * 0.9) {
+      tooManyOpenTxns=false;
+    }
+ else {
+      LOG.warn("Maximum allowed number of open transactions (" + maxOpenTxns + ") has been "+ "reached. Current number of open transactions: "+ numOpenTxns);
+      throw new MetaException("Maximum allowed number of open transactions has been reached. " + "See hive.max.open.txns.");
+    }
+  }
   int numTxns=rqst.getNum_txns();
   try {
     Connection dbConn=null;
