@@ -208,15 +208,21 @@
     }
     final Process child=pb.start();
     int childId=childIdGenerator.incrementAndGet();
-    redirect("stdout-redir-" + childId,child.getInputStream());
-    redirect("stderr-redir-" + childId,child.getErrorStream());
+    final List<String> childErrorLog=new ArrayList<String>();
+    redirect("stdout-redir-" + childId,new Redirector(child.getInputStream()));
+    redirect("stderr-redir-" + childId,new Redirector(child.getErrorStream(),childErrorLog));
     runnable=new Runnable(){
       @Override public void run(){
         try {
           int exitCode=child.waitFor();
           if (exitCode != 0) {
-            rpcServer.cancelClient(clientId,"Child process exited before connecting back");
-            LOG.warn("Child process exited with code {}.",exitCode);
+            StringBuilder errStr=new StringBuilder();
+            for (            String s : childErrorLog) {
+              errStr.append(s);
+              errStr.append('\n');
+            }
+            rpcServer.cancelClient(clientId,"Child process exited before connecting back with error log " + errStr.toString());
+            LOG.warn("Child process exited with code {}",exitCode);
           }
         }
  catch (        InterruptedException ie) {
