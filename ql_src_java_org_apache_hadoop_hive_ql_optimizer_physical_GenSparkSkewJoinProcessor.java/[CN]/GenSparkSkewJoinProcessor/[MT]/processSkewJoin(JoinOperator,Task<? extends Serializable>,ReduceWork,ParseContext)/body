@@ -5,7 +5,6 @@
     return;
   }
   List<Task<? extends Serializable>> children=currTask.getChildTasks();
-  Task<? extends Serializable> child=children != null && children.size() == 1 ? children.get(0) : null;
   Path baseTmpDir=parseCtx.getContext().getMRTmpPath();
   JoinDesc joinDescriptor=joinOp.getConf();
   Map<Byte,List<ExprNodeDesc>> joinValues=joinDescriptor.getExprs();
@@ -181,13 +180,16 @@
         tsk.addDependentTask(oldChild);
       }
     }
+    currTask.setChildTasks(new ArrayList<Task<? extends Serializable>>());
+    for (    Task<? extends Serializable> oldChild : children) {
+      oldChild.getParentTasks().remove(currTask);
+    }
+    listTasks.addAll(children);
+    for (    Task<? extends Serializable> oldChild : children) {
+      listWorks.add(oldChild.getWork());
+    }
   }
-  if (child != null) {
-    currTask.removeDependentTask(child);
-    listTasks.add(child);
-    listWorks.add(child.getWork());
-  }
-  ConditionalResolverSkewJoin.ConditionalResolverSkewJoinCtx context=new ConditionalResolverSkewJoin.ConditionalResolverSkewJoinCtx(bigKeysDirToTaskMap,child);
+  ConditionalResolverSkewJoin.ConditionalResolverSkewJoinCtx context=new ConditionalResolverSkewJoin.ConditionalResolverSkewJoinCtx(bigKeysDirToTaskMap,children);
   ConditionalWork cndWork=new ConditionalWork(listWorks);
   ConditionalTask cndTsk=(ConditionalTask)TaskFactory.get(cndWork,parseCtx.getConf());
   cndTsk.setListTasks(listTasks);

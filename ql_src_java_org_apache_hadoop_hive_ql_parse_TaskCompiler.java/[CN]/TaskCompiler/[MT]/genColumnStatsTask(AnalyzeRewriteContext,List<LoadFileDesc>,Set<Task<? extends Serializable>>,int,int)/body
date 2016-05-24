@@ -1,0 +1,28 @@
+{
+  ColumnStatsTask cStatsTask=null;
+  ColumnStatsWork cStatsWork=null;
+  FetchWork fetch=null;
+  String tableName=analyzeRewrite.getTableName();
+  List<String> colName=analyzeRewrite.getColName();
+  List<String> colType=analyzeRewrite.getColType();
+  boolean isTblLevel=analyzeRewrite.isTblLvl();
+  String cols=loadFileWork.get(0).getColumns();
+  String colTypes=loadFileWork.get(0).getColumnTypes();
+  String resFileFormat;
+  TableDesc resultTab;
+  if (SessionState.get().isHiveServerQuery() && conf.getBoolVar(HiveConf.ConfVars.HIVE_SERVER2_THRIFT_RESULTSET_SERIALIZE_IN_TASKS)) {
+    resFileFormat="SequenceFile";
+    resultTab=PlanUtils.getDefaultQueryOutputTableDesc(cols,colTypes,resFileFormat,ThriftJDBCBinarySerDe.class);
+  }
+ else {
+    resFileFormat=HiveConf.getVar(conf,HiveConf.ConfVars.HIVEQUERYRESULTFILEFORMAT);
+    resultTab=PlanUtils.getDefaultQueryOutputTableDesc(cols,colTypes,resFileFormat,LazySimpleSerDe.class);
+  }
+  fetch=new FetchWork(loadFileWork.get(0).getSourcePath(),resultTab,outerQueryLimit);
+  ColumnStatsDesc cStatsDesc=new ColumnStatsDesc(tableName,colName,colType,isTblLevel,numBitVector);
+  cStatsWork=new ColumnStatsWork(fetch,cStatsDesc);
+  cStatsTask=(ColumnStatsTask)TaskFactory.get(cStatsWork,conf);
+  for (  Task<? extends Serializable> tsk : leafTasks) {
+    tsk.addDependentTask(cStatsTask);
+  }
+}

@@ -1,0 +1,36 @@
+{
+  tbl=AnalyzeCommandUtils.getTable(ast,this);
+  colNames=getColumnName(ast);
+  originalTree=ast;
+  boolean isPartitionStats=AnalyzeCommandUtils.isPartitionLevelStats(ast);
+  Map<String,String> partSpec=null;
+  checkForPartitionColumns(colNames,Utilities.getColumnNamesFromFieldSchema(tbl.getPartitionKeys()));
+  validateSpecifiedColumnNames(colNames);
+  if (conf.getBoolVar(ConfVars.HIVE_STATS_COLLECT_PART_LEVEL_STATS) && tbl.isPartitioned()) {
+    isPartitionStats=true;
+  }
+  if (isPartitionStats) {
+    isTableLevel=false;
+    partSpec=AnalyzeCommandUtils.getPartKeyValuePairsFromAST(tbl,ast,conf);
+    handlePartialPartitionSpec(partSpec);
+  }
+ else {
+    isTableLevel=true;
+  }
+  colType=getColumnTypes(colNames);
+  int numBitVectors=0;
+  try {
+    numBitVectors=HiveStatsUtils.getNumBitVectorsForNDVEstimation(conf);
+  }
+ catch (  Exception e) {
+    throw new SemanticException(e.getMessage());
+  }
+  rewrittenQuery=genRewrittenQuery(colNames,numBitVectors,partSpec,isPartitionStats);
+  rewrittenTree=genRewrittenTree(rewrittenQuery);
+  context.analyzeRewrite=new AnalyzeRewriteContext();
+  context.analyzeRewrite.setTableName(tbl.getDbName() + "." + tbl.getTableName());
+  context.analyzeRewrite.setTblLvl(isTableLevel);
+  context.analyzeRewrite.setColName(colNames);
+  context.analyzeRewrite.setColType(colType);
+  return rewrittenTree;
+}

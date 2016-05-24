@@ -1,0 +1,28 @@
+{
+  Context ctx=new Context(conf);
+  ParseDriver pd=new ParseDriver();
+  ASTNode tree=pd.parse(analyzeCommand,ctx);
+  tree=ParseUtils.findRootNonNullToken(tree);
+  BaseSemanticAnalyzer baseSem=SemanticAnalyzerFactory.get(new QueryState(conf),tree);
+  ColumnStatsSemanticAnalyzer colSem=(ColumnStatsSemanticAnalyzer)baseSem;
+  ASTNode ast=colSem.rewriteAST(tree,this);
+  baseSem=SemanticAnalyzerFactory.get(new QueryState(conf),ast);
+  SemanticAnalyzer sem=(SemanticAnalyzer)baseSem;
+  QB qb=new QB(null,null,false);
+  ASTNode child=ast;
+  ParseContext subPCtx=((SemanticAnalyzer)sem).getParseContext();
+  subPCtx.setContext(ctx);
+  ((SemanticAnalyzer)sem).initParseCtx(subPCtx);
+  sem.doPhase1(child,qb,sem.initPhase1Ctx(),null);
+  sem.getMetaData(qb);
+  Operator<?> operator=sem.genPlan(qb);
+  loadFileWork.addAll(sem.getLoadFileWork());
+  if (sem.topOps.values().size() != 1) {
+    throw new SemanticException("ColumnStatsAutoGatherContext is expecting exactly one TS, but finds " + sem.topOps.values().size());
+  }
+  operator=sem.topOps.values().iterator().next();
+  while (!(operator instanceof SelectOperator)) {
+    operator=operator.getChildOperators().get(0);
+  }
+  return operator;
+}

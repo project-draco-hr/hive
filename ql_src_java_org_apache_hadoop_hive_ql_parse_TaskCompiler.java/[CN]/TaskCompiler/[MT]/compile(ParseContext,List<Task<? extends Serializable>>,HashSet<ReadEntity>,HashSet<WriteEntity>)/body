@@ -113,9 +113,6 @@ catch (          MetaException e) {
     }
   }
   generateTaskTree(rootTasks,pCtx,mvTask,inputs,outputs);
-  if (isCStats) {
-    genColumnStatsTask(pCtx.getAnalyzeRewrite(),loadTableWork,loadFileWork,rootTasks,outerQueryLimit);
-  }
   for (  Task<? extends Serializable> rootTask : rootTasks) {
     GenMapRedUtils.setKeyAndValueDescForTaskTree(rootTask);
   }
@@ -123,6 +120,30 @@ catch (          MetaException e) {
     setInputFormat(rootTask);
   }
   optimizeTaskPlan(rootTasks,pCtx,ctx);
+  if (isCStats || !pCtx.getColumnStatsAutoGatherContexts().isEmpty()) {
+    Set<Task<? extends Serializable>> leafTasks=new LinkedHashSet<Task<? extends Serializable>>();
+    getLeafTasks(rootTasks,leafTasks);
+    if (isCStats) {
+      genColumnStatsTask(pCtx.getAnalyzeRewrite(),loadFileWork,leafTasks,outerQueryLimit,0);
+    }
+ else {
+      for (      ColumnStatsAutoGatherContext columnStatsAutoGatherContext : pCtx.getColumnStatsAutoGatherContexts()) {
+        if (!columnStatsAutoGatherContext.isInsertInto()) {
+          genColumnStatsTask(columnStatsAutoGatherContext.getAnalyzeRewrite(),columnStatsAutoGatherContext.getLoadFileWork(),leafTasks,outerQueryLimit,0);
+        }
+ else {
+          int numBitVector;
+          try {
+            numBitVector=HiveStatsUtils.getNumBitVectorsForNDVEstimation(conf);
+          }
+ catch (          Exception e) {
+            throw new SemanticException(e.getMessage());
+          }
+          genColumnStatsTask(columnStatsAutoGatherContext.getAnalyzeRewrite(),columnStatsAutoGatherContext.getLoadFileWork(),leafTasks,outerQueryLimit,numBitVector);
+        }
+      }
+    }
+  }
   decideExecMode(rootTasks,ctx,globalLimitCtx);
   if (pCtx.getQueryProperties().isCTAS() && !pCtx.getCreateTable().isMaterialization()) {
     CreateTableDesc crtTblDesc=pCtx.getCreateTable();
