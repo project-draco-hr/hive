@@ -10,6 +10,7 @@
   boolean verbose=false;
   if (cli.hasOption("r")) {
     dryRun=true;
+    SessionState.getConsole().printInfo("dry-run mode on");
   }
   if (cli.hasOption("v")) {
     verbose=true;
@@ -39,23 +40,47 @@
         }
         continue;
       }
+      boolean removable=false;
+      boolean inuse=false;
       try {
         IOUtils.closeStream(fs.append(lockFilePath));
-        scratchDirToRemove.add(scratchDir.getPath());
+        removable=true;
       }
- catch (      RemoteException e) {
-        if (AlreadyBeingCreatedException.class.getName().equals(e.getClassName())) {
-          String message=scratchDir.getPath() + " is being used by live process";
-          if (verbose) {
-            SessionState.getConsole().printInfo(message);
+ catch (      RemoteException eAppend) {
+        if (AlreadyBeingCreatedException.class.getName().equals(eAppend.getClassName())) {
+          inuse=true;
+        }
+ else         if (UnsupportedOperationException.class.getName().equals(eAppend.getClassName())) {
+          try {
+            IOUtils.closeStream(fs.create(lockFilePath,false));
           }
+ catch (          RemoteException eCreate) {
+            if (AlreadyBeingCreatedException.class.getName().equals(eCreate.getClassName())) {
+              inuse=true;
+            }
  else {
-            SessionState.getConsole().logInfo(message);
+              SessionState.getConsole().printInfo("Unexpected error:" + eCreate.getMessage());
+            }
+          }
+catch (          FileAlreadyExistsException eCreateNormal) {
+            removable=true;
           }
         }
  else {
-          throw e;
+          SessionState.getConsole().printInfo("Unexpected error:" + eAppend.getMessage());
         }
+      }
+      if (inuse) {
+        String message=scratchDir.getPath() + " is being used by live process";
+        if (verbose) {
+          SessionState.getConsole().printInfo(message);
+        }
+ else {
+          SessionState.getConsole().logInfo(message);
+        }
+      }
+      if (removable) {
+        scratchDirToRemove.add(scratchDir.getPath());
       }
     }
   }
