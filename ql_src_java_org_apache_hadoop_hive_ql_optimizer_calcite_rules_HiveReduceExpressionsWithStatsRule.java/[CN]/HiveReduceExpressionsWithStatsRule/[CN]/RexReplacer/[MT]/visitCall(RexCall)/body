@@ -1,0 +1,125 @@
+{
+  if (COMPARISON.contains(call.getOperator().getKind())) {
+    RexInputRef ref=null;
+    RexLiteral literal=null;
+    SqlKind kind=null;
+    if (call.operands.get(0) instanceof RexInputRef && call.operands.get(1) instanceof RexLiteral) {
+      ref=(RexInputRef)call.operands.get(0);
+      literal=(RexLiteral)call.operands.get(1);
+      kind=call.getOperator().getKind();
+    }
+ else     if (call.operands.get(1) instanceof RexInputRef && call.operands.get(0) instanceof RexLiteral) {
+      ref=(RexInputRef)call.operands.get(1);
+      literal=(RexLiteral)call.operands.get(0);
+      kind=HiveRexUtil.invert(call.getOperator().getKind());
+    }
+    Number max=null;
+    Number min=null;
+    if (ref != null && literal != null && kind != null) {
+      Pair<Number,Number> maxMin=extractMaxMin(ref);
+      max=maxMin.left;
+      min=maxMin.right;
+    }
+    if (max != null && min != null) {
+      RexNode reduced=reduceCall(literal,kind,max,min);
+      if (reduced != null) {
+        return reduced;
+      }
+    }
+    return call;
+  }
+ else   if (call.getOperator().getKind() == SqlKind.IN) {
+    if (call.getOperands().get(0) instanceof RexInputRef) {
+      RexInputRef ref=(RexInputRef)call.getOperands().get(0);
+      Number max=null;
+      Number min=null;
+      if (ref != null) {
+        Pair<Number,Number> maxMin=extractMaxMin(ref);
+        max=maxMin.left;
+        min=maxMin.right;
+      }
+      if (max != null && min != null) {
+        List<RexNode> newOperands=Lists.newArrayList();
+        newOperands.add(ref);
+        for (int i=1; i < call.getOperands().size(); i++) {
+          RexNode operand=call.getOperands().get(i);
+          if (operand instanceof RexLiteral) {
+            RexLiteral literal=(RexLiteral)operand;
+            RexNode reduced=reduceCall(literal,SqlKind.EQUALS,max,min);
+            if (reduced != null) {
+              if (reduced.isAlwaysTrue()) {
+                return rexBuilder.makeLiteral(true);
+              }
+            }
+ else {
+              newOperands.add(literal);
+            }
+          }
+ else {
+            newOperands.add(operand);
+          }
+        }
+        if (newOperands.size() == 1) {
+          return rexBuilder.makeLiteral(false);
+        }
+        return rexBuilder.makeCall(HiveIn.INSTANCE,newOperands);
+      }
+    }
+ else     if (call.getOperands().get(0).getKind() == SqlKind.ROW) {
+      RexCall struct=(RexCall)call.getOperands().get(0);
+      List<RexInputRef> refs=Lists.newArrayList();
+      List<Pair<Number,Number>> maxMinStats=Lists.newArrayList();
+      for (      RexNode operand : struct.getOperands()) {
+        if (!(operand instanceof RexInputRef)) {
+          return call;
+        }
+        RexInputRef ref=(RexInputRef)operand;
+        refs.add(ref);
+        maxMinStats.add(extractMaxMin(ref));
+      }
+      List<RexNode> newOperands=Lists.newArrayList();
+      newOperands.add(struct);
+      for (int i=1; i < call.getOperands().size(); i++) {
+        RexCall constStruct=(RexCall)call.getOperands().get(i);
+        boolean allTrue=true;
+        boolean addOperand=true;
+        for (int j=0; i < constStruct.getOperands().size(); j++) {
+          RexNode operand=constStruct.getOperands().get(j);
+          if (operand instanceof RexLiteral) {
+            RexLiteral literal=(RexLiteral)operand;
+            RexNode reduced=reduceCall(literal,SqlKind.EQUALS,maxMinStats.get(j).left,maxMinStats.get(j).right);
+            if (reduced != null) {
+              if (reduced.isAlwaysFalse()) {
+                allTrue=false;
+                addOperand=false;
+                break;
+              }
+            }
+ else {
+              allTrue=false;
+            }
+          }
+ else {
+            allTrue=false;
+          }
+        }
+        if (allTrue) {
+          return rexBuilder.makeLiteral(true);
+        }
+        if (addOperand) {
+          newOperands.add(constStruct);
+        }
+      }
+      if (newOperands.size() == 1) {
+        return rexBuilder.makeLiteral(false);
+      }
+      return rexBuilder.makeCall(HiveIn.INSTANCE,newOperands);
+    }
+    return call;
+  }
+  RexNode node=super.visitCall(call);
+  if (node != call) {
+    node=HiveRexUtil.simplify(rexBuilder,node);
+  }
+  return node;
+}
