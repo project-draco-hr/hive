@@ -1,0 +1,28 @@
+{
+  job.setBoolean(IS_MAJOR,compactionType == CompactionType.MAJOR);
+  if (dirsToSearch == null) {
+    dirsToSearch=new StringableList();
+  }
+  StringableList deltaDirs=new StringableList();
+  long minTxn=Long.MAX_VALUE;
+  long maxTxn=Long.MIN_VALUE;
+  for (  AcidUtils.ParsedDelta delta : parsedDeltas) {
+    LOG.debug("Adding delta " + delta.getPath() + " to directories to search");
+    dirsToSearch.add(delta.getPath());
+    deltaDirs.add(delta.getPath());
+    minTxn=Math.min(minTxn,delta.getMinTransaction());
+    maxTxn=Math.max(maxTxn,delta.getMaxTransaction());
+  }
+  if (baseDir != null)   job.set(BASE_DIR,baseDir.toString());
+  job.set(DELTA_DIRS,deltaDirs.toString());
+  job.set(DIRS_TO_SEARCH,dirsToSearch.toString());
+  job.setLong(MIN_TXN,minTxn);
+  job.setLong(MAX_TXN,maxTxn);
+  if (hiveConf.getBoolVar(HiveConf.ConfVars.HIVE_IN_TEST)) {
+    mrJob=job;
+  }
+  LOG.info("Submitting " + compactionType + " compaction job '"+ job.getJobName()+ "' to "+ job.getQueueName()+ " queue.  "+ "(current delta dirs count="+ curDirNumber+ ", obsolete delta dirs count="+ obsoleteDirNumber+ ". TxnIdRange["+ minTxn+ ","+ maxTxn+ "]");
+  RunningJob rj=JobClient.runJob(job);
+  LOG.info("Submitted compaction job '" + job.getJobName() + "' with jobID="+ rj.getID());
+  rj.waitForCompletion();
+}

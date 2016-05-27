@@ -1,0 +1,26 @@
+{
+  if (ci.tooManyAborts) {
+    LOG.debug("Found too many aborted transactions for " + ci.getFullPartitionName() + ", "+ "initiating major compaction");
+    return CompactionType.MAJOR;
+  }
+  if (runJobAsSelf(runAs)) {
+    return determineCompactionType(ci,txns,sd,tblproperties);
+  }
+ else {
+    LOG.info("Going to initiate as user " + runAs);
+    UserGroupInformation ugi=UserGroupInformation.createProxyUser(runAs,UserGroupInformation.getLoginUser());
+    CompactionType compactionType=ugi.doAs(new PrivilegedExceptionAction<CompactionType>(){
+      @Override public CompactionType run() throws Exception {
+        return determineCompactionType(ci,txns,sd,tblproperties);
+      }
+    }
+);
+    try {
+      FileSystem.closeAllForUGI(ugi);
+    }
+ catch (    IOException exception) {
+      LOG.error("Could not clean up file-system handles for UGI: " + ugi + " for "+ ci.getFullPartitionName(),exception);
+    }
+    return compactionType;
+  }
+}
