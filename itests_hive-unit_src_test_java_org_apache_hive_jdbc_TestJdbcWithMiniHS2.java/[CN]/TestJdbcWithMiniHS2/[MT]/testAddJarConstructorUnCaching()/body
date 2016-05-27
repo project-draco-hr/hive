@@ -1,0 +1,40 @@
+{
+  setReflectionUtilCache();
+  String udfClassName="org.apache.hadoop.hive.contrib.udf.example.UDFExampleAdd";
+  String mvnRepo=System.getProperty("maven.local.repository");
+  String hiveVersion=System.getProperty("hive.version");
+  String jarFileName="hive-contrib-" + hiveVersion + ".jar";
+  String[] pathParts={"org","apache","hive","hive-contrib",hiveVersion,jarFileName};
+  Path jarFilePath=new Path(mvnRepo);
+  for (  String pathPart : pathParts) {
+    jarFilePath=new Path(jarFilePath,pathPart);
+  }
+  Connection conn=getConnection(miniHS2.getJdbcURL(),"foo","bar");
+  String tableName="testAddJar";
+  Statement stmt=conn.createStatement();
+  stmt.execute("SET hive.support.concurrency = false");
+  stmt.execute("DROP TABLE IF EXISTS " + tableName);
+  stmt.execute("CREATE TABLE " + tableName + " (key INT, value STRING)");
+  stmt.execute("LOAD DATA LOCAL INPATH '" + kvDataFilePath.toString() + "' INTO TABLE "+ tableName);
+  ResultSet res=stmt.executeQuery("SELECT * FROM " + tableName);
+  assertTrue(res.next());
+  long cacheBeforeAddJar, cacheAfterAddJar, cacheAfterClose;
+  invalidateReflectionUtlCache();
+  cacheBeforeAddJar=getReflectionUtilCacheSize();
+  System.out.println("CONSTRUCTOR_CACHE size before add jar: " + cacheBeforeAddJar);
+  System.out.println("CONSTRUCTOR_CACHE as map before add jar:" + getReflectionUtilCache().asMap());
+  Assert.assertTrue("FAILED: CONSTRUCTOR_CACHE size before add jar: " + cacheBeforeAddJar,cacheBeforeAddJar == 0);
+  stmt.execute("ADD JAR " + jarFilePath.toString());
+  stmt.execute("CREATE TEMPORARY FUNCTION func AS '" + udfClassName + "'");
+  res=stmt.executeQuery("SELECT func(value) from " + tableName);
+  assertTrue(res.next());
+  cacheAfterAddJar=getReflectionUtilCacheSize();
+  System.out.println("CONSTRUCTOR_CACHE size after add jar: " + cacheAfterAddJar);
+  Assert.assertTrue("FAILED: CONSTRUCTOR_CACHE size after connection close: " + cacheAfterAddJar,cacheAfterAddJar > 0);
+  conn.close();
+  TimeUnit.SECONDS.sleep(10);
+  cleanUpReflectionUtlCache();
+  cacheAfterClose=getReflectionUtilCacheSize();
+  System.out.println("CONSTRUCTOR_CACHE size after connection close: " + cacheAfterClose);
+  Assert.assertTrue("FAILED: CONSTRUCTOR_CACHE size after connection close: " + cacheAfterClose,cacheAfterClose == 0);
+}
