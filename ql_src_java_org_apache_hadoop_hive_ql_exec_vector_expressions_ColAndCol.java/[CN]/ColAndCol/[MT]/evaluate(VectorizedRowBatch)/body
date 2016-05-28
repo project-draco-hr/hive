@@ -1,235 +1,328 @@
 {
-  if (childExpressions != null) {
-    super.evaluateChildren(batch);
+  Preconditions.checkState(colNums.length >= 2);
+  if (childExpressions != null && mapToChildExpression == null) {
+    mapToChildExpression=new int[colNums.length];
+    int childIndex=0;
+    for (int i=0; i < childExpressions.length; i++) {
+      VectorExpression ve=childExpressions[i];
+      int outputColumn=ve.getOutputColumn();
+      while (outputColumn != colNums[childIndex]) {
+        mapToChildExpression[childIndex++]=-1;
+      }
+      mapToChildExpression[childIndex++]=i;
+    }
+    Preconditions.checkState(childIndex == colNums.length);
   }
-  LongColumnVector inputColVector1=(LongColumnVector)batch.cols[colNum1];
-  LongColumnVector inputColVector2=(LongColumnVector)batch.cols[colNum2];
-  int[] sel=batch.selected;
-  int n=batch.size;
-  long[] vector1=inputColVector1.vector;
-  long[] vector2=inputColVector2.vector;
-  LongColumnVector outV=(LongColumnVector)batch.cols[outputColumn];
-  long[] outputVector=outV.vector;
+  final int n=batch.size;
   if (n <= 0) {
     return;
   }
-  long vector1Value=vector1[0];
-  long vector2Value=vector2[0];
-  if (inputColVector1.noNulls && inputColVector2.noNulls) {
-    if ((inputColVector1.isRepeating) && (inputColVector2.isRepeating)) {
-      outV.isRepeating=true;
-      outputVector[0]=vector1[0] & vector2[0];
+  if (childExpressions != null) {
+    int childExpressionIndex=mapToChildExpression[0];
+    if (childExpressionIndex != -1) {
+      VectorExpression ve=childExpressions[childExpressionIndex];
+      Preconditions.checkState(ve.getOutputColumn() == colNums[0]);
+      ve.evaluate(batch);
     }
- else     if (inputColVector1.isRepeating && !inputColVector2.isRepeating) {
-      if (batch.selectedInUse) {
-        for (int j=0; j != n; j++) {
-          int i=sel[j];
-          outputVector[i]=vector1Value & vector2[i];
-        }
-      }
- else {
-        for (int i=0; i != n; i++) {
-          outputVector[i]=vector1Value & vector2[i];
-        }
-      }
-      outV.isRepeating=false;
-    }
- else     if (!inputColVector1.isRepeating && inputColVector2.isRepeating) {
-      if (batch.selectedInUse) {
-        for (int j=0; j != n; j++) {
-          int i=sel[j];
-          outputVector[i]=vector1[i] & vector2Value;
-        }
-      }
- else {
-        for (int i=0; i != n; i++) {
-          outputVector[i]=vector1[i] & vector2Value;
-        }
-      }
-      outV.isRepeating=false;
-    }
- else {
-      if (batch.selectedInUse) {
-        for (int j=0; j != n; j++) {
-          int i=sel[j];
-          outputVector[i]=vector1[i] & vector2[i];
-        }
-      }
- else {
-        for (int i=0; i != n; i++) {
-          outputVector[i]=vector1[i] & vector2[i];
-        }
-      }
-      outV.isRepeating=false;
-    }
-    outV.noNulls=true;
   }
- else   if (inputColVector1.noNulls && !inputColVector2.noNulls) {
-    if ((inputColVector1.isRepeating) && (inputColVector2.isRepeating)) {
-      outV.isRepeating=true;
-      outputVector[0]=vector1[0] & vector2[0];
-      outV.isNull[0]=(vector1[0] == 1) && inputColVector2.isNull[0];
-    }
- else     if (inputColVector1.isRepeating && !inputColVector2.isRepeating) {
-      if (batch.selectedInUse) {
-        for (int j=0; j != n; j++) {
-          int i=sel[j];
-          outputVector[i]=vector1Value & vector2[i];
-          outV.isNull[i]=(vector1[0] == 1) && inputColVector2.isNull[i];
-        }
+  int[] sel=batch.selected;
+  LongColumnVector outV=(LongColumnVector)batch.cols[outputColumn];
+  long[] outputVector=outV.vector;
+  boolean andRepeating=false;
+  boolean andRepeatingIsNull=false;
+  int andSel=0;
+  Arrays.fill(intermediateNulls,0,VectorizedRowBatch.DEFAULT_SIZE,false);
+  outV.reset();
+  LongColumnVector firstColVector=(LongColumnVector)batch.cols[colNums[0]];
+  long[] firstVector=firstColVector.vector;
+  if (firstColVector.isRepeating) {
+    if (firstColVector.noNulls || !firstColVector.isNull[0]) {
+      if (firstVector[0] == 0) {
+        outV.isRepeating=true;
+        outputVector[0]=0;
+        return;
       }
  else {
-        for (int i=0; i != n; i++) {
-          outputVector[i]=vector1Value & vector2[i];
-          outV.isNull[i]=(vector1[0] == 1) && inputColVector2.isNull[i];
-        }
       }
-      outV.isRepeating=false;
-    }
- else     if (!inputColVector1.isRepeating && inputColVector2.isRepeating) {
-      if (batch.selectedInUse) {
-        for (int j=0; j != n; j++) {
-          int i=sel[j];
-          outputVector[i]=vector1[i] & vector2Value;
-          outV.isNull[i]=(vector1[i] == 1) && inputColVector2.isNull[0];
-        }
-      }
- else {
-        for (int i=0; i != n; i++) {
-          outputVector[i]=vector1[i] & vector2Value;
-          outV.isNull[i]=(vector1[i] == 1) && inputColVector2.isNull[0];
-        }
-      }
-      outV.isRepeating=false;
     }
  else {
-      if (batch.selectedInUse) {
-        for (int j=0; j != n; j++) {
-          int i=sel[j];
-          outputVector[i]=vector1[i] & vector2[i];
-          outV.isNull[i]=(vector1[i] == 1) && inputColVector2.isNull[i];
-        }
-      }
- else {
-        for (int i=0; i != n; i++) {
-          outputVector[i]=vector1[i] & vector2[i];
-          outV.isNull[i]=(vector1[i] == 1) && inputColVector2.isNull[i];
-        }
-      }
-      outV.isRepeating=false;
+      Preconditions.checkState(firstColVector.isNull[0]);
+      andRepeatingIsNull=true;
     }
-    outV.noNulls=false;
+    andRepeating=true;
   }
- else   if (!inputColVector1.noNulls && inputColVector2.noNulls) {
-    if ((inputColVector1.isRepeating) && (inputColVector2.isRepeating)) {
-      outV.isRepeating=true;
-      outputVector[0]=vector1[0] & vector2[0];
-      outV.isNull[0]=inputColVector1.isNull[0] && (vector2[0] == 1);
-    }
- else     if (inputColVector1.isRepeating && !inputColVector2.isRepeating) {
-      if (batch.selectedInUse) {
-        for (int j=0; j != n; j++) {
-          int i=sel[j];
-          outputVector[i]=vector1Value & vector2[i];
-          outV.isNull[i]=inputColVector1.isNull[0] && (vector2[i] == 1);
+ else   if (firstColVector.noNulls) {
+    if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        if (firstVector[i] == 1) {
+          andSelected[andSel++]=i;
         }
       }
- else {
-        for (int i=0; i != n; i++) {
-          outputVector[i]=vector1Value & vector2[i];
-          outV.isNull[i]=inputColVector1.isNull[0] && (vector2[i] == 1);
-        }
-      }
-      outV.isRepeating=false;
-    }
- else     if (!inputColVector1.isRepeating && inputColVector2.isRepeating) {
-      if (batch.selectedInUse) {
-        for (int j=0; j != n; j++) {
-          int i=sel[j];
-          outputVector[i]=vector1[i] & vector2Value;
-          outV.isNull[i]=inputColVector1.isNull[i] && (vector2[0] == 1);
-        }
-      }
- else {
-        for (int i=0; i != n; i++) {
-          outputVector[i]=vector1[i] & vector2Value;
-          outV.isNull[i]=inputColVector1.isNull[i] && (vector2[0] == 1);
-        }
-      }
-      outV.isRepeating=false;
     }
  else {
-      if (batch.selectedInUse) {
-        for (int j=0; j != n; j++) {
-          int i=sel[j];
-          outputVector[i]=vector1[i] & vector2[i];
-          outV.isNull[i]=inputColVector1.isNull[i] && (vector2[i] == 1);
+      for (int i=0; i != n; i++) {
+        if (firstVector[i] == 1) {
+          andSelected[andSel++]=i;
         }
       }
- else {
-        for (int i=0; i != n; i++) {
-          outputVector[i]=vector1[i] & vector2[i];
-          outV.isNull[i]=inputColVector1.isNull[i] && (vector2[i] == 1);
-        }
-      }
-      outV.isRepeating=false;
     }
-    outV.noNulls=false;
   }
  else {
-    if ((inputColVector1.isRepeating) && (inputColVector2.isRepeating)) {
-      outV.isRepeating=true;
-      outputVector[0]=vector1[0] & vector2[0];
-      outV.isNull[0]=((vector1[0] == 1) && inputColVector2.isNull[0]) || (inputColVector1.isNull[0] && (vector2[0] == 1)) || (inputColVector1.isNull[0] && inputColVector2.isNull[0]);
+    if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        if (firstColVector.isNull[i]) {
+          intermediateNulls[i]=true;
+          andSelected[andSel++]=i;
+        }
+ else         if (firstVector[i] == 1) {
+          andSelected[andSel++]=i;
+        }
+      }
     }
- else     if (inputColVector1.isRepeating && !inputColVector2.isRepeating) {
-      if (batch.selectedInUse) {
-        for (int j=0; j != n; j++) {
-          int i=sel[j];
-          outputVector[i]=vector1Value & vector2[i];
-          outV.isNull[i]=((vector1[0] == 1) && inputColVector2.isNull[i]) || (inputColVector1.isNull[0] && (vector2[i] == 1)) || (inputColVector1.isNull[0] && inputColVector2.isNull[i]);
+ else {
+      for (int i=0; i != n; i++) {
+        if (firstColVector.isNull[i]) {
+          intermediateNulls[i]=true;
+          andSelected[andSel++]=i;
+        }
+ else         if (firstVector[i] == 1) {
+          andSelected[andSel++]=i;
+        }
+      }
+    }
+  }
+  int colNum=1;
+  do {
+    if (!andRepeating && andSel == 0) {
+      break;
+    }
+    if (childExpressions != null) {
+      int childExpressionIndex=mapToChildExpression[colNum];
+      if (childExpressionIndex != -1) {
+        if (andRepeating) {
+          VectorExpression ve=childExpressions[childExpressionIndex];
+          Preconditions.checkState(ve.getOutputColumn() == colNums[colNum]);
+          ve.evaluate(batch);
+        }
+ else {
+          boolean saveSelectedInUse=batch.selectedInUse;
+          int[] saveSelected=sel;
+          batch.selectedInUse=true;
+          batch.selected=andSelected;
+          VectorExpression ve=childExpressions[childExpressionIndex];
+          Preconditions.checkState(ve.getOutputColumn() == colNums[colNum]);
+          ve.evaluate(batch);
+          batch.selectedInUse=saveSelectedInUse;
+          batch.selected=saveSelected;
+        }
+      }
+    }
+    LongColumnVector nextColVector=(LongColumnVector)batch.cols[colNums[colNum]];
+    long[] nextVector=nextColVector.vector;
+    if (andRepeating) {
+      if (nextColVector.isRepeating) {
+        if (nextColVector.noNulls || !nextColVector.isNull[0]) {
+          if (nextVector[0] == 0) {
+            outV.isRepeating=true;
+            outputVector[0]=0;
+            return;
+          }
+ else {
+          }
+        }
+ else {
+          Preconditions.checkState(nextColVector.isNull[0]);
+          andRepeatingIsNull=true;
         }
       }
  else {
-        for (int i=0; i != n; i++) {
-          outputVector[i]=vector1Value & vector2[i];
-          outV.isNull[i]=((vector1[0] == 1) && inputColVector2.isNull[i]) || (inputColVector1.isNull[0] && (vector2[i] == 1)) || (inputColVector1.isNull[0] && inputColVector2.isNull[i]);
+        if (nextColVector.noNulls) {
+          Preconditions.checkState(andSel == 0);
+          andRepeating=false;
+          if (andRepeatingIsNull) {
+            if (batch.selectedInUse) {
+              for (int j=0; j != n; j++) {
+                int i=sel[j];
+                if (nextVector[i] == 1) {
+                  intermediateNulls[i]=true;
+                  andSelected[andSel++]=i;
+                }
+              }
+            }
+ else {
+              for (int i=0; i != n; i++) {
+                if (nextVector[i] == 1) {
+                  intermediateNulls[i]=true;
+                  andSelected[andSel++]=i;
+                }
+              }
+            }
+            andRepeatingIsNull=false;
+          }
+ else {
+            if (batch.selectedInUse) {
+              for (int j=0; j != n; j++) {
+                int i=sel[j];
+                if (nextVector[i] == 1) {
+                  andSelected[andSel++]=i;
+                }
+              }
+            }
+ else {
+              for (int i=0; i != n; i++) {
+                if (nextVector[i] == 1) {
+                  andSelected[andSel++]=i;
+                }
+              }
+            }
+          }
+        }
+ else {
+          Preconditions.checkState(andSel == 0);
+          andRepeating=false;
+          if (andRepeatingIsNull) {
+            if (batch.selectedInUse) {
+              for (int j=0; j != n; j++) {
+                int i=sel[j];
+                if (nextColVector.isNull[i] || nextVector[i] == 1) {
+                  intermediateNulls[i]=true;
+                  andSelected[andSel++]=i;
+                }
+              }
+            }
+ else {
+              for (int i=0; i != n; i++) {
+                if (nextColVector.isNull[i] || nextVector[i] == 1) {
+                  intermediateNulls[i]=true;
+                  andSelected[andSel++]=i;
+                }
+              }
+            }
+            andRepeatingIsNull=false;
+          }
+ else {
+            if (batch.selectedInUse) {
+              for (int j=0; j != n; j++) {
+                int i=sel[j];
+                if (nextColVector.isNull[i]) {
+                  intermediateNulls[i]=true;
+                  andSelected[andSel++]=i;
+                }
+ else                 if (nextVector[i] == 1) {
+                  andSelected[andSel++]=i;
+                }
+              }
+            }
+ else {
+              for (int i=0; i != n; i++) {
+                if (nextColVector.isNull[i]) {
+                  intermediateNulls[i]=true;
+                  andSelected[andSel++]=i;
+                }
+ else                 if (nextVector[i] == 1) {
+                  andSelected[andSel++]=i;
+                }
+              }
+            }
+          }
         }
       }
-      outV.isRepeating=false;
     }
- else     if (!inputColVector1.isRepeating && inputColVector2.isRepeating) {
-      if (batch.selectedInUse) {
-        for (int j=0; j != n; j++) {
-          int i=sel[j];
-          outputVector[i]=vector1[i] & vector2Value;
-          outV.isNull[i]=((vector1[i] == 1) && inputColVector2.isNull[0]) || (inputColVector1.isNull[i] && (vector2[0] == 1)) || (inputColVector1.isNull[i] && inputColVector2.isNull[0]);
+ else {
+      if (nextColVector.isRepeating) {
+        if (nextColVector.noNulls || !nextColVector.isNull[0]) {
+          if (nextVector[0] == 0) {
+            outV.isRepeating=true;
+            outputVector[0]=0;
+            return;
+          }
+ else {
+          }
         }
+ else {
+          Preconditions.checkState(nextColVector.isNull[0]);
+          for (int j=0; j < andSel; j++) {
+            int i=andSelected[j];
+            intermediateNulls[i]=true;
+          }
+        }
+      }
+ else       if (nextColVector.noNulls) {
+        int newSel=0;
+        for (int j=0; j < andSel; j++) {
+          int i=andSelected[j];
+          if (nextVector[i] == 1) {
+            andSelected[newSel++]=i;
+          }
+        }
+        andSel=newSel;
       }
  else {
-        for (int i=0; i != n; i++) {
-          outputVector[i]=vector1[i] & vector2Value;
-          outV.isNull[i]=((vector1[i] == 1) && inputColVector2.isNull[0]) || (inputColVector1.isNull[i] && (vector2[0] == 1)) || (inputColVector1.isNull[i] && inputColVector2.isNull[0]);
+        int newSel=0;
+        for (int j=0; j < andSel; j++) {
+          int i=andSelected[j];
+          if (nextColVector.isNull[i]) {
+            intermediateNulls[i]=true;
+            andSelected[newSel++]=i;
+          }
+ else           if (nextVector[i] == 1) {
+            andSelected[newSel++]=i;
+          }
         }
+        andSel=newSel;
       }
-      outV.isRepeating=false;
+    }
+  }
+ while (++colNum < colNums.length);
+  if (andRepeating) {
+    outV.isRepeating=true;
+    if (andRepeatingIsNull) {
+      outV.noNulls=false;
+      outV.isNull[0]=true;
     }
  else {
-      if (batch.selectedInUse) {
-        for (int j=0; j != n; j++) {
-          int i=sel[j];
-          outputVector[i]=vector1[i] & vector2[i];
-          outV.isNull[i]=((vector1[i] == 1) && inputColVector2.isNull[i]) || (inputColVector1.isNull[i] && (vector2[i] == 1)) || (inputColVector1.isNull[i] && inputColVector2.isNull[i]);
-        }
-      }
- else {
-        for (int i=0; i != n; i++) {
-          outputVector[i]=vector1[i] & vector2[i];
-          outV.isNull[i]=((vector1[i] == 1) && inputColVector2.isNull[i]) || (inputColVector1.isNull[i] && (vector2[i] == 1)) || (inputColVector1.isNull[i] && inputColVector2.isNull[i]);
-        }
-      }
-      outV.isRepeating=false;
+      outputVector[0]=1;
     }
-    outV.noNulls=false;
+  }
+ else   if (andSel == 0) {
+    outV.isRepeating=true;
+    outputVector[0]=0;
+  }
+ else {
+    int andIndex=0;
+    if (batch.selectedInUse) {
+      for (int j=0; j != n; j++) {
+        int i=sel[j];
+        if (andIndex < andSel && andSelected[andIndex] == i) {
+          if (intermediateNulls[i]) {
+            outV.noNulls=false;
+            outV.isNull[i]=true;
+          }
+ else {
+            outputVector[i]=1;
+          }
+          andIndex++;
+        }
+ else {
+          outputVector[i]=0;
+        }
+      }
+      Preconditions.checkState(andIndex == andSel);
+    }
+ else {
+      Arrays.fill(outputVector,0,n,0);
+      for (int j=0; j < andSel; j++) {
+        int i=andSelected[j];
+        if (intermediateNulls[i]) {
+          outV.noNulls=false;
+          outV.isNull[i]=true;
+        }
+ else {
+          outputVector[i]=1;
+        }
+      }
+    }
   }
 }

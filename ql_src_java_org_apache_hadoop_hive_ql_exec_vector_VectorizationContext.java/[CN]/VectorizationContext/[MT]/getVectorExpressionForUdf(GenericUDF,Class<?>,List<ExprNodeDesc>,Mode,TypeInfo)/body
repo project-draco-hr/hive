@@ -1,33 +1,33 @@
 {
   int numChildren=(childExpr == null) ? 0 : childExpr.size();
-  if (numChildren > 2 && genericeUdf != null && mode == Mode.FILTER && ((genericeUdf instanceof GenericUDFOPOr) || (genericeUdf instanceof GenericUDFOPAnd))) {
-    for (int i=0; i < numChildren; i++) {
-      ExprNodeDesc child=childExpr.get(i);
-      String childTypeString=child.getTypeString();
-      if (childTypeString == null) {
-        throw new HiveException("Null child type name string");
-      }
-      TypeInfo typeInfo=TypeInfoUtils.getTypeInfoFromTypeString(childTypeString);
-      Type columnVectorType=VectorizationContext.getColumnVectorTypeFromTypeInfo(typeInfo);
-      if (columnVectorType != ColumnVector.Type.LONG) {
-        return null;
-      }
-      if (!(child instanceof ExprNodeGenericFuncDesc) && !(child instanceof ExprNodeColumnDesc)) {
-        return null;
-      }
-    }
+  if (genericeUdf != null && ((genericeUdf instanceof GenericUDFOPOr) || (genericeUdf instanceof GenericUDFOPAnd))) {
     Class<?> vclass;
     if (genericeUdf instanceof GenericUDFOPOr) {
-      vclass=FilterExprOrExpr.class;
+      if (mode == Mode.PROJECTION) {
+        vclass=ColOrCol.class;
+      }
+ else {
+        vclass=FilterExprOrExpr.class;
+      }
     }
  else     if (genericeUdf instanceof GenericUDFOPAnd) {
-      vclass=FilterExprAndExpr.class;
+      if (mode == Mode.PROJECTION) {
+        vclass=ColAndCol.class;
+      }
+ else {
+        vclass=FilterExprAndExpr.class;
+      }
     }
  else {
       throw new RuntimeException("Unexpected multi-child UDF");
     }
     Mode childrenMode=getChildrenMode(mode,udfClass);
-    return createVectorExpression(vclass,childExpr,childrenMode,returnType);
+    if (mode == Mode.PROJECTION) {
+      return createVectorMultiAndOrProjectionExpr(vclass,childExpr,childrenMode,returnType);
+    }
+ else {
+      return createVectorExpression(vclass,childExpr,childrenMode,returnType);
+    }
   }
   if (numChildren > VectorExpressionDescriptor.MAX_NUM_ARGUMENTS) {
     return null;
