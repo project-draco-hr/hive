@@ -1,0 +1,38 @@
+{
+  RexBuilder rB=union.getCluster().getRexBuilder();
+  Map<String,RexNode> finalPreds=new LinkedHashMap<>();
+  Map<String,RexNode> finalResidualPreds=new LinkedHashMap<>();
+  for (int i=0; i < union.getInputs().size(); i++) {
+    RelNode input=union.getInputs().get(i);
+    RelOptPredicateList info=mq.getPulledUpPredicates(input);
+    if (info.pulledUpPredicates.isEmpty()) {
+      return RelOptPredicateList.EMPTY;
+    }
+    Map<String,RexNode> preds=new LinkedHashMap<>();
+    for (    RexNode pred : info.pulledUpPredicates) {
+      final String predString=pred.toString();
+      if (i == 0) {
+        preds.put(predString,pred);
+        continue;
+      }
+      if (finalPreds.containsKey(predString)) {
+        preds.put(predString,pred);
+      }
+ else {
+        finalResidualPreds.put(predString,pred);
+      }
+    }
+    for (    Entry<String,RexNode> e : finalPreds.entrySet()) {
+      if (!preds.containsKey(e.getKey())) {
+        finalResidualPreds.put(e.getKey(),e.getValue());
+      }
+    }
+    finalPreds=preds;
+  }
+  List<RexNode> preds=new ArrayList<>(finalPreds.values());
+  RexNode disjPred=RexUtil.composeDisjunction(rB,finalResidualPreds.values(),true);
+  if (disjPred != null) {
+    preds.add(disjPred);
+  }
+  return RelOptPredicateList.of(preds);
+}
