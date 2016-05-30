@@ -1,0 +1,31 @@
+{
+  String udfName=aggDesc.getGenericUDAFName().toLowerCase();
+  if (!supportedAggregationUdfs.contains(udfName)) {
+    LOG.info("Cannot vectorize groupby aggregate expression: UDF " + udfName + " not supported");
+    return new Pair<Boolean,Boolean>(false,false);
+  }
+  if (aggDesc.getParameters() != null && !validateExprNodeDesc(aggDesc.getParameters())) {
+    LOG.info("Cannot vectorize groupby aggregate expression: UDF parameters not supported");
+    return new Pair<Boolean,Boolean>(false,false);
+  }
+  VectorizationContext vc=new ValidatorVectorizationContext();
+  VectorAggregateExpression vectorAggrExpr;
+  try {
+    vectorAggrExpr=vc.getAggregatorExpression(aggDesc);
+  }
+ catch (  Exception e) {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Vectorization of aggreation should have succeeded ",e);
+    }
+    return new Pair<Boolean,Boolean>(false,false);
+  }
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("Aggregation " + aggDesc.getExprString() + " --> "+ " vector expression "+ vectorAggrExpr.toString());
+  }
+  boolean outputIsPrimitive=validateAggregationIsPrimitive(vectorAggrExpr);
+  if (processingMode == ProcessingMode.MERGE_PARTIAL && hasKeys && !outputIsPrimitive) {
+    LOG.info("Vectorized Reduce MergePartial GROUP BY keys can only handle aggregate outputs that are primitive types");
+    return new Pair<Boolean,Boolean>(false,false);
+  }
+  return new Pair<Boolean,Boolean>(true,outputIsPrimitive);
+}

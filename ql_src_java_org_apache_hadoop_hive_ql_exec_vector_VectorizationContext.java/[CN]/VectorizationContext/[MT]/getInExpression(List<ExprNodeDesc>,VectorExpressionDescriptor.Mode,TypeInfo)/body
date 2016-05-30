@@ -1,0 +1,77 @@
+{
+  ExprNodeDesc colExpr=childExpr.get(0);
+  List<ExprNodeDesc> inChildren=childExpr.subList(1,childExpr.size());
+  String colType=colExpr.getTypeString();
+  colType=VectorizationContext.mapTypeNameSynonyms(colType);
+  TypeInfo colTypeInfo=TypeInfoUtils.getTypeInfoFromTypeString(colType);
+  Category category=colTypeInfo.getCategory();
+  if (category == Category.STRUCT) {
+    return getStructInExpression(childExpr,colExpr,colTypeInfo,inChildren,mode,returnType);
+  }
+ else   if (category != Category.PRIMITIVE) {
+    return null;
+  }
+  List<ExprNodeDesc> childrenForInList=evaluateCastOnConstants(inChildren);
+  VectorExpression expr=null;
+  for (  ExprNodeDesc inListChild : childrenForInList) {
+    if (!(inListChild instanceof ExprNodeConstantDesc)) {
+      throw new HiveException("Vectorizing IN expression only supported for constant values");
+    }
+  }
+  Class<?> cl=null;
+  if (isIntFamily(colType)) {
+    cl=(mode == VectorExpressionDescriptor.Mode.FILTER ? FilterLongColumnInList.class : LongColumnInList.class);
+    long[] inVals=new long[childrenForInList.size()];
+    for (int i=0; i != inVals.length; i++) {
+      inVals[i]=getIntFamilyScalarAsLong((ExprNodeConstantDesc)childrenForInList.get(i));
+    }
+    expr=createVectorExpression(cl,childExpr.subList(0,1),VectorExpressionDescriptor.Mode.PROJECTION,returnType);
+    ((ILongInExpr)expr).setInListValues(inVals);
+  }
+ else   if (isTimestampFamily(colType)) {
+    cl=(mode == VectorExpressionDescriptor.Mode.FILTER ? FilterTimestampColumnInList.class : TimestampColumnInList.class);
+    Timestamp[] inVals=new Timestamp[childrenForInList.size()];
+    for (int i=0; i != inVals.length; i++) {
+      inVals[i]=getTimestampScalar(childrenForInList.get(i));
+    }
+    expr=createVectorExpression(cl,childExpr.subList(0,1),VectorExpressionDescriptor.Mode.PROJECTION,returnType);
+    ((ITimestampInExpr)expr).setInListValues(inVals);
+  }
+ else   if (isStringFamily(colType)) {
+    cl=(mode == VectorExpressionDescriptor.Mode.FILTER ? FilterStringColumnInList.class : StringColumnInList.class);
+    byte[][] inVals=new byte[childrenForInList.size()][];
+    for (int i=0; i != inVals.length; i++) {
+      inVals[i]=getStringScalarAsByteArray((ExprNodeConstantDesc)childrenForInList.get(i));
+    }
+    expr=createVectorExpression(cl,childExpr.subList(0,1),VectorExpressionDescriptor.Mode.PROJECTION,returnType);
+    ((IStringInExpr)expr).setInListValues(inVals);
+  }
+ else   if (isFloatFamily(colType)) {
+    cl=(mode == VectorExpressionDescriptor.Mode.FILTER ? FilterDoubleColumnInList.class : DoubleColumnInList.class);
+    double[] inValsD=new double[childrenForInList.size()];
+    for (int i=0; i != inValsD.length; i++) {
+      inValsD[i]=getNumericScalarAsDouble(childrenForInList.get(i));
+    }
+    expr=createVectorExpression(cl,childExpr.subList(0,1),VectorExpressionDescriptor.Mode.PROJECTION,returnType);
+    ((IDoubleInExpr)expr).setInListValues(inValsD);
+  }
+ else   if (isDecimalFamily(colType)) {
+    cl=(mode == VectorExpressionDescriptor.Mode.FILTER ? FilterDecimalColumnInList.class : DecimalColumnInList.class);
+    HiveDecimal[] inValsD=new HiveDecimal[childrenForInList.size()];
+    for (int i=0; i != inValsD.length; i++) {
+      inValsD[i]=(HiveDecimal)getVectorTypeScalarValue((ExprNodeConstantDesc)childrenForInList.get(i));
+    }
+    expr=createVectorExpression(cl,childExpr.subList(0,1),VectorExpressionDescriptor.Mode.PROJECTION,returnType);
+    ((IDecimalInExpr)expr).setInListValues(inValsD);
+  }
+ else   if (isDateFamily(colType)) {
+    cl=(mode == VectorExpressionDescriptor.Mode.FILTER ? FilterLongColumnInList.class : LongColumnInList.class);
+    long[] inVals=new long[childrenForInList.size()];
+    for (int i=0; i != inVals.length; i++) {
+      inVals[i]=(Integer)getVectorTypeScalarValue((ExprNodeConstantDesc)childrenForInList.get(i));
+    }
+    expr=createVectorExpression(cl,childExpr.subList(0,1),VectorExpressionDescriptor.Mode.PROJECTION,returnType);
+    ((ILongInExpr)expr).setInListValues(inVals);
+  }
+  return expr;
+}

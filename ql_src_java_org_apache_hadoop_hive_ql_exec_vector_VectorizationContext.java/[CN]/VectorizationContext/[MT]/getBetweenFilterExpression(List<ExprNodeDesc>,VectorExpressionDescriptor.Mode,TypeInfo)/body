@@ -1,0 +1,81 @@
+{
+  if (mode == VectorExpressionDescriptor.Mode.PROJECTION) {
+    return null;
+  }
+  if (!(childExpr.get(2) instanceof ExprNodeConstantDesc) || !(childExpr.get(3) instanceof ExprNodeConstantDesc)) {
+    return null;
+  }
+  boolean notKeywordPresent=(Boolean)((ExprNodeConstantDesc)childExpr.get(0)).getValue();
+  ExprNodeDesc colExpr=childExpr.get(1);
+  TypeInfo commonType=FunctionRegistry.getCommonClassForComparison(childExpr.get(1).getTypeInfo(),childExpr.get(2).getTypeInfo());
+  if (commonType == null) {
+    return null;
+  }
+  commonType=FunctionRegistry.getCommonClassForComparison(commonType,childExpr.get(3).getTypeInfo());
+  if (commonType == null) {
+    return null;
+  }
+  List<ExprNodeDesc> castChildren=new ArrayList<ExprNodeDesc>();
+  for (  ExprNodeDesc desc : childExpr.subList(1,4)) {
+    if (commonType.equals(desc.getTypeInfo())) {
+      castChildren.add(desc);
+    }
+ else {
+      GenericUDF castUdf=getGenericUDFForCast(commonType);
+      ExprNodeGenericFuncDesc engfd=new ExprNodeGenericFuncDesc(commonType,castUdf,Arrays.asList(new ExprNodeDesc[]{desc}));
+      castChildren.add(engfd);
+    }
+  }
+  String colType=commonType.getTypeName();
+  List<ExprNodeDesc> childrenAfterNot=evaluateCastOnConstants(castChildren);
+  Class<?> cl=null;
+  if (isIntFamily(colType) && !notKeywordPresent) {
+    cl=FilterLongColumnBetween.class;
+  }
+ else   if (isIntFamily(colType) && notKeywordPresent) {
+    cl=FilterLongColumnNotBetween.class;
+  }
+ else   if (isFloatFamily(colType) && !notKeywordPresent) {
+    cl=FilterDoubleColumnBetween.class;
+  }
+ else   if (isFloatFamily(colType) && notKeywordPresent) {
+    cl=FilterDoubleColumnNotBetween.class;
+  }
+ else   if (colType.equals("string") && !notKeywordPresent) {
+    cl=FilterStringColumnBetween.class;
+  }
+ else   if (colType.equals("string") && notKeywordPresent) {
+    cl=FilterStringColumnNotBetween.class;
+  }
+ else   if (varcharTypePattern.matcher(colType).matches() && !notKeywordPresent) {
+    cl=FilterVarCharColumnBetween.class;
+  }
+ else   if (varcharTypePattern.matcher(colType).matches() && notKeywordPresent) {
+    cl=FilterVarCharColumnNotBetween.class;
+  }
+ else   if (charTypePattern.matcher(colType).matches() && !notKeywordPresent) {
+    cl=FilterCharColumnBetween.class;
+  }
+ else   if (charTypePattern.matcher(colType).matches() && notKeywordPresent) {
+    cl=FilterCharColumnNotBetween.class;
+  }
+ else   if (colType.equals("timestamp") && !notKeywordPresent) {
+    cl=FilterTimestampColumnBetween.class;
+  }
+ else   if (colType.equals("timestamp") && notKeywordPresent) {
+    cl=FilterTimestampColumnNotBetween.class;
+  }
+ else   if (isDecimalFamily(colType) && !notKeywordPresent) {
+    cl=FilterDecimalColumnBetween.class;
+  }
+ else   if (isDecimalFamily(colType) && notKeywordPresent) {
+    cl=FilterDecimalColumnNotBetween.class;
+  }
+ else   if (isDateFamily(colType) && !notKeywordPresent) {
+    cl=FilterLongColumnBetween.class;
+  }
+ else   if (isDateFamily(colType) && notKeywordPresent) {
+    cl=FilterLongColumnNotBetween.class;
+  }
+  return createVectorExpression(cl,childrenAfterNot,VectorExpressionDescriptor.Mode.PROJECTION,returnType);
+}

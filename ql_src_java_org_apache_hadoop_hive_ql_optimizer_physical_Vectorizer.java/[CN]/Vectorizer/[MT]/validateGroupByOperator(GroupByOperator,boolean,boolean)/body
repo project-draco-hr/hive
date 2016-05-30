@@ -9,53 +9,23 @@
     LOG.info("Pruning grouping set id not supported in vector mode");
     return false;
   }
-  boolean ret=validateExprNodeDesc(desc.getKeys());
-  if (!ret) {
-    LOG.info("Cannot vectorize groupby key expression");
+  if (desc.getMode() != GroupByDesc.Mode.HASH && desc.isDistinct()) {
+    LOG.info("DISTINCT not supported in vector mode");
     return false;
   }
-  if (!isReduce) {
-    ret=validateHashAggregationDesc(desc.getAggregators());
-    if (!ret) {
-      return false;
-    }
+  boolean ret=validateExprNodeDesc(desc.getKeys());
+  if (!ret) {
+    LOG.info("Cannot vectorize groupby key expression " + desc.getKeys().toString());
+    return false;
   }
- else {
-    boolean isComplete=desc.getMode() == GroupByDesc.Mode.COMPLETE;
-    if (desc.getMode() != GroupByDesc.Mode.HASH) {
-      if (desc.isDistinct()) {
-        LOG.info("Vectorized Reduce MergePartial GROUP BY does not support DISTINCT");
-        return false;
-      }
-      boolean hasKeys=(desc.getKeys().size() > 0);
-      ret=validateReduceMergePartialAggregationDesc(desc.getAggregators(),hasKeys);
-      if (!ret) {
-        return false;
-      }
-      if (hasKeys) {
-        if (op.getParentOperators().size() > 0 && !isComplete) {
-          LOG.info("Vectorized Reduce MergePartial GROUP BY keys can only handle a key group when it is fed by reduce-shuffle");
-          return false;
-        }
-        LOG.info("Vectorized Reduce MergePartial GROUP BY will process key groups");
-        vectorDesc.setVectorOutput(true);
-      }
- else {
-        LOG.info("Vectorized Reduce MergePartial GROUP BY will do global aggregation");
-      }
-      if (!isComplete) {
-        vectorDesc.setIsReduceMergePartial(true);
-      }
- else {
-        vectorDesc.setIsReduceStreaming(true);
-      }
-    }
- else {
-      ret=validateHashAggregationDesc(desc.getAggregators());
-      if (!ret) {
-        return false;
-      }
-    }
+  boolean hasKeys=(desc.getKeys().size() > 0);
+  ProcessingMode processingMode=VectorGroupByDesc.groupByDescModeToVectorProcessingMode(desc.getMode(),hasKeys);
+  Pair<Boolean,Boolean> retPair=validateAggregationDescs(desc.getAggregators(),processingMode,hasKeys);
+  if (!retPair.left) {
+    return false;
   }
+  vectorDesc.setVectorOutput(retPair.right);
+  vectorDesc.setProcessingMode(processingMode);
+  LOG.info("Vector GROUP BY operator will use processing mode " + processingMode.name() + ", isVectorOutput "+ vectorDesc.isVectorOutput());
   return true;
 }

@@ -14,11 +14,9 @@
       aggregators[i].init(conf.getAggregators().get(i));
       objectInspectors.add(aggregators[i].getOutputObjectInspector());
     }
-    if (outputKeyLength > 0 && !conf.getVectorDesc().isReduceMergePartial()) {
-      keyWrappersBatch=VectorHashKeyWrapperBatch.compileKeyWrapperBatch(keyExpressions);
-      aggregationBatchInfo=new VectorAggregationBufferBatch();
-      aggregationBatchInfo.compileAggregationBatchInfo(aggregators);
-    }
+    keyWrappersBatch=VectorHashKeyWrapperBatch.compileKeyWrapperBatch(keyExpressions);
+    aggregationBatchInfo=new VectorAggregationBufferBatch();
+    aggregationBatchInfo.compileAggregationBatchInfo(aggregators);
     LOG.info("VectorGroupByOperator is vector output {}",isVectorOutput);
     outputObjInspector=ObjectInspectorFactory.getStandardStructObjectInspector(outputFieldNames,objectInspectors);
     if (isVectorOutput) {
@@ -36,17 +34,22 @@ catch (  Throwable e) {
     throw new HiveException(e);
   }
   forwardCache=new Object[outputKeyLength + aggregators.length];
-  if (outputKeyLength == 0) {
-    processingMode=this.new ProcessingModeGlobalAggregate();
-  }
- else   if (conf.getVectorDesc().isReduceMergePartial()) {
-    processingMode=this.new ProcessingModeReduceMergePartialKeys();
-  }
- else   if (conf.getVectorDesc().isReduceStreaming()) {
-    processingMode=this.new ProcessingModeUnsortedStreaming();
-  }
- else {
-    processingMode=this.new ProcessingModeHashAggregate();
-  }
-  processingMode.initialize(hconf);
+switch (conf.getVectorDesc().getProcessingMode()) {
+case GLOBAL:
+    Preconditions.checkState(outputKeyLength == 0);
+  processingMode=this.new ProcessingModeGlobalAggregate();
+break;
+case HASH:
+processingMode=this.new ProcessingModeHashAggregate();
+break;
+case MERGE_PARTIAL:
+processingMode=this.new ProcessingModeReduceMergePartial();
+break;
+case STREAMING:
+processingMode=this.new ProcessingModeStreaming();
+break;
+default :
+throw new RuntimeException("Unsupported vector GROUP BY processing mode " + conf.getVectorDesc().getProcessingMode().name());
+}
+processingMode.initialize(hconf);
 }

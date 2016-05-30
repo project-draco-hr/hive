@@ -1,0 +1,56 @@
+{
+  String typeName=typeInfo.getTypeName();
+  VectorExpressionDescriptor.ArgumentType vectorArgType=VectorExpressionDescriptor.ArgumentType.fromHiveTypeName(typeName);
+  if (vectorArgType == VectorExpressionDescriptor.ArgumentType.NONE) {
+    throw new HiveException("No vector argument type for type name " + typeName);
+  }
+  int outCol=-1;
+  if (mode == VectorExpressionDescriptor.Mode.PROJECTION) {
+    outCol=ocm.allocateOutputColumn(typeName);
+  }
+  if (constantValue == null) {
+    return new ConstantVectorExpression(outCol,typeName,true);
+  }
+  if (typeName.equalsIgnoreCase("boolean")) {
+    if (mode == VectorExpressionDescriptor.Mode.FILTER) {
+      if (((Boolean)constantValue).booleanValue()) {
+        return new FilterConstantBooleanVectorExpression(1);
+      }
+ else {
+        return new FilterConstantBooleanVectorExpression(0);
+      }
+    }
+ else {
+      if (((Boolean)constantValue).booleanValue()) {
+        return new ConstantVectorExpression(outCol,1);
+      }
+ else {
+        return new ConstantVectorExpression(outCol,0);
+      }
+    }
+  }
+switch (vectorArgType) {
+case INT_FAMILY:
+    return new ConstantVectorExpression(outCol,((Number)constantValue).longValue());
+case DATE:
+  return new ConstantVectorExpression(outCol,DateWritable.dateToDays((Date)constantValue));
+case TIMESTAMP:
+return new ConstantVectorExpression(outCol,(Timestamp)constantValue);
+case INTERVAL_YEAR_MONTH:
+return new ConstantVectorExpression(outCol,((HiveIntervalYearMonth)constantValue).getTotalMonths());
+case INTERVAL_DAY_TIME:
+return new ConstantVectorExpression(outCol,(HiveIntervalDayTime)constantValue);
+case FLOAT_FAMILY:
+return new ConstantVectorExpression(outCol,((Number)constantValue).doubleValue());
+case DECIMAL:
+return new ConstantVectorExpression(outCol,(HiveDecimal)constantValue,typeName);
+case STRING:
+return new ConstantVectorExpression(outCol,((String)constantValue).getBytes());
+case CHAR:
+return new ConstantVectorExpression(outCol,((HiveChar)constantValue));
+case VARCHAR:
+return new ConstantVectorExpression(outCol,((HiveVarchar)constantValue));
+default :
+throw new HiveException("Unsupported constant type: " + typeName + ", object class "+ constantValue.getClass().getSimpleName());
+}
+}

@@ -1,0 +1,29 @@
+{
+  int columnNum=getInputColumnIndex(exprDesc.getColumn());
+  VectorExpression expr=null;
+switch (mode) {
+case FILTER:
+    TypeInfo typeInfo=exprDesc.getTypeInfo();
+  if (typeInfo.getCategory() == Category.PRIMITIVE && ((PrimitiveTypeInfo)typeInfo).getPrimitiveCategory() == PrimitiveCategory.BOOLEAN) {
+    expr=new SelectColumnIsTrue(columnNum);
+  }
+ else {
+    ArrayList<ExprNodeDesc> exprAsList=new ArrayList<ExprNodeDesc>(1);
+    exprAsList.add(exprDesc);
+    VectorExpression castToBooleanExpr=getCastToBoolean(exprAsList);
+    if (castToBooleanExpr == null) {
+      castToBooleanExpr=getVectorExpressionForUdf(null,UDFToBoolean.class,exprAsList,VectorExpressionDescriptor.Mode.PROJECTION,null);
+      if (castToBooleanExpr == null) {
+        throw new HiveException("Cannot vectorize converting expression " + exprDesc.getExprString() + " to boolean");
+      }
+    }
+    expr=new SelectColumnIsTrue(castToBooleanExpr.getOutputColumn());
+    expr.setChildExpressions(new VectorExpression[]{castToBooleanExpr});
+  }
+break;
+case PROJECTION:
+expr=new IdentityExpression(columnNum,exprDesc.getTypeString());
+break;
+}
+return expr;
+}

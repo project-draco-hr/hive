@@ -1,0 +1,29 @@
+{
+  for (int i=0; i < numChildren; i++) {
+    ExprNodeDesc child=childExpr.get(i);
+    String undecoratedName=getUndecoratedName(child.getTypeInfo().getTypeName());
+    inputTypes[i]=VectorExpression.Type.getValue(undecoratedName);
+    if (inputTypes[i] == VectorExpression.Type.OTHER) {
+      throw new HiveException("No vector type for " + vectorClass.getSimpleName() + " argument #"+ i+ " type name "+ undecoratedName);
+    }
+    if (child instanceof ExprNodeGenericFuncDesc) {
+      VectorExpression vChild=getVectorExpression(child,childrenMode);
+      children.add(vChild);
+      arguments[i]=vChild.getOutputColumn();
+    }
+ else     if (child instanceof ExprNodeColumnDesc) {
+      int colIndex=getInputColumnIndex((ExprNodeColumnDesc)child);
+      if (childrenMode == VectorExpressionDescriptor.Mode.FILTER) {
+        children.add(new SelectColumnIsTrue(colIndex));
+      }
+      arguments[i]=colIndex;
+    }
+ else     if (child instanceof ExprNodeConstantDesc) {
+      Object scalarValue=getVectorTypeScalarValue((ExprNodeConstantDesc)child);
+      arguments[i]=(null == scalarValue) ? getConstantVectorExpression(null,child.getTypeInfo(),childrenMode) : scalarValue;
+    }
+ else {
+      throw new HiveException("Cannot handle expression type: " + child.getClass().getSimpleName());
+    }
+  }
+}
