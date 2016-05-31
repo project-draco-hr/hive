@@ -3,18 +3,56 @@
   ColumnMapping tsMapping=hBaseSerDe.getHBaseSerdeParam().getTimestampColumnMapping();
   IndexPredicateAnalyzer analyzer=HiveHBaseTableInputFormat.newIndexPredicateAnalyzer(keyMapping.columnName,keyMapping.isComparable(),tsMapping == null ? null : tsMapping.columnName);
   List<IndexSearchCondition> conditions=new ArrayList<IndexSearchCondition>();
+  ExprNodeGenericFuncDesc pushedPredicate=null;
   ExprNodeGenericFuncDesc residualPredicate=(ExprNodeGenericFuncDesc)analyzer.analyzePredicate(predicate,conditions);
   for (  List<IndexSearchCondition> searchConditions : HiveHBaseInputFormatUtil.decompose(conditions).values()) {
     int scSize=searchConditions.size();
     if (scSize < 1 || 2 < scSize) {
-      return null;
+      residualPredicate=extractResidualCondition(analyzer,searchConditions,residualPredicate);
+      continue;
     }
-    if (scSize == 2 && (searchConditions.get(0).getComparisonOp().equals("org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPEqual") || searchConditions.get(1).getComparisonOp().equals("org.apache.hadoop.hive.ql.udf.generic.GenericUDFOPEqual"))) {
-      return null;
+    if (scSize == 2 && (searchConditions.get(0).getComparisonOp().equals(GenericUDFOPEqual.class.getName()) || searchConditions.get(1).getComparisonOp().equals(GenericUDFOPEqual.class.getName()))) {
+      residualPredicate=extractResidualCondition(analyzer,searchConditions,residualPredicate);
+      continue;
     }
+    boolean sameType=sameTypeIndexSearchConditions(searchConditions);
+    if (!sameType) {
+      residualPredicate=extractResidualCondition(analyzer,searchConditions,residualPredicate);
+      continue;
+    }
+    TypeInfo typeInfo=searchConditions.get(0).getColumnDesc().getTypeInfo();
+    if (typeInfo.getCategory() == Category.PRIMITIVE && PrimitiveObjectInspectorUtils.getPrimitiveGrouping(((PrimitiveTypeInfo)typeInfo).getPrimitiveCategory()) == PrimitiveGrouping.NUMERIC_GROUP) {
+      if (scSize == 2) {
+        boolean lowerBound=false;
+        boolean upperBound=false;
+        if (searchConditions.get(0).getComparisonOp().equals(GenericUDFOPEqualOrLessThan.class.getName()) || searchConditions.get(0).getComparisonOp().equals(GenericUDFOPLessThan.class.getName())) {
+          lowerBound=true;
+        }
+ else {
+          upperBound=true;
+        }
+        if (searchConditions.get(1).getComparisonOp().equals(GenericUDFOPEqualOrGreaterThan.class.getName()) || searchConditions.get(1).getComparisonOp().equals(GenericUDFOPGreaterThan.class.getName())) {
+          upperBound=true;
+        }
+ else {
+          lowerBound=true;
+        }
+        if (!upperBound || !lowerBound) {
+          residualPredicate=extractResidualCondition(analyzer,searchConditions,residualPredicate);
+          continue;
+        }
+      }
+ else {
+        if (!searchConditions.get(0).getComparisonOp().equals(GenericUDFOPEqual.class.getName())) {
+          residualPredicate=extractResidualCondition(analyzer,searchConditions,residualPredicate);
+          continue;
+        }
+      }
+    }
+    pushedPredicate=extractStorageHandlerCondition(analyzer,searchConditions,pushedPredicate);
   }
   DecomposedPredicate decomposedPredicate=new DecomposedPredicate();
-  decomposedPredicate.pushedPredicate=analyzer.translateSearchConditions(conditions);
+  decomposedPredicate.pushedPredicate=pushedPredicate;
   decomposedPredicate.residualPredicate=residualPredicate;
   return decomposedPredicate;
 }
