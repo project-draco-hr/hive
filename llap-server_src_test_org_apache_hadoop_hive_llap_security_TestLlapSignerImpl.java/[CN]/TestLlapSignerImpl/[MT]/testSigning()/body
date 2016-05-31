@@ -1,0 +1,63 @@
+{
+  FakeSecretManager fsm=new FakeSecretManager();
+  fsm.startThreads();
+  LlapSignerImpl signer=new LlapSignerImpl(fsm);
+  byte theByte=1;
+  TestSignable in=new TestSignable(theByte);
+  TestSignable in2=new TestSignable(++theByte);
+  SignedMessage sm2=signer.serializeAndSign(in2);
+  SignedMessage sm=signer.serializeAndSign(in);
+  TestSignable out=TestSignable.deserialize(sm.message);
+  TestSignable out2=TestSignable.deserialize(sm2.message);
+  assertEquals(in,out);
+  assertEquals(in2,out2);
+  signer.checkSignature(sm.message,sm.signature,out.masterKeyId);
+  signer.checkSignature(sm2.message,sm2.signature,out2.masterKeyId);
+  try {
+    signer.checkSignature(sm.message,sm2.signature,out.masterKeyId);
+    fail("Didn't throw");
+  }
+ catch (  SecurityException ex) {
+  }
+  int index=sm.signature.length / 2;
+  sm.signature[index]=(byte)(sm.signature[index] + 1);
+  try {
+    signer.checkSignature(sm.message,sm.signature,out.masterKeyId);
+    fail("Didn't throw");
+  }
+ catch (  SecurityException ex) {
+  }
+  sm.signature[index]=(byte)(sm.signature[index] - 1);
+  DelegationKey dk=fsm.getCurrentKey();
+  fsm.stopThreads();
+  fsm=new FakeSecretManager();
+  fsm.addKey(dk);
+  fsm.startThreads();
+  signer=new LlapSignerImpl(fsm);
+  sm2=signer.serializeAndSign(in2);
+  out2=TestSignable.deserialize(sm2.message);
+  assertNotEquals(out.masterKeyId,out2.masterKeyId);
+  assertEquals(in2,out2);
+  signer.checkSignature(sm2.message,sm2.signature,out2.masterKeyId);
+  signer.checkSignature(sm.message,sm.signature,out.masterKeyId);
+  try {
+    signer.checkSignature(sm2.message,sm2.signature,out.masterKeyId);
+    fail("Didn't throw");
+  }
+ catch (  SecurityException ex) {
+  }
+  dk=fsm.getCurrentKey();
+  fsm.stopThreads();
+  fsm=new FakeSecretManager();
+  fsm.addKey(dk);
+  fsm.startThreads();
+  signer=new LlapSignerImpl(fsm);
+  signer.checkSignature(sm2.message,sm2.signature,out2.masterKeyId);
+  try {
+    signer.checkSignature(sm.message,sm.signature,out.masterKeyId);
+    fail("Didn't throw");
+  }
+ catch (  SecurityException ex) {
+  }
+  fsm.stopThreads();
+}

@@ -1,19 +1,21 @@
 {
   final Configuration conf=getConfig();
+  isSigningRequiredConfig=getSigningConfig(conf);
   final BlockingService daemonImpl=LlapDaemonProtocolProtos.LlapDaemonProtocol.newReflectiveBlockingService(this);
   final BlockingService managementImpl=LlapDaemonProtocolProtos.LlapManagementProtocol.newReflectiveBlockingService(this);
   if (!UserGroupInformation.isSecurityEnabled()) {
     startProtocolServers(conf,daemonImpl,managementImpl);
     return;
   }
+  try {
+    this.clusterUser=UserGroupInformation.getCurrentUser().getShortUserName();
+  }
+ catch (  IOException e) {
+    throw new RuntimeException(e);
+  }
   if (isPermissiveManagementAcl(conf)) {
     LOG.warn("Management protocol has a '*' ACL.");
-    try {
-      this.restrictedToUser=UserGroupInformation.getCurrentUser().getShortUserName();
-    }
- catch (    IOException e) {
-      throw new RuntimeException(e);
-    }
+    isRestrictedToClusterUser=true;
   }
   String llapPrincipal=HiveConf.getVar(conf,ConfVars.LLAP_KERBEROS_PRINCIPAL), llapKeytab=HiveConf.getVar(conf,ConfVars.LLAP_KERBEROS_KEYTAB_FILE);
   zkSecretManager=SecretManager.createSecretManager(conf,llapPrincipal,llapKeytab,daemonId.getClusterString());

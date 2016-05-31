@@ -1,5 +1,17 @@
 {
-  SignableVertexSpec vertex=request.getWorkSpec().getVertex();
+  VertexOrBinary vob=request.getWorkSpec();
+  SignableVertexSpec vertex=vob.hasVertex() ? vob.getVertex() : null;
+  ByteString vertexBinary=vob.hasVertexBinary() ? vob.getVertexBinary() : null;
+  if (vertex != null && vertexBinary != null) {
+    throw new IOException("Vertex and vertexBinary in VertexOrBinary cannot be set at the same time");
+  }
+  if (vertexBinary != null) {
+    vertex=SignableVertexSpec.parseFrom(vob.getVertexBinary());
+  }
+  LlapTokenInfo tokenInfo=LlapTokenChecker.getTokenInfo(clusterId);
+  if (tokenInfo.isSigningRequired) {
+    checkSignature(vertex,vertexBinary,request,tokenInfo.userName);
+  }
   if (LOG.isInfoEnabled()) {
     LOG.info("Queueing container for execution: " + stringifySubmitRequest(request,vertex));
   }
@@ -23,14 +35,14 @@
     dib.reset(tokenBytes,tokenBytes.length);
     credentials.readTokenStorageStream(dib);
     Token<JobTokenIdentifier> jobToken=TokenCache.getSessionToken(credentials);
-    QueryFragmentInfo fragmentInfo=queryTracker.registerFragment(queryIdentifier,vId.getApplicationIdString(),vertex.getDagName(),dagIdentifier,vertex.getVertexName(),request.getFragmentNumber(),request.getAttemptNumber(),vertex.getUser(),vertex,jobToken,fragmentIdString);
+    QueryFragmentInfo fragmentInfo=queryTracker.registerFragment(queryIdentifier,vId.getApplicationIdString(),vertex.getDagName(),dagIdentifier,vertex.getVertexName(),request.getFragmentNumber(),request.getAttemptNumber(),vertex.getUser(),vertex,jobToken,fragmentIdString,tokenInfo);
     String[] localDirs=fragmentInfo.getLocalDirs();
     Preconditions.checkNotNull(localDirs);
     if (LOG.isDebugEnabled()) {
       LOG.debug("Dirs are: " + Arrays.toString(localDirs));
     }
     Configuration callableConf=new Configuration(getConfig());
-    TaskRunnerCallable callable=new TaskRunnerCallable(request,fragmentInfo,callableConf,new LlapExecutionContext(localAddress.get().getHostName(),queryTracker),env,credentials,memoryPerExecutor,amReporter,confParams,metrics,killedTaskHandler,this,tezHadoopShim,attemptId);
+    TaskRunnerCallable callable=new TaskRunnerCallable(request,fragmentInfo,callableConf,new LlapExecutionContext(localAddress.get().getHostName(),queryTracker),env,credentials,memoryPerExecutor,amReporter,confParams,metrics,killedTaskHandler,this,tezHadoopShim,attemptId,vertex);
     submissionState=executorService.schedule(callable);
     if (LOG.isInfoEnabled()) {
       LOG.info("SubmissionState for {} : {} ",fragmentIdString,submissionState);
