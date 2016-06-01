@@ -17,7 +17,7 @@
           shouldNeverHappen(txnid);
         }
       }
-      String s=addForUpdateClause("select nl_next from NEXT_LOCK_ID");
+      String s=sqlGenerator.addForUpdateClause("select nl_next from NEXT_LOCK_ID");
       LOG.debug("Going to execute query <" + s + ">");
       rs=stmt.executeQuery(s);
       if (!rs.next()) {
@@ -30,6 +30,7 @@
       LOG.debug("Going to execute update <" + s + ">");
       stmt.executeUpdate(s);
       if (txnid > 0) {
+        List<String> rows=new ArrayList<>();
         for (        LockComponent lc : rqst.getComponent()) {
           if (lc.isSetIsAcid() && !lc.isIsAcid()) {
             continue;
@@ -58,11 +59,15 @@ if (!updateTxnComponents) {
 String dbName=lc.getDbname();
 String tblName=lc.getTablename();
 String partName=lc.getPartitionname();
-s="insert into TXN_COMPONENTS " + "(tc_txnid, tc_database, tc_table, tc_partition, tc_operation_type) " + "values (" + txnid + ", '"+ dbName+ "', "+ (tblName == null ? "null" : "'" + tblName + "'")+ ", "+ (partName == null ? "null" : "'" + partName + "'")+ ","+ quoteString(OpertaionType.fromDataOperationType(lc.getOperationType()).toString())+ ")";
-LOG.debug("Going to execute update <" + s + ">");
-int modCount=stmt.executeUpdate(s);
+rows.add(txnid + ", '" + dbName+ "', "+ (tblName == null ? "null" : "'" + tblName + "'")+ ", "+ (partName == null ? "null" : "'" + partName + "'")+ ","+ quoteString(OpertaionType.fromDataOperationType(lc.getOperationType()).toString()));
+}
+List<String> queries=sqlGenerator.createInsertValuesStmt("TXN_COMPONENTS (tc_txnid, tc_database, tc_table, tc_partition, tc_operation_type)",rows);
+for (String query : queries) {
+LOG.debug("Going to execute update <" + query + ">");
+int modCount=stmt.executeUpdate(query);
 }
 }
+List<String> rows=new ArrayList<>();
 long intLockId=0;
 for (LockComponent lc : rqst.getComponent()) {
 if (lc.isSetOperationType() && lc.getOperationType() == DataOperationType.UNSET) {
@@ -86,9 +91,12 @@ lockChar=LOCK_SEMI_SHARED;
 break;
 }
 long now=getDbTime(dbConn);
-s="insert into HIVE_LOCKS " + "(hl_lock_ext_id, hl_lock_int_id, hl_txnid, " + "hl_db, "+ "hl_table, "+ "hl_partition, "+ "hl_lock_state, hl_lock_type, "+ "hl_last_heartbeat, "+ "hl_user, "+ "hl_host, "+ "hl_agent_info) values(" + extLockId + ", "+ intLockId+ ","+ txnid+ ", "+ quoteString(dbName)+ ", "+ valueOrNullLiteral(tblName)+ ", "+ valueOrNullLiteral(partName)+ ", "+ quoteChar(LOCK_WAITING)+ ", "+ quoteChar(lockChar)+ ", "+ (isValidTxn(txnid) ? 0 : now)+ ", "+ valueOrNullLiteral(rqst.getUser())+ ", "+ valueOrNullLiteral(rqst.getHostname())+ ", "+ valueOrNullLiteral(rqst.getAgentInfo())+ ")";
-LOG.debug("Going to execute update <" + s + ">");
-stmt.executeUpdate(s);
+rows.add(extLockId + ", " + intLockId+ ","+ txnid+ ", "+ quoteString(dbName)+ ", "+ valueOrNullLiteral(tblName)+ ", "+ valueOrNullLiteral(partName)+ ", "+ quoteChar(LOCK_WAITING)+ ", "+ quoteChar(lockChar)+ ", "+ (isValidTxn(txnid) ? 0 : now)+ ", "+ valueOrNullLiteral(rqst.getUser())+ ", "+ valueOrNullLiteral(rqst.getHostname())+ ", "+ valueOrNullLiteral(rqst.getAgentInfo()));
+}
+List<String> queries=sqlGenerator.createInsertValuesStmt("HIVE_LOCKS (hl_lock_ext_id, hl_lock_int_id, hl_txnid, hl_db, " + "hl_table, hl_partition,hl_lock_state, hl_lock_type, " + "hl_last_heartbeat, hl_user, hl_host, hl_agent_info)",rows);
+for (String query : queries) {
+LOG.debug("Going to execute update <" + query + ">");
+int modCount=stmt.executeUpdate(query);
 }
 dbConn.commit();
 success=true;

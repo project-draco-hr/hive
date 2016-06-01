@@ -1,0 +1,46 @@
+{
+  if (rows == null || rows.size() == 0) {
+    return Collections.emptyList();
+  }
+  List<String> insertStmts=new ArrayList<>();
+  StringBuilder sb=new StringBuilder();
+switch (dbProduct) {
+case ORACLE:
+    if (rows.size() > 1) {
+      for (int numRows=0; numRows < rows.size(); numRows++) {
+        if (numRows % conf.getIntVar(HiveConf.ConfVars.METASTORE_DIRECT_SQL_MAX_ELEMENTS_VALUES_CLAUSE) == 0) {
+          if (numRows > 0) {
+            sb.append(" select * from dual");
+            insertStmts.add(sb.toString());
+          }
+          sb.setLength(0);
+          sb.append("insert all ");
+        }
+        sb.append("into ").append(tblColumns).append(" values(").append(rows.get(numRows)).append(") ");
+      }
+      sb.append("select * from dual");
+      insertStmts.add(sb.toString());
+      return insertStmts;
+    }
+case DERBY:
+case MYSQL:
+case POSTGRES:
+case SQLSERVER:
+  for (int numRows=0; numRows < rows.size(); numRows++) {
+    if (numRows % conf.getIntVar(HiveConf.ConfVars.METASTORE_DIRECT_SQL_MAX_ELEMENTS_VALUES_CLAUSE) == 0) {
+      if (numRows > 0) {
+        insertStmts.add(sb.substring(0,sb.length() - 1));
+      }
+      sb.setLength(0);
+      sb.append("insert into ").append(tblColumns).append(" values");
+    }
+    sb.append('(').append(rows.get(numRows)).append("),");
+  }
+insertStmts.add(sb.substring(0,sb.length() - 1));
+return insertStmts;
+default :
+String msg="Unrecognized database product name <" + dbProduct + ">";
+LOG.error(msg);
+throw new IllegalStateException(msg);
+}
+}
