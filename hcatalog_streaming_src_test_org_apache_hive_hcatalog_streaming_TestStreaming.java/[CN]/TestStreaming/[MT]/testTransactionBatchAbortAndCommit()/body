@@ -1,11 +1,17 @@
 {
+  String agentInfo="UT_" + Thread.currentThread().getName();
   HiveEndPoint endPt=new HiveEndPoint(metaStoreURI,dbName,tblName,partitionVals);
   DelimitedInputWriter writer=new DelimitedInputWriter(fieldNames,",",endPt);
-  StreamingConnection connection=endPt.newConnection(false);
+  StreamingConnection connection=endPt.newConnection(false,agentInfo);
   TransactionBatch txnBatch=connection.fetchTransactionBatch(10,writer);
   txnBatch.beginNextTransaction();
   txnBatch.write("1,Hello streaming".getBytes());
   txnBatch.write("2,Welcome to streaming".getBytes());
+  ShowLocksResponse resp=msClient.showLocks(new ShowLocksRequest());
+  Assert.assertEquals("LockCount",1,resp.getLocksSize());
+  Assert.assertEquals("LockType",LockType.SHARED_READ,resp.getLocks().get(0).getType());
+  Assert.assertEquals("LockState",LockState.ACQUIRED,resp.getLocks().get(0).getState());
+  Assert.assertEquals("AgentInfo",agentInfo,resp.getLocks().get(0).getAgentInfo());
   txnBatch.abort();
   checkNothingWritten(partLoc);
   Assert.assertEquals(TransactionBatch.TxnState.ABORTED,txnBatch.getCurrentTransactionState());
