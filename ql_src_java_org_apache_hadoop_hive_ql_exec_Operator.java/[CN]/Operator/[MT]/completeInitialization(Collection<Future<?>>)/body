@@ -2,25 +2,53 @@
   Object[] os=new Object[fs.size()];
   int i=0;
   Throwable asyncEx=null;
+  boolean cancelAll=false;
   for (  Future<?> f : fs) {
-    if (abortOp.get() || asyncEx != null) {
-      f.cancel(true);
+    if (cancelAll) {
+      break;
+    }
+    if (abortOp.get()) {
+      cancelAll=true;
+      break;
     }
  else {
-      try {
-        os[i++]=f.get();
-      }
- catch (      CancellationException ex) {
-        asyncEx=new InterruptedException("Future was canceled");
-      }
-catch (      Throwable t) {
-        f.cancel(true);
-        asyncEx=t;
+      while (true) {
+        if (abortOp.get()) {
+          cancelAll=true;
+          break;
+        }
+ else {
+          try {
+            Object futureResult=f.get(200l,TimeUnit.MILLISECONDS);
+            os[i++]=futureResult;
+            break;
+          }
+ catch (          TimeoutException e) {
+          }
+catch (          InterruptedException|CancellationException e) {
+            asyncEx=e;
+            cancelAll=true;
+            break;
+          }
+catch (          ExecutionException e) {
+            if (e.getCause() == null) {
+              asyncEx=e;
+            }
+ else {
+              asyncEx=e.getCause();
+            }
+            cancelAll=true;
+            break;
+          }
+        }
       }
     }
   }
-  if (asyncEx != null) {
-    throw new HiveException("Async initialization failed",asyncEx);
+  if (cancelAll || asyncEx != null) {
+    for (    Future<?> f : fs) {
+      f.cancel(true);
+    }
+    throw new HiveException("Async Initialization failed. abortRequested=" + abortOp.get(),asyncEx);
   }
   completeInitializationOp(os);
 }
