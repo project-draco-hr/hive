@@ -1,9 +1,10 @@
 {
   logInfo("add_partitions");
   boolean success=false;
-  Map<PartValEqWrapper,Boolean> addedPartitions=new HashMap<PartValEqWrapper,Boolean>();
-  List<Partition> result=new ArrayList<Partition>();
-  List<Partition> existingParts=null;
+  final Map<PartValEqWrapper,Boolean> addedPartitions=Collections.synchronizedMap(new HashMap<PartValEqWrapper,Boolean>());
+  final List<Partition> result=new ArrayList<Partition>();
+  final List<Partition> existingParts=new ArrayList<Partition>();
+  ;
   Table tbl=null;
   try {
     ms.openTransaction();
@@ -14,25 +15,43 @@
     if (!parts.isEmpty()) {
       firePreEvent(new PreAddPartitionEvent(tbl,parts,this));
     }
-    for (    Partition part : parts) {
+    List<Future<Partition>> partFutures=Lists.newArrayList();
+    final Table table=tbl;
+    for (    final Partition part : parts) {
       if (!part.getTableName().equals(tblName) || !part.getDbName().equals(dbName)) {
         throw new MetaException("Partition does not belong to target table " + dbName + "."+ tblName+ ": "+ part);
       }
       boolean shouldAdd=startAddPartition(ms,part,ifNotExists);
       if (!shouldAdd) {
-        if (existingParts == null) {
-          existingParts=new ArrayList<Partition>();
-        }
         existingParts.add(part);
         LOG.info("Not adding partition " + part + " as it already exists");
         continue;
       }
-      boolean madeDir=createLocationForAddedPartition(tbl,part);
-      if (addedPartitions.put(new PartValEqWrapper(part),madeDir) != null) {
-        throw new MetaException("Duplicate partitions in the list: " + part);
+      partFutures.add(threadPool.submit(new Callable(){
+        @Override public Partition call() throws Exception {
+          boolean madeDir=createLocationForAddedPartition(table,part);
+          if (addedPartitions.put(new PartValEqWrapper(part),madeDir) != null) {
+            throw new MetaException("Duplicate partitions in the list: " + part);
+          }
+          initializeAddedPartition(table,part,madeDir);
+          return part;
+        }
       }
-      initializeAddedPartition(tbl,part,madeDir);
-      result.add(part);
+));
+    }
+    try {
+      for (      Future<Partition> partFuture : partFutures) {
+        Partition part=partFuture.get();
+        if (part != null) {
+          result.add(part);
+        }
+      }
+    }
+ catch (    InterruptedException|ExecutionException e) {
+      for (      Future<Partition> partFuture : partFutures) {
+        partFuture.cancel(true);
+      }
+      throw new MetaException(e.getMessage());
     }
     if (!result.isEmpty()) {
       success=ms.addPartitions(dbName,tblName,result);
@@ -45,7 +64,7 @@
   finally {
     if (!success) {
       ms.rollbackTransaction();
-      for (      Entry<PartValEqWrapper,Boolean> e : addedPartitions.entrySet()) {
+      for (      Map.Entry<PartValEqWrapper,Boolean> e : addedPartitions.entrySet()) {
         if (e.getValue()) {
           wh.deleteDir(new Path(e.getKey().partition.getSd().getLocation()),true);
         }

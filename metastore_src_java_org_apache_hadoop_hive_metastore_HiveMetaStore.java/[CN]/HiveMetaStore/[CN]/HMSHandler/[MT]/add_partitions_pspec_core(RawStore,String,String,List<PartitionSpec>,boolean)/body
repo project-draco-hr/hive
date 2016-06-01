@@ -1,8 +1,8 @@
 {
   boolean success=false;
-  Map<PartValEqWrapperLite,Boolean> addedPartitions=new HashMap<PartValEqWrapperLite,Boolean>();
+  final Map<PartValEqWrapperLite,Boolean> addedPartitions=Collections.synchronizedMap(new HashMap<PartValEqWrapperLite,Boolean>());
   PartitionSpecProxy partitionSpecProxy=PartitionSpecProxy.Factory.get(partSpecs);
-  PartitionSpecProxy.PartitionIterator partitionIterator=partitionSpecProxy.getPartitionIterator();
+  final PartitionSpecProxy.PartitionIterator partitionIterator=partitionSpecProxy.getPartitionIterator();
   Table tbl=null;
   try {
     ms.openTransaction();
@@ -11,9 +11,10 @@
       throw new InvalidObjectException("Unable to add partitions because " + "database or table " + dbName + "."+ tblName+ " does not exist");
     }
     firePreEvent(new PreAddPartitionEvent(tbl,partitionSpecProxy,this));
-    int nPartitions=0;
+    List<Future<Partition>> partFutures=Lists.newArrayList();
+    final Table table=tbl;
     while (partitionIterator.hasNext()) {
-      Partition part=partitionIterator.getCurrent();
+      final Partition part=partitionIterator.getCurrent();
       if (!part.getTableName().equals(tblName) || !part.getDbName().equals(dbName)) {
         throw new MetaException("Partition does not belong to target table " + dbName + "."+ tblName+ ": "+ part);
       }
@@ -22,21 +23,37 @@
         LOG.info("Not adding partition " + part + " as it already exists");
         continue;
       }
-      boolean madeDir=createLocationForAddedPartition(tbl,part);
-      if (addedPartitions.put(new PartValEqWrapperLite(part),madeDir) != null) {
-        throw new MetaException("Duplicate partitions in the list: " + part);
+      partFutures.add(threadPool.submit(new Callable(){
+        @Override public Object call() throws Exception {
+          boolean madeDir=createLocationForAddedPartition(table,part);
+          if (addedPartitions.put(new PartValEqWrapperLite(part),madeDir) != null) {
+            throw new MetaException("Duplicate partitions in the list: " + part);
+          }
+          initializeAddedPartition(table,part,madeDir);
+          return part;
+        }
       }
-      initializeAddedPartition(tbl,partitionIterator,madeDir);
-      ++nPartitions;
+));
       partitionIterator.next();
     }
+    try {
+      for (      Future<Partition> partFuture : partFutures) {
+        Partition part=partFuture.get();
+      }
+    }
+ catch (    InterruptedException|ExecutionException e) {
+      for (      Future<Partition> partFuture : partFutures) {
+        partFuture.cancel(true);
+      }
+      throw new MetaException(e.getMessage());
+    }
     success=ms.addPartitions(dbName,tblName,partitionSpecProxy,ifNotExists) && ms.commitTransaction();
-    return nPartitions;
+    return addedPartitions.size();
   }
   finally {
     if (!success) {
       ms.rollbackTransaction();
-      for (      Entry<PartValEqWrapperLite,Boolean> e : addedPartitions.entrySet()) {
+      for (      Map.Entry<PartValEqWrapperLite,Boolean> e : addedPartitions.entrySet()) {
         if (e.getValue()) {
           wh.deleteDir(new Path(e.getKey().location),true);
         }
