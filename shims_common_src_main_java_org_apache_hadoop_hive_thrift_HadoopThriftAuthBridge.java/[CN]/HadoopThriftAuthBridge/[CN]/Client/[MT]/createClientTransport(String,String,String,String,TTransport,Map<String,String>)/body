@@ -1,5 +1,5 @@
 {
-  AuthMethod method=AuthMethod.valueOf(AuthMethod.class,methodStr);
+  final AuthMethod method=AuthMethod.valueOf(AuthMethod.class,methodStr);
   TTransport saslTransport=null;
 switch (method) {
 case DIGEST:
@@ -9,15 +9,20 @@ saslTransport=new TSaslClientTransport(method.getMechanismName(),null,null,SaslR
 return new TUGIAssumingTransport(saslTransport,UserGroupInformation.getCurrentUser());
 case KERBEROS:
 String serverPrincipal=SecurityUtil.getServerPrincipal(principalConfig,host);
-String names[]=SaslRpcServer.splitKerberosName(serverPrincipal);
+final String names[]=SaslRpcServer.splitKerberosName(serverPrincipal);
 if (names.length != 3) {
 throw new IOException("Kerberos principal name does NOT have the expected hostname part: " + serverPrincipal);
 }
 try {
-saslTransport=new TSaslClientTransport(method.getMechanismName(),null,names[0],names[1],saslProps,null,underlyingTransport);
+return UserGroupInformation.getCurrentUser().doAs(new PrivilegedExceptionAction<TUGIAssumingTransport>(){
+@Override public TUGIAssumingTransport run() throws IOException {
+TTransport saslTransport=new TSaslClientTransport(method.getMechanismName(),null,names[0],names[1],saslProps,null,underlyingTransport);
 return new TUGIAssumingTransport(saslTransport,UserGroupInformation.getCurrentUser());
 }
- catch (SaslException se) {
+}
+);
+}
+ catch (InterruptedException|SaslException se) {
 throw new IOException("Could not instantiate SASL transport",se);
 }
 default :
