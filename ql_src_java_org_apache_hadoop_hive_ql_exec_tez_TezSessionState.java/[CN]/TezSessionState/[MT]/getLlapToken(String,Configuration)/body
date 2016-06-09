@@ -2,20 +2,13 @@
   SessionState session=SessionState.get();
   boolean isInHs2=session != null && session.isHiveServerQuery();
   Token<LlapTokenIdentifier> token=null;
+  LlapCoordinator coordinator=null;
   if (isInHs2) {
-    String clusterName=LlapUtil.generateClusterName(conf);
-    final String clusterId=DaemonId.createClusterString(user,clusterName);
-    try {
-      token=localClientCache.get(clusterId,new Callable<LlapTokenLocalClient>(){
-        @Override public LlapTokenLocalClient call() throws Exception {
-          return new LlapTokenLocalClient(conf,clusterId);
-        }
-      }
-).createToken(null,null,false);
+    coordinator=LlapCoordinator.getInstance();
+    if (coordinator == null) {
+      throw new IOException("LLAP coordinator not initialized; cannot get LLAP tokens");
     }
- catch (    ExecutionException e) {
-      throw new IOException(e);
-    }
+    token=coordinator.getLocalTokenClient(conf,user).createToken(null,null,false);
   }
  else {
     token=new LlapTokenClient(conf).getDelegationToken(null);

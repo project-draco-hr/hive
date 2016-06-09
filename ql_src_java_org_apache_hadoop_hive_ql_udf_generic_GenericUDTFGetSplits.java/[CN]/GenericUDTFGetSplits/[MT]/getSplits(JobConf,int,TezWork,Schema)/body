@@ -18,7 +18,6 @@
     HiveSplitGenerator splitGenerator=new HiveSplitGenerator(wxConf,mapWork);
     List<Event> eventList=splitGenerator.initialize();
     InputSplit[] result=new InputSplit[eventList.size() - 1];
-    DataOutputBuffer dob=new DataOutputBuffer();
     InputConfigureVertexTasksEvent configureEvent=(InputConfigureVertexTasksEvent)eventList.get(0);
     List<TaskLocationHint> hints=configureEvent.getLocationHint().getTaskLocationHints();
     Preconditions.checkState(hints.size() == eventList.size() - 1);
@@ -26,12 +25,22 @@
       LOG.debug("NumEvents=" + eventList.size());
       LOG.debug("NumSplits=" + result.length);
     }
-    ApplicationId fakeApplicationId=ApplicationId.newInstance(Math.abs(new Random().nextInt()),0);
+    LlapCoordinator coordinator=LlapCoordinator.getInstance();
+    if (coordinator == null) {
+      throw new IOException("LLAP coordinator is not initialized; must be running in HS2 with " + ConfVars.LLAP_HS2_ENABLE_COORDINATOR.varname + " enabled");
+    }
+    ApplicationId fakeApplicationId=coordinator.createExtClientAppId();
     String llapUser=UserGroupInformation.getLoginUser().getShortUserName();
+    LlapSigner signer=UserGroupInformation.isSecurityEnabled() ? coordinator.getLlapSigner(job) : null;
     LOG.info("Number of splits: " + (eventList.size() - 1));
+    SignedMessage signedSvs=null;
+    DataOutputBuffer dob=new DataOutputBuffer();
     for (int i=0; i < eventList.size() - 1; i++) {
       TaskSpec taskSpec=new TaskSpecBuilder().constructTaskSpec(dag,vertexName,eventList.size() - 1,fakeApplicationId,i);
-      SubmitWorkInfo submitWorkInfo=new SubmitWorkInfo(taskSpec,fakeApplicationId,System.currentTimeMillis());
+      if (i == 0) {
+        signedSvs=createSignedVertexSpec(signer,taskSpec,fakeApplicationId);
+      }
+      SubmitWorkInfo submitWorkInfo=new SubmitWorkInfo(fakeApplicationId,System.currentTimeMillis(),taskSpec.getVertexParallelism(),signedSvs.message,signedSvs.signature);
       EventMetaData sourceMetaData=new EventMetaData(EventMetaData.EventProducerConsumerType.INPUT,vertexName,"NULL_VERTEX",null);
       EventMetaData destinationMetaInfo=new TaskSpecBuilder().getDestingationMetaData(wx);
       Event event=eventList.get(i + 1);

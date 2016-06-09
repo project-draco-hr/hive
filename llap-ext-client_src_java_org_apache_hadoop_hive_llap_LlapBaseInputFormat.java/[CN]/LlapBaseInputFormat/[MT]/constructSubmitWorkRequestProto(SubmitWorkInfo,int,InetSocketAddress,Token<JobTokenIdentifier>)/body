@@ -1,12 +1,8 @@
 {
-  TaskSpec taskSpec=submitWorkInfo.getTaskSpec();
   ApplicationId appId=submitWorkInfo.getFakeAppId();
-  int attemptId=taskSpec.getTaskAttemptID().getId();
   String user=System.getenv(ApplicationConstants.Environment.USER.name());
   LOG.info("Setting user in submitWorkRequest to: " + user);
-  SignableVertexSpec svs=Converters.convertTaskSpecToProto(taskSpec,attemptId,appId.toString(),null,user);
   ContainerId containerId=ContainerId.newInstance(ApplicationAttemptId.newInstance(appId,0),taskNum);
-  Credentials taskCredentials=new Credentials();
   Credentials credentials=new Credentials();
   TokenCache.setSessionToken(token,credentials);
   ByteBuffer credentialsBinary=serializeCredentials(credentials);
@@ -15,11 +11,16 @@
   runtimeInfo.setWithinDagPriority(0);
   runtimeInfo.setDagStartTime(submitWorkInfo.getCreationTime());
   runtimeInfo.setFirstAttemptStartTime(submitWorkInfo.getCreationTime());
-  runtimeInfo.setNumSelfAndUpstreamTasks(taskSpec.getVertexParallelism());
+  runtimeInfo.setNumSelfAndUpstreamTasks(submitWorkInfo.getVertexParallelism());
   runtimeInfo.setNumSelfAndUpstreamCompletedTasks(0);
   SubmitWorkRequestProto.Builder builder=SubmitWorkRequestProto.newBuilder();
-  builder.setWorkSpec(VertexOrBinary.newBuilder().setVertex(svs).build());
-  builder.setFragmentNumber(taskSpec.getTaskAttemptID().getTaskID().getId());
+  VertexOrBinary.Builder vertexBuilder=VertexOrBinary.newBuilder();
+  vertexBuilder.setVertexBinary(ByteString.copyFrom(submitWorkInfo.getVertexBinary()));
+  if (submitWorkInfo.getVertexSignature() != null) {
+    builder.setWorkSpecSignature(ByteString.copyFrom(submitWorkInfo.getVertexSignature()));
+  }
+  builder.setWorkSpec(vertexBuilder.build());
+  builder.setFragmentNumber(taskNum);
   builder.setAttemptNumber(0);
   builder.setContainerIdString(containerId.toString());
   builder.setAmHost(address.getHostName());
