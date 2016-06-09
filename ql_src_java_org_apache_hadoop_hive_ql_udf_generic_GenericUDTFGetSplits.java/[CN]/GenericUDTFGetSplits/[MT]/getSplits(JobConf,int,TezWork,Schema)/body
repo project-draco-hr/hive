@@ -22,8 +22,7 @@
     List<TaskLocationHint> hints=configureEvent.getLocationHint().getTaskLocationHints();
     Preconditions.checkState(hints.size() == eventList.size() - 1);
     if (LOG.isDebugEnabled()) {
-      LOG.debug("NumEvents=" + eventList.size());
-      LOG.debug("NumSplits=" + result.length);
+      LOG.debug("NumEvents=" + eventList.size() + ", NumSplits="+ result.length);
     }
     LlapCoordinator coordinator=LlapCoordinator.getInstance();
     if (coordinator == null) {
@@ -41,26 +40,10 @@
         signedSvs=createSignedVertexSpec(signer,taskSpec,fakeApplicationId);
       }
       SubmitWorkInfo submitWorkInfo=new SubmitWorkInfo(fakeApplicationId,System.currentTimeMillis(),taskSpec.getVertexParallelism(),signedSvs.message,signedSvs.signature);
-      EventMetaData sourceMetaData=new EventMetaData(EventMetaData.EventProducerConsumerType.INPUT,vertexName,"NULL_VERTEX",null);
-      EventMetaData destinationMetaInfo=new TaskSpecBuilder().getDestingationMetaData(wx);
-      Event event=eventList.get(i + 1);
-      TaskLocationHint hint=hints.get(i);
-      Set<String> hosts=hint.getHosts();
-      if (hosts.size() != 1) {
-        LOG.warn("Bad # of locations: " + hosts.size());
-      }
-      SplitLocationInfo[] locations=new SplitLocationInfo[hosts.size()];
-      int j=0;
-      for (      String host : hosts) {
-        locations[j++]=new SplitLocationInfo(host,false);
-      }
-      TezEvent tezEvent=new TezEvent(event,sourceMetaData,System.currentTimeMillis());
-      tezEvent.setDestinationInfo(destinationMetaInfo);
-      bos.reset();
-      dob.reset();
-      tezEvent.write(dob);
       byte[] submitWorkBytes=SubmitWorkInfo.toBytes(submitWorkInfo);
-      result[i]=new LlapInputSplit(i,submitWorkBytes,dob.getData(),locations,schema,llapUser);
+      SignedMessage eventBytes=makeEventBytes(wx,vertexName,eventList.get(i + 1),dob,signer);
+      SplitLocationInfo[] locations=makeLocationHints(hints.get(i));
+      result[i]=new LlapInputSplit(i,submitWorkBytes,eventBytes.message,eventBytes.signature,locations,schema,llapUser);
     }
     return result;
   }

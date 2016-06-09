@@ -1,0 +1,35 @@
+{
+  ApplicationId appId=submitWorkInfo.getFakeAppId();
+  String user=System.getenv(ApplicationConstants.Environment.USER.name());
+  LOG.info("Setting user in submitWorkRequest to: " + user);
+  ContainerId containerId=ContainerId.newInstance(ApplicationAttemptId.newInstance(appId,0),taskNum);
+  Credentials credentials=new Credentials();
+  TokenCache.setSessionToken(token,credentials);
+  ByteBuffer credentialsBinary=serializeCredentials(credentials);
+  FragmentRuntimeInfo.Builder runtimeInfo=FragmentRuntimeInfo.newBuilder();
+  runtimeInfo.setCurrentAttemptStartTime(System.currentTimeMillis());
+  runtimeInfo.setWithinDagPriority(0);
+  runtimeInfo.setDagStartTime(submitWorkInfo.getCreationTime());
+  runtimeInfo.setFirstAttemptStartTime(submitWorkInfo.getCreationTime());
+  runtimeInfo.setNumSelfAndUpstreamTasks(submitWorkInfo.getVertexParallelism());
+  runtimeInfo.setNumSelfAndUpstreamCompletedTasks(0);
+  SubmitWorkRequestProto.Builder builder=SubmitWorkRequestProto.newBuilder();
+  VertexOrBinary.Builder vertexBuilder=VertexOrBinary.newBuilder();
+  vertexBuilder.setVertexBinary(ByteString.copyFrom(submitWorkInfo.getVertexBinary()));
+  if (submitWorkInfo.getVertexSignature() != null) {
+    builder.setWorkSpecSignature(ByteString.copyFrom(submitWorkInfo.getVertexSignature()));
+  }
+  builder.setWorkSpec(vertexBuilder.build());
+  builder.setFragmentNumber(taskNum);
+  builder.setAttemptNumber(0);
+  builder.setContainerIdString(containerId.toString());
+  builder.setAmHost(address.getHostName());
+  builder.setAmPort(address.getPort());
+  builder.setCredentialsBinary(ByteString.copyFrom(credentialsBinary));
+  builder.setFragmentRuntimeInfo(runtimeInfo.build());
+  builder.setInitialEventBytes(ByteString.copyFrom(fragmentBytes));
+  if (fragmentBytesSignature != null) {
+    builder.setInitialEventSignature(ByteString.copyFrom(fragmentBytesSignature));
+  }
+  return builder.build();
+}

@@ -1,17 +1,7 @@
 {
-  VertexOrBinary vob=request.getWorkSpec();
-  SignableVertexSpec vertex=vob.hasVertex() ? vob.getVertex() : null;
-  ByteString vertexBinary=vob.hasVertexBinary() ? vob.getVertexBinary() : null;
-  if (vertex != null && vertexBinary != null) {
-    throw new IOException("Vertex and vertexBinary in VertexOrBinary cannot be set at the same time");
-  }
-  if (vertexBinary != null) {
-    vertex=SignableVertexSpec.parseFrom(vob.getVertexBinary());
-  }
   LlapTokenInfo tokenInfo=LlapTokenChecker.getTokenInfo(clusterId);
-  if (tokenInfo.isSigningRequired) {
-    checkSignature(vertex,vertexBinary,request,tokenInfo.userName);
-  }
+  SignableVertexSpec vertex=extractVertexSpec(request,tokenInfo);
+  TezEvent initialEvent=extractInitialEvent(request,tokenInfo);
   if (LOG.isInfoEnabled()) {
     LOG.info("Queueing container for execution: " + stringifySubmitRequest(request,vertex));
   }
@@ -43,7 +33,7 @@
     }
     Configuration callableConf=new Configuration(getConfig());
     UserGroupInformation taskUgi=fsUgiFactory == null ? null : fsUgiFactory.createUgi();
-    TaskRunnerCallable callable=new TaskRunnerCallable(request,fragmentInfo,callableConf,new LlapExecutionContext(localAddress.get().getHostName(),queryTracker),env,credentials,memoryPerExecutor,amReporter,confParams,metrics,killedTaskHandler,this,tezHadoopShim,attemptId,vertex,taskUgi);
+    TaskRunnerCallable callable=new TaskRunnerCallable(request,fragmentInfo,callableConf,new LlapExecutionContext(localAddress.get().getHostName(),queryTracker),env,credentials,memoryPerExecutor,amReporter,confParams,metrics,killedTaskHandler,this,tezHadoopShim,attemptId,vertex,initialEvent,taskUgi);
     submissionState=executorService.schedule(callable);
     if (LOG.isInfoEnabled()) {
       LOG.info("SubmissionState for {} : {} ",fragmentIdString,submissionState);

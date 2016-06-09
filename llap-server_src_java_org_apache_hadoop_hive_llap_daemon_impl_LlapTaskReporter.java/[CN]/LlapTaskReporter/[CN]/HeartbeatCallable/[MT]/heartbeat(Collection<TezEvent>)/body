@@ -44,12 +44,25 @@
  else {
     task.setNextFromEventId(response.getNextFromEventId());
     task.setNextPreRoutedEventId(response.getNextPreRoutedEventId());
+    List<TezEvent> taskEvents=null;
     if (response.getEvents() != null && !response.getEvents().isEmpty()) {
       if (LOG.isDebugEnabled()) {
         LOG.debug("Routing events from heartbeat response to task" + ", currentTaskAttemptId=" + task.getTaskAttemptID() + ", eventCount="+ response.getEvents().size()+ " fromEventId="+ fromEventId+ " nextFromEventId="+ response.getNextFromEventId());
       }
       numEventsReceived=response.getEvents().size();
-      task.handleEvents(response.getEvents());
+      taskEvents=response.getEvents();
+    }
+    if (initialEvent != null) {
+      List<TezEvent> oldEvents=taskEvents;
+      taskEvents=new ArrayList<>(1 + (taskEvents == null ? 0 : taskEvents.size()));
+      taskEvents.add(initialEvent);
+      initialEvent=null;
+      if (oldEvents != null) {
+        taskEvents.addAll(oldEvents);
+      }
+    }
+    if (taskEvents != null) {
+      task.handleEvents(taskEvents);
     }
   }
   return new ResponseWrapper(false,numEventsReceived);
