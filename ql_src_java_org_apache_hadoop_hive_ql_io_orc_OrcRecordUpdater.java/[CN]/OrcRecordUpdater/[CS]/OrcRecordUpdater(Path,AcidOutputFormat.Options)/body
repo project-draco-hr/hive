@@ -24,18 +24,30 @@
     flushLengths=null;
   }
   OrcFile.WriterOptions writerOptions=null;
-  if (options instanceof OrcOptions) {
-    writerOptions=((OrcOptions)options).getOrcOptions();
+  if (options.isWritingBase()) {
+    if (options instanceof OrcOptions) {
+      writerOptions=((OrcOptions)options).getOrcOptions();
+    }
+    if (writerOptions == null) {
+      writerOptions=OrcFile.writerOptions(options.getTableProperties(),options.getConfiguration());
+    }
   }
-  if (writerOptions == null) {
-    writerOptions=OrcFile.writerOptions(options.getTableProperties(),options.getConfiguration());
+ else {
+    AcidOutputFormat.Options optionsCloneForDelta=options.clone();
+    if (optionsCloneForDelta instanceof OrcOptions) {
+      writerOptions=((OrcOptions)optionsCloneForDelta).getOrcOptions();
+    }
+    if (writerOptions == null) {
+      writerOptions=OrcFile.writerOptions(optionsCloneForDelta.getTableProperties(),optionsCloneForDelta.getConfiguration());
+    }
+    int baseBufferSizeValue=writerOptions.getBufferSize();
+    long baseStripeSizeValue=writerOptions.getStripeSize();
+    int ratio=(int)OrcConf.BASE_DELTA_RATIO.getLong(options.getConfiguration());
+    writerOptions.bufferSize(baseBufferSizeValue / ratio);
+    writerOptions.stripeSize(baseStripeSizeValue / ratio);
+    writerOptions.blockPadding(false);
   }
   writerOptions.fileSystem(fs).callback(indexBuilder);
-  if (!options.isWritingBase()) {
-    writerOptions.blockPadding(false);
-    writerOptions.bufferSize(DELTA_BUFFER_SIZE);
-    writerOptions.stripeSize(DELTA_STRIPE_SIZE);
-  }
   rowInspector=(StructObjectInspector)options.getInspector();
   writerOptions.inspector(createEventSchema(findRecId(options.getInspector(),options.getRecordIdColumn())));
   this.writer=OrcFile.createWriter(this.path,writerOptions);
