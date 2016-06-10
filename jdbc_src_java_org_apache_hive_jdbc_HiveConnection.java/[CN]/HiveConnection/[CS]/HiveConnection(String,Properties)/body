@@ -14,15 +14,6 @@
   if (sessConfMap.containsKey(JdbcConnectionParams.FETCH_SIZE)) {
     fetchSize=Integer.parseInt(sessConfMap.get(JdbcConnectionParams.FETCH_SIZE));
   }
-  if (isEmbeddedMode) {
-    EmbeddedThriftBinaryCLIService embeddedClient=new EmbeddedThriftBinaryCLIService();
-    embeddedClient.init(null);
-    client=embeddedClient;
-  }
- else {
-    openTransport();
-    client=new TCLIService.Client(new TBinaryProtocol(transport));
-  }
   supportedProtocols.add(TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V1);
   supportedProtocols.add(TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V2);
   supportedProtocols.add(TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V3);
@@ -31,6 +22,54 @@
   supportedProtocols.add(TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V6);
   supportedProtocols.add(TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V7);
   supportedProtocols.add(TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V8);
-  openSession();
+  if (isEmbeddedMode) {
+    EmbeddedThriftBinaryCLIService embeddedClient=new EmbeddedThriftBinaryCLIService();
+    embeddedClient.init(null);
+    client=embeddedClient;
+    openSession();
+  }
+ else {
+    int maxRetries=1;
+    try {
+      String strRetries=sessConfMap.get(JdbcConnectionParams.RETRIES);
+      if (StringUtils.isNotBlank(strRetries)) {
+        maxRetries=Integer.parseInt(strRetries);
+      }
+    }
+ catch (    NumberFormatException e) {
+    }
+    for (int numRetries=0; ; ) {
+      try {
+        openTransport();
+        client=new TCLIService.Client(new TBinaryProtocol(transport));
+        openSession();
+        break;
+      }
+ catch (      Exception e) {
+        LOG.warn("Failed to connect to " + connParams.getHost() + ":"+ connParams.getPort());
+        String errMsg=null;
+        String warnMsg="Could not open client transport with JDBC Uri: " + jdbcUriString + ": ";
+        if (isZkDynamicDiscoveryMode()) {
+          errMsg="Could not open client transport for any of the Server URI's in ZooKeeper: ";
+          while (!Utils.updateConnParamsFromZooKeeper(connParams) && ++numRetries < maxRetries) {
+            connParams.getRejectedHostZnodePaths().clear();
+          }
+          jdbcUriString=connParams.getJdbcUriString();
+          host=connParams.getHost();
+          port=connParams.getPort();
+        }
+ else {
+          errMsg=warnMsg;
+          ++numRetries;
+        }
+        if (numRetries >= maxRetries) {
+          throw new SQLException(errMsg + e.getMessage()," 08S01",e);
+        }
+ else {
+          LOG.warn(warnMsg + e.getMessage() + " Retrying "+ numRetries+ " of "+ maxRetries);
+        }
+      }
+    }
+  }
   client=newSynchronizedClient(client);
 }
