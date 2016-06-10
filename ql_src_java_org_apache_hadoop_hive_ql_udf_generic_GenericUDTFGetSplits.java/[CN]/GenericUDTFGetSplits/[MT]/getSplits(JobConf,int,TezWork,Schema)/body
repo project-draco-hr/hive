@@ -30,20 +30,37 @@
     }
     ApplicationId fakeApplicationId=coordinator.createExtClientAppId();
     String llapUser=UserGroupInformation.getLoginUser().getShortUserName();
-    LlapSigner signer=UserGroupInformation.isSecurityEnabled() ? coordinator.getLlapSigner(job) : null;
+    String queryUser=null;
+    byte[] tokenBytes=null;
+    LlapSigner signer=null;
+    if (UserGroupInformation.isSecurityEnabled()) {
+      signer=coordinator.getLlapSigner(job);
+      queryUser=SessionState.getUserFromAuthenticator();
+      if (queryUser == null) {
+        queryUser=UserGroupInformation.getCurrentUser().getUserName();
+        LOG.warn("Cannot determine the session user; using " + queryUser + " instead");
+      }
+      LlapTokenLocalClient tokenClient=coordinator.getLocalTokenClient(job,llapUser);
+      Token<LlapTokenIdentifier> token=tokenClient.createToken(fakeApplicationId.toString(),queryUser,true);
+      bos.reset();
+      token.write(dos);
+      tokenBytes=bos.toByteArray();
+    }
+ else {
+      queryUser=UserGroupInformation.getCurrentUser().getUserName();
+    }
     LOG.info("Number of splits: " + (eventList.size() - 1));
     SignedMessage signedSvs=null;
-    DataOutputBuffer dob=new DataOutputBuffer();
     for (int i=0; i < eventList.size() - 1; i++) {
       TaskSpec taskSpec=new TaskSpecBuilder().constructTaskSpec(dag,vertexName,eventList.size() - 1,fakeApplicationId,i);
       if (i == 0) {
-        signedSvs=createSignedVertexSpec(signer,taskSpec,fakeApplicationId);
+        signedSvs=createSignedVertexSpec(signer,taskSpec,fakeApplicationId,queryUser);
       }
       SubmitWorkInfo submitWorkInfo=new SubmitWorkInfo(fakeApplicationId,System.currentTimeMillis(),taskSpec.getVertexParallelism(),signedSvs.message,signedSvs.signature);
       byte[] submitWorkBytes=SubmitWorkInfo.toBytes(submitWorkInfo);
-      SignedMessage eventBytes=makeEventBytes(wx,vertexName,eventList.get(i + 1),dob,signer);
+      SignedMessage eventBytes=makeEventBytes(wx,vertexName,eventList.get(i + 1),signer);
       SplitLocationInfo[] locations=makeLocationHints(hints.get(i));
-      result[i]=new LlapInputSplit(i,submitWorkBytes,eventBytes.message,eventBytes.signature,locations,schema,llapUser);
+      result[i]=new LlapInputSplit(i,submitWorkBytes,eventBytes.message,eventBytes.signature,locations,schema,llapUser,tokenBytes);
     }
     return result;
   }
