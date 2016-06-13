@@ -1,0 +1,30 @@
+{
+  StringBuilder message=new StringBuilder("Falling back to ORM path due to direct SQL failure (this is not an error): ");
+  Throwable t=ex;
+  StackTraceElement[] prevStack=null;
+  while (t != null) {
+    message.append(t.getMessage());
+    StackTraceElement[] stack=t.getStackTrace();
+    int uniqueFrames=stack.length - 1;
+    if (prevStack != null) {
+      int n=prevStack.length - 1;
+      while (uniqueFrames >= 0 && n >= 0 && stack[uniqueFrames].equals(prevStack[n])) {
+        uniqueFrames--;
+        n--;
+      }
+    }
+    for (int i=0; i <= uniqueFrames; ++i) {
+      StackTraceElement ste=stack[i];
+      message.append(" at ").append(ste);
+      if (ste.getMethodName() != null && ste.getMethodName().contains("getSqlResult") && (ste.getFileName() == null || ste.getFileName().contains("ObjectStore"))) {
+        break;
+      }
+    }
+    prevStack=stack;
+    t=t.getCause();
+    if (t != null) {
+      message.append(";\n Caused by: ");
+    }
+  }
+  return message.toString();
+}
