@@ -1,0 +1,25 @@
+{
+  if (sm != null) {
+    try {
+      sm.verifyToken(tokenBytes);
+    }
+ catch (    SecurityException|IOException ex) {
+      failChannel(ctx,id,ex.getMessage());
+      return;
+    }
+  }
+  LOG.debug("registering socket for: " + id);
+  @SuppressWarnings("rawtypes") LlapRecordWriter writer=new LlapRecordWriter(new ChannelOutputStream(ctx,id,sendBufferSize));
+  boolean isFailed=true;
+synchronized (lock) {
+    if (!writers.containsKey(id)) {
+      isFailed=false;
+      writers.put(id,writer);
+      ctx.channel().closeFuture().addListener(new LlapOutputFormatChannelCloseListener(id));
+      lock.notifyAll();
+    }
+  }
+  if (isFailed) {
+    failChannel(ctx,id,"Writer already registered for " + id);
+  }
+}

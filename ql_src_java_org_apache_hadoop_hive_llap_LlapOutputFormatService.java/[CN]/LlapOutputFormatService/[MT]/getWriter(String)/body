@@ -1,11 +1,23 @@
 {
-  RecordWriter writer=null;
-synchronized (INSTANCE) {
+  RecordWriter<?,?> writer=null;
+synchronized (lock) {
+    long startTime=System.nanoTime();
+    boolean isFirst=true;
     while ((writer=writers.get(id)) == null) {
-      LOG.info("Waiting for writer for: " + id);
-      INSTANCE.wait();
+      String error=errors.remove(id);
+      if (error != null) {
+        throw new IOException(error);
+      }
+      if (isFirst) {
+        LOG.info("Waiting for writer for " + id);
+        isFirst=false;
+      }
+      if (((System.nanoTime() - startTime) / 1000000) > writerTimeoutMs) {
+        throw new IOException("The writer for " + id + " has timed out after "+ writerTimeoutMs+ "ms");
+      }
+      lock.wait(writerTimeoutMs);
     }
   }
   LOG.info("Returning writer for: " + id);
-  return writer;
+  return (RecordWriter<K,V>)writer;
 }

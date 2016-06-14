@@ -1,13 +1,13 @@
 {
   HiveConf conf=new HiveConf(SessionState.get().getConf());
   HiveConf.setVar(conf,ConfVars.HIVEFETCHTASKCONVERSION,"none");
-  HiveConf.setVar(conf,HiveConf.ConfVars.HIVEQUERYRESULTFILEFORMAT,"Llap");
-  String originalMode=HiveConf.getVar(conf,HiveConf.ConfVars.HIVE_EXECUTION_MODE);
-  HiveConf.setVar(conf,HiveConf.ConfVars.HIVE_EXECUTION_MODE,"llap");
-  HiveConf.setBoolVar(conf,HiveConf.ConfVars.HIVE_TEZ_GENERATE_CONSISTENT_SPLITS,true);
-  HiveConf.setBoolVar(conf,HiveConf.ConfVars.LLAP_CLIENT_CONSISTENT_SPLITS,true);
+  HiveConf.setVar(conf,ConfVars.HIVEQUERYRESULTFILEFORMAT,PlanUtils.LLAP_OUTPUT_FORMAT_KEY);
+  String originalMode=HiveConf.getVar(conf,ConfVars.HIVE_EXECUTION_MODE);
+  HiveConf.setVar(conf,ConfVars.HIVE_EXECUTION_MODE,"llap");
+  HiveConf.setBoolVar(conf,ConfVars.HIVE_TEZ_GENERATE_CONSISTENT_SPLITS,true);
+  HiveConf.setBoolVar(conf,ConfVars.LLAP_CLIENT_CONSISTENT_SPLITS,true);
   conf.setBoolean(TezSplitGrouper.TEZ_GROUPING_NODE_LOCAL_ONLY,true);
-  HiveConf.setBoolVar(conf,HiveConf.ConfVars.HIVE_RPC_QUERY_PLAN,true);
+  HiveConf.setBoolVar(conf,ConfVars.HIVE_RPC_QUERY_PLAN,true);
   try {
     jc=DagUtils.getInstance().createConfiguration(conf);
   }
@@ -15,9 +15,7 @@
     throw new HiveException(e);
   }
   Driver driver=new Driver(conf);
-  CommandProcessorResponse cpr;
-  LOG.info("setting fetch.task.conversion to none and query file format to \"" + LlapOutputFormat.class.getName() + "\"");
-  cpr=driver.compileAndRespond(query);
+  CommandProcessorResponse cpr=driver.compileAndRespond(query);
   if (cpr.getResponseCode() != 0) {
     throw new HiveException("Failed to compile query: " + cpr.getException());
   }
@@ -31,9 +29,9 @@
   if (tezWork.getAllWork().size() != 1) {
     String tableName="table_" + UUID.randomUUID().toString().replaceAll("[^A-Za-z0-9 ]","");
     String ctas="create temporary table " + tableName + " as "+ query;
-    LOG.info("CTAS: " + ctas);
+    LOG.info("Materializing the query for LLAPIF; CTAS: " + ctas);
     try {
-      HiveConf.setVar(conf,HiveConf.ConfVars.HIVE_EXECUTION_MODE,originalMode);
+      HiveConf.setVar(conf,ConfVars.HIVE_EXECUTION_MODE,originalMode);
       cpr=driver.run(ctas,false);
     }
  catch (    CommandNeedRetryException e) {
@@ -42,7 +40,7 @@
     if (cpr.getResponseCode() != 0) {
       throw new HiveException("Failed to create temp table: " + cpr.getException());
     }
-    HiveConf.setVar(conf,HiveConf.ConfVars.HIVE_EXECUTION_MODE,"llap");
+    HiveConf.setVar(conf,ConfVars.HIVE_EXECUTION_MODE,"llap");
     query="select * from " + tableName;
     cpr=driver.compileAndRespond(query);
     if (cpr.getResponseCode() != 0) {

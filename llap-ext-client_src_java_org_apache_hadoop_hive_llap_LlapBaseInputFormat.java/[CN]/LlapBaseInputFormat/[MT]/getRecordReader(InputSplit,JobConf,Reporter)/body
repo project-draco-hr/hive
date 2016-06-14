@@ -18,15 +18,20 @@
   LlapTaskUmbilicalExternalClient llapClient=new LlapTaskUmbilicalExternalClient(job,submitWorkInfo.getTokenIdentifier(),submitWorkInfo.getToken(),umbilicalResponder,llapToken);
   llapClient.init(job);
   llapClient.start();
-  SubmitWorkRequestProto submitWorkRequestProto=constructSubmitWorkRequestProto(submitWorkInfo,llapSplit.getSplitNum(),llapClient.getAddress(),submitWorkInfo.getToken(),llapSplit.getFragmentBytes(),llapSplit.getFragmentBytesSignature());
-  llapClient.submitWork(submitWorkRequestProto,host,llapSubmitPort);
-  String id=HiveConf.getVar(job,HiveConf.ConfVars.HIVEQUERYID) + "_" + llapSplit.getSplitNum();
+  SubmitWorkRequestProto request=constructSubmitWorkRequestProto(submitWorkInfo,llapSplit.getSplitNum(),llapClient.getAddress(),submitWorkInfo.getToken(),llapSplit.getFragmentBytes(),llapSplit.getFragmentBytesSignature());
+  llapClient.submitWork(request,host,llapSubmitPort);
   Socket socket=new Socket(host,serviceInstance.getOutputFormatPort());
   LOG.debug("Socket connected");
-  socket.getOutputStream().write(id.getBytes());
-  socket.getOutputStream().write(0);
-  socket.getOutputStream().flush();
-  LOG.info("Registered id: " + id);
+  SignableVertexSpec vertex=SignableVertexSpec.parseFrom(submitWorkInfo.getVertexBinary());
+  String fragmentId=Converters.createTaskAttemptId(vertex.getVertexIdentifier(),request.getFragmentNumber(),request.getAttemptNumber()).toString();
+  OutputStream socketStream=socket.getOutputStream();
+  LlapOutputSocketInitMessage.Builder builder=LlapOutputSocketInitMessage.newBuilder().setFragmentId(fragmentId);
+  if (llapSplit.getTokenBytes() != null) {
+    builder.setToken(ByteString.copyFrom(llapSplit.getTokenBytes()));
+  }
+  builder.build().writeDelimitedTo(socketStream);
+  socketStream.flush();
+  LOG.info("Registered id: " + fragmentId);
   @SuppressWarnings("rawtypes") LlapBaseRecordReader recordReader=new LlapBaseRecordReader(socket.getInputStream(),llapSplit.getSchema(),Text.class,job);
   umbilicalResponder.setRecordReader(recordReader);
   return recordReader;
