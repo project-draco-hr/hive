@@ -9,7 +9,18 @@
     }
   }
  else   if (genericUdf instanceof GenericUDFIn) {
-    return children.get(0).getTypeInfo();
+    TypeInfo colTi=children.get(0).getTypeInfo();
+    if (colTi.getCategory() != Category.PRIMITIVE) {
+      return colTi;
+    }
+    TypeInfo opTi=GenericUDFUtils.deriveInType(children);
+    if (opTi == null || opTi.getCategory() != Category.PRIMITIVE) {
+      throw new HiveException("Cannot vectorize IN() - common type is " + opTi);
+    }
+    if (((PrimitiveTypeInfo)colTi).getPrimitiveCategory() != ((PrimitiveTypeInfo)opTi).getPrimitiveCategory()) {
+      throw new HiveException("Cannot vectorize IN() - casting a column is not supported. " + "Column type is " + colTi + " but the common type is "+ opTi);
+    }
+    return colTi;
   }
  else {
     commonType=returnType;
