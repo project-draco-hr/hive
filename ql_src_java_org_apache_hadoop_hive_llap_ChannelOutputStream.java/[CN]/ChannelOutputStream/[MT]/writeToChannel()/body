@@ -2,6 +2,16 @@
   if (closed) {
     throw new IOException("Already closed: " + id);
   }
-  chc.write(buf.copy()).addListener(listener);
+  chc.writeAndFlush(buf.copy()).addListener(listener);
   buf.clear();
+synchronized (channelWritabilityMonitor) {
+    while (!chc.channel().isWritable()) {
+      try {
+        channelWritabilityMonitor.wait();
+      }
+ catch (      InterruptedException e) {
+        throw new IOException("Interrupted when waiting for channel writability state change",e);
+      }
+    }
+  }
 }
