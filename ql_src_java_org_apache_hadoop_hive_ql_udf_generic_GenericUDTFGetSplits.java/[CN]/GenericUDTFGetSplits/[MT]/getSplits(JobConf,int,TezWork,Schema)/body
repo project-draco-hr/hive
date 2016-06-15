@@ -28,7 +28,7 @@
     if (coordinator == null) {
       throw new IOException("LLAP coordinator is not initialized; must be running in HS2 with " + ConfVars.LLAP_HS2_ENABLE_COORDINATOR.varname + " enabled");
     }
-    ApplicationId fakeApplicationId=coordinator.createExtClientAppId();
+    ApplicationId applicationId=coordinator.createExtClientAppId();
     String llapUser=UserGroupInformation.getLoginUser().getShortUserName();
     String queryUser=null;
     byte[] tokenBytes=null;
@@ -41,7 +41,7 @@
         LOG.warn("Cannot determine the session user; using " + queryUser + " instead");
       }
       LlapTokenLocalClient tokenClient=coordinator.getLocalTokenClient(job,llapUser);
-      Token<LlapTokenIdentifier> token=tokenClient.createToken(fakeApplicationId.toString(),queryUser,true);
+      Token<LlapTokenIdentifier> token=tokenClient.createToken(applicationId.toString(),queryUser,true);
       bos.reset();
       token.write(dos);
       tokenBytes=bos.toByteArray();
@@ -52,11 +52,11 @@
     LOG.info("Number of splits: " + (eventList.size() - 1));
     SignedMessage signedSvs=null;
     for (int i=0; i < eventList.size() - 1; i++) {
-      TaskSpec taskSpec=new TaskSpecBuilder().constructTaskSpec(dag,vertexName,eventList.size() - 1,fakeApplicationId,i);
+      TaskSpec taskSpec=new TaskSpecBuilder().constructTaskSpec(dag,vertexName,eventList.size() - 1,applicationId,i);
       if (i == 0) {
-        signedSvs=createSignedVertexSpec(signer,taskSpec,fakeApplicationId,queryUser);
+        signedSvs=createSignedVertexSpec(signer,taskSpec,applicationId,queryUser);
       }
-      SubmitWorkInfo submitWorkInfo=new SubmitWorkInfo(fakeApplicationId,System.currentTimeMillis(),taskSpec.getVertexParallelism(),signedSvs.message,signedSvs.signature);
+      SubmitWorkInfo submitWorkInfo=new SubmitWorkInfo(applicationId,System.currentTimeMillis(),taskSpec.getVertexParallelism(),signedSvs.message,signedSvs.signature);
       byte[] submitWorkBytes=SubmitWorkInfo.toBytes(submitWorkInfo);
       SignedMessage eventBytes=makeEventBytes(wx,vertexName,eventList.get(i + 1),signer);
       SplitLocationInfo[] locations=makeLocationHints(hints.get(i));
