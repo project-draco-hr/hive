@@ -1,3 +1,15 @@
 {
-  getAllLeafDirs(basePath,allDirs,basePath.getFileSystem(conf));
+  ConcurrentLinkedQueue<Path> basePaths=new ConcurrentLinkedQueue<>();
+  basePaths.add(basePath);
+  Map<Path,Object> dirSet=new ConcurrentHashMap<>();
+  final ExecutorService pool=conf.getInt(ConfVars.HIVE_MOVE_FILES_THREAD_COUNT.varname,25) > 0 ? Executors.newFixedThreadPool(conf.getInt(ConfVars.HIVE_MOVE_FILES_THREAD_COUNT.varname,25),new ThreadFactoryBuilder().setDaemon(true).setNameFormat("MSCK-GetPaths-%d").build()) : null;
+  if (pool == null) {
+    LOG.debug("Not-using threaded version of MSCK-GetPaths");
+  }
+ else {
+    LOG.debug("Using threaded version of MSCK-GetPaths with number of threads " + ((ThreadPoolExecutor)pool).getPoolSize());
+  }
+  getAllLeafDirs(pool,basePaths,dirSet,basePath.getFileSystem(conf));
+  pool.shutdown();
+  allDirs.addAll(dirSet.keySet());
 }

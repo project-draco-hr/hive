@@ -1,0 +1,56 @@
+{
+  final ConcurrentLinkedQueue<Path> nextLevel=new ConcurrentLinkedQueue<>();
+  if (null == pool) {
+    for (    final Path path : basePaths) {
+      FileStatus[] statuses=fs.listStatus(path,FileUtils.HIDDEN_FILES_PATH_FILTER);
+      boolean directoryFound=false;
+      for (      FileStatus status : statuses) {
+        if (status.isDir()) {
+          directoryFound=true;
+          nextLevel.add(status.getPath());
+        }
+      }
+      if (!directoryFound) {
+        allDirs.put(path,null);
+      }
+      if (!nextLevel.isEmpty()) {
+        getAllLeafDirs(pool,nextLevel,allDirs,fs);
+      }
+    }
+  }
+ else {
+    final List<Future<Void>> futures=new LinkedList<>();
+    for (    final Path path : basePaths) {
+      futures.add(pool.submit(new Callable<Void>(){
+        @Override public Void call() throws Exception {
+          FileStatus[] statuses=fs.listStatus(path,FileUtils.HIDDEN_FILES_PATH_FILTER);
+          boolean directoryFound=false;
+          for (          FileStatus status : statuses) {
+            if (status.isDir()) {
+              directoryFound=true;
+              nextLevel.add(status.getPath());
+            }
+          }
+          if (!directoryFound) {
+            allDirs.put(path,null);
+          }
+          return null;
+        }
+      }
+));
+    }
+    for (    Future<Void> future : futures) {
+      try {
+        future.get();
+      }
+ catch (      Exception e) {
+        LOG.error(e.getMessage());
+        pool.shutdownNow();
+        throw new HiveException(e.getCause());
+      }
+    }
+    if (!nextLevel.isEmpty()) {
+      getAllLeafDirs(pool,nextLevel,allDirs,fs);
+    }
+  }
+}
