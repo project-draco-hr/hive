@@ -3,6 +3,7 @@
   super.init(mrReporter,inputs,outputs);
   MapredContext.init(false,new JobConf(jconf));
   List<LogicalInput> shuffleInputs=getShuffleInputs(inputs);
+  checkAbortCondition();
   if (shuffleInputs != null) {
     l4j.info("Waiting for ShuffleInputs to become ready");
     processorContext.waitForAllInputsReady(new ArrayList<Input>(shuffleInputs));
@@ -14,18 +15,21 @@
     for (    BaseWork mergeWork : mergeWorkList) {
       ReduceWork mergeReduceWork=(ReduceWork)mergeWork;
       reducer=mergeReduceWork.getReducer();
+      checkAbortCondition();
       DummyStoreOperator dummyStoreOp=getJoinParentOp(reducer);
       connectOps.put(mergeReduceWork.getTag(),dummyStoreOp);
       tagToReducerMap.put(mergeReduceWork.getTag(),mergeReduceWork);
     }
     ((TezContext)MapredContext.get()).setDummyOpsMap(connectOps);
   }
+  checkAbortCondition();
   bigTablePosition=(byte)reduceWork.getTag();
   ObjectInspector[] mainWorkOIs=null;
   ((TezContext)MapredContext.get()).setInputs(inputs);
   ((TezContext)MapredContext.get()).setTezProcessorContext(processorContext);
   int numTags=reduceWork.getTagToValueDesc().size();
   reducer=reduceWork.getReducer();
+  checkAbortCondition();
   if (numTags > 1) {
     sources=new ReduceRecordSource[numTags];
     mainWorkOIs=new ObjectInspector[numTags];
@@ -40,10 +44,12 @@
     for (    int i : tagToReducerMap.keySet()) {
       redWork=tagToReducerMap.get(i);
       reducer=redWork.getReducer();
+      checkAbortCondition();
       initializeSourceForTag(redWork,i,mainWorkOIs,sources,redWork.getTagToValueDesc().get(0),redWork.getTagToInput().get(0));
       reducer.initializeLocalWork(jconf);
     }
     reducer=reduceWork.getReducer();
+    checkAbortCondition();
     ((TezContext)MapredContext.get()).setRecordSources(sources);
     reducer.initialize(jconf,new ObjectInspector[]{mainWorkOIs[bigTablePosition]});
     for (    int i : tagToReducerMap.keySet()) {
@@ -52,9 +58,11 @@
       }
       redWork=tagToReducerMap.get(i);
       reducer=redWork.getReducer();
+      checkAbortCondition();
       reducer.initialize(jconf,new ObjectInspector[]{mainWorkOIs[i]});
     }
   }
+  checkAbortCondition();
   reducer=reduceWork.getReducer();
   try {
     l4j.info(reducer.dump(0));
@@ -62,6 +70,7 @@
     if (dummyOps != null) {
       for (      HashTableDummyOperator dummyOp : dummyOps) {
         dummyOp.initialize(jconf,null);
+        checkAbortCondition();
       }
     }
     List<Operator<?>> children=new LinkedList<Operator<?>>();
@@ -71,6 +80,7 @@
     }
     createOutputMap();
     OperatorUtils.setChildrenCollector(children,outMap);
+    checkAbortCondition();
     reducer.setReporter(reporter);
     MapredContext.get().setReporter(reporter);
   }
@@ -78,6 +88,10 @@
     abort=true;
     if (e instanceof OutOfMemoryError) {
       throw (OutOfMemoryError)e;
+    }
+ else     if (e instanceof InterruptedException) {
+      l4j.info("Hit an interrupt while initializing ReduceRecordProcessor. Message={}",e.getMessage());
+      throw (InterruptedException)e;
     }
  else {
       throw new RuntimeException("Reduce operator initialization failed",e);
