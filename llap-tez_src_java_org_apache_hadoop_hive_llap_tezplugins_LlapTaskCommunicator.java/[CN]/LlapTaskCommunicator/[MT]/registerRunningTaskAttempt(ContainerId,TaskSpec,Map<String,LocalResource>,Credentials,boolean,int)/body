@@ -1,8 +1,16 @@
 {
   super.registerRunningTaskAttempt(containerId,taskSpec,additionalResources,credentials,credentialsChanged,priority);
   int dagId=taskSpec.getTaskAttemptID().getTaskID().getVertexID().getDAGId().getId();
-  if (currentQueryIdentifierProto == null || (dagId != currentQueryIdentifierProto.getDagIdentifier())) {
-    resetCurrentDag(dagId);
+  if (currentQueryIdentifierProto == null || (dagId != currentQueryIdentifierProto.getDagIndex())) {
+    String hiveQueryId;
+    try {
+      hiveQueryId=extractQueryId(taskSpec);
+    }
+ catch (    IOException e) {
+      throw new RuntimeException("Failed to extract query id from task spec: " + taskSpec,e);
+    }
+    Preconditions.checkNotNull(hiveQueryId,"Unexpected null query id");
+    resetCurrentDag(dagId,hiveQueryId);
   }
   ContainerInfo containerInfo=getContainerInfo(containerId);
   String host;
@@ -24,7 +32,7 @@ synchronized (containerInfo) {
   FragmentRuntimeInfo fragmentRuntimeInfo=sourceStateTracker.getFragmentRuntimeInfo(taskSpec.getVertexName(),taskSpec.getTaskAttemptID().getTaskID().getId(),priority);
   SubmitWorkRequestProto requestProto;
   try {
-    requestProto=constructSubmitWorkRequest(containerId,taskSpec,fragmentRuntimeInfo);
+    requestProto=constructSubmitWorkRequest(containerId,taskSpec,fragmentRuntimeInfo,currentHiveQueryId);
   }
  catch (  IOException e) {
     throw new RuntimeException("Failed to construct request",e);

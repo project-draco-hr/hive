@@ -1,0 +1,21 @@
+{
+  SubmitWorkRequestProto.Builder builder=SubmitWorkRequestProto.newBuilder();
+  builder.setFragmentNumber(taskSpec.getTaskAttemptID().getTaskID().getId());
+  builder.setAttemptNumber(taskSpec.getTaskAttemptID().getId());
+  builder.setContainerIdString(containerId.toString());
+  builder.setAmHost(getAddress().getHostName());
+  builder.setAmPort(getAddress().getPort());
+  Preconditions.checkState(currentQueryIdentifierProto.getDagIndex() == taskSpec.getTaskAttemptID().getTaskID().getVertexID().getDAGId().getId());
+  ByteBuffer credentialsBinary=credentialMap.get(currentQueryIdentifierProto);
+  if (credentialsBinary == null) {
+    credentialsBinary=serializeCredentials(getContext().getCurrentDagInfo().getCredentials());
+    credentialMap.putIfAbsent(currentQueryIdentifierProto,credentialsBinary.duplicate());
+  }
+ else {
+    credentialsBinary=credentialsBinary.duplicate();
+  }
+  builder.setCredentialsBinary(ByteString.copyFrom(credentialsBinary));
+  builder.setWorkSpec(VertexOrBinary.newBuilder().setVertex(Converters.constructSignableVertexSpec(taskSpec,currentQueryIdentifierProto,getTokenIdentifier(),user,hiveQueryId)).build());
+  builder.setFragmentRuntimeInfo(fragmentRuntimeInfo);
+  return builder.build();
+}

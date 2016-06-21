@@ -5,10 +5,10 @@
   if (LOG.isInfoEnabled()) {
     LOG.info("Queueing container for execution: " + stringifySubmitRequest(request,vertex));
   }
-  VertexIdentifier vId=vertex.getVertexIdentifier();
-  TezTaskAttemptID attemptId=Converters.createTaskAttemptId(vId,request.getFragmentNumber(),request.getAttemptNumber());
+  QueryIdentifierProto qIdProto=vertex.getQueryIdentifier();
+  TezTaskAttemptID attemptId=Converters.createTaskAttemptId(vertex.getQueryIdentifier(),vertex.getVertexIndex(),request.getFragmentNumber(),request.getAttemptNumber());
   String fragmentIdString=attemptId.toString();
-  HistoryLogger.logFragmentStart(vId.getApplicationIdString(),request.getContainerIdString(),localAddress.get().getHostName(),vertex.getDagName(),vId.getDagId(),vertex.getVertexName(),request.getFragmentNumber(),request.getAttemptNumber());
+  HistoryLogger.logFragmentStart(qIdProto.getApplicationIdString(),request.getContainerIdString(),localAddress.get().getHostName(),vertex.getDagName(),qIdProto.getDagIndex(),vertex.getVertexName(),request.getFragmentNumber(),request.getAttemptNumber());
   NDC.push(fragmentIdString);
   Scheduler.SubmissionState submissionState;
   SubmitWorkResponseProto.Builder responseBuilder=SubmitWorkResponseProto.newBuilder();
@@ -18,14 +18,14 @@
     env.put(ApplicationConstants.Environment.USER.name(),vertex.getUser());
     TezTaskAttemptID taskAttemptId=TezTaskAttemptID.fromString(fragmentIdString);
     int dagIdentifier=taskAttemptId.getTaskID().getVertexID().getDAGId().getId();
-    QueryIdentifier queryIdentifier=new QueryIdentifier(vId.getApplicationIdString(),dagIdentifier);
+    QueryIdentifier queryIdentifier=new QueryIdentifier(qIdProto.getApplicationIdString(),dagIdentifier);
     Credentials credentials=new Credentials();
     DataInputBuffer dib=new DataInputBuffer();
     byte[] tokenBytes=request.getCredentialsBinary().toByteArray();
     dib.reset(tokenBytes,tokenBytes.length);
     credentials.readTokenStorageStream(dib);
     Token<JobTokenIdentifier> jobToken=TokenCache.getSessionToken(credentials);
-    QueryFragmentInfo fragmentInfo=queryTracker.registerFragment(queryIdentifier,vId.getApplicationIdString(),vertex.getDagName(),dagIdentifier,vertex.getVertexName(),request.getFragmentNumber(),request.getAttemptNumber(),vertex.getUser(),vertex,jobToken,fragmentIdString,tokenInfo);
+    QueryFragmentInfo fragmentInfo=queryTracker.registerFragment(queryIdentifier,qIdProto.getApplicationIdString(),vertex.getDagName(),vertex.getHiveQueryId(),dagIdentifier,vertex.getVertexName(),request.getFragmentNumber(),request.getAttemptNumber(),vertex.getUser(),vertex,jobToken,fragmentIdString,tokenInfo);
     String[] localDirs=fragmentInfo.getLocalDirs();
     Preconditions.checkNotNull(localDirs);
     if (LOG.isDebugEnabled()) {
@@ -33,7 +33,7 @@
     }
     Configuration callableConf=new Configuration(getConfig());
     UserGroupInformation taskUgi=fsUgiFactory == null ? null : fsUgiFactory.createUgi();
-    TaskRunnerCallable callable=new TaskRunnerCallable(request,fragmentInfo,callableConf,new LlapExecutionContext(localAddress.get().getHostName(),queryTracker),env,credentials,memoryPerExecutor,amReporter,confParams,metrics,killedTaskHandler,this,tezHadoopShim,attemptId,vertex,initialEvent,taskUgi);
+    TaskRunnerCallable callable=new TaskRunnerCallable(request,fragmentInfo,callableConf,new ExecutionContextImpl(localAddress.get().getHostName()),env,credentials,memoryPerExecutor,amReporter,confParams,metrics,killedTaskHandler,this,tezHadoopShim,attemptId,vertex,initialEvent,taskUgi);
     submissionState=executorService.schedule(callable);
     if (LOG.isInfoEnabled()) {
       LOG.info("SubmissionState for {} : {} ",fragmentIdString,submissionState);
