@@ -6,10 +6,18 @@
   TSaslServerTransport saslTrans=(TSaslServerTransport)trans;
   SaslServer saslServer=saslTrans.getSaslServer();
   String authId=saslServer.getAuthorizationID();
-  authenticationMethod.set(AuthenticationMethod.KERBEROS);
   LOG.debug("AUTH ID ======>" + authId);
   String endUser=authId;
-  if (saslServer.getMechanismName().equals("DIGEST-MD5")) {
+  Socket socket=((TSocket)(saslTrans.getUnderlyingTransport())).getSocket();
+  remoteAddress.set(socket.getInetAddress());
+  String mechanismName=saslServer.getMechanismName();
+  userAuthMechanism.set(mechanismName);
+  if (AuthMethod.PLAIN.getMechanismName().equalsIgnoreCase(mechanismName)) {
+    remoteUser.set(endUser);
+    return wrapped.process(inProt,outProt);
+  }
+  authenticationMethod.set(AuthenticationMethod.KERBEROS);
+  if (AuthMethod.TOKEN.getMechanismName().equalsIgnoreCase(mechanismName)) {
     try {
       TokenIdentifier tokenId=SaslRpcServer.getIdentifier(authId,secretManager);
       endUser=tokenId.getUser().getUserName();
@@ -19,8 +27,6 @@
       throw new TException(e.getMessage());
     }
   }
-  Socket socket=((TSocket)(saslTrans.getUnderlyingTransport())).getSocket();
-  remoteAddress.set(socket.getInetAddress());
   UserGroupInformation clientUgi=null;
   try {
     if (useProxy) {
