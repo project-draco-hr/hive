@@ -1,0 +1,15 @@
+{
+  int readSize=buffer.limit();
+  int psLen=buffer.get(readSize - 1) & 0xff;
+  int psOffset=readSize - 1 - psLen;
+  ensureOrcFooter(buffer,psLen);
+  byte[] psBuffer=new byte[psLen];
+  System.arraycopy(buffer.array(),psOffset,psBuffer,0,psLen);
+  OrcProto.PostScript ps=OrcProto.PostScript.parseFrom(psBuffer);
+  int footerSize=(int)ps.getFooterLength();
+  CompressionCodec codec=WriterImpl.createCodec(CompressionKind.valueOf(ps.getCompression().name()));
+  OrcProto.Footer footer=extractFooter(buffer,(int)(buffer.position() + ps.getMetadataLength()),footerSize,codec,(int)ps.getCompressionBlockSize());
+  OrcProto.FileTail.Builder fileTailBuilder=OrcProto.FileTail.newBuilder().setPostscriptLength(psLen).setPostscript(ps).setFooter(footer).setFileLength(fileLength);
+  buffer.clear();
+  return new OrcTail(fileTailBuilder.build(),buffer.slice(),modificationTime);
+}

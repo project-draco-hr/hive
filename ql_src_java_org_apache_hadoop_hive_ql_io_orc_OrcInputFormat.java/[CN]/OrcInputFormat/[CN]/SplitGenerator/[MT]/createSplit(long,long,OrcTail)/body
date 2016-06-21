@@ -1,0 +1,53 @@
+{
+  String[] hosts;
+  Map.Entry<Long,BlockLocation> startEntry=locations.floorEntry(offset);
+  BlockLocation start=startEntry.getValue();
+  if (offset + length <= start.getOffset() + start.getLength()) {
+    hosts=start.getHosts();
+  }
+ else {
+    Map.Entry<Long,BlockLocation> endEntry=locations.floorEntry(offset + length);
+    NavigableMap<Long,BlockLocation> navigableMap=locations.subMap(startEntry.getKey(),true,endEntry.getKey(),true);
+    Map<String,LongWritable> sizes=new HashMap<String,LongWritable>();
+    long maxSize=0;
+    for (    BlockLocation block : navigableMap.values()) {
+      long overlap=getOverlap(offset,length,block.getOffset(),block.getLength());
+      if (overlap > 0) {
+        for (        String host : block.getHosts()) {
+          LongWritable val=sizes.get(host);
+          if (val == null) {
+            val=new LongWritable();
+            sizes.put(host,val);
+          }
+          val.set(val.get() + overlap);
+          maxSize=Math.max(maxSize,val.get());
+        }
+      }
+ else {
+        throw new IOException("File " + file.getPath().toString() + " should have had overlap on block starting at "+ block.getOffset());
+      }
+    }
+    long threshold=(long)(maxSize * MIN_INCLUDED_LOCATION);
+    List<String> hostList=new ArrayList<String>();
+    for (    BlockLocation block : navigableMap.values()) {
+      for (      String host : block.getHosts()) {
+        if (sizes.containsKey(host)) {
+          if (sizes.get(host).get() >= threshold) {
+            hostList.add(host);
+          }
+          sizes.remove(host);
+        }
+      }
+    }
+    hosts=new String[hostList.size()];
+    hostList.toArray(hosts);
+  }
+  final long fileLen=file.getLen();
+  final double splitRatio=(double)length / (double)fileLen;
+  final long scaledProjSize=projColsUncompressedSize > 0 ? (long)(splitRatio * projColsUncompressedSize) : fileLen;
+  Object fileKey=fsFileId;
+  if (fileKey == null && allowSyntheticFileIds) {
+    fileKey=new SyntheticFileId(file);
+  }
+  return new OrcSplit(file.getPath(),fileKey,offset,length,hosts,orcTail,isOriginal,hasBase,deltas,scaledProjSize,fileLen);
+}
