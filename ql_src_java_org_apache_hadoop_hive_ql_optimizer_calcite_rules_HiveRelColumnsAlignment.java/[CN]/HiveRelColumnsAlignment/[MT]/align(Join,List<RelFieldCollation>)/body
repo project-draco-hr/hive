@@ -1,0 +1,66 @@
+{
+  ImmutableList.Builder<RelFieldCollation> propagateCollationsLeft=ImmutableList.builder();
+  ImmutableList.Builder<RelFieldCollation> propagateCollationsRight=ImmutableList.builder();
+  final int nLeftColumns=rel.getLeft().getRowType().getFieldList().size();
+  Map<Integer,RexNode> idxToConjuncts=new HashMap<>();
+  Map<Integer,Integer> refToRef=new HashMap<>();
+  List<RexNode> conjuncts=new ArrayList<>();
+  List<RexNode> otherConjuncts=new ArrayList<>();
+  for (  RexNode conj : RelOptUtil.conjunctions(rel.getCondition())) {
+    if (conj.getKind() != SqlKind.EQUALS) {
+      otherConjuncts.add(conj);
+      continue;
+    }
+    RexCall equals=(RexCall)conj;
+    if (!(equals.getOperands().get(0) instanceof RexInputRef) || !(equals.getOperands().get(1) instanceof RexInputRef)) {
+      otherConjuncts.add(conj);
+      continue;
+    }
+    RexInputRef ref0=(RexInputRef)equals.getOperands().get(0);
+    RexInputRef ref1=(RexInputRef)equals.getOperands().get(1);
+    if ((ref0.getIndex() < nLeftColumns && ref1.getIndex() >= nLeftColumns) || (ref1.getIndex() < nLeftColumns && ref0.getIndex() >= nLeftColumns)) {
+      idxToConjuncts.put(ref0.getIndex(),equals);
+      idxToConjuncts.put(ref1.getIndex(),equals);
+      refToRef.put(ref0.getIndex(),ref1.getIndex());
+      refToRef.put(ref1.getIndex(),ref0.getIndex());
+    }
+ else {
+      otherConjuncts.add(conj);
+    }
+  }
+  for (  RelFieldCollation c : collations) {
+    RexNode equals=idxToConjuncts.get(c.getFieldIndex());
+    if (equals != null) {
+      conjuncts.add(equals);
+      idxToConjuncts.remove(c.getFieldIndex());
+      idxToConjuncts.remove(refToRef.get(c.getFieldIndex()));
+      if (c.getFieldIndex() < nLeftColumns) {
+        propagateCollationsLeft.add(c.copy(c.getFieldIndex()));
+        propagateCollationsRight.add(c.copy(refToRef.get(c.getFieldIndex()) - nLeftColumns));
+      }
+ else {
+        propagateCollationsLeft.add(c.copy(refToRef.get(c.getFieldIndex())));
+        propagateCollationsRight.add(c.copy(c.getFieldIndex() - nLeftColumns));
+      }
+    }
+  }
+  final Set<RexNode> visited=new HashSet<>();
+  for (  Entry<Integer,RexNode> e : idxToConjuncts.entrySet()) {
+    if (visited.add(e.getValue())) {
+      conjuncts.add(e.getValue());
+      if (e.getKey() < nLeftColumns) {
+        propagateCollationsLeft.add(new RelFieldCollation(e.getKey()));
+        propagateCollationsRight.add(new RelFieldCollation(refToRef.get(e.getKey()) - nLeftColumns));
+      }
+ else {
+        propagateCollationsLeft.add(new RelFieldCollation(refToRef.get(e.getKey())));
+        propagateCollationsRight.add(new RelFieldCollation(e.getKey() - nLeftColumns));
+      }
+    }
+  }
+  conjuncts.addAll(otherConjuncts);
+  final RelNode newLeftInput=dispatchAlign(rel.getLeft(),propagateCollationsLeft.build());
+  final RelNode newRightInput=dispatchAlign(rel.getRight(),propagateCollationsRight.build());
+  final RelNode newJoin=rel.copy(rel.getTraitSet(),RexUtil.composeConjunction(relBuilder.getRexBuilder(),conjuncts,false),newLeftInput,newRightInput,rel.getJoinType(),rel.isSemiJoinDone());
+  return newJoin;
+}

@@ -1,0 +1,22 @@
+{
+  LinkedHashSet<Integer> aggregateColumnsOrder=new LinkedHashSet<>();
+  ImmutableList.Builder<RelFieldCollation> propagateCollations=ImmutableList.builder();
+  if (!rel.indicator && !collations.isEmpty()) {
+    for (    RelFieldCollation c : collations) {
+      if (c.getFieldIndex() < rel.getGroupCount()) {
+        if (aggregateColumnsOrder.add(c.getFieldIndex())) {
+          propagateCollations.add(c.copy(rel.getGroupSet().nth(c.getFieldIndex())));
+        }
+      }
+    }
+  }
+  for (int i=0; i < rel.getGroupCount(); i++) {
+    if (!aggregateColumnsOrder.contains(i)) {
+      propagateCollations.add(new RelFieldCollation(rel.getGroupSet().nth(i)));
+    }
+  }
+  final RelNode child=dispatchAlign(rel.getInput(),propagateCollations.build());
+  final HiveAggregate newAggregate=(HiveAggregate)rel.copy(rel.getTraitSet(),ImmutableList.of(child));
+  newAggregate.setAggregateColumnsOrder(aggregateColumnsOrder);
+  return newAggregate;
+}

@@ -1,0 +1,21 @@
+{
+  boolean containsWindowing=false;
+  for (  RexNode childExp : rel.getChildExps()) {
+    if (childExp instanceof RexOver) {
+      containsWindowing=true;
+      break;
+    }
+  }
+  ImmutableList.Builder<RelFieldCollation> propagateCollations=ImmutableList.builder();
+  if (!containsWindowing) {
+    for (    RelFieldCollation c : collations) {
+      RexNode rexNode=rel.getChildExps().get(c.getFieldIndex());
+      if (rexNode instanceof RexInputRef) {
+        int newIdx=((RexInputRef)rexNode).getIndex();
+        propagateCollations.add(c.copy((newIdx)));
+      }
+    }
+  }
+  final RelNode child=dispatchAlign(rel.getInput(),propagateCollations.build());
+  return rel.copy(rel.getTraitSet(),ImmutableList.of(child));
+}
