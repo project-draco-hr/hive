@@ -1,11 +1,32 @@
 {
   LOG.info("LLAP status invoked with arguments = {}",args);
-  int ret;
+  int ret=ExitCode.SUCCESS.getInt();
+  LlapStatusServiceDriver statusServiceDriver=null;
+  LlapStatusOptions options=null;
   try {
-    LlapStatusServiceDriver statusServiceDriver=new LlapStatusServiceDriver();
-    ret=statusServiceDriver.run(args);
+    statusServiceDriver=new LlapStatusServiceDriver();
+    options=statusServiceDriver.parseOptions(args);
+  }
+ catch (  Throwable t) {
+    logError(t);
+    if (t instanceof LlapStatusCliException) {
+      LlapStatusCliException ce=(LlapStatusCliException)t;
+      ret=ce.getExitCode().getInt();
+    }
+ else {
+      ret=ExitCode.INTERNAL_ERROR.getInt();
+    }
+  }
+ finally {
+    LOG.info("LLAP status finished");
+  }
+  if (ret != 0 || options == null) {
+    System.exit(ret);
+  }
+  try {
+    ret=statusServiceDriver.run(options);
     if (ret == ExitCode.SUCCESS.getInt()) {
-      try (PrintWriter pw=new PrintWriter(System.out)){
+      try (OutputStream os=options.getOutputFile() == null ? System.out : new BufferedOutputStream(new FileOutputStream(options.getOutputFile()));PrintWriter pw=new PrintWriter(os)){
         statusServiceDriver.outputJson(pw);
       }
      }
