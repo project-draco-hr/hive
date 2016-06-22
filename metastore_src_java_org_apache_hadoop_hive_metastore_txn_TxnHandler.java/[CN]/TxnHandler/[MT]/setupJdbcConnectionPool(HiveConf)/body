@@ -1,15 +1,9 @@
 {
   if (connPool != null)   return;
   String driverUrl=HiveConf.getVar(conf,HiveConf.ConfVars.METASTORECONNECTURLKEY);
-  String user=HiveConf.getVar(conf,HiveConf.ConfVars.METASTORE_CONNECTION_USER_NAME);
-  String passwd;
-  try {
-    passwd=ShimLoader.getHadoopShims().getPassword(conf,HiveConf.ConfVars.METASTOREPWD.varname);
-  }
- catch (  IOException err) {
-    throw new SQLException("Error getting metastore password",err);
-  }
-  String connectionPooler=HiveConf.getVar(conf,HiveConf.ConfVars.METASTORE_CONNECTION_POOLING_TYPE).toLowerCase();
+  String user=getMetastoreJdbcUser(conf);
+  String passwd=getMetastoreJdbcPasswd(conf);
+  String connectionPooler=conf.getVar(HiveConf.ConfVars.METASTORE_CONNECTION_POOLING_TYPE).toLowerCase();
   if ("bonecp".equals(connectionPooler)) {
     BoneCPConfig config=new BoneCPConfig();
     config.setJdbcUrl(driverUrl);
@@ -26,6 +20,10 @@
     ConnectionFactory connFactory=new DriverManagerConnectionFactory(driverUrl,user,passwd);
     PoolableConnectionFactory poolConnFactory=new PoolableConnectionFactory(connFactory,objectPool,null,null,false,true);
     connPool=new PoolingDataSource(objectPool);
+  }
+ else   if ("none".equals(connectionPooler)) {
+    LOG.info("Choosing not to pool JDBC connections");
+    connPool=new NoPoolConnectionPool(conf);
   }
  else {
     throw new RuntimeException("Unknown JDBC connection pooling " + connectionPooler);
