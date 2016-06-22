@@ -1,0 +1,48 @@
+{
+  OrcProto.Type type=types.get(columnId);
+switch (type.getKind()) {
+case BOOLEAN:
+case BYTE:
+case SHORT:
+case INT:
+case LONG:
+case DATE:
+    return new LongColumnVector(batchSize);
+case FLOAT:
+case DOUBLE:
+  return new DoubleColumnVector(batchSize);
+case BINARY:
+case STRING:
+case CHAR:
+case VARCHAR:
+return new BytesColumnVector(batchSize);
+case TIMESTAMP:
+return new TimestampColumnVector(batchSize);
+case DECIMAL:
+return new DecimalColumnVector(batchSize,type.getPrecision(),type.getScale());
+case STRUCT:
+{
+List<Integer> subtypeIdxs=type.getSubtypesList();
+ColumnVector[] fieldVector=new ColumnVector[subtypeIdxs.size()];
+for (int i=0; i < fieldVector.length; ++i) {
+fieldVector[i]=createColumn(types,subtypeIdxs.get(i),batchSize);
+}
+return new StructColumnVector(batchSize,fieldVector);
+}
+case UNION:
+{
+List<Integer> subtypeIdxs=type.getSubtypesList();
+ColumnVector[] fieldVector=new ColumnVector[subtypeIdxs.size()];
+for (int i=0; i < fieldVector.length; ++i) {
+fieldVector[i]=createColumn(types,subtypeIdxs.get(i),batchSize);
+}
+return new UnionColumnVector(batchSize,fieldVector);
+}
+case LIST:
+return new ListColumnVector(batchSize,createColumn(types,type.getSubtypes(0),batchSize));
+case MAP:
+return new MapColumnVector(batchSize,createColumn(types,type.getSubtypes(0),batchSize),createColumn(types,type.getSubtypes(1),batchSize));
+default :
+throw new IllegalArgumentException("LLAP does not support " + type.getKind());
+}
+}
