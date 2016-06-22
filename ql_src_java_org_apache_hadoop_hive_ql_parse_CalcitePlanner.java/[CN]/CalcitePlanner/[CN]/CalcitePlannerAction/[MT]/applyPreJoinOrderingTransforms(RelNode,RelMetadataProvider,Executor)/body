@@ -1,12 +1,14 @@
 {
   PerfLogger perfLogger=SessionState.getPerfLogger();
+  final int maxCNFNodeCount=conf.getIntVar(HiveConf.ConfVars.HIVE_CBO_CNF_NODES_LIMIT);
+  final int minNumORClauses=conf.getIntVar(HiveConf.ConfVars.HIVEPOINTLOOKUPOPTIMIZERMIN);
   if (!conf.getVar(HiveConf.ConfVars.HIVE_EXECUTION_ENGINE).equals("mr") && conf.getBoolVar(HiveConf.ConfVars.HIVEOPTIMIZEDISTINCTREWRITE)) {
     perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
     basePlan=hepPlan(basePlan,true,mdProvider,null,HiveExpandDistinctAggregatesRule.INSTANCE);
     perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, Distinct aggregate rewrite");
   }
   perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
-  basePlan=hepPlan(basePlan,false,mdProvider,null,HepMatchOrder.ARBITRARY,HivePreFilteringRule.INSTANCE);
+  basePlan=hepPlan(basePlan,false,mdProvider,null,HepMatchOrder.ARBITRARY,new HivePreFilteringRule(maxCNFNodeCount));
   perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Prejoin ordering transformation, factor out common filter elements and separating deterministic vs non-deterministic UDF");
   List<RelOptRule> rules=Lists.newArrayList();
   if (conf.getBoolVar(HiveConf.ConfVars.HIVEOPTPPD_WINDOWING)) {
@@ -29,8 +31,7 @@
   rules.add(HiveReduceExpressionsRule.FILTER_INSTANCE);
   rules.add(HiveReduceExpressionsRule.JOIN_INSTANCE);
   if (conf.getBoolVar(HiveConf.ConfVars.HIVEPOINTLOOKUPOPTIMIZER)) {
-    final int min=conf.getIntVar(HiveConf.ConfVars.HIVEPOINTLOOKUPOPTIMIZERMIN);
-    rules.add(new HivePointLookupOptimizerRule(min));
+    rules.add(new HivePointLookupOptimizerRule(minNumORClauses));
   }
   rules.add(HiveJoinAddNotNullRule.INSTANCE_JOIN);
   rules.add(HiveJoinAddNotNullRule.INSTANCE_SEMIJOIN);
