@@ -1,0 +1,31 @@
+{
+  boolean hasLlap=false, hasNonLlap=false, hasAcid=false;
+  boolean isLlapOn=HiveConf.getBoolVar(conf,ConfVars.LLAP_IO_ENABLED,llapMode);
+  boolean canWrapAny=false, doCheckIfs=false;
+  if (isLlapOn) {
+    canWrapAny=Utilities.getUseVectorizedInputFileFormat(conf,this);
+    if (!canWrapAny && !isExecDriver) {
+      canWrapAny=HiveConf.getBoolVar(conf,ConfVars.LLAP_IO_NONVECTOR_WRAPPER_ENABLED);
+      doCheckIfs=true;
+    }
+  }
+  boolean hasPathToPartInfo=(pathToPartitionInfo != null && !pathToPartitionInfo.isEmpty());
+  if (canWrapAny && hasPathToPartInfo) {
+    assert isLlapOn;
+    for (    PartitionDesc part : pathToPartitionInfo.values()) {
+      boolean isUsingLlapIo=HiveInputFormat.canWrapForLlap(part.getInputFileFormatClass(),doCheckIfs);
+      if (isUsingLlapIo) {
+        if (part.getTableDesc() != null && AcidUtils.isTablePropertyTransactional(part.getTableDesc().getProperties())) {
+          hasAcid=true;
+        }
+ else {
+          hasLlap=true;
+        }
+      }
+ else {
+        hasNonLlap=true;
+      }
+    }
+  }
+  llapIoDesc=deriveLlapIoDescString(isLlapOn,canWrapAny,hasPathToPartInfo,hasLlap,hasNonLlap,hasAcid);
+}
