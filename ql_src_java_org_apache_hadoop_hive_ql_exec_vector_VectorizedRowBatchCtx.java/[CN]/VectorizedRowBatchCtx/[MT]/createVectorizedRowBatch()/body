@@ -1,10 +1,25 @@
 {
-  int totalColumnCount=rowColumnTypeInfos.length + scratchColumnTypeNames.length;
+  final int dataAndPartColumnCount=rowColumnTypeInfos.length;
+  final int totalColumnCount=dataAndPartColumnCount + scratchColumnTypeNames.length;
   VectorizedRowBatch result=new VectorizedRowBatch(totalColumnCount);
-  LOG.info("createVectorizedRowBatch columnsToIncludeTruncated NONE");
-  for (int i=0; i < rowColumnTypeInfos.length; i++) {
-    TypeInfo typeInfo=rowColumnTypeInfos[i];
-    result.cols[i]=VectorizedBatchUtil.createColumnVector(typeInfo);
+  if (dataColumnNums == null) {
+    for (int i=0; i < dataAndPartColumnCount; i++) {
+      TypeInfo typeInfo=rowColumnTypeInfos[i];
+      result.cols[i]=VectorizedBatchUtil.createColumnVector(typeInfo);
+    }
+  }
+ else {
+    for (int i=0; i < dataColumnNums.length; i++) {
+      int columnNum=dataColumnNums[i];
+      Preconditions.checkState(columnNum < dataAndPartColumnCount);
+      TypeInfo typeInfo=rowColumnTypeInfos[columnNum];
+      result.cols[columnNum]=VectorizedBatchUtil.createColumnVector(typeInfo);
+    }
+    final int endColumnNum=dataColumnCount + partitionColumnCount;
+    for (int partitionColumnNum=dataColumnCount; partitionColumnNum < endColumnNum; partitionColumnNum++) {
+      TypeInfo typeInfo=rowColumnTypeInfos[partitionColumnNum];
+      result.cols[partitionColumnNum]=VectorizedBatchUtil.createColumnVector(typeInfo);
+    }
   }
   for (int i=0; i < scratchColumnTypeNames.length; i++) {
     String typeName=scratchColumnTypeNames[i];
