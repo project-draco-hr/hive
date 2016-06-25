@@ -1,0 +1,19 @@
+{
+  final RelNode input=agg.getInput();
+  final RelOptPredicateList inputInfo=mq.getPulledUpPredicates(input);
+  final List<RexNode> aggPullUpPredicates=new ArrayList<>();
+  ImmutableBitSet groupKeys=agg.getGroupSet();
+  Mapping m=Mappings.create(MappingType.PARTIAL_FUNCTION,input.getRowType().getFieldCount(),agg.getRowType().getFieldCount());
+  int i=0;
+  for (  int j : groupKeys) {
+    m.set(j,i++);
+  }
+  for (  RexNode r : inputInfo.pulledUpPredicates) {
+    ImmutableBitSet rCols=RelOptUtil.InputFinder.bits(r);
+    if (!rCols.isEmpty() && groupKeys.contains(rCols)) {
+      r=r.accept(new RexPermuteInputsShuttle(m,input));
+      aggPullUpPredicates.add(r);
+    }
+  }
+  return RelOptPredicateList.of(aggPullUpPredicates);
+}
