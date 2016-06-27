@@ -21,7 +21,23 @@
   for (  HiveLock lock : locks) {
     long lockId=((DbLockManager.DbHiveLock)lock).lockId;
     try {
-      client.heartbeat(txnId,lockId);
+      SynchronizedMetaStoreClient heartbeaterClient=getThreadLocalMSClient();
+      if (heartbeaterClient == null) {
+        Hive db;
+        try {
+          db=Hive.get(conf);
+          heartbeaterClient=new SynchronizedMetaStoreClient(db.getMSC());
+          threadLocalMSClient.set(heartbeaterClient);
+        }
+ catch (        HiveException e) {
+          LOG.error("Unable to create new metastore client for heartbeating",e);
+          throw new LockException(e);
+        }
+        if (heartbeaterMSClientCount.incrementAndGet() >= heartbeaterThreadPoolSize) {
+          LOG.warn("The number of hearbeater metastore clients - + " + heartbeaterMSClientCount.get() + ", has exceeded the max limit - "+ heartbeaterThreadPoolSize);
+        }
+      }
+      heartbeaterClient.heartbeat(txnId,lockId);
     }
  catch (    NoSuchLockException e) {
       LOG.error("Unable to find lock " + JavaUtils.lockIdToString(lockId));
