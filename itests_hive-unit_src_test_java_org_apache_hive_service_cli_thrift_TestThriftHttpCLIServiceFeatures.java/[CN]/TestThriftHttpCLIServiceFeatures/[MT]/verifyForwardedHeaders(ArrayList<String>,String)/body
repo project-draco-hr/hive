@@ -1,0 +1,26 @@
+{
+  TTransport transport;
+  DefaultHttpClient hClient=new DefaultHttpClient();
+  String httpUrl=getHttpUrl();
+  if (!headerIPs.isEmpty()) {
+    Header xForwardHeader=new BasicHeader("X-Forwarded-For",Joiner.on(",").join(headerIPs));
+    RequestDefaultHeaders headerInterceptor=new RequestDefaultHeaders(Arrays.asList(xForwardHeader));
+    hClient.addRequestInterceptor(headerInterceptor);
+  }
+  HttpBasicAuthInterceptor authInt=new HttpBasicAuthInterceptor(ThriftCLIServiceTest.USERNAME,ThriftCLIServiceTest.PASSWORD,null,null,false,null);
+  hClient.addRequestInterceptor(authInt);
+  transport=new THttpClient(httpUrl,hClient);
+  TCLIService.Client httpClient=getClient(transport);
+  TOpenSessionReq openReq=new TOpenSessionReq();
+  TOpenSessionResp openResp=httpClient.OpenSession(openReq);
+  TExecuteStatementReq execReq=new TExecuteStatementReq(openResp.getSessionHandle(),"show tables");
+  httpClient.ExecuteStatement(execReq);
+  ArgumentCaptor<HiveAuthzContext> contextCapturer=ArgumentCaptor.forClass(HiveAuthzContext.class);
+  verify(mockedAuthorizer).checkPrivileges(any(HiveOperationType.class),Matchers.anyListOf(HivePrivilegeObject.class),Matchers.anyListOf(HivePrivilegeObject.class),contextCapturer.capture());
+  HiveAuthzContext context=contextCapturer.getValue();
+  System.err.println("Forwarded IP Addresses " + context.getForwardedAddresses());
+  List<String> auditIPAddresses=new ArrayList<String>(context.getForwardedAddresses());
+  Collections.sort(auditIPAddresses);
+  Collections.sort(headerIPs);
+  Assert.assertEquals("Checking forwarded IP Address",headerIPs,auditIPAddresses);
+}
