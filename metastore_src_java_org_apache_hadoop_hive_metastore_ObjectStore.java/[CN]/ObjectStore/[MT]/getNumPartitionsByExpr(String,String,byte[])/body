@@ -1,5 +1,6 @@
 {
-  final ExpressionTree exprTree=(filter != null && !filter.isEmpty()) ? PartFilterExprUtil.getFilterParser(filter).tree : ExpressionTree.EMPTY_TREE;
+  final ExpressionTree exprTree=PartFilterExprUtil.makeExpressionTree(expressionProxy,expr);
+  final byte[] tempExpr=expr;
   return new GetHelper<Integer>(dbName,tblName,true,true){
     private SqlFilterForPushdown filter=new SqlFilterForPushdown();
     @Override protected String describeResult(){
@@ -12,7 +13,21 @@
       return directSql.getNumPartitionsViaSqlFilter(filter);
     }
     @Override protected Integer getJdoResult(    GetHelper<Integer> ctx) throws MetaException, NoSuchObjectException {
-      return getNumPartitionsViaOrmFilter(ctx.getTable(),exprTree,true);
+      Integer numPartitions=null;
+      if (exprTree != null) {
+        try {
+          numPartitions=getNumPartitionsViaOrmFilter(ctx.getTable(),exprTree,true);
+        }
+ catch (        MetaException e) {
+          numPartitions=null;
+        }
+      }
+      if (numPartitions == null) {
+        List<String> filteredPartNames=new ArrayList<String>();
+        getPartitionNamesPrunedByExprNoTxn(ctx.getTable(),tempExpr,"",(short)-1,filteredPartNames);
+        numPartitions=filteredPartNames.size();
+      }
+      return numPartitions;
     }
   }
 .run(true);
