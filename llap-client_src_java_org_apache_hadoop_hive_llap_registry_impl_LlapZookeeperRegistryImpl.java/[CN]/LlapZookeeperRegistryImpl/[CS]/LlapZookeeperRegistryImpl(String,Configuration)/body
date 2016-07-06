@@ -6,11 +6,29 @@
   int sessionTimeout=(int)HiveConf.getTimeVar(conf,ConfVars.HIVE_ZOOKEEPER_SESSION_TIMEOUT,TimeUnit.MILLISECONDS);
   int baseSleepTime=(int)HiveConf.getTimeVar(conf,ConfVars.HIVE_ZOOKEEPER_CONNECTION_BASESLEEPTIME,TimeUnit.MILLISECONDS);
   int maxRetries=HiveConf.getIntVar(conf,ConfVars.HIVE_ZOOKEEPER_CONNECTION_MAX_RETRIES);
-  this.zooKeeperClient=CuratorFrameworkFactory.builder().connectString(zkEnsemble).sessionTimeoutMs(sessionTimeout).aclProvider(zooKeeperAclProvider).namespace(ROOT_NAMESPACE).retryPolicy(new ExponentialBackoffRetry(baseSleepTime,maxRetries)).build();
   this.userPathPrefix=USER_SCOPE_PATH_PREFIX + getZkPathUser(this.conf);
   this.pathPrefix="/" + userPathPrefix + "/"+ instanceName+ "/workers/worker-";
   this.instancesCache=null;
   this.instances=null;
   this.stateChangeListeners=new HashSet<>();
+  final boolean isSecure=UserGroupInformation.isSecurityEnabled();
+  ACLProvider zooKeeperAclProvider=new ACLProvider(){
+    @Override public List<ACL> getDefaultAcl(){
+      LOG.warn("getDefaultAcl was called");
+      return Lists.newArrayList(ZooDefs.Ids.OPEN_ACL_UNSAFE);
+    }
+    @Override public List<ACL> getAclForPath(    String path){
+      if (!isSecure || path == null || !path.contains(userPathPrefix)) {
+        return Lists.newArrayList(ZooDefs.Ids.OPEN_ACL_UNSAFE);
+      }
+      return createSecureAcls();
+    }
+  }
+;
+  String rootNs=HiveConf.getVar(conf,ConfVars.LLAP_ZK_REGISTRY_NAMESPACE);
+  if (rootNs == null) {
+    rootNs=isSecure ? SASL_NAMESPACE : UNSECURE_NAMESPACE;
+  }
+  this.zooKeeperClient=CuratorFrameworkFactory.builder().connectString(zkEnsemble).sessionTimeoutMs(sessionTimeout).aclProvider(zooKeeperAclProvider).namespace(rootNs).retryPolicy(new ExponentialBackoffRetry(baseSleepTime,maxRetries)).build();
   LOG.info("Llap Zookeeper Registry is enabled with registryid: " + instanceName);
 }
