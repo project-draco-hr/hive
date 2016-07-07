@@ -1,33 +1,33 @@
 {
   int numChildren=(childExpr == null) ? 0 : childExpr.size();
-  if (genericeUdf != null && ((genericeUdf instanceof GenericUDFOPOr) || (genericeUdf instanceof GenericUDFOPAnd))) {
-    Class<?> vclass;
-    if (genericeUdf instanceof GenericUDFOPOr) {
-      if (mode == VectorExpressionDescriptor.Mode.PROJECTION) {
-        vclass=ColOrCol.class;
+  if (numChildren > 2 && genericeUdf != null && mode == VectorExpressionDescriptor.Mode.FILTER && ((genericeUdf instanceof GenericUDFOPOr) || (genericeUdf instanceof GenericUDFOPAnd))) {
+    for (int i=0; i < numChildren; i++) {
+      ExprNodeDesc child=childExpr.get(i);
+      String childTypeString=child.getTypeString();
+      if (childTypeString == null) {
+        throw new HiveException("Null child type name string");
       }
- else {
-        vclass=FilterExprOrExpr.class;
+      TypeInfo typeInfo=TypeInfoUtils.getTypeInfoFromTypeString(childTypeString);
+      Type columnVectorType=VectorizationContext.getColumnVectorTypeFromTypeInfo(typeInfo);
+      if (columnVectorType != ColumnVector.Type.LONG) {
+        return null;
+      }
+      if (!(child instanceof ExprNodeGenericFuncDesc) && !(child instanceof ExprNodeColumnDesc)) {
+        return null;
       }
     }
+    Class<?> vclass;
+    if (genericeUdf instanceof GenericUDFOPOr) {
+      vclass=FilterExprOrExpr.class;
+    }
  else     if (genericeUdf instanceof GenericUDFOPAnd) {
-      if (mode == VectorExpressionDescriptor.Mode.PROJECTION) {
-        vclass=ColAndCol.class;
-      }
- else {
-        vclass=FilterExprAndExpr.class;
-      }
+      vclass=FilterExprAndExpr.class;
     }
  else {
       throw new RuntimeException("Unexpected multi-child UDF");
     }
     VectorExpressionDescriptor.Mode childrenMode=getChildrenMode(mode,udfClass);
-    if (mode == VectorExpressionDescriptor.Mode.PROJECTION) {
-      return createVectorMultiAndOrProjectionExpr(vclass,childExpr,childrenMode,returnType);
-    }
- else {
-      return createVectorExpression(vclass,childExpr,childrenMode,returnType);
-    }
+    return createVectorExpression(vclass,childExpr,childrenMode,returnType);
   }
   if (numChildren > VectorExpressionDescriptor.MAX_NUM_ARGUMENTS) {
     return null;
