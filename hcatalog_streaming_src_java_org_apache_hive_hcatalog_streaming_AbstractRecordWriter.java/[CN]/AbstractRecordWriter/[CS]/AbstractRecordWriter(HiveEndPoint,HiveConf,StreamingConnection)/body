@@ -1,0 +1,40 @@
+{
+  this.endPoint=endPoint2;
+  this.conf=conf != null ? conf : HiveEndPoint.createHiveConf(DelimitedInputWriter.class,endPoint.metaStoreUri);
+  try {
+    msClient=HCatUtil.getHiveMetastoreClient(this.conf);
+    UserGroupInformation ugi=conn != null ? conn.getUserGroupInformation() : null;
+    if (ugi == null) {
+      this.tbl=msClient.getTable(endPoint.database,endPoint.table);
+      this.partitionPath=getPathForEndPoint(msClient,endPoint);
+    }
+ else {
+      TableWriterPair twp=ugi.doAs(new PrivilegedExceptionAction<TableWriterPair>(){
+        @Override public TableWriterPair run() throws Exception {
+          return new TableWriterPair(msClient.getTable(endPoint.database,endPoint.table),getPathForEndPoint(msClient,endPoint));
+        }
+      }
+);
+      this.tbl=twp.tbl;
+      this.partitionPath=twp.partitionPath;
+    }
+    this.totalBuckets=tbl.getSd().getNumBuckets();
+    if (totalBuckets <= 0) {
+      throw new StreamingException("Cannot stream to table that has not been bucketed : " + endPoint);
+    }
+    this.bucketIds=getBucketColIDs(tbl.getSd().getBucketCols(),tbl.getSd().getCols());
+    this.bucketFieldData=new Object[bucketIds.size()];
+    String outFormatName=this.tbl.getSd().getOutputFormat();
+    outf=(AcidOutputFormat<?,?>)ReflectionUtils.newInstance(JavaUtils.loadClass(outFormatName),conf);
+    bucketFieldData=new Object[bucketIds.size()];
+  }
+ catch (  InterruptedException e) {
+    throw new StreamingException(endPoint2.toString(),e);
+  }
+catch (  MetaException|NoSuchObjectException e) {
+    throw new ConnectionError(endPoint2,e);
+  }
+catch (  TException|ClassNotFoundException|IOException e) {
+    throw new StreamingException(e.getMessage(),e);
+  }
+}
