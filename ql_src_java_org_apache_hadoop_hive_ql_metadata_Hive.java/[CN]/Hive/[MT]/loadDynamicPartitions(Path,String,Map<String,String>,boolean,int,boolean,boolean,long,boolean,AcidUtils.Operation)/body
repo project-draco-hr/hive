@@ -1,2 +1,68 @@
 {
+  final Map<Map<String,String>,Partition> partitionsMap=Collections.synchronizedMap(new LinkedHashMap<Map<String,String>,Partition>());
+  int poolSize=conf.getInt(ConfVars.HIVE_LOAD_DYNAMIC_PARTITIONS_THREAD_COUNT.varname,1);
+  final ExecutorService pool=Executors.newFixedThreadPool(poolSize,new ThreadFactoryBuilder().setDaemon(true).setNameFormat("load-dynamic-partitions-%d").build());
+  final Table tbl=getTable(tableName);
+  final Set<Path> validPartitions=getValidPartitionsInPath(numDP,loadPath);
+  final int partsToLoad=validPartitions.size();
+  final AtomicInteger partitionsLoaded=new AtomicInteger(0);
+  final boolean inPlaceEligible=conf.getLong("fs.trash.interval",0) <= 0 && InPlaceUpdates.inPlaceEligible(conf);
+  final PrintStream ps=(inPlaceEligible) ? SessionState.getConsole().getInfoStream() : null;
+  final SessionState parentSession=SessionState.get();
+  final List<Future<Void>> futures=Lists.newLinkedList();
+  try {
+    for (    final Path partPath : validPartitions) {
+      final LinkedHashMap<String,String> fullPartSpec=Maps.newLinkedHashMap(partSpec);
+      Warehouse.makeSpecFromName(fullPartSpec,partPath);
+      futures.add(pool.submit(new Callable<Void>(){
+        @Override public Void call() throws Exception {
+          try {
+            SessionState.setCurrentSessionState(parentSession);
+            LOG.info("New loading path = " + partPath + " with partSpec "+ fullPartSpec);
+            Partition newPartition=loadPartition(partPath,tbl,fullPartSpec,replace,true,listBucketingEnabled,false,isAcid,hasFollowingStatsTask);
+            partitionsMap.put(fullPartSpec,newPartition);
+            if (inPlaceEligible) {
+synchronized (ps) {
+                InPlaceUpdates.rePositionCursor(ps);
+                partitionsLoaded.incrementAndGet();
+                InPlaceUpdates.reprintLine(ps,"Loaded : " + partitionsLoaded.get() + "/"+ partsToLoad+ " partitions.");
+              }
+            }
+            return null;
+          }
+ catch (          Exception t) {
+            LOG.error("Exception when loading partition with parameters " + " partPath=" + partPath + ", "+ " table="+ tbl.getTableName()+ ", "+ " partSpec="+ fullPartSpec+ ", "+ " replace="+ replace+ ", "+ " listBucketingEnabled="+ listBucketingEnabled+ ", "+ " isAcid="+ isAcid+ ", "+ " hasFollowingStatsTask="+ hasFollowingStatsTask,t);
+            throw t;
+          }
+        }
+      }
+));
+    }
+    pool.shutdown();
+    LOG.debug("Number of partitions to be added is " + futures.size());
+    for (    Future future : futures) {
+      future.get();
+    }
+  }
+ catch (  InterruptedException|ExecutionException e) {
+    LOG.debug("Cancelling " + futures.size() + " dynamic loading tasks");
+    for (    Future future : futures) {
+      future.cancel(true);
+    }
+    throw new HiveException("Exception when loading " + partsToLoad + " in table "+ tbl.getTableName()+ " with loadPath="+ loadPath,e);
+  }
+  try {
+    if (isAcid) {
+      List<String> partNames=new ArrayList<>(partitionsMap.size());
+      for (      Partition p : partitionsMap.values()) {
+        partNames.add(p.getName());
+      }
+      metaStoreClient.addDynamicPartitions(txnId,tbl.getDbName(),tbl.getTableName(),partNames,AcidUtils.toDataOperationType(operation));
+    }
+    LOG.info("Loaded " + partitionsMap.size() + " partitions");
+    return partitionsMap;
+  }
+ catch (  TException te) {
+    throw new HiveException("Exception updating metastore for acid table " + tableName + " with partitions "+ partitionsMap.values(),te);
+  }
 }
