@@ -42,7 +42,7 @@
         colNames.add(col.getName());
         colTypes.add(col.getType());
       }
-      basicInfos.put(new HivePrivilegeObject(table.getDbName(),table.getTableName(),colNames),new MaskAndFilterInfo(colTypes,additionalTabInfo.toString(),alias,astNode));
+      basicInfos.put(new HivePrivilegeObject(table.getDbName(),table.getTableName(),colNames),new MaskAndFilterInfo(colTypes,additionalTabInfo.toString(),alias,astNode,table.isView()));
     }
     if (astNode.getChildCount() > 0 && !ignoredTokens.contains(astNode.getToken().getType())) {
       for (      Node child : astNode.getChildren()) {
@@ -54,11 +54,13 @@
   basicPrivObjs.addAll(basicInfos.keySet());
   List<HivePrivilegeObject> needRewritePrivObjs=tableMask.applyRowFilterAndColumnMasking(basicPrivObjs);
   if (needRewritePrivObjs != null && !needRewritePrivObjs.isEmpty()) {
-    tableMask.setNeedsRewrite(true);
     for (    HivePrivilegeObject privObj : needRewritePrivObjs) {
       MaskAndFilterInfo info=basicInfos.get(privObj);
       String replacementText=tableMask.create(privObj,info);
-      tableMask.addTableMasking(info.astNode,replacementText);
+      if (replacementText != null) {
+        tableMask.setNeedsRewrite(true);
+        tableMask.addTranslation(info.astNode,replacementText);
+      }
     }
   }
 }

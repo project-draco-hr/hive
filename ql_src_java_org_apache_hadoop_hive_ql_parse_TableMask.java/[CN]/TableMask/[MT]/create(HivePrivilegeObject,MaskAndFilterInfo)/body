@@ -1,4 +1,6 @@
 {
+  boolean doColumnMasking=false;
+  boolean doRowFiltering=false;
   StringBuilder sb=new StringBuilder();
   sb.append("(SELECT ");
   boolean firstOne=true;
@@ -21,32 +23,41 @@
       }
       String colName=privObject.getColumns().get(index);
       if (!expr.equals(colName)) {
-        sb.append("CAST(" + expr + " AS "+ colTypes.get(index)+ ") AS `"+ colName+ "`");
+        sb.append("CAST(" + expr + " AS "+ colTypes.get(index)+ ") AS "+ HiveUtils.unparseIdentifier(colName,conf));
+        doColumnMasking=true;
       }
  else {
-        sb.append(expr);
+        sb.append(HiveUtils.unparseIdentifier(colName,conf));
       }
     }
   }
- else {
-    for (int index=0; index < privObject.getColumns().size(); index++) {
-      String expr=privObject.getColumns().get(index);
-      if (!firstOne) {
-        sb.append(", ");
-      }
- else {
-        firstOne=false;
-      }
-      sb.append(expr);
+  if (!doColumnMasking) {
+    sb=new StringBuilder();
+    sb.append("(SELECT *");
+  }
+  if (!maskAndFilterInfo.isView) {
+    Iterator<VirtualColumn> vcs=VirtualColumn.getRegistry(conf).iterator();
+    while (vcs.hasNext()) {
+      VirtualColumn vc=vcs.next();
+      sb.append(", " + vc.getName());
     }
   }
-  sb.append(" FROM `" + privObject.getDbname() + "`.`"+ privObject.getObjectName()+ "`");
+  sb.append(" FROM ");
+  sb.append(HiveUtils.unparseIdentifier(privObject.getDbname(),conf));
+  sb.append(".");
+  sb.append(HiveUtils.unparseIdentifier(privObject.getObjectName(),conf));
   sb.append(" " + maskAndFilterInfo.additionalTabInfo);
   String filter=privObject.getRowFilterExpression();
   if (filter != null) {
     sb.append(" WHERE " + filter);
+    doRowFiltering=true;
   }
-  sb.append(")" + maskAndFilterInfo.alias);
-  LOG.debug("TableMask creates `" + sb.toString() + "`");
-  return sb.toString();
+  sb.append(")" + HiveUtils.unparseIdentifier(maskAndFilterInfo.alias,conf));
+  if (!doColumnMasking && !doRowFiltering) {
+    return null;
+  }
+ else {
+    LOG.debug("TableMask creates `" + sb.toString() + "`");
+    return sb.toString();
+  }
 }

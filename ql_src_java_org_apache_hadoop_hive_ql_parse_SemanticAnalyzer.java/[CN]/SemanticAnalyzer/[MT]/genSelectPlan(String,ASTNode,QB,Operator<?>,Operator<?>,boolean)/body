@@ -94,6 +94,7 @@ Set<String> colAliases=new HashSet<String>();
 ASTNode[] exprs=new ASTNode[exprList.getChildCount()];
 String[][] aliases=new String[exprList.getChildCount()][];
 boolean[] hasAsClauses=new boolean[exprList.getChildCount()];
+int offset=0;
 for (int i=startPosn; i < exprList.getChildCount(); ++i) {
 ASTNode child=(ASTNode)exprList.getChild(i);
 boolean hasAsClause=(!isInTransform) && (child.getChildCount() == 2);
@@ -111,7 +112,7 @@ expr=child;
 }
  else {
 expr=(ASTNode)child.getChild(0);
-String[] colRef=getColAlias(child,autogenColAliasPrfxLbl,inputRR,autogenColAliasPrfxIncludeFuncName,i);
+String[] colRef=getColAlias(child,autogenColAliasPrfxLbl,inputRR,autogenColAliasPrfxIncludeFuncName,i + offset);
 tabAlias=colRef[0];
 colAlias=colRef[1];
 if (hasAsClause) {
@@ -122,14 +123,12 @@ exprs[i]=expr;
 aliases[i]=new String[]{tabAlias,colAlias};
 hasAsClauses[i]=hasAsClause;
 colAliases.add(colAlias);
-}
-for (int i=startPosn; i < exprList.getChildCount(); ++i) {
-ASTNode expr=exprs[i];
-String tabAlias=aliases[i][0];
-String colAlias=aliases[i][1];
-boolean hasAsClause=hasAsClauses[i];
 if (expr.getType() == HiveParser.TOK_ALLCOLREF) {
+int initPos=pos;
 pos=genColListRegex(".*",expr.getChildCount() == 0 ? null : getUnescapedName((ASTNode)expr.getChild(0)).toLowerCase(),expr,col_list,null,inputRR,starRR,pos,out_rwsch,qb.getAliases(),false);
+if (unparseTranslator.isEnabled()) {
+offset+=pos - initPos - 1;
+}
 selectStar=true;
 }
  else if (expr.getType() == HiveParser.TOK_TABLE_OR_COL && !hasAsClause && !inputRR.getIsExprResolver() && isRegex(unescapeIdentifier(expr.getChild(0).getText()),conf)) {
