@@ -1,0 +1,38 @@
+{
+  long evicted=0;
+  LlapCacheableBuffer nextCandidate=null, firstCandidate=null;
+  listLock.lock();
+  try {
+    nextCandidate=firstCandidate=listTail;
+    while (evicted < memoryToReserve && nextCandidate != null) {
+      if (!nextCandidate.invalidate()) {
+        LlapCacheableBuffer lockedBuffer=nextCandidate;
+        if (firstCandidate == nextCandidate) {
+          firstCandidate=nextCandidate.prev;
+        }
+        nextCandidate=nextCandidate.prev;
+        removeFromListUnderLock(lockedBuffer);
+        continue;
+      }
+      nextCandidate.indexInHeap=LlapCacheableBuffer.NOT_IN_CACHE;
+      evicted+=nextCandidate.getMemoryUsage();
+      nextCandidate=nextCandidate.prev;
+    }
+    if (firstCandidate != nextCandidate) {
+      if (nextCandidate == null) {
+        listHead=listTail=null;
+      }
+ else {
+        removeFromListUnderLockNoStateUpdate(nextCandidate.next,firstCandidate);
+      }
+    }
+  }
+  finally {
+    listLock.unlock();
+  }
+  while (firstCandidate != nextCandidate) {
+    evictionListener.notifyEvicted(firstCandidate);
+    firstCandidate=firstCandidate.prev;
+  }
+  return evicted;
+}

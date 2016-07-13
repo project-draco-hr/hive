@@ -1,0 +1,21 @@
+{
+  long evicted=0;
+  lock.lock();
+  try {
+    Iterator<LlapCacheableBuffer> iter=buffers.iterator();
+    while (evicted < memoryToReserve && iter.hasNext()) {
+      LlapCacheableBuffer buffer=iter.next();
+      long memUsage=buffer.getMemoryUsage();
+      if (memUsage < minSize || (minSize > 0 && !(buffer instanceof LlapDataBuffer)))       continue;
+      if (buffer.invalidate()) {
+        iter.remove();
+        evicted+=memUsage;
+        evictionListener.notifyEvicted(buffer);
+      }
+    }
+  }
+  finally {
+    lock.unlock();
+  }
+  return evicted;
+}
