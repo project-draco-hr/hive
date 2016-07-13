@@ -13,44 +13,39 @@
     session=ss.getTezSession();
     session=TezSessionPoolManager.getInstance().getSession(session,conf,false,getWork().getLlapMode());
     ss.setTezSession(session);
-    JobConf jobConf=utils.createConfiguration(conf);
-    String[] inputOutputJars=work.configureJobConfAndExtractJars(jobConf);
-    Path scratchDir=ctx.getMRScratchDir();
-    scratchDir=utils.createTezDir(scratchDir,conf);
-    Map<String,LocalResource> inputOutputLocalResources=getExtraLocalResources(jobConf,scratchDir,inputOutputJars);
-    updateSession(session,jobConf,scratchDir,inputOutputJars,inputOutputLocalResources);
-    List<LocalResource> additionalLr=session.getLocalizedResources();
-    if (LOG.isDebugEnabled()) {
-      if (additionalLr == null || additionalLr.size() == 0) {
-        LOG.debug("No local resources to process (other than hive-exec)");
-      }
- else {
-        for (        LocalResource lr : additionalLr) {
-          LOG.debug("Adding local resource: " + lr.getResource());
-        }
-      }
-    }
-    LocalResource appJarLr=session.getAppJarLr();
-    DAG dag=build(jobConf,work,scratchDir,appJarLr,additionalLr,ctx);
-    CallerContext callerContext=CallerContext.create("HIVE",queryPlan.getQueryId(),"HIVE_QUERY_ID",queryPlan.getQueryStr());
-    dag.setCallerContext(callerContext);
-    addExtraResourcesToDag(session,dag,inputOutputJars,inputOutputLocalResources);
-    dagClient=submit(jobConf,dag,scratchDir,appJarLr,session,additionalLr,inputOutputJars,inputOutputLocalResources);
-    TezJobMonitor monitor=new TezJobMonitor(work.getWorkMap());
-    rc=monitor.monitorExecution(dagClient,conf,dag,ctx);
-    if (rc != 0) {
-      this.setException(new HiveException(monitor.getDiagnostics()));
-    }
     try {
-      Set<StatusGetOpts> statusGetOpts=EnumSet.of(StatusGetOpts.GET_COUNTERS);
-      counters=dagClient.getDAGStatus(statusGetOpts).getDAGCounters();
+      JobConf jobConf=utils.createConfiguration(conf);
+      String[] inputOutputJars=work.configureJobConfAndExtractJars(jobConf);
+      Path scratchDir=ctx.getMRScratchDir();
+      scratchDir=utils.createTezDir(scratchDir,conf);
+      Map<String,LocalResource> inputOutputLocalResources=getExtraLocalResources(jobConf,scratchDir,inputOutputJars);
+      updateSession(session,jobConf,scratchDir,inputOutputJars,inputOutputLocalResources);
+      List<LocalResource> additionalLr=session.getLocalizedResources();
+      logResources(additionalLr);
+      LocalResource appJarLr=session.getAppJarLr();
+      DAG dag=build(jobConf,work,scratchDir,appJarLr,additionalLr,ctx);
+      CallerContext callerContext=CallerContext.create("HIVE",queryPlan.getQueryId(),"HIVE_QUERY_ID",queryPlan.getQueryStr());
+      dag.setCallerContext(callerContext);
+      addExtraResourcesToDag(session,dag,inputOutputJars,inputOutputLocalResources);
+      dagClient=submit(jobConf,dag,scratchDir,appJarLr,session,additionalLr,inputOutputJars,inputOutputLocalResources);
+      TezJobMonitor monitor=new TezJobMonitor(work.getWorkMap());
+      rc=monitor.monitorExecution(dagClient,conf,dag,ctx);
+      if (rc != 0) {
+        this.setException(new HiveException(monitor.getDiagnostics()));
+      }
+      try {
+        Set<StatusGetOpts> statusGetOpts=EnumSet.of(StatusGetOpts.GET_COUNTERS);
+        counters=dagClient.getDAGStatus(statusGetOpts).getDAGCounters();
+      }
+ catch (      Exception err) {
+        LOG.error("Failed to get counters: " + err,err);
+        counters=null;
+      }
     }
- catch (    Exception err) {
-      LOG.error("Failed to get counters: " + err,err);
-      counters=null;
+  finally {
+      TezSessionPoolManager.getInstance().returnSession(session,getWork().getLlapMode());
     }
-    TezSessionPoolManager.getInstance().returnSession(session,getWork().getLlapMode());
-    if (LOG.isInfoEnabled() && counters != null && (conf.getBoolVar(conf,HiveConf.ConfVars.TEZ_EXEC_SUMMARY) || Utilities.isPerfOrAboveLogging(conf))) {
+    if (LOG.isInfoEnabled() && counters != null && (HiveConf.getBoolVar(conf,HiveConf.ConfVars.TEZ_EXEC_SUMMARY) || Utilities.isPerfOrAboveLogging(conf))) {
       for (      CounterGroup group : counters) {
         LOG.info(group.getDisplayName() + ":");
         for (        TezCounter counter : group) {
