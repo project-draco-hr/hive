@@ -1,0 +1,35 @@
+{
+  SortedSet<String> keys=new TreeSet<>(progressMap.keySet());
+  Set<StatusGetOpts> statusOptions=new HashSet<>(1);
+  statusOptions.add(StatusGetOpts.GET_COUNTERS);
+  for (  FileSystem.Statistics statistics : FileSystem.getAllStatistics()) {
+    final String scheme=statistics.getScheme().toUpperCase();
+    final String fsCountersHeader=String.format(FS_COUNTERS_HEADER_FORMAT,"VERTICES","BYTES_READ","READ_OPS","LARGE_READ_OPS","BYTES_WRITTEN","WRITE_OPS");
+    console.printInfo("");
+    reprintLineWithColorAsBold("Scheme: " + scheme,Ansi.Color.RED);
+    console.printInfo(SEPARATOR);
+    reprintLineWithColorAsBold(fsCountersHeader,Ansi.Color.CYAN);
+    console.printInfo(SEPARATOR);
+    for (    String vertexName : keys) {
+      TezCounters vertexCounters=null;
+      try {
+        vertexCounters=dagClient.getVertexStatus(vertexName,statusOptions).getVertexCounters();
+      }
+ catch (      IOException e) {
+      }
+catch (      TezException e) {
+      }
+      if (vertexCounters != null) {
+        final String counterGroup=FileSystemCounter.class.getName();
+        final long bytesRead=getCounterValueByGroupName(vertexCounters,counterGroup,scheme + "_" + FileSystemCounter.BYTES_READ.name());
+        final long bytesWritten=getCounterValueByGroupName(vertexCounters,counterGroup,scheme + "_" + FileSystemCounter.BYTES_WRITTEN.name());
+        final long readOps=getCounterValueByGroupName(vertexCounters,counterGroup,scheme + "_" + FileSystemCounter.READ_OPS.name());
+        final long largeReadOps=getCounterValueByGroupName(vertexCounters,counterGroup,scheme + "_" + FileSystemCounter.LARGE_READ_OPS.name());
+        final long writeOps=getCounterValueByGroupName(vertexCounters,counterGroup,scheme + "_" + FileSystemCounter.WRITE_OPS.name());
+        String fsCountersSummary=String.format(FS_COUNTERS_HEADER_FORMAT,vertexName,humanReadableByteCount(bytesRead),readOps,largeReadOps,humanReadableByteCount(bytesWritten),writeOps);
+        console.printInfo(fsCountersSummary);
+      }
+    }
+    console.printInfo(SEPARATOR);
+  }
+}

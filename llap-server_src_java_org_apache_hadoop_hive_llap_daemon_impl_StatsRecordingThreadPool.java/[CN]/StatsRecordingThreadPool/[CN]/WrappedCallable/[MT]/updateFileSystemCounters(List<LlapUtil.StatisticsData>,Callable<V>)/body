@@ -1,0 +1,57 @@
+{
+  Thread thread=Thread.currentThread();
+  TezCounters tezCounters=null;
+  if (actualCallable instanceof TaskRunner2Callable) {
+    TaskRunner2Callable taskRunner2Callable=(TaskRunner2Callable)actualCallable;
+    tezCounters=taskRunner2Callable.addAndGetTezCounter(FileSystemCounter.class.getName());
+  }
+ else   if (actualCallable instanceof OrcEncodedDataReader) {
+    tezCounters=((OrcEncodedDataReader)actualCallable).getTezCounters();
+  }
+  if (tezCounters != null) {
+    if (statsBefore != null) {
+      Map<String,FileSystem.Statistics> schemeToStats=LlapUtil.getCombinedFileSystemStatistics();
+      for (      Map.Entry<String,FileSystem.Statistics> entry : schemeToStats.entrySet()) {
+        final String scheme=entry.getKey();
+        FileSystem.Statistics statistics=entry.getValue();
+        FileSystem.Statistics.StatisticsData threadFSStats=statistics.getThreadStatistics();
+        List<LlapUtil.StatisticsData> allStatsBefore=LlapUtil.getStatisticsForScheme(scheme,statsBefore);
+        long bytesReadDelta=0;
+        long bytesWrittenDelta=0;
+        long readOpsDelta=0;
+        long largeReadOpsDelta=0;
+        long writeOpsDelta=0;
+        if (allStatsBefore != null && !allStatsBefore.isEmpty()) {
+          for (          LlapUtil.StatisticsData sb : allStatsBefore) {
+            bytesReadDelta+=threadFSStats.getBytesRead() - sb.getBytesRead();
+            bytesWrittenDelta+=threadFSStats.getBytesWritten() - sb.getBytesWritten();
+            readOpsDelta+=threadFSStats.getReadOps() - sb.getReadOps();
+            largeReadOpsDelta+=threadFSStats.getLargeReadOps() - sb.getLargeReadOps();
+            writeOpsDelta+=threadFSStats.getWriteOps() - sb.getWriteOps();
+          }
+        }
+ else {
+          bytesReadDelta=threadFSStats.getBytesRead();
+          bytesWrittenDelta=threadFSStats.getBytesWritten();
+          readOpsDelta=threadFSStats.getReadOps();
+          largeReadOpsDelta=threadFSStats.getLargeReadOps();
+          writeOpsDelta=threadFSStats.getWriteOps();
+        }
+        tezCounters.findCounter(scheme,FileSystemCounter.BYTES_READ).increment(bytesReadDelta);
+        tezCounters.findCounter(scheme,FileSystemCounter.BYTES_WRITTEN).increment(bytesWrittenDelta);
+        tezCounters.findCounter(scheme,FileSystemCounter.READ_OPS).increment(readOpsDelta);
+        tezCounters.findCounter(scheme,FileSystemCounter.LARGE_READ_OPS).increment(largeReadOpsDelta);
+        tezCounters.findCounter(scheme,FileSystemCounter.WRITE_OPS).increment(writeOpsDelta);
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("Updated stats: instance: {} thread name: {} thread id: {} scheme: {} " + "bytesRead: {} bytesWritten: {} readOps: {} largeReadOps: {} writeOps: {}",actualCallable.getClass().getSimpleName(),thread.getName(),thread.getId(),scheme,bytesReadDelta,bytesWrittenDelta,readOpsDelta,largeReadOpsDelta,writeOpsDelta);
+        }
+      }
+    }
+ else {
+      LOG.warn("File system statistics snapshot before execution of thread is null." + "Thread name: {} id: {} allStats: {}",thread.getName(),thread.getId(),statsBefore);
+    }
+  }
+ else {
+    LOG.warn("TezCounters is null for callable type: {}",actualCallable.getClass().getSimpleName());
+  }
+}
