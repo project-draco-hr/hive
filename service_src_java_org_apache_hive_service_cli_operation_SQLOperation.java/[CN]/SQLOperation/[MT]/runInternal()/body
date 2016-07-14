@@ -9,55 +9,9 @@
     runQuery();
   }
  else {
-    final SessionState parentSessionState=SessionState.get();
-    final Hive parentHive=parentSession.getSessionHive();
-    final PerfLogger parentPerfLogger=SessionState.getPerfLogger();
-    final UserGroupInformation currentUGI=getCurrentUGI();
-    Runnable backgroundOperation=new Runnable(){
-      @Override public void run(){
-        PrivilegedExceptionAction<Object> doAsAction=new PrivilegedExceptionAction<Object>(){
-          @Override public Object run() throws HiveSQLException {
-            Hive.set(parentHive);
-            SessionState.setCurrentSessionState(parentSessionState);
-            PerfLogger.setPerfLogger(parentPerfLogger);
-            registerCurrentOperationLog();
-            registerLoggingContext();
-            try {
-              if (asyncPrepare) {
-                prepare(queryState);
-              }
-              runQuery();
-            }
- catch (            HiveSQLException e) {
-              setOperationException(e);
-              LOG.error("Error running hive query: ",e);
-            }
- finally {
-              unregisterLoggingContext();
-              unregisterOperationLog();
-            }
-            return null;
-          }
-        }
-;
-        try {
-          currentUGI.doAs(doAsAction);
-        }
- catch (        Exception e) {
-          setOperationException(new HiveSQLException(e));
-          LOG.error("Error running hive query as user : " + currentUGI.getShortUserName(),e);
-        }
- finally {
-          if (ThreadWithGarbageCleanup.currentThread() instanceof ThreadWithGarbageCleanup) {
-            ThreadWithGarbageCleanup currentThread=(ThreadWithGarbageCleanup)ThreadWithGarbageCleanup.currentThread();
-            currentThread.cacheThreadLocalRawStore();
-          }
-        }
-      }
-    }
-;
+    Runnable work=new BackgroundWork(getCurrentUGI(),parentSession.getSessionHive(),SessionState.getPerfLogger(),SessionState.get(),asyncPrepare);
     try {
-      Future<?> backgroundHandle=getParentSession().getSessionManager().submitBackgroundOperation(backgroundOperation);
+      Future<?> backgroundHandle=getParentSession().submitBackgroundOperation(work);
       setBackgroundHandle(backgroundHandle);
     }
  catch (    RejectedExecutionException rejected) {

@@ -1,0 +1,40 @@
+{
+  PrivilegedExceptionAction<Object> doAsAction=new PrivilegedExceptionAction<Object>(){
+    @Override public Object run() throws HiveSQLException {
+      Hive.set(parentHive);
+      SessionState.setCurrentSessionState(parentSessionState);
+      PerfLogger.setPerfLogger(parentPerfLogger);
+      registerCurrentOperationLog();
+      registerLoggingContext();
+      try {
+        if (asyncPrepare) {
+          prepare(queryState);
+        }
+        runQuery();
+      }
+ catch (      HiveSQLException e) {
+        setOperationException(e);
+        LOG.error("Error running hive query: ",e);
+      }
+ finally {
+        unregisterLoggingContext();
+        unregisterOperationLog();
+      }
+      return null;
+    }
+  }
+;
+  try {
+    currentUGI.doAs(doAsAction);
+  }
+ catch (  Exception e) {
+    setOperationException(new HiveSQLException(e));
+    LOG.error("Error running hive query as user : " + currentUGI.getShortUserName(),e);
+  }
+ finally {
+    if (ThreadWithGarbageCleanup.currentThread() instanceof ThreadWithGarbageCleanup) {
+      ThreadWithGarbageCleanup currentThread=(ThreadWithGarbageCleanup)ThreadWithGarbageCleanup.currentThread();
+      currentThread.cacheThreadLocalRawStore();
+    }
+  }
+}
