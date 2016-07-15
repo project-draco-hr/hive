@@ -9,7 +9,15 @@
   TezTaskAttemptID attemptId=Converters.createTaskAttemptId(vertex.getQueryIdentifier(),vertex.getVertexIndex(),request.getFragmentNumber(),request.getAttemptNumber());
   String fragmentIdString=attemptId.toString();
   HistoryLogger.logFragmentStart(qIdProto.getApplicationIdString(),request.getContainerIdString(),localAddress.get().getHostName(),vertex.getDagName(),qIdProto.getDagIndex(),vertex.getVertexName(),request.getFragmentNumber(),request.getAttemptNumber());
-  NDC.push(fragmentIdString);
+  final String dagId=attemptId.getTaskID().getVertexID().getDAGId().toString();
+  final String queryId=vertex.getHiveQueryId();
+  final String fragId=LlapTezUtils.stripAttemptPrefix(fragmentIdString);
+  MDC.put("dagId",dagId);
+  MDC.put("queryId",queryId);
+  MDC.put("fragmentId",fragId);
+  NDC.push(dagId);
+  NDC.push(queryId);
+  NDC.push(fragId);
   Scheduler.SubmissionState submissionState;
   SubmitWorkResponseProto.Builder responseBuilder=SubmitWorkResponseProto.newBuilder();
   try {
@@ -47,7 +55,8 @@
     }
   }
   finally {
-    NDC.pop();
+    MDC.clear();
+    NDC.clear();
   }
   responseBuilder.setSubmissionState(SubmissionStateProto.valueOf(submissionState.name()));
   return responseBuilder.build();
