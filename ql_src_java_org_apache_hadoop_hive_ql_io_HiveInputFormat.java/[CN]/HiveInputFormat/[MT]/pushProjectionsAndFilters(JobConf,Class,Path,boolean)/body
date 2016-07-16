@@ -1,0 +1,37 @@
+{
+  Path splitPathWithNoSchema=Path.getPathWithoutSchemeAndAuthority(splitPath);
+  if (this.mrwork == null) {
+    init(job);
+  }
+  if (this.mrwork.getPathToAliases() == null) {
+    return;
+  }
+  ArrayList<String> aliases=new ArrayList<String>();
+  Iterator<Entry<Path,ArrayList<String>>> iterator=this.mrwork.getPathToAliases().entrySet().iterator();
+  while (iterator.hasNext()) {
+    Entry<Path,ArrayList<String>> entry=iterator.next();
+    Path key=entry.getKey();
+    boolean match;
+    if (nonNative) {
+      match=splitPath.equals(key) || splitPathWithNoSchema.equals(key);
+    }
+ else {
+      match=FileUtils.isPathWithinSubtree(splitPath,key) || FileUtils.isPathWithinSubtree(splitPathWithNoSchema,key);
+    }
+    if (match) {
+      ArrayList<String> list=entry.getValue();
+      for (      String val : list) {
+        aliases.add(val);
+      }
+    }
+  }
+  for (  String alias : aliases) {
+    Operator<? extends OperatorDesc> op=this.mrwork.getAliasToWork().get(alias);
+    if (op instanceof TableScanOperator) {
+      TableScanOperator ts=(TableScanOperator)op;
+      ColumnProjectionUtils.appendReadColumns(jobConf,ts.getNeededColumnIDs(),ts.getNeededColumns());
+      pushFilters(jobConf,ts);
+      AcidUtils.setTransactionalTableScan(job,ts.getConf().isAcidTable());
+    }
+  }
+}

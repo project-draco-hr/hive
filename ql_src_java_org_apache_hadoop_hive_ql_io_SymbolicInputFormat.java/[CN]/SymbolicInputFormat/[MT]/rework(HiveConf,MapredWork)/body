@@ -1,22 +1,21 @@
 {
-  Map<String,PartitionDesc> pathToParts=work.getMapWork().getPathToPartitionInfo();
-  List<String> toRemovePaths=new ArrayList<String>();
-  Map<String,PartitionDesc> toAddPathToPart=new HashMap<String,PartitionDesc>();
-  Map<String,ArrayList<String>> pathToAliases=work.getMapWork().getPathToAliases();
-  for (  Map.Entry<String,PartitionDesc> pathPartEntry : pathToParts.entrySet()) {
-    String path=pathPartEntry.getKey();
+  Map<Path,PartitionDesc> pathToParts=work.getMapWork().getPathToPartitionInfo();
+  List<Path> toRemovePaths=new ArrayList<>();
+  Map<Path,PartitionDesc> toAddPathToPart=new HashMap<>();
+  Map<Path,ArrayList<String>> pathToAliases=work.getMapWork().getPathToAliases();
+  for (  Map.Entry<Path,PartitionDesc> pathPartEntry : pathToParts.entrySet()) {
+    Path path=pathPartEntry.getKey();
     PartitionDesc partDesc=pathPartEntry.getValue();
     if (partDesc.getInputFileFormatClass().equals(SymlinkTextInputFormat.class)) {
       partDesc.setInputFileFormatClass(TextInputFormat.class);
-      Path symlinkDir=new Path(path);
-      FileSystem fileSystem=symlinkDir.getFileSystem(job);
-      FileStatus fStatus=fileSystem.getFileStatus(symlinkDir);
+      FileSystem fileSystem=path.getFileSystem(job);
+      FileStatus fStatus=fileSystem.getFileStatus(path);
       FileStatus[] symlinks=null;
       if (!fStatus.isDir()) {
         symlinks=new FileStatus[]{fStatus};
       }
  else {
-        symlinks=fileSystem.listStatus(symlinkDir,FileUtils.HIDDEN_FILES_PATH_FILTER);
+        symlinks=fileSystem.listStatus(path,FileUtils.HIDDEN_FILES_PATH_FILTER);
       }
       toRemovePaths.add(path);
       ArrayList<String> aliases=pathToAliases.remove(path);
@@ -29,8 +28,9 @@
           while ((line=reader.readLine()) != null) {
             FileStatus[] matches=fileSystem.globStatus(new Path(line));
             for (            FileStatus fileStatus : matches) {
-              toAddPathToPart.put(fileStatus.getPath().toUri().getPath(),partDesc);
-              pathToAliases.put(fileStatus.getPath().toUri().getPath(),aliases);
+              Path schemaLessPath=Path.getPathWithoutSchemeAndAuthority(fileStatus.getPath());
+              toAddPathToPart.put(schemaLessPath,partDesc);
+              pathToAliases.put(schemaLessPath,aliases);
             }
           }
         }
@@ -40,8 +40,10 @@
       }
     }
   }
-  pathToParts.putAll(toAddPathToPart);
-  for (  String toRemove : toRemovePaths) {
-    pathToParts.remove(toRemove);
+  for (  Entry<Path,PartitionDesc> toAdd : toAddPathToPart.entrySet()) {
+    work.getMapWork().addPathToPartitionInfo(toAdd.getKey(),toAdd.getValue());
+  }
+  for (  Path toRemove : toRemovePaths) {
+    work.getMapWork().removePathToPartitionInfo(toRemove);
   }
 }
