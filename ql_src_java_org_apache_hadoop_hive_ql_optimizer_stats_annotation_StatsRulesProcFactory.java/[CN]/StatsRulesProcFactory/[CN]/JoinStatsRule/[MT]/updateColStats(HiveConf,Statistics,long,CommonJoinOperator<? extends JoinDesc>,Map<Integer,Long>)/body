@@ -9,7 +9,9 @@
   newNumRows=StatsUtils.getMaxIfOverflow(newNumRows);
   stats.setNumRows(newNumRows);
   List<ColStatistics> colStats=stats.getColumnStats();
+  Set<String> colNameStatsAvailable=new HashSet<>();
   for (  ColStatistics cs : colStats) {
+    colNameStatsAvailable.add(cs.getColumnName());
     int pos=jop.getConf().getReversedExprs().get(cs.getColumnName());
     long oldRowCount=rowCountParents.get(pos);
     double ratio=(double)newNumRows / (double)oldRowCount;
@@ -23,5 +25,15 @@
   }
   stats.setColumnStats(colStats);
   long newDataSize=StatsUtils.getDataSizeFromColumnStats(newNumRows,colStats);
+  List<String> neededColumns=new ArrayList<>();
+  for (  String colName : jop.getSchema().getColumnNames()) {
+    if (!colNameStatsAvailable.contains(colName)) {
+      neededColumns.add(colName);
+    }
+  }
+  if (neededColumns.size() != 0) {
+    int restColumnsDefaultSize=StatsUtils.estimateRowSizeFromSchema(conf,jop.getSchema().getSignature(),neededColumns);
+    newDataSize=StatsUtils.safeAdd(newDataSize,StatsUtils.safeMult(restColumnsDefaultSize,newNumRows));
+  }
   stats.setDataSize(StatsUtils.getMaxIfOverflow(newDataSize));
 }
