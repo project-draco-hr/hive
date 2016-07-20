@@ -18,22 +18,30 @@
       throw new SemanticException(ErrorMsg.ALTER_VIEW_AS_SELECT_NOT_EXIST.getMsg(viewNotExistErrorMsg));
     }
     if (createVwDesc.getOrReplace() && oldView != null) {
-      if (!oldView.getTableType().equals(TableType.VIRTUAL_VIEW)) {
+      if (oldView.getTableType().equals(TableType.VIRTUAL_VIEW) && createVwDesc.isMaterialized()) {
+        throw new SemanticException(ErrorMsg.REPLACE_VIEW_WITH_MATERIALIZED,oldView.getTableName());
+      }
+      if (oldView.getTableType().equals(TableType.MATERIALIZED_VIEW) && !createVwDesc.isMaterialized()) {
+        throw new SemanticException(ErrorMsg.REPLACE_MATERIALIZED_WITH_VIEW,oldView.getTableName());
+      }
+      if (!oldView.getTableType().equals(TableType.VIRTUAL_VIEW) && !oldView.getTableType().equals(TableType.MATERIALIZED_VIEW)) {
         String tableNotViewErrorMsg="The following is an existing table, not a view: " + createVwDesc.getViewName();
         throw new SemanticException(ErrorMsg.EXISTING_TABLE_IS_NOT_VIEW.getMsg(tableNotViewErrorMsg));
       }
-      String partitionViewErrorMsg="The following view has partition, it could not be replaced: " + createVwDesc.getViewName();
-      try {
-        if ((createVwDesc.getPartCols() == null || createVwDesc.getPartCols().isEmpty() || !createVwDesc.getPartCols().equals(oldView.getPartCols())) && !oldView.getPartCols().isEmpty() && !db.getPartitions(oldView).isEmpty()) {
+      if (!createVwDesc.isMaterialized()) {
+        String partitionViewErrorMsg="The following view has partition, it could not be replaced: " + createVwDesc.getViewName();
+        try {
+          if ((createVwDesc.getPartCols() == null || createVwDesc.getPartCols().isEmpty() || !createVwDesc.getPartCols().equals(oldView.getPartCols())) && !oldView.getPartCols().isEmpty() && !db.getPartitions(oldView).isEmpty()) {
+            throw new SemanticException(ErrorMsg.REPLACE_VIEW_WITH_PARTITION.getMsg(partitionViewErrorMsg));
+          }
+        }
+ catch (        HiveException e) {
           throw new SemanticException(ErrorMsg.REPLACE_VIEW_WITH_PARTITION.getMsg(partitionViewErrorMsg));
         }
-      }
- catch (      HiveException e) {
-        throw new SemanticException(ErrorMsg.REPLACE_VIEW_WITH_PARTITION.getMsg(partitionViewErrorMsg));
       }
     }
   }
  catch (  HiveException e) {
-    throw new SemanticException(e.getMessage());
+    throw new SemanticException(e.getMessage(),e);
   }
 }
