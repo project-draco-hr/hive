@@ -1,10 +1,10 @@
 {
   int root=ast.getToken().getType();
   boolean needToLogMessage=STATIC_LOG.isInfoEnabled();
-  boolean isSupportedRoot=root == HiveParser.TOK_QUERY || root == HiveParser.TOK_EXPLAIN || qb.isCTAS();
-  boolean isSupportedType=(qb.getIsQuery() && !qb.containsQueryWithoutSourceTable()) || qb.isCTAS() || cboCtx.type == PreCboCtx.Type.INSERT;
+  boolean isSupportedRoot=root == HiveParser.TOK_QUERY || root == HiveParser.TOK_EXPLAIN || qb.isCTAS() || qb.isMaterializedView();
+  boolean isSupportedType=(qb.getIsQuery() && !qb.containsQueryWithoutSourceTable()) || qb.isCTAS() || qb.isMaterializedView()|| cboCtx.type == PreCboCtx.Type.INSERT;
   boolean noBadTokens=HiveCalciteUtil.validateASTForUnsupportedTokens(ast);
-  boolean result=isSupportedRoot && isSupportedType && getCreateViewDesc() == null && noBadTokens;
+  boolean result=isSupportedRoot && isSupportedType && (getCreateViewDesc() == null || getCreateViewDesc().isMaterialized())&& noBadTokens;
   if (!result) {
     if (needToLogMessage) {
       String msg="";
@@ -14,7 +14,7 @@
       if (!isSupportedType) {
         msg+="is not a query with at least one source table " + " or there is a subquery without a source table, or CTAS, or insert; ";
       }
-      if (getCreateViewDesc() != null) {
+      if (getCreateViewDesc() != null && !getCreateViewDesc().isMaterialized()) {
         msg+="has create view; ";
       }
       if (!noBadTokens) {

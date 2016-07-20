@@ -7,7 +7,7 @@
  else {
     PreCboCtx cboCtx=(PreCboCtx)plannerCtx;
     ASTNode queryForCbo=ast;
-    if (cboCtx.type == PreCboCtx.Type.CTAS) {
+    if (cboCtx.type == PreCboCtx.Type.CTAS_OR_MV) {
       queryForCbo=cboCtx.nodeOfInterest;
     }
     runCBO=canCBOHandleAst(queryForCbo,getQB(),cboCtx);
@@ -15,6 +15,7 @@
     if (runCBO) {
       disableJoinMerge=true;
       boolean reAnalyzeAST=false;
+      final boolean materializedView=getQB().isMaterializedView();
       try {
         if (this.conf.getBoolVar(HiveConf.ConfVars.HIVE_CBO_RETPATH_HIVEOP)) {
           sinkOp=getOptimizedHiveOPDag();
@@ -24,11 +25,22 @@
         }
  else {
           ASTNode newAST=getOptimizedAST();
-          newAST=fixUpCtasAndInsertAfterCbo(ast,newAST,cboCtx);
+          newAST=fixUpAfterCbo(ast,newAST,cboCtx);
           init(false);
-          if (cboCtx.type == PreCboCtx.Type.CTAS) {
-            setAST(newAST);
-            newAST=reAnalyzeCtasAfterCbo(newAST);
+          if (cboCtx.type == PreCboCtx.Type.CTAS_OR_MV) {
+            if (materializedView) {
+              setAST(newAST);
+              newAST=reAnalyzeMaterializedViewAfterCbo(newAST);
+              String originalText=ctx.getTokenRewriteStream().toString(cboCtx.nodeOfInterest.getTokenStartIndex(),cboCtx.nodeOfInterest.getTokenStopIndex());
+              createVwDesc.setViewOriginalText(originalText);
+              viewSelect=newAST;
+              viewsExpanded=new ArrayList<>();
+              viewsExpanded.add(createVwDesc.getViewName());
+            }
+ else {
+              setAST(newAST);
+              newAST=reAnalyzeCTASAfterCbo(newAST);
+            }
           }
           Phase1Ctx ctx_1=initPhase1Ctx();
           if (!doPhase1(newAST,getQB(),ctx_1,null)) {
