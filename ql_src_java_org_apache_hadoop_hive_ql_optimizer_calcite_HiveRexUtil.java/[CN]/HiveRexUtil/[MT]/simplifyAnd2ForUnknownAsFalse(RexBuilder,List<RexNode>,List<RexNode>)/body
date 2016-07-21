@@ -10,14 +10,32 @@
   if (terms.size() == 1 && notTerms.isEmpty()) {
     return simplify(rexBuilder,terms.get(0),true);
   }
+  final Multimap<String,Pair<String,RexNode>> equalityTerms=ArrayListMultimap.create();
+  final Map<String,String> equalityConstantTerms=new HashMap<>();
   final Set<String> negatedTerms=new HashSet<>();
   final Set<String> nullOperands=new HashSet<>();
   final Set<RexNode> notNullOperands=new LinkedHashSet<>();
   final Set<String> comparedOperands=new HashSet<>();
   for (int i=0; i < terms.size(); i++) {
-    final RexNode term=terms.get(i);
+    RexNode term=terms.get(i);
     if (!HiveCalciteUtil.isDeterministic(term)) {
       continue;
+    }
+    while (term.getKind() == SqlKind.EQUALS) {
+      RexCall call=(RexCall)term;
+      if (call.getOperands().get(0).isAlwaysTrue()) {
+        term=call.getOperands().get(1);
+        terms.remove(i);
+        terms.add(i,term);
+        continue;
+      }
+ else       if (call.getOperands().get(1).isAlwaysTrue()) {
+        term=call.getOperands().get(0);
+        terms.remove(i);
+        terms.add(i,term);
+        continue;
+      }
+      break;
     }
 switch (term.getKind()) {
 case EQUALS:
@@ -29,15 +47,38 @@ case GREATER_THAN_OR_EQUAL:
       RexCall call=(RexCall)term;
     RexNode left=call.getOperands().get(0);
   comparedOperands.add(left.toString());
+RexCall leftCast=null;
 if (left.getKind() == SqlKind.CAST) {
-  RexCall leftCast=(RexCall)left;
-  comparedOperands.add(leftCast.getOperands().get(0).toString());
+leftCast=(RexCall)left;
+comparedOperands.add(leftCast.getOperands().get(0).toString());
 }
 RexNode right=call.getOperands().get(1);
 comparedOperands.add(right.toString());
+RexCall rightCast=null;
 if (right.getKind() == SqlKind.CAST) {
-RexCall rightCast=(RexCall)right;
+rightCast=(RexCall)right;
 comparedOperands.add(rightCast.getOperands().get(0).toString());
+}
+if (term.getKind() == SqlKind.EQUALS) {
+boolean leftRef=left instanceof RexInputRef || (leftCast != null && leftCast.getOperands().get(0) instanceof RexInputRef);
+boolean rightRef=right instanceof RexInputRef || (rightCast != null && rightCast.getOperands().get(0) instanceof RexInputRef);
+if (right instanceof RexLiteral && leftRef) {
+final String literal=right.toString();
+final String prevLiteral=equalityConstantTerms.put(left.toString(),literal);
+if (prevLiteral != null && !literal.equals(prevLiteral)) {
+return rexBuilder.makeLiteral(false);
+}
+}
+ else if (left instanceof RexLiteral && rightRef) {
+final String literal=left.toString();
+final String prevLiteral=equalityConstantTerms.put(right.toString(),literal);
+if (prevLiteral != null && !literal.equals(prevLiteral)) {
+return rexBuilder.makeLiteral(false);
+}
+}
+ else if (leftRef && rightRef) {
+equalityTerms.put(left.toString(),Pair.of(right.toString(),term));
+}
 }
 RexNode negatedTerm=negate(rexBuilder,call);
 if (negatedTerm != null) {
@@ -65,6 +106,23 @@ nullOperands.add(((RexCall)term).getOperands().get(0).toString());
 }
 if (!Collections.disjoint(nullOperands,comparedOperands)) {
 return rexBuilder.makeLiteral(false);
+}
+for (String ref1 : equalityTerms.keySet()) {
+final String literal1=equalityConstantTerms.get(ref1);
+if (literal1 == null) {
+continue;
+}
+Collection<Pair<String,RexNode>> references=equalityTerms.get(ref1);
+for (Pair<String,RexNode> ref2 : references) {
+final String literal2=equalityConstantTerms.get(ref2.left);
+if (literal2 == null) {
+continue;
+}
+if (!literal1.equals(literal2)) {
+return rexBuilder.makeLiteral(false);
+}
+terms.remove(ref2.right);
+}
 }
 for (RexNode operand : notNullOperands) {
 if (!comparedOperands.contains(operand.toString())) {
