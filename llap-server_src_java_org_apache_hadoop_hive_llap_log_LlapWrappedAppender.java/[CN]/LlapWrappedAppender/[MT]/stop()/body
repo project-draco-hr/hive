@@ -1,0 +1,37 @@
+{
+  if (!(this.isStopping() || this.isStopped())) {
+    super.stop();
+    if (appenderControl.get() != null) {
+      appenderControl.get().stop();
+      realAppender.get().stop();
+    }
+    if (LOGGER.isDebugEnabled()) {
+      LOGGER.debug("Stop invoked for " + ((RandomAccessFileAppender)realAppender.get()).getFileName());
+    }
+    if (realAppender.get() == null) {
+      LOGGER.info("RealAppender is null. Ignoring stop");
+      return;
+    }
+    RandomAccessFileAppender raf=(RandomAccessFileAppender)realAppender.get();
+    Path renamedPath=null;
+    if (renameFileOnClose) {
+      try {
+        int counter=0;
+        while (true) {
+          renamedPath=getRenamedPath(raf.getFileName(),counter);
+          if (!Files.exists(renamedPath)) {
+            if (LOGGER.isTraceEnabled()) {
+              LOGGER.trace("Renaming file: " + raf.getFileName() + " to "+ renamedPath);
+            }
+            Files.move(Paths.get(raf.getFileName()),renamedPath);
+            break;
+          }
+          counter++;
+        }
+      }
+ catch (      IOException e) {
+        LOGGER.warn("Failed to rename file: " + raf.getFileName() + " to "+ renamedPath,e);
+      }
+    }
+  }
+}
