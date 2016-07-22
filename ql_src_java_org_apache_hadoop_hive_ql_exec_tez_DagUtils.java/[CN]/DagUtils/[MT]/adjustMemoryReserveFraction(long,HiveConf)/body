@@ -1,0 +1,32 @@
+{
+  if (conf.getFloatVar(ConfVars.TEZ_TASK_SCALE_MEMORY_RESERVE_FRACTION) > 0) {
+    return conf.getFloatVar(ConfVars.TEZ_TASK_SCALE_MEMORY_RESERVE_FRACTION);
+  }
+  float tezHeapFraction=conf.getFloatVar(ConfVars.TEZ_CONTAINER_MAX_JAVA_HEAP_FRACTION);
+  float tezMinReserveFraction=conf.getFloatVar(ConfVars.TEZ_TASK_SCALE_MEMORY_RESERVE_FRACTION_MIN);
+  float tezMaxReserveFraction=conf.getFloatVar(ConfVars.TEZ_TASK_SCALE_MEMORY_RESERVE_FRACTION_MAX);
+  Resource resource=getContainerResource(conf);
+  long containerSize=(long)resource.getMemory() * 1024 * 1024;
+  String javaOpts=getContainerJavaOpts(conf);
+  long xmx=parseRightmostXmx(javaOpts);
+  if (xmx <= 0) {
+    xmx=(long)(tezHeapFraction * containerSize);
+  }
+  long actualMemToBeAllocated=(long)(tezMinReserveFraction * xmx);
+  if (actualMemToBeAllocated < memoryRequested) {
+    LOG.warn("The actual amount of memory to be allocated " + actualMemToBeAllocated + " is less than the amount of requested memory for Map Join conversion "+ memoryRequested);
+    float frac=(float)memoryRequested / xmx;
+    LOG.info("Fraction after calculation: " + frac);
+    if (frac <= tezMinReserveFraction) {
+      return tezMinReserveFraction;
+    }
+ else     if (frac > tezMinReserveFraction && frac < tezMaxReserveFraction) {
+      LOG.info("Will adjust Tez setting " + TezConfiguration.TEZ_TASK_SCALE_MEMORY_RESERVE_FRACTION + " to "+ frac+ " to allocate more memory");
+      return frac;
+    }
+ else {
+      return tezMaxReserveFraction;
+    }
+  }
+  return tezMinReserveFraction;
+}
