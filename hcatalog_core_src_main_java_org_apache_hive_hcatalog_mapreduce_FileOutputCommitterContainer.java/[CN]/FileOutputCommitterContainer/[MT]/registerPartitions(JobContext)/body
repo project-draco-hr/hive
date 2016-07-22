@@ -7,20 +7,24 @@
   Table table=new Table(jobInfo.getTableInfo().getTable());
   Path tblPath=new Path(table.getTTable().getSd().getLocation());
   FileSystem fs=tblPath.getFileSystem(conf);
-  if (table.getPartitionKeys().size() == 0) {
-    Path src=new Path(jobInfo.getLocation());
-    moveTaskOutputs(fs,src,src,tblPath,false,table.isImmutable());
-    if (!src.equals(tblPath)) {
-      fs.delete(src,true);
-    }
-    return;
-  }
   IMetaStoreClient client=null;
   HCatTableInfo tableInfo=jobInfo.getTableInfo();
   List<Partition> partitionsAdded=new ArrayList<Partition>();
   try {
     HiveConf hiveConf=HCatUtil.getHiveConf(conf);
     client=HCatUtil.getHiveMetastoreClient(hiveConf);
+    if (table.getPartitionKeys().size() == 0) {
+      Path src=new Path(jobInfo.getLocation());
+      moveTaskOutputs(fs,src,src,tblPath,false,table.isImmutable());
+      if (!src.equals(tblPath)) {
+        fs.delete(src,true);
+      }
+      if (table.getParameters() != null && table.getParameters().containsKey(StatsSetupConst.COLUMN_STATS_ACCURATE)) {
+        table.getParameters().remove(StatsSetupConst.COLUMN_STATS_ACCURATE);
+        client.alter_table(table.getDbName(),table.getTableName(),table.getTTable());
+      }
+      return;
+    }
     StorerInfo storer=InternalUtil.extractStorerInfo(table.getTTable().getSd(),table.getParameters());
     FileStatus tblStat=fs.getFileStatus(tblPath);
     String grpName=tblStat.getGroup();
