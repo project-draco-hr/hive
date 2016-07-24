@@ -8,11 +8,37 @@
   }
   stripes=orcTail.getStripes();
   stripeStats=orcTail.getStripeStatistics();
-  types=orcTail.getTypes();
+  fileTypes=orcTail.getTypes();
+  TypeDescription fileSchema=OrcUtils.convertTypeFromProtobuf(fileTypes,0);
+  if (readerTypes == null) {
+    readerIncluded=genIncludedColumns(fileTypes,context.conf,isOriginal);
+    evolution=new SchemaEvolution(fileSchema,readerIncluded);
+  }
+ else {
+    readerIncluded=genIncludedColumns(readerTypes,context.conf,true);
+    if (readerIncluded != null && !isOriginal) {
+      readerIncluded=shiftReaderIncludedForAcid(readerIncluded);
+    }
+    TypeDescription readerSchema=OrcUtils.convertTypeFromProtobuf(readerTypes,0);
+    evolution=new SchemaEvolution(fileSchema,readerSchema,readerIncluded);
+  }
   writerVersion=orcTail.getWriterVersion();
-  includedCols=genIncludedColumns(types,context.conf,isOriginal);
   List<OrcProto.ColumnStatistics> fileColStats=orcTail.getFooter().getStatisticsList();
-  projColsUncompressedSize=computeProjectionSize(types,fileColStats,includedCols,isOriginal);
+  boolean[] fileIncluded;
+  if (readerTypes == null) {
+    fileIncluded=readerIncluded;
+  }
+ else {
+    fileIncluded=new boolean[fileTypes.size()];
+    final int readerSchemaSize=readerTypes.size();
+    for (int i=0; i < readerSchemaSize; i++) {
+      TypeDescription fileType=evolution.getFileType(i);
+      if (fileType != null) {
+        fileIncluded[fileType.getId()]=true;
+      }
+    }
+  }
+  projColsUncompressedSize=computeProjectionSize(fileTypes,fileColStats,fileIncluded,isOriginal);
   if (!context.footerInSplits) {
     orcTail=null;
   }
