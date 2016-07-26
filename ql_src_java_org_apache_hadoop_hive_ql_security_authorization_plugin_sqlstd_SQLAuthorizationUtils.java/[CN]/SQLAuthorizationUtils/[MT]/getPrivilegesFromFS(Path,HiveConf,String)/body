@@ -3,16 +3,26 @@
   FileSystem fs;
   try {
     fs=FileSystem.get(filePath.toUri(),conf);
-    FileStatus fileStatus=FileUtils.getPathOrParentThatExists(fs,filePath);
-    if (FileUtils.isOwnerOfFileHierarchy(fs,fileStatus,userName)) {
-      availPrivs.addPrivilege(SQLPrivTypeGrant.OWNER_PRIV);
+    FileStatus[] fileMatches=fs.globStatus(filePath);
+    if ((fileMatches != null) && (fileMatches.length > 1)) {
+      LOG.debug("Checking fs privileges for multiple files that matched {}",filePath.toString());
+      addPrivilegesFromFS(userName,availPrivs,fs,fileMatches,true);
     }
-    if (FileUtils.isActionPermittedForFileHierarchy(fs,fileStatus,userName,FsAction.WRITE)) {
-      availPrivs.addPrivilege(SQLPrivTypeGrant.INSERT_NOGRANT);
-      availPrivs.addPrivilege(SQLPrivTypeGrant.DELETE_NOGRANT);
-    }
-    if (FileUtils.isActionPermittedForFileHierarchy(fs,fileStatus,userName,FsAction.READ)) {
-      availPrivs.addPrivilege(SQLPrivTypeGrant.SELECT_NOGRANT);
+ else {
+      FileStatus fileStatus=FileUtils.getFileStatusOrNull(fs,filePath);
+      boolean pickParent=(fileStatus == null);
+      if (pickParent) {
+        fileStatus=FileUtils.getPathOrParentThatExists(fs,filePath.getParent());
+      }
+      Path path=fileStatus.getPath();
+      if (pickParent) {
+        LOG.debug("Checking fs privileges for parent path {} for nonexistent {}",path.toString(),filePath.toString());
+        addPrivilegesFromFS(userName,availPrivs,fs,fileStatus,false);
+      }
+ else {
+        LOG.debug("Checking fs privileges for path itself {}, originally specified as {}",path.toString(),filePath.toString());
+        addPrivilegesFromFS(userName,availPrivs,fs,fileStatus,true);
+      }
     }
   }
  catch (  Exception e) {
