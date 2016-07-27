@@ -12,18 +12,42 @@
       List<ExprNodeDesc> childExpressions=getChildExpressionsWithImplicitCast(expr.getGenericUDF(),exprDesc.getChildren(),exprDesc.getTypeInfo());
       ve=getGenericUdfVectorExpression(expr.getGenericUDF(),childExpressions,mode,exprDesc.getTypeInfo());
       if (ve == null) {
-        ve=getCustomUDFExpression(expr,mode);
+        if (hiveVectorAdaptorUsageMode != null) {
+switch (hiveVectorAdaptorUsageMode) {
+case NONE:
+            throw new HiveException("Could not vectorize expression (mode = " + mode.name() + "): "+ exprDesc.toString()+ " because hive.vectorized.adaptor.usage.mode=none");
+case CHOSEN:
+          if (isNonVectorizedPathUDF(expr,mode)) {
+            ve=getCustomUDFExpression(expr,mode);
+          }
+ else {
+            throw new HiveException("Could not vectorize expression (mode = " + mode.name() + "): "+ exprDesc.toString()+ " because hive.vectorized.adaptor.usage.mode=chosen "+ " and the UDF wasn't one of the chosen ones");
+          }
+        break;
+case ALL:
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("We will try to use the VectorUDFAdaptor for " + exprDesc.toString() + " because hive.vectorized.adaptor.usage.mode=all");
       }
-    }
-  }
- else   if (exprDesc instanceof ExprNodeConstantDesc) {
-    ve=getConstantVectorExpression(((ExprNodeConstantDesc)exprDesc).getValue(),exprDesc.getTypeInfo(),mode);
-  }
-  if (ve == null) {
-    throw new HiveException("Could not vectorize expression (mode = " + mode.name() + "): "+ exprDesc.toString());
-  }
-  if (LOG.isDebugEnabled()) {
-    LOG.debug("Input Expression = " + exprDesc.toString() + ", Vectorized Expression = "+ ve.toString());
-  }
-  return ve;
+    ve=getCustomUDFExpression(expr,mode);
+  break;
+default :
+throw new RuntimeException("Unknown hive vector adaptor usage mode " + hiveVectorAdaptorUsageMode.name());
+}
+if (ve == null) {
+throw new HiveException("Unable vectorize expression (mode = " + mode.name() + "): "+ exprDesc.toString()+ " even for the VectorUDFAdaptor");
+}
+}
+}
+}
+}
+ else if (exprDesc instanceof ExprNodeConstantDesc) {
+ve=getConstantVectorExpression(((ExprNodeConstantDesc)exprDesc).getValue(),exprDesc.getTypeInfo(),mode);
+}
+if (ve == null) {
+throw new HiveException("Could not vectorize expression (mode = " + mode.name() + "): "+ exprDesc.toString());
+}
+if (LOG.isDebugEnabled()) {
+LOG.debug("Input Expression = " + exprDesc.toString() + ", Vectorized Expression = "+ ve.toString());
+}
+return ve;
 }
