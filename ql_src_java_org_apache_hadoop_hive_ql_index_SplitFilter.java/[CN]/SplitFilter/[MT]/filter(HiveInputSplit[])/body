@@ -1,0 +1,28 @@
+{
+  long sumSplitLengths=0;
+  List<HiveInputSplit> newSplits=new ArrayList<>();
+  Arrays.sort(splits,new HiveInputSplitComparator());
+  for (  HiveInputSplit split : splits) {
+    LOG.info("split start : " + split.getStart());
+    LOG.info("split end : " + (split.getStart() + split.getLength()));
+    try {
+      if (indexResult.contains(split)) {
+        HiveInputSplit newSplit=split;
+        if (isAdjustmentRequired(newSplits,split)) {
+          newSplit=adjustSplit(split);
+        }
+        sumSplitLengths+=newSplit.getLength();
+        if (sumSplitLengths > maxInputSize) {
+          String messageTemplate="Size of data to read during a compact-index-based query " + "exceeded the maximum of %d set in %s";
+          throw new IOException(String.format(messageTemplate,maxInputSize,HiveConf.ConfVars.HIVE_INDEX_COMPACT_QUERY_MAX_SIZE.varname));
+        }
+        newSplits.add(newSplit);
+      }
+    }
+ catch (    HiveException e) {
+      throw new RuntimeException("Unable to get metadata for input table split " + split.getPath(),e);
+    }
+  }
+  LOG.info("Number of input splits: {}, new input splits: {}, sum of split lengths: {}",splits.length,newSplits.size(),sumSplitLengths);
+  return newSplits;
+}
