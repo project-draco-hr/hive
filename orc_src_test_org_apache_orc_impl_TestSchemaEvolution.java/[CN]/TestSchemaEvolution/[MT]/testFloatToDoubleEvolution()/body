@@ -1,0 +1,20 @@
+{
+  testFilePath=new Path(workDir,"TestOrcFile." + testCaseName.getMethodName() + ".orc");
+  TypeDescription schema=TypeDescription.createFloat();
+  Writer writer=OrcFile.createWriter(testFilePath,OrcFile.writerOptions(conf).setSchema(schema).stripeSize(100000).bufferSize(10000));
+  VectorizedRowBatch batch=new VectorizedRowBatch(1,1024);
+  DoubleColumnVector dcv=new DoubleColumnVector(1024);
+  batch.cols[0]=dcv;
+  batch.reset();
+  batch.size=1;
+  dcv.vector[0]=74.72f;
+  writer.addRowBatch(batch);
+  writer.close();
+  Reader reader=OrcFile.createReader(testFilePath,OrcFile.readerOptions(conf).filesystem(fs));
+  TypeDescription schemaOnRead=TypeDescription.createDouble();
+  RecordReader rows=reader.rows(new Reader.Options().schema(schemaOnRead));
+  batch=schemaOnRead.createRowBatch();
+  rows.nextBatch(batch);
+  assertEquals(74.72,((DoubleColumnVector)batch.cols[0]).vector[0],0.00000000001);
+  rows.close();
+}
