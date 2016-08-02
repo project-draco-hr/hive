@@ -26,6 +26,7 @@
   this.queryDisplay.setQueryId(queryId);
   LOG.info("Compiling command(queryId=" + queryId + "): "+ queryStr);
   SessionState.get().setupQueryCurrentTimestamp();
+  boolean compileError=false;
   try {
     final HiveTxnManager txnManager=SessionState.get().initTxnMgr(conf);
     ShutdownHookManager.removeShutdownHook(shutdownRunner);
@@ -50,6 +51,15 @@
     ASTNode tree=pd.parse(command,ctx);
     tree=ParseUtils.findRootNonNullToken(tree);
     perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.PARSE);
+    queryHooks=getHooks(ConfVars.HIVE_QUERY_LIFETIME_HOOKS,QueryLifeTimeHook.class);
+    if (queryHooks != null && !queryHooks.isEmpty()) {
+      QueryLifeTimeHookContext qhc=new QueryLifeTimeHookContextImpl();
+      qhc.setHiveConf(conf);
+      qhc.setCommand(command);
+      for (      QueryLifeTimeHook hook : queryHooks) {
+        hook.beforeCompile(qhc);
+      }
+    }
     perfLogger.PerfLogBegin(CLASS_NAME,PerfLogger.ANALYZE);
     BaseSemanticAnalyzer sem=SemanticAnalyzerFactory.get(queryState,tree);
     List<HiveSemanticAnalyzerHook> saHooks=getHooks(HiveConf.ConfVars.SEMANTIC_ANALYZER_HOOK,HiveSemanticAnalyzerHook.class);
@@ -114,6 +124,7 @@
     return 0;
   }
  catch (  Exception e) {
+    compileError=true;
     ErrorMsg error=ErrorMsg.getErrorMsg(e.getMessage());
     errorMessage="FAILED: " + e.getClass().getSimpleName();
     if (error != ErrorMsg.GENERIC_ERROR) {
@@ -134,6 +145,14 @@
     return error.getErrorCode();
   }
  finally {
+    if (queryHooks != null && !queryHooks.isEmpty()) {
+      QueryLifeTimeHookContext qhc=new QueryLifeTimeHookContextImpl();
+      qhc.setHiveConf(conf);
+      qhc.setCommand(command);
+      for (      QueryLifeTimeHook hook : queryHooks) {
+        hook.afterCompile(qhc,compileError);
+      }
+    }
     double duration=perfLogger.PerfLogEnd(CLASS_NAME,PerfLogger.COMPILE) / 1000.00;
     ImmutableMap<String,Long> compileHMSTimings=dumpMetaCallTimingWithoutEx("compilation");
     queryDisplay.setHmsTimings(QueryDisplay.Phase.COMPILATION,compileHMSTimings);
