@@ -58,15 +58,16 @@
         StatsSetupConst.setBasicStatsStateForCreateTable(newTPart.getParameters(),StatsSetupConst.TRUE);
       }
       MetaStoreUtils.populateQuickStats(HiveStatsUtils.getFileStatusRecurse(newPartPath,-1,newPartPath.getFileSystem(conf)),newTPart.getParameters());
-      getMSC().add_partition(newTPart.getTPartition());
+      try {
+        getMSC().add_partition(newTPart.getTPartition());
+      }
+ catch (      AlreadyExistsException aee) {
+        LOG.debug("Caught AlreadyExistsException, trying to alter partition instead");
+        setStatsPropAndAlterPartition(hasFollowingStatsTask,tbl,newTPart);
+      }
     }
  else {
-      EnvironmentContext environmentContext=null;
-      if (hasFollowingStatsTask) {
-        environmentContext=new EnvironmentContext();
-        environmentContext.putToProperties(StatsSetupConst.DO_NOT_UPDATE_STATS,StatsSetupConst.TRUE);
-      }
-      alterPartition(tbl.getDbName(),tbl.getTableName(),new Partition(tbl,newTPart.getTPartition()),environmentContext);
+      setStatsPropAndAlterPartition(hasFollowingStatsTask,tbl,newTPart);
     }
     return newTPart;
   }
