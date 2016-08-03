@@ -1,6 +1,9 @@
 {
   writeLock.lock();
   try {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("ScheduleRun: {}",constructPendingTaskCountsLogMessage());
+    }
     Iterator<Entry<Priority,List<TaskInfo>>> pendingIterator=pendingTasks.entrySet().iterator();
     while (pendingIterator.hasNext()) {
       Entry<Priority,List<TaskInfo>> entry=pendingIterator.next();
@@ -14,9 +17,7 @@
         }
         taskInfo.triedAssigningTask();
         ScheduleResult scheduleResult=scheduleTask(taskInfo);
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("ScheduleResult for Task: {} = {}",taskInfo,scheduleResult);
-        }
+        LOG.info("ScheduleResult for Task: {} = {}",taskInfo,scheduleResult);
         if (scheduleResult == ScheduleResult.SCHEDULED) {
           taskIter.remove();
         }
@@ -37,23 +38,36 @@
             potentialHosts=null;
           }
           if (potentialHosts != null) {
+            if (LOG.isDebugEnabled()) {
+              LOG.debug("Attempting to preempt on requested host for task={}, potentialHosts={}",taskInfo,Arrays.toString(potentialHosts));
+            }
             boolean shouldPreempt=true;
             for (            String host : potentialHosts) {
               MutableInt pendingHostPreemptions=pendingPreemptionsPerHost.get(host);
               if (pendingHostPreemptions != null && pendingHostPreemptions.intValue() > 0) {
                 shouldPreempt=false;
+                LOG.debug("Not preempting for task={}. Found an existing preemption request on host={}, pendingPreemptionCount={}",taskInfo.task,host,pendingHostPreemptions.intValue());
                 break;
               }
             }
             if (shouldPreempt) {
-              LOG.info("Attempting to preempt for {}, pendingPreemptions={} on hosts={}",taskInfo.task,pendingPreemptions.get(),Arrays.toString(potentialHosts));
+              LOG.debug("Preempting for {} on potential hosts={}. TotalPendingPreemptions={}",taskInfo.task,Arrays.toString(potentialHosts),pendingPreemptions.get());
               preemptTasks(entry.getKey().getPriority(),1,potentialHosts);
+            }
+ else {
+              LOG.debug("Not preempting for {} on potential hosts={}. An existing preemption request exists",taskInfo.task,Arrays.toString(potentialHosts));
             }
           }
  else {
+            LOG.debug("Attempting to preempt on any host for task={}, pendingPreemptions={}",taskInfo.task,pendingPreemptions.get());
             if (pendingPreemptions.get() == 0) {
-              LOG.info("Attempting to preempt for {}, pendingPreemptions={} on any host",taskInfo.task,pendingPreemptions.get());
+              LOG.info("Preempting for task={} on any available host",taskInfo.task);
               preemptTasks(entry.getKey().getPriority(),1,null);
+            }
+ else {
+              if (LOG.isDebugEnabled()) {
+                LOG.debug("Skipping preemption since there are {} pending preemption request. For task={}",pendingPreemptions.get(),taskInfo);
+              }
             }
           }
           scheduledAllAtPriority=false;
@@ -66,6 +80,7 @@
         pendingIterator.remove();
       }
       if (!scheduledAllAtPriority) {
+        LOG.debug("Unable to schedule all requests at priority={}. Skipping subsequent priority levels",entry.getKey());
         break;
       }
     }

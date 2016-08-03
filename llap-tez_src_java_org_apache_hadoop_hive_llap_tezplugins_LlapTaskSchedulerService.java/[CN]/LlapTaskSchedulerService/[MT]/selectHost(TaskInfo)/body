@@ -1,5 +1,8 @@
 {
   String[] requestedHosts=request.requestedHosts;
+  if (LOG.isDebugEnabled()) {
+    LOG.debug("selectingHost for task={} on hosts={}",request.task,Arrays.toString(requestedHosts));
+  }
   long schedulerAttemptTime=clock.getTime();
   readLock.lock();
   try {
@@ -7,6 +10,7 @@
       return SELECT_HOST_RESULT_INADEQUATE_TOTAL_CAPACITY;
     }
     boolean shouldDelayForLocality=request.shouldDelayForLocality(schedulerAttemptTime);
+    LOG.debug("ShouldDelayForLocality={} for task={} on hosts={}",shouldDelayForLocality,request.task,Arrays.toString(requestedHosts));
     if (requestedHosts != null && requestedHosts.length > 0) {
       int prefHostCount=-1;
       boolean requestedHostsWillBecomeAvailable=false;
@@ -28,6 +32,7 @@
                   }
  else {
                     if (nodeInfo.getEnableTime() > request.getLocalityDelayTimeout() && nodeInfo.isDisabled() && nodeInfo.hadCommFailure()) {
+                      LOG.debug("Host={} will not become available within requested timeout",nodeInfo);
                     }
  else {
                       requestedHostsWillBecomeAvailable=true;
@@ -45,18 +50,21 @@
       if (shouldDelayForLocality) {
         if (requestedHostsWillBecomeAvailable) {
           if (LOG.isDebugEnabled()) {
-            LOG.debug("Skipping non-local location allocation for [" + request.task + "] when trying to allocate on ["+ Arrays.toString(requestedHosts)+ "]"+ ". ScheduleAttemptTime="+ schedulerAttemptTime+ ", taskDelayTimeout="+ request.getLocalityDelayTimeout());
+            LOG.debug("Delaying local allocation for [" + request.task + "] when trying to allocate on ["+ Arrays.toString(requestedHosts)+ "]"+ ". ScheduleAttemptTime="+ schedulerAttemptTime+ ", taskDelayTimeout="+ request.getLocalityDelayTimeout());
           }
           return SELECT_HOST_RESULT_DELAYED_LOCALITY;
         }
  else {
           if (LOG.isDebugEnabled()) {
-            LOG.debug("Not skipping non-local location allocation for [" + request.task + "] when trying to allocate on ["+ Arrays.toString(requestedHosts)+ "] since none of these hosts are part of the known list");
+            LOG.debug("Skipping local allocation for [" + request.task + "] when trying to allocate on ["+ Arrays.toString(requestedHosts)+ "] since none of these hosts are part of the known list");
           }
         }
       }
     }
     Entry<String,NodeInfo>[] all=instanceToNodeMap.entrySet().toArray(new Entry[0]);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Attempting random allocation for task={}",request.task);
+    }
     if (all.length > 0) {
       int n=random.nextInt(all.length);
       for (int i=0; i < all.length; i++) {
