@@ -1,16 +1,35 @@
 {
-  List<Long> sizes=Lists.newArrayList();
-  for (  Partition part : parts) {
-    Path path=part.getDataLocation();
-    long size=0;
-    try {
-      FileSystem fs=path.getFileSystem(conf);
-      size=fs.getContentSummary(path).getLength();
+  LOG.info("Number of partitions : " + parts.size());
+  ArrayList<Future<Long>> futures=new ArrayList<>();
+  int threads=Math.max(1,conf.getIntVar(ConfVars.METASTORE_FS_HANDLER_THREADS_COUNT));
+  final ExecutorService pool=Executors.newFixedThreadPool(threads,new ThreadFactoryBuilder().setDaemon(true).setNameFormat("Get-Partitions-Size-%d").build());
+  final ArrayList<Long> sizes=new ArrayList<>(parts.size());
+  for (  final Partition part : parts) {
+    final Path path=part.getDataLocation();
+    futures.add(pool.submit(new Callable<Long>(){
+      @Override public Long call() throws Exception {
+        try {
+          LOG.debug("Partition path : " + path);
+          FileSystem fs=path.getFileSystem(conf);
+          return fs.getContentSummary(path).getLength();
+        }
+ catch (        IOException e) {
+          return 0L;
+        }
+      }
     }
- catch (    Exception e) {
-      size=0;
+));
+  }
+  try {
+    for (int i=0; i < futures.size(); i++) {
+      sizes.add(i,futures.get(i).get());
     }
-    sizes.add(size);
+  }
+ catch (  InterruptedException|ExecutionException e) {
+    LOG.warn("Exception in processing files ",e);
+  }
+ finally {
+    pool.shutdownNow();
   }
   return sizes;
 }
