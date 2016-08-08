@@ -6,16 +6,10 @@
       if (LOG.isDebugEnabled()) {
         LOG.debug("Creating a client without a token for " + nodeId);
       }
-      proxy=new LlapProtocolClientImpl(getConfig(),nodeId.getHostname(),nodeId.getPort(),retryPolicy,socketFactory);
+      proxy=new LlapProtocolClientImpl(getConfig(),nodeId.getHostname(),nodeId.getPort(),null,retryPolicy,socketFactory);
     }
  else {
-      UserGroupInformation ugi;
-      try {
-        ugi=UserGroupInformation.getCurrentUser();
-      }
- catch (      IOException e) {
-        throw new RuntimeException(e);
-      }
+      final UserGroupInformation ugi=UserGroupInformation.createRemoteUser(llapTokenUser);
       Token<LlapTokenIdentifier> nodeToken=new Token<LlapTokenIdentifier>(llapToken);
       SecurityUtil.setTokenService(nodeToken,NetUtils.createSocketAddrForHost(nodeId.getHostname(),nodeId.getPort()));
       ugi.addToken(nodeToken);
@@ -24,7 +18,7 @@
       }
       proxy=ugi.doAs(new PrivilegedAction<LlapProtocolBlockingPB>(){
         @Override public LlapProtocolBlockingPB run(){
-          return new LlapProtocolClientImpl(getConfig(),nodeId.getHostname(),nodeId.getPort(),retryPolicy,socketFactory);
+          return new LlapProtocolClientImpl(getConfig(),nodeId.getHostname(),nodeId.getPort(),ugi,retryPolicy,socketFactory);
         }
       }
 );
