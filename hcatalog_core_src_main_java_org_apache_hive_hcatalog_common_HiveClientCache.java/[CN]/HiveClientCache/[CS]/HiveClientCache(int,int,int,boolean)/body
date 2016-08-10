@@ -1,0 +1,20 @@
+{
+  this.timeout=timeout;
+  this.enableStats=enableStats;
+  LOG.info("Initializing cache: eviction-timeout=" + timeout + " initial-capacity="+ initialCapacity+ " maximum-capacity="+ maxCapacity);
+  CacheBuilder builder=CacheBuilder.newBuilder().initialCapacity(initialCapacity).maximumSize(maxCapacity).expireAfterAccess(timeout,TimeUnit.SECONDS).removalListener(createRemovalListener());
+  try {
+    java.lang.reflect.Method m=builder.getClass().getMethod("recordStats",null);
+    m.invoke(builder,null);
+  }
+ catch (  NoSuchMethodException e) {
+    LOG.debug("Using a version of guava <12.0. Stats collection is enabled by default.");
+  }
+catch (  Exception e) {
+    LOG.warn("Unable to invoke recordStats method.",e);
+  }
+  this.hiveCache=builder.build();
+  long cleanupInterval=timeout > DEFAULT_HIVE_CACHE_EXPIRY_TIME_SECONDS ? timeout : DEFAULT_HIVE_CACHE_EXPIRY_TIME_SECONDS;
+  this.cleanupHandle=createCleanupThread(cleanupInterval);
+  createShutdownHook();
+}
