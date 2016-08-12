@@ -1,0 +1,28 @@
+{
+  final RelOptUtil.InputReferencedVisitor visitor=new RelOptUtil.InputReferencedVisitor();
+  for (  RexNode node : nodes) {
+    node.accept(visitor);
+  }
+  if (visitor.inputPosReferenced.size() == input.getRowType().getFieldCount()) {
+    return null;
+  }
+  final List<RexNode> belowNodes=new ArrayList<>();
+  final List<RelDataType> belowTypes=new ArrayList<>();
+  final List<Integer> positions=Lists.newArrayList(visitor.inputPosReferenced);
+  for (  int i : positions) {
+    final RexNode node=rexBuilder.makeInputRef(input,i);
+    belowNodes.add(node);
+    belowTypes.add(node.getType());
+  }
+  final List<RexNode> aboveNodes=new ArrayList<>();
+  for (  RexNode node : nodes) {
+    aboveNodes.add(node.accept(new RexShuttle(){
+      @Override public RexNode visitInputRef(      RexInputRef ref){
+        final int index=positions.indexOf(ref.getIndex());
+        return rexBuilder.makeInputRef(belowTypes.get(index),index);
+      }
+    }
+));
+  }
+  return Pair.of(aboveNodes,belowNodes);
+}

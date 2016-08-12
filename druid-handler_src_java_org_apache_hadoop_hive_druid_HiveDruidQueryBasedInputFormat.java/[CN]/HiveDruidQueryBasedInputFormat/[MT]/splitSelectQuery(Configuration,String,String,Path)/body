@@ -1,0 +1,89 @@
+{
+  final int selectThreshold=(int)HiveConf.getIntVar(conf,HiveConf.ConfVars.HIVE_DRUID_SELECT_THRESHOLD);
+  SelectQuery query;
+  try {
+    query=DruidStorageHandlerUtils.JSON_MAPPER.readValue(druidQuery,SelectQuery.class);
+  }
+ catch (  Exception e) {
+    throw new IOException(e);
+  }
+  final boolean isFetch=query.getContextBoolean(Constants.DRUID_QUERY_FETCH,false);
+  if (isFetch) {
+    return new HiveDruidSplit[]{new HiveDruidSplit(address,DruidStorageHandlerUtils.JSON_MAPPER.writeValueAsString(query),dummyPath)};
+  }
+  SegmentMetadataQueryBuilder metadataBuilder=new Druids.SegmentMetadataQueryBuilder();
+  metadataBuilder.dataSource(query.getDataSource());
+  metadataBuilder.intervals(query.getIntervals());
+  metadataBuilder.merge(true);
+  metadataBuilder.analysisTypes();
+  SegmentMetadataQuery metadataQuery=metadataBuilder.build();
+  HttpClient client=HttpClientInit.createClient(HttpClientConfig.builder().build(),new Lifecycle());
+  InputStream response;
+  try {
+    response=DruidStorageHandlerUtils.submitRequest(client,DruidStorageHandlerUtils.createRequest(address,metadataQuery));
+  }
+ catch (  Exception e) {
+    throw new IOException(org.apache.hadoop.util.StringUtils.stringifyException(e));
+  }
+  List<SegmentAnalysis> metadataList;
+  try {
+    metadataList=DruidStorageHandlerUtils.SMILE_MAPPER.readValue(response,new TypeReference<List<SegmentAnalysis>>(){
+    }
+);
+  }
+ catch (  Exception e) {
+    response.close();
+    throw new IOException(org.apache.hadoop.util.StringUtils.stringifyException(e));
+  }
+  if (metadataList == null || metadataList.isEmpty()) {
+    throw new IOException("Connected to Druid but could not retrieve datasource information");
+  }
+  if (metadataList.size() != 1) {
+    throw new IOException("Information about segments should have been merged");
+  }
+  final long numRows=metadataList.get(0).getNumRows();
+  query=query.withPagingSpec(PagingSpec.newSpec(selectThreshold));
+  if (numRows <= selectThreshold) {
+    return new HiveDruidSplit[]{new HiveDruidSplit(address,DruidStorageHandlerUtils.JSON_MAPPER.writeValueAsString(query),dummyPath)};
+  }
+  final List<Interval> intervals=new ArrayList<>();
+  if (query.getIntervals().size() == 1 && query.getIntervals().get(0).equals(DruidTable.DEFAULT_INTERVAL)) {
+    TimeBoundaryQueryBuilder timeBuilder=new Druids.TimeBoundaryQueryBuilder();
+    timeBuilder.dataSource(query.getDataSource());
+    TimeBoundaryQuery timeQuery=timeBuilder.build();
+    try {
+      response=DruidStorageHandlerUtils.submitRequest(client,DruidStorageHandlerUtils.createRequest(address,timeQuery));
+    }
+ catch (    Exception e) {
+      throw new IOException(org.apache.hadoop.util.StringUtils.stringifyException(e));
+    }
+    List<Result<TimeBoundaryResultValue>> timeList;
+    try {
+      timeList=DruidStorageHandlerUtils.SMILE_MAPPER.readValue(response,new TypeReference<List<Result<TimeBoundaryResultValue>>>(){
+      }
+);
+    }
+ catch (    Exception e) {
+      response.close();
+      throw new IOException(org.apache.hadoop.util.StringUtils.stringifyException(e));
+    }
+    if (timeList == null || timeList.isEmpty()) {
+      throw new IOException("Connected to Druid but could not retrieve time boundary information");
+    }
+    if (timeList.size() != 1) {
+      throw new IOException("We should obtain a single time boundary");
+    }
+    intervals.add(new Interval(timeList.get(0).getValue().getMinTime().getMillis(),timeList.get(0).getValue().getMaxTime().getMillis()));
+  }
+ else {
+    intervals.addAll(query.getIntervals());
+  }
+  int numSplits=(int)Math.ceil((double)numRows / selectThreshold);
+  List<List<Interval>> newIntervals=createSplitsIntervals(intervals,numSplits);
+  HiveDruidSplit[] splits=new HiveDruidSplit[numSplits];
+  for (int i=0; i < numSplits; i++) {
+    final SelectQuery partialQuery=query.withQuerySegmentSpec(new MultipleIntervalSegmentSpec(newIntervals.get(i)));
+    splits[i]=new HiveDruidSplit(address,DruidStorageHandlerUtils.JSON_MAPPER.writeValueAsString(partialQuery),dummyPath);
+  }
+  return splits;
+}

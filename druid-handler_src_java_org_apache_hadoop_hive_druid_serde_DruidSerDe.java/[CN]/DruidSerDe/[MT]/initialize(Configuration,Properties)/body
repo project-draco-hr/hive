@@ -1,0 +1,80 @@
+{
+  final List<String> columnNames=new ArrayList<>();
+  final List<PrimitiveTypeInfo> columnTypes=new ArrayList<>();
+  List<ObjectInspector> inspectors=new ArrayList<>();
+  String druidQuery=properties.getProperty(Constants.DRUID_QUERY_JSON);
+  if (druidQuery == null) {
+    String dataSource=properties.getProperty(Constants.DRUID_DATA_SOURCE);
+    if (dataSource == null) {
+      throw new SerDeException("Druid data source not specified; use " + Constants.DRUID_DATA_SOURCE + " in table properties");
+    }
+    SegmentMetadataQueryBuilder builder=new Druids.SegmentMetadataQueryBuilder();
+    builder.dataSource(dataSource);
+    builder.merge(true);
+    builder.analysisTypes();
+    SegmentMetadataQuery query=builder.build();
+    String address=HiveConf.getVar(configuration,HiveConf.ConfVars.HIVE_DRUID_BROKER_DEFAULT_ADDRESS);
+    if (org.apache.commons.lang3.StringUtils.isEmpty(address)) {
+      throw new SerDeException("Druid broker address not specified in configuration");
+    }
+    SegmentAnalysis schemaInfo;
+    try {
+      schemaInfo=submitMetadataRequest(address,query);
+    }
+ catch (    IOException e) {
+      throw new SerDeException(e);
+    }
+    for (    Entry<String,ColumnAnalysis> columnInfo : schemaInfo.getColumns().entrySet()) {
+      if (columnInfo.getKey().equals(DruidTable.DEFAULT_TIMESTAMP_COLUMN)) {
+        columnNames.add(columnInfo.getKey());
+        PrimitiveTypeInfo type=TypeInfoFactory.timestampTypeInfo;
+        columnTypes.add(type);
+        inspectors.add(PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(type));
+        continue;
+      }
+      columnNames.add(columnInfo.getKey());
+      PrimitiveTypeInfo type=DruidSerDeUtils.convertDruidToHiveType(columnInfo.getValue().getType());
+      columnTypes.add(type);
+      inspectors.add(PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(type));
+    }
+    columns=columnNames.toArray(new String[columnNames.size()]);
+    types=columnTypes.toArray(new PrimitiveTypeInfo[columnTypes.size()]);
+    inspector=ObjectInspectorFactory.getStandardStructObjectInspector(columnNames,inspectors);
+  }
+ else {
+    Query<?> query;
+    try {
+      query=DruidStorageHandlerUtils.JSON_MAPPER.readValue(druidQuery,Query.class);
+    }
+ catch (    Exception e) {
+      throw new SerDeException(e);
+    }
+switch (query.getType()) {
+case Query.TIMESERIES:
+      inferSchema((TimeseriesQuery)query,columnNames,columnTypes);
+    break;
+case Query.TOPN:
+  inferSchema((TopNQuery)query,columnNames,columnTypes);
+break;
+case Query.SELECT:
+inferSchema((SelectQuery)query,columnNames,columnTypes);
+break;
+case Query.GROUP_BY:
+inferSchema((GroupByQuery)query,columnNames,columnTypes);
+break;
+default :
+throw new SerDeException("Not supported Druid query");
+}
+columns=new String[columnNames.size()];
+types=new PrimitiveTypeInfo[columnNames.size()];
+for (int i=0; i < columnTypes.size(); ++i) {
+columns[i]=columnNames.get(i);
+types[i]=columnTypes.get(i);
+inspectors.add(PrimitiveObjectInspectorFactory.getPrimitiveWritableObjectInspector(types[i]));
+}
+inspector=ObjectInspectorFactory.getStandardStructObjectInspector(columnNames,inspectors);
+}
+if (LOG.isDebugEnabled()) {
+LOG.debug("DruidSerDe initialized with\n" + "\t columns: " + columnNames + "\n\t types: "+ columnTypes);
+}
+}

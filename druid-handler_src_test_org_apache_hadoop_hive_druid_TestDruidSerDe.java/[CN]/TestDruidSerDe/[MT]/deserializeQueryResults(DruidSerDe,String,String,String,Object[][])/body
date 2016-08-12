@@ -1,0 +1,77 @@
+{
+  Query<?> query=null;
+  DruidQueryRecordReader<?,?> reader=null;
+  List<?> resultsList=null;
+  ObjectMapper mapper=new DefaultObjectMapper();
+switch (queryType) {
+case Query.TIMESERIES:
+    query=mapper.readValue(jsonQuery,TimeseriesQuery.class);
+  reader=new DruidTimeseriesQueryRecordReader();
+resultsList=mapper.readValue(resultString,new TypeReference<List<Result<TimeseriesResultValue>>>(){
+}
+);
+break;
+case Query.TOPN:
+query=mapper.readValue(jsonQuery,TopNQuery.class);
+reader=new DruidTopNQueryRecordReader();
+resultsList=mapper.readValue(resultString,new TypeReference<List<Result<TopNResultValue>>>(){
+}
+);
+break;
+case Query.GROUP_BY:
+query=mapper.readValue(jsonQuery,GroupByQuery.class);
+reader=new DruidGroupByQueryRecordReader();
+resultsList=mapper.readValue(resultString,new TypeReference<List<Row>>(){
+}
+);
+break;
+case Query.SELECT:
+query=mapper.readValue(jsonQuery,SelectQuery.class);
+reader=new DruidSelectQueryRecordReader();
+resultsList=mapper.readValue(resultString,new TypeReference<List<Result<SelectResultValue>>>(){
+}
+);
+break;
+}
+Field field1=DruidQueryRecordReader.class.getDeclaredField("query");
+field1.setAccessible(true);
+field1.set(reader,query);
+if (reader instanceof DruidGroupByQueryRecordReader) {
+Method method1=DruidGroupByQueryRecordReader.class.getDeclaredMethod("initExtractors");
+method1.setAccessible(true);
+method1.invoke(reader);
+}
+Field field2=DruidQueryRecordReader.class.getDeclaredField("results");
+field2.setAccessible(true);
+StructObjectInspector oi=(StructObjectInspector)serDe.getObjectInspector();
+List<? extends StructField> fieldRefs=oi.getAllStructFieldRefs();
+Iterator<?> results=resultsList.iterator();
+field2.set(reader,results);
+DruidWritable writable=new DruidWritable();
+int pos=0;
+while (reader.next(NullWritable.get(),writable)) {
+Object row=serDe.deserialize(writable);
+Object[] expectedFieldsData=records[pos];
+assertEquals(expectedFieldsData.length,fieldRefs.size());
+for (int i=0; i < fieldRefs.size(); i++) {
+Object fieldData=oi.getStructFieldData(row,fieldRefs.get(i));
+assertEquals("Field " + i,expectedFieldsData[i],fieldData);
+}
+pos++;
+}
+assertEquals(pos,records.length);
+results=resultsList.iterator();
+field2.set(reader,results);
+pos=0;
+while (reader.nextKeyValue()) {
+Object row=serDe.deserialize(reader.getCurrentValue());
+Object[] expectedFieldsData=records[pos];
+assertEquals(expectedFieldsData.length,fieldRefs.size());
+for (int i=0; i < fieldRefs.size(); i++) {
+Object fieldData=oi.getStructFieldData(row,fieldRefs.get(i));
+assertEquals("Field " + i,expectedFieldsData[i],fieldData);
+}
+pos++;
+}
+assertEquals(pos,records.length);
+}

@@ -1,0 +1,40 @@
+{
+  final RelDataType rowType=table.getRowType();
+  int i=1;
+  RexNode filter=null;
+  if (i < rels.size() && rels.get(i) instanceof Filter) {
+    final Filter filterRel=(Filter)rels.get(i++);
+    filter=filterRel.getCondition();
+  }
+  List<RexNode> projects=null;
+  if (i < rels.size() && rels.get(i) instanceof Project) {
+    final Project project=(Project)rels.get(i++);
+    projects=project.getProjects();
+  }
+  ImmutableBitSet groupSet=null;
+  List<AggregateCall> aggCalls=null;
+  List<String> aggNames=null;
+  if (i < rels.size() && rels.get(i) instanceof Aggregate) {
+    final Aggregate aggregate=(Aggregate)rels.get(i++);
+    groupSet=aggregate.getGroupSet();
+    aggCalls=aggregate.getAggCallList();
+    aggNames=Util.skip(aggregate.getRowType().getFieldNames(),groupSet.cardinality());
+  }
+  List<Integer> collationIndexes=null;
+  List<Direction> collationDirections=null;
+  Integer fetch=null;
+  if (i < rels.size() && rels.get(i) instanceof Sort) {
+    final Sort sort=(Sort)rels.get(i++);
+    collationIndexes=new ArrayList<>();
+    collationDirections=new ArrayList<>();
+    for (    RelFieldCollation fCol : sort.collation.getFieldCollations()) {
+      collationIndexes.add(fCol.getFieldIndex());
+      collationDirections.add(fCol.getDirection());
+    }
+    fetch=sort.fetch != null ? RexLiteral.intValue(sort.fetch) : null;
+  }
+  if (i != rels.size()) {
+    throw new AssertionError("could not implement all rels");
+  }
+  return getQuery(rowType,filter,projects,groupSet,aggCalls,aggNames,collationIndexes,collationDirections,fetch);
+}

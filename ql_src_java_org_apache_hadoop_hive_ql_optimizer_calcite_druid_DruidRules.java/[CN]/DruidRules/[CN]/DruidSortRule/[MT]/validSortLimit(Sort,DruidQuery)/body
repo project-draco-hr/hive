@@ -1,0 +1,25 @@
+{
+  if (sort.offset != null && RexLiteral.intValue(sort.offset) != 0) {
+    return false;
+  }
+  if (query.getTopNode() instanceof Aggregate) {
+    final Aggregate topAgg=(Aggregate)query.getTopNode();
+    final ImmutableBitSet.Builder positionsReferenced=ImmutableBitSet.builder();
+    int metricsRefs=0;
+    for (    RelFieldCollation col : sort.collation.getFieldCollations()) {
+      int idx=col.getFieldIndex();
+      if (idx >= topAgg.getGroupCount()) {
+        metricsRefs++;
+        continue;
+      }
+      positionsReferenced.set(topAgg.getGroupSet().nth(idx));
+    }
+    boolean refsTimestamp=checkTimestampRefOnQuery(positionsReferenced.build(),topAgg.getInput());
+    if (refsTimestamp && metricsRefs != 0) {
+      return false;
+    }
+    return true;
+  }
+  HiveDruidConf conf=sort.getCluster().getPlanner().getContext().unwrap(HiveDruidConf.class);
+  return HiveCalciteUtil.pureLimitRelNode(sort) && RexLiteral.intValue(sort.fetch) <= conf.getSelectThreshold();
+}

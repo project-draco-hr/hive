@@ -1,0 +1,93 @@
+{
+switch (call.getKind()) {
+case EQUALS:
+case LESS_THAN:
+case LESS_THAN_OR_EQUAL:
+case GREATER_THAN:
+case GREATER_THAN_OR_EQUAL:
+{
+      RexLiteral literal=null;
+      if (call.getOperands().get(0) instanceof RexInputRef && call.getOperands().get(1) instanceof RexLiteral) {
+        literal=extractLiteral(call.getOperands().get(1));
+      }
+ else       if (call.getOperands().get(0) instanceof RexInputRef && call.getOperands().get(1).getKind() == SqlKind.CAST) {
+        literal=extractLiteral(call.getOperands().get(1));
+      }
+ else       if (call.getOperands().get(1) instanceof RexInputRef && call.getOperands().get(0) instanceof RexLiteral) {
+        literal=extractLiteral(call.getOperands().get(0));
+      }
+ else       if (call.getOperands().get(1) instanceof RexInputRef && call.getOperands().get(0).getKind() == SqlKind.CAST) {
+        literal=extractLiteral(call.getOperands().get(0));
+      }
+      if (literal == null) {
+        return null;
+      }
+      Comparable value=literalToType(literal,type);
+      if (value == null) {
+        return null;
+      }
+      if (call.getKind() == SqlKind.LESS_THAN) {
+        return Arrays.<Range>asList(withNot ? Range.atLeast(value) : Range.lessThan(value));
+      }
+ else       if (call.getKind() == SqlKind.LESS_THAN_OR_EQUAL) {
+        return Arrays.<Range>asList(withNot ? Range.greaterThan(value) : Range.atMost(value));
+      }
+ else       if (call.getKind() == SqlKind.GREATER_THAN) {
+        return Arrays.<Range>asList(withNot ? Range.atMost(value) : Range.greaterThan(value));
+      }
+ else       if (call.getKind() == SqlKind.GREATER_THAN_OR_EQUAL) {
+        return Arrays.<Range>asList(withNot ? Range.lessThan(value) : Range.atLeast(value));
+      }
+ else {
+        if (!withNot) {
+          return Arrays.<Range>asList(Range.closed(value,value));
+        }
+        return Arrays.<Range>asList(Range.lessThan(value),Range.greaterThan(value));
+      }
+    }
+case BETWEEN:
+{
+    RexLiteral literal1=extractLiteral(call.getOperands().get(2));
+    if (literal1 == null) {
+      return null;
+    }
+    RexLiteral literal2=extractLiteral(call.getOperands().get(3));
+    if (literal2 == null) {
+      return null;
+    }
+    Comparable value1=literalToType(literal1,type);
+    Comparable value2=literalToType(literal2,type);
+    if (value1 == null || value2 == null) {
+      return null;
+    }
+    boolean inverted=value1.compareTo(value2) > 0;
+    if (!withNot) {
+      return Arrays.<Range>asList(inverted ? Range.closed(value2,value1) : Range.closed(value1,value2));
+    }
+    return Arrays.<Range>asList(Range.lessThan(inverted ? value2 : value1),Range.greaterThan(inverted ? value1 : value2));
+  }
+case IN:
+{
+  List<Range> ranges=Lists.newArrayList();
+  for (int i=1; i < call.getOperands().size(); i++) {
+    RexLiteral literal=extractLiteral(call.getOperands().get(i));
+    if (literal == null) {
+      return null;
+    }
+    Comparable element=literalToType(literal,type);
+    if (element == null) {
+      return null;
+    }
+    if (withNot) {
+      ranges.addAll(Arrays.<Range>asList(Range.lessThan(element),Range.greaterThan(element)));
+    }
+ else {
+      ranges.add(Range.closed(element,element));
+    }
+  }
+  return ranges;
+}
+default :
+return null;
+}
+}

@@ -1,6 +1,6 @@
 {
   RowResolver rr=new RowResolver();
-  HiveTableScan tableRel=null;
+  RelNode tableRel=null;
   try {
     if (qb.getParseInfo().getTabSample(tableAlias) != null || getNameToSplitSampleMap().containsKey(tableAlias) || (conf.getBoolVar(HiveConf.ConfVars.HIVE_CBO_RETPATH_HIVEOP)) && (conf.getBoolVar(HiveConf.ConfVars.HIVETESTMODE))) {
       String msg=String.format("Table Sample specified for %s." + " Currently we don't support Table Sample clauses in CBO," + " turn off cbo for queries on tableSamples.",tableAlias);
@@ -29,14 +29,17 @@
       cInfoLst.add(colInfo);
       partitionColumns.add(colInfo);
     }
+    final TableType tableType=obtainTableType(tabMetaData);
     List<VirtualColumn> virtualCols=new ArrayList<VirtualColumn>();
-    Iterator<VirtualColumn> vcs=VirtualColumn.getRegistry(conf).iterator();
-    while (vcs.hasNext()) {
-      VirtualColumn vc=vcs.next();
-      colInfo=new ColumnInfo(vc.getName(),vc.getTypeInfo(),tableAlias,true,vc.getIsHidden());
-      rr.put(tableAlias,vc.getName().toLowerCase(),colInfo);
-      cInfoLst.add(colInfo);
-      virtualCols.add(vc);
+    if (tableType == TableType.NATIVE) {
+      Iterator<VirtualColumn> vcs=VirtualColumn.getRegistry(conf).iterator();
+      while (vcs.hasNext()) {
+        VirtualColumn vc=vcs.next();
+        colInfo=new ColumnInfo(vc.getName(),vc.getTypeInfo(),tableAlias,true,vc.getIsHidden());
+        rr.put(tableAlias,vc.getName().toLowerCase(),colInfo);
+        cInfoLst.add(colInfo);
+        virtualCols.add(vc);
+      }
     }
     RelDataType rowType=TypeConverter.getType(cluster,rr,null);
     String fullyQualifiedTabName=tabMetaData.getDbName();
@@ -47,7 +50,31 @@
       fullyQualifiedTabName=tabMetaData.getTableName();
     }
     RelOptHiveTable optTable=new RelOptHiveTable(relOptSchema,fullyQualifiedTabName,rowType,tabMetaData,nonPartitionColumns,partitionColumns,virtualCols,conf,partitionCache,noColsMissingStats);
-    tableRel=new HiveTableScan(cluster,cluster.traitSetOf(HiveRelNode.CONVENTION),optTable,null == tableAlias ? tabMetaData.getTableName() : tableAlias,getAliasId(tableAlias,qb),HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_CBO_RETPATH_HIVEOP),qb.isInsideView() || qb.getAliasInsideView().contains(tableAlias.toLowerCase()));
+    if (tableType == TableType.DRUID) {
+      String address=HiveConf.getVar(conf,HiveConf.ConfVars.HIVE_DRUID_BROKER_DEFAULT_ADDRESS);
+      String dataSource=tabMetaData.getParameters().get(Constants.DRUID_DATA_SOURCE);
+      Set<String> metrics=new HashSet<>();
+      List<RelDataType> druidColTypes=new ArrayList<>();
+      List<String> druidColNames=new ArrayList<>();
+      for (      RelDataTypeField field : rowType.getFieldList()) {
+        druidColTypes.add(field.getType());
+        druidColNames.add(field.getName());
+        if (field.getName().equals(DruidTable.DEFAULT_TIMESTAMP_COLUMN)) {
+          continue;
+        }
+        if (field.getType().getSqlTypeName() == SqlTypeName.VARCHAR) {
+          continue;
+        }
+        metrics.add(field.getName());
+      }
+      List<Interval> intervals=Arrays.asList(DruidTable.DEFAULT_INTERVAL);
+      DruidTable druidTable=new DruidTable(new DruidSchema(address),dataSource,rowType,metrics,intervals,DruidTable.DEFAULT_TIMESTAMP_COLUMN);
+      final TableScan scan=new HiveTableScan(cluster,cluster.traitSetOf(HiveRelNode.CONVENTION),optTable,null == tableAlias ? tabMetaData.getTableName() : tableAlias,getAliasId(tableAlias,qb),HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_CBO_RETPATH_HIVEOP),qb.isInsideView() || qb.getAliasInsideView().contains(tableAlias.toLowerCase()));
+      tableRel=DruidQuery.create(cluster,cluster.traitSetOf(HiveRelNode.CONVENTION),optTable,druidTable,ImmutableList.<RelNode>of(scan));
+    }
+ else {
+      tableRel=new HiveTableScan(cluster,cluster.traitSetOf(HiveRelNode.CONVENTION),optTable,null == tableAlias ? tabMetaData.getTableName() : tableAlias,getAliasId(tableAlias,qb),HiveConf.getBoolVar(conf,HiveConf.ConfVars.HIVE_CBO_RETPATH_HIVEOP),qb.isInsideView() || qb.getAliasInsideView().contains(tableAlias.toLowerCase()));
+    }
     ImmutableMap<String,Integer> hiveToCalciteColMap=buildHiveToCalciteColumnMap(rr,tableRel);
     relToHiveRR.put(tableRel,rr);
     relToHiveColNameCalcitePosMap.put(tableRel,hiveToCalciteColMap);

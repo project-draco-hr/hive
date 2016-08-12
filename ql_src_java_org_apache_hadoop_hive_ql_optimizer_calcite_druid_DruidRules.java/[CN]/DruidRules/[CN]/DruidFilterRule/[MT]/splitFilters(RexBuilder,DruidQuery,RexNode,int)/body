@@ -1,0 +1,26 @@
+{
+  final List<RexNode> timeRangeNodes=new ArrayList<>();
+  final List<RexNode> otherNodes=new ArrayList<>();
+  List<RexNode> conjs=RelOptUtil.conjunctions(cond);
+  if (conjs.isEmpty()) {
+    return null;
+  }
+  int max=input.getRowType().getFieldCount() - input.druidTable.metricFieldNames.size();
+  for (  RexNode conj : conjs) {
+    final RelOptUtil.InputReferencedVisitor visitor=new RelOptUtil.InputReferencedVisitor();
+    conj.accept(visitor);
+    if (visitor.inputPosReferenced.contains(timestampFieldIdx)) {
+      if (visitor.inputPosReferenced.size() != 1) {
+        return null;
+      }
+      timeRangeNodes.add(conj);
+    }
+ else     if (!visitor.inputPosReferenced.tailSet(max).isEmpty()) {
+      return null;
+    }
+ else {
+      otherNodes.add(conj);
+    }
+  }
+  return Pair.of(timeRangeNodes,otherNodes);
+}

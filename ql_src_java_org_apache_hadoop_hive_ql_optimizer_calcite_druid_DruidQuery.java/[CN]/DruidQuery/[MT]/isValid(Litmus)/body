@@ -1,0 +1,53 @@
+{
+  if (!super.isValid(litmus)) {
+    return false;
+  }
+  final String signature=signature();
+  if (!isValidSignature(signature)) {
+    return litmus.fail("invalid signature");
+  }
+  if (rels.isEmpty()) {
+    return litmus.fail("must have at least one rel");
+  }
+  for (int i=0; i < rels.size(); i++) {
+    final RelNode r=rels.get(i);
+    if (i == 0) {
+      if (!(r instanceof TableScan)) {
+        return litmus.fail("first rel must be TableScan");
+      }
+      if (r.getTable() != table) {
+        return litmus.fail("first rel must be based on table table");
+      }
+    }
+ else {
+      final List<RelNode> inputs=r.getInputs();
+      if (inputs.size() != 1 || inputs.get(0) != rels.get(i - 1)) {
+        return litmus.fail("each rel must have a single input");
+      }
+      if (r instanceof Aggregate) {
+        final Aggregate aggregate=(Aggregate)r;
+        if (aggregate.getGroupSets().size() != 1 || aggregate.indicator) {
+          return litmus.fail("no grouping sets");
+        }
+        for (        AggregateCall call : aggregate.getAggCallList()) {
+          if (call.filterArg >= 0) {
+            return litmus.fail("no filtered aggregate functions");
+          }
+        }
+      }
+      if (r instanceof Filter) {
+        final Filter filter=(Filter)r;
+        if (!isValidFilter(filter.getCondition())) {
+          return litmus.fail("invalid filter");
+        }
+      }
+      if (r instanceof Sort) {
+        final Sort sort=(Sort)r;
+        if (sort.offset != null && RexLiteral.intValue(sort.offset) != 0) {
+          return litmus.fail("offset not supported");
+        }
+      }
+    }
+  }
+  return true;
+}

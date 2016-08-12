@@ -3,9 +3,18 @@
   Table tab=qb.getMetaData().getSrcForAlias(alias);
   RowResolver rwsch;
   TableScanOperator top=topOps.get(alias_id);
+  Map<String,String> properties=qb.getTabPropsForAlias(alias);
   if (top == null) {
     rwsch=new RowResolver();
     try {
+      if (properties != null) {
+        for (        Entry<String,String> prop : properties.entrySet()) {
+          if (tab.getSerdeParam(prop.getKey()) != null) {
+            LOG.warn("SerDe property in input query overrides stored SerDe property");
+          }
+          tab.setSerdeParam(prop.getKey(),prop.getValue());
+        }
+      }
       StructObjectInspector rowObjectInspector=(StructObjectInspector)tab.getDeserializer().getObjectInspector();
       List<? extends StructField> fields=rowObjectInspector.getAllStructFieldRefs();
       for (int i=0; i < fields.size(); i++) {
@@ -39,10 +48,9 @@
     top.setInsideView(qb.isInsideView() || qb.getAliasInsideView().contains(alias.toLowerCase()));
     topOps.put(alias_id,top);
     topToTable.put(top,tab);
-    Map<String,String> props=qb.getTabPropsForAlias(alias);
-    if (props != null) {
-      topToTableProps.put(top,props);
-      tsDesc.setOpProps(props);
+    if (properties != null) {
+      topToTableProps.put(top,properties);
+      tsDesc.setOpProps(properties);
     }
   }
  else {

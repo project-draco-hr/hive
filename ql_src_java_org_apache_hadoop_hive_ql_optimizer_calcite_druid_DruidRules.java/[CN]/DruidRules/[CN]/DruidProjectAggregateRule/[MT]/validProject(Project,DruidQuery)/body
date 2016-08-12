@@ -1,0 +1,36 @@
+{
+  List<RexNode> nodes=project.getProjects();
+  int idxTimestamp=-1;
+  for (int i=0; i < nodes.size(); i++) {
+    final RexNode e=nodes.get(i);
+    if (e instanceof RexCall) {
+      final RexCall call=(RexCall)e;
+      if (!HiveDateGranularity.ALL_FUNCTIONS.contains(call.getOperator())) {
+        return -1;
+      }
+      if (idxTimestamp != -1) {
+        return -1;
+      }
+      if (!(call.getOperands().get(0) instanceof RexInputRef)) {
+        return -1;
+      }
+      final RexInputRef ref=(RexInputRef)call.getOperands().get(0);
+      if (!(checkTimestampRefOnQuery(ImmutableBitSet.of(ref.getIndex()),query.getTopNode()))) {
+        return -1;
+      }
+      idxTimestamp=i;
+      continue;
+    }
+    if (!(e instanceof RexInputRef)) {
+      return -1;
+    }
+    final RexInputRef ref=(RexInputRef)e;
+    if (checkTimestampRefOnQuery(ImmutableBitSet.of(ref.getIndex()),query.getTopNode())) {
+      if (idxTimestamp != -1) {
+        return -1;
+      }
+      idxTimestamp=i;
+    }
+  }
+  return idxTimestamp;
+}

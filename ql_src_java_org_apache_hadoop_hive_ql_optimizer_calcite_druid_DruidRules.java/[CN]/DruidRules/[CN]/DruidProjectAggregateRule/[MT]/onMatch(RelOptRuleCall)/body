@@ -1,0 +1,19 @@
+{
+  final Aggregate aggregate=call.rel(0);
+  final Project project=call.rel(1);
+  final DruidQuery query=call.rel(2);
+  if (!DruidQuery.isValidSignature(query.signature() + 'p' + 'a')) {
+    return;
+  }
+  int timestampIdx;
+  if ((timestampIdx=validProject(project,query)) == -1) {
+    return;
+  }
+  if (aggregate.indicator || aggregate.getGroupSets().size() != 1 || Iterables.any(aggregate.getAggCallList(),BAD_AGG) || !validAggregate(aggregate,timestampIdx)) {
+    return;
+  }
+  final RelNode newProject=project.copy(project.getTraitSet(),ImmutableList.of(Util.last(query.rels)));
+  final DruidQuery projectDruidQuery=DruidQuery.extendQuery(query,newProject);
+  final RelNode newAggregate=aggregate.copy(aggregate.getTraitSet(),ImmutableList.of(Util.last(projectDruidQuery.rels)));
+  call.transformTo(DruidQuery.extendQuery(projectDruidQuery,newAggregate));
+}

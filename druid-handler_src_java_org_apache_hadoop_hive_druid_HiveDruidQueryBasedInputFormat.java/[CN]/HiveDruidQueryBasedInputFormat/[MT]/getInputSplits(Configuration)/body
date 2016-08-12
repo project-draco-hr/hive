@@ -1,0 +1,38 @@
+{
+  String address=HiveConf.getVar(conf,HiveConf.ConfVars.HIVE_DRUID_BROKER_DEFAULT_ADDRESS);
+  if (StringUtils.isEmpty(address)) {
+    throw new IOException("Druid broker address not specified in configuration");
+  }
+  String druidQuery=StringEscapeUtils.unescapeJava(conf.get(Constants.DRUID_QUERY_JSON));
+  String druidQueryType;
+  if (StringUtils.isEmpty(druidQuery)) {
+    if (LOG.isWarnEnabled()) {
+      LOG.warn("Druid query is empty; creating Select query");
+    }
+    String dataSource=conf.get(Constants.DRUID_DATA_SOURCE);
+    if (dataSource == null) {
+      throw new IOException("Druid data source cannot be empty");
+    }
+    druidQuery=createSelectStarQuery(address,dataSource);
+    druidQueryType=Query.SELECT;
+  }
+ else {
+    druidQueryType=conf.get(Constants.DRUID_QUERY_TYPE);
+    if (druidQueryType == null) {
+      throw new IOException("Druid query type not recognized");
+    }
+  }
+  Job job=new Job(conf);
+  JobContext jobContext=ShimLoader.getHadoopShims().newJobContext(job);
+  Path[] paths=FileInputFormat.getInputPaths(jobContext);
+switch (druidQueryType) {
+case Query.TIMESERIES:
+case Query.TOPN:
+case Query.GROUP_BY:
+    return new HiveDruidSplit[]{new HiveDruidSplit(address,druidQuery,paths[0])};
+case Query.SELECT:
+  return splitSelectQuery(conf,address,druidQuery,paths[0]);
+default :
+throw new IOException("Druid query type not recognized");
+}
+}

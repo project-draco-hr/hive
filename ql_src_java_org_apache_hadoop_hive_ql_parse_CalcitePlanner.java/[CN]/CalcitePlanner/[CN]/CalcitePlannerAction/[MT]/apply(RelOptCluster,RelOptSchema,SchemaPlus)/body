@@ -5,8 +5,10 @@
   final Double maxSplitSize=(double)HiveConf.getLongVar(conf,HiveConf.ConfVars.MAPREDMAXSPLITSIZE);
   final Double maxMemory=(double)HiveConf.getLongVar(conf,HiveConf.ConfVars.HIVECONVERTJOINNOCONDITIONALTASKTHRESHOLD);
   HiveAlgorithmsConf algorithmsConf=new HiveAlgorithmsConf(maxSplitSize,maxMemory);
+  final int selectThreshold=(int)HiveConf.getIntVar(conf,HiveConf.ConfVars.HIVE_DRUID_SELECT_THRESHOLD);
+  HiveDruidConf druidConf=new HiveDruidConf(selectThreshold);
   HiveRulesRegistry registry=new HiveRulesRegistry();
-  HivePlannerContext confContext=new HivePlannerContext(algorithmsConf,registry);
+  HivePlannerContext confContext=new HivePlannerContext(algorithmsConf,druidConf,registry);
   RelOptPlanner planner=HiveVolcanoPlanner.createPlanner(confContext);
   final RelOptQuery query=new RelOptQuery(planner);
   final RexBuilder rexBuilder=cluster.getRexBuilder();
@@ -104,6 +106,9 @@
     calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),null,HepMatchOrder.BOTTOM_UP,HiveWindowingFixRule.INSTANCE);
     perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Window fixing rule");
   }
+  perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
+  calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,false,mdProvider.getMetadataProvider(),null,HepMatchOrder.BOTTOM_UP,DruidRules.FILTER,DruidRules.PROJECT_AGGREGATE,DruidRules.PROJECT,DruidRules.AGGREGATE,DruidRules.PROJECT_SORT,DruidRules.SORT,DruidRules.SORT_PROJECT);
+  perfLogger.PerfLogEnd(this.getClass().getName(),PerfLogger.OPTIMIZER,"Calcite: Druid transformation rules");
   if (HiveConf.getBoolVar(conf,ConfVars.HIVE_CBO_RETPATH_HIVEOP)) {
     perfLogger.PerfLogBegin(this.getClass().getName(),PerfLogger.OPTIMIZER);
     calciteOptimizedPlan=hepPlan(calciteOptimizedPlan,true,mdProvider.getMetadataProvider(),null,HepMatchOrder.BOTTOM_UP,HiveJoinProjectTransposeRule.BOTH_PROJECT_INCLUDE_OUTER,HiveJoinProjectTransposeRule.LEFT_PROJECT_INCLUDE_OUTER,HiveJoinProjectTransposeRule.RIGHT_PROJECT_INCLUDE_OUTER,HiveJoinToMultiJoinRule.INSTANCE,HiveProjectMergeRule.INSTANCE);

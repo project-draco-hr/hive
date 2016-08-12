@@ -1,0 +1,37 @@
+{
+  final Filter filter=call.rel(0);
+  final DruidQuery query=call.rel(1);
+  if (!DruidQuery.isValidSignature(query.signature() + 'f') || !query.isValidFilter(filter.getCondition())) {
+    return;
+  }
+  int timestampFieldIdx=-1;
+  for (int i=0; i < query.getRowType().getFieldCount(); i++) {
+    if (DruidTable.DEFAULT_TIMESTAMP_COLUMN.equals(query.getRowType().getFieldList().get(i).getName())) {
+      timestampFieldIdx=i;
+      break;
+    }
+  }
+  final Pair<List<RexNode>,List<RexNode>> pair=splitFilters(filter.getCluster().getRexBuilder(),query,filter.getCondition(),timestampFieldIdx);
+  if (pair == null) {
+    return;
+  }
+  List<Interval> intervals=null;
+  if (!pair.left.isEmpty()) {
+    intervals=DruidIntervalUtils.createInterval(query.getRowType().getFieldList().get(timestampFieldIdx).getType(),pair.left);
+    if (intervals == null) {
+      return;
+    }
+  }
+  DruidQuery newDruidQuery=query;
+  if (!pair.right.isEmpty()) {
+    if (!validConditions(pair.right)) {
+      return;
+    }
+    final RelNode newFilter=filter.copy(filter.getTraitSet(),Util.last(query.rels),RexUtil.composeConjunction(filter.getCluster().getRexBuilder(),pair.right,false));
+    newDruidQuery=DruidQuery.extendQuery(query,newFilter);
+  }
+  if (intervals != null) {
+    newDruidQuery=DruidQuery.extendQuery(newDruidQuery,intervals);
+  }
+  call.transformTo(newDruidQuery);
+}

@@ -1,0 +1,35 @@
+{
+  final Project project=call.rel(0);
+  final DruidQuery query=call.rel(1);
+  if (!DruidQuery.isValidSignature(query.signature() + 'p')) {
+    return;
+  }
+  if (canProjectAll(project.getProjects())) {
+    final RelNode newProject=project.copy(project.getTraitSet(),ImmutableList.of(Util.last(query.rels)));
+    RelNode newNode=DruidQuery.extendQuery(query,newProject);
+    call.transformTo(newNode);
+    return;
+  }
+  final Pair<List<RexNode>,List<RexNode>> pair=splitProjects(project.getCluster().getRexBuilder(),query,project.getProjects());
+  if (pair == null) {
+    return;
+  }
+  final List<RexNode> above=pair.left;
+  final List<RexNode> below=pair.right;
+  final RelDataTypeFactory.FieldInfoBuilder builder=project.getCluster().getTypeFactory().builder();
+  final RelNode input=Util.last(query.rels);
+  for (  RexNode e : below) {
+    final String name;
+    if (e instanceof RexInputRef) {
+      name=input.getRowType().getFieldNames().get(((RexInputRef)e).getIndex());
+    }
+ else {
+      name=null;
+    }
+    builder.add(name,e.getType());
+  }
+  final RelNode newProject=project.copy(project.getTraitSet(),input,below,builder.build());
+  final DruidQuery newQuery=DruidQuery.extendQuery(query,newProject);
+  final RelNode newProject2=project.copy(project.getTraitSet(),newQuery,above,project.getRowType());
+  call.transformTo(newProject2);
+}

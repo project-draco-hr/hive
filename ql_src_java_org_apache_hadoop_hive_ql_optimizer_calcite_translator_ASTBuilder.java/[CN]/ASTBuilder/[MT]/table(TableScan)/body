@@ -1,9 +1,23 @@
 {
   RelOptHiveTable hTbl=(RelOptHiveTable)scan.getTable();
   ASTBuilder b=ASTBuilder.construct(HiveParser.TOK_TABREF,"TOK_TABREF").add(ASTBuilder.construct(HiveParser.TOK_TABNAME,"TOK_TABNAME").add(HiveParser.Identifier,hTbl.getHiveTableMD().getDbName()).add(HiveParser.Identifier,hTbl.getHiveTableMD().getTableName()));
-  if (((HiveTableScan)scan).isInsideView()) {
-    b.add(ASTBuilder.construct(HiveParser.TOK_TABLEPROPERTIES,"TOK_TABLEPROPERTIES").add(ASTBuilder.construct(HiveParser.TOK_TABLEPROPLIST,"TOK_TABLEPROPLIST").add(ASTBuilder.construct(HiveParser.TOK_TABLEPROPERTY,"TOK_TABLEPROPERTY").add(HiveParser.StringLiteral,"\"insideView\"").add(HiveParser.StringLiteral,"\"TRUE\""))));
+  HiveTableScan hts;
+  if (scan instanceof DruidQuery) {
+    hts=(HiveTableScan)((DruidQuery)scan).getTableScan();
   }
-  b.add(HiveParser.Identifier,((HiveTableScan)scan).getTableAlias());
+ else {
+    hts=(HiveTableScan)scan;
+  }
+  ASTBuilder propList=ASTBuilder.construct(HiveParser.TOK_TABLEPROPLIST,"TOK_TABLEPROPLIST");
+  if (scan instanceof DruidQuery) {
+    DruidQuery dq=(DruidQuery)scan;
+    propList.add(ASTBuilder.construct(HiveParser.TOK_TABLEPROPERTY,"TOK_TABLEPROPERTY").add(HiveParser.StringLiteral,"\"" + Constants.DRUID_QUERY_JSON + "\"").add(HiveParser.StringLiteral,"\"" + SemanticAnalyzer.escapeSQLString(dq.getQueryString()) + "\""));
+    propList.add(ASTBuilder.construct(HiveParser.TOK_TABLEPROPERTY,"TOK_TABLEPROPERTY").add(HiveParser.StringLiteral,"\"" + Constants.DRUID_QUERY_TYPE + "\"").add(HiveParser.StringLiteral,"\"" + dq.getQueryType() + "\""));
+  }
+  if (hts.isInsideView()) {
+    propList.add(ASTBuilder.construct(HiveParser.TOK_TABLEPROPERTY,"TOK_TABLEPROPERTY").add(HiveParser.StringLiteral,"\"insideView\"").add(HiveParser.StringLiteral,"\"TRUE\""));
+  }
+  b.add(ASTBuilder.construct(HiveParser.TOK_TABLEPROPERTIES,"TOK_TABLEPROPERTIES").add(propList));
+  b.add(HiveParser.Identifier,hts.getTableAlias());
   return b.node();
 }
