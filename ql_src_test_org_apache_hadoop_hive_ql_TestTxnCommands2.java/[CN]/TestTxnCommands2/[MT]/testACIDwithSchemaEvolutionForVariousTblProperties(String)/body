@@ -1,0 +1,34 @@
+{
+  String tblName="acidWithSchemaEvol";
+  int numBuckets=1;
+  runStatementOnDriver("drop table if exists " + tblName);
+  runStatementOnDriver("CREATE TABLE " + tblName + "(a INT, b STRING) "+ " CLUSTERED BY(a) INTO "+ numBuckets+ " BUCKETS"+ " STORED AS ORC  TBLPROPERTIES ( "+ tblProperties+ " )");
+  runStatementOnDriver("insert into " + tblName + " values(1, 'foo'),(2, 'bar'),(3, 'baz')");
+  runStatementOnDriver("update " + tblName + " set b = 'blah' where a = 3");
+  runStatementOnDriver("alter table " + tblName + " add columns(c int, d string)");
+  runStatementOnDriver("insert into " + tblName + " values(4, 'acid', 100, 'orc'),"+ "(5, 'llap', 200, 'tez')");
+  runStatementOnDriver("update " + tblName + " set d = 'hive' where a <= 3");
+  runStatementOnDriver("update " + tblName + " set c = 999 where a <= 3");
+  List<String> rs=runStatementOnDriver("select * from " + tblName + " order by a");
+  String[] expectedResult={"1\tfoo\t999\thive","2\tbar\t999\thive","3\tblah\t999\thive","4\tacid\t100\torc","5\tllap\t200\ttez"};
+  Assert.assertEquals(Arrays.asList(expectedResult),rs);
+  runStatementOnDriver("alter table " + tblName + " compact 'MAJOR'");
+  runWorker(hiveConf);
+  runCleaner(hiveConf);
+  FileSystem fs=FileSystem.get(hiveConf);
+  FileStatus[] status;
+  status=fs.listStatus(new Path(TEST_WAREHOUSE_DIR + "/" + tblName.toString().toLowerCase()),FileUtils.STAGING_DIR_PATH_FILTER);
+  Assert.assertEquals(1,status.length);
+  boolean sawNewBase=false;
+  for (int i=0; i < status.length; i++) {
+    if (status[i].getPath().getName().matches("base_.*")) {
+      sawNewBase=true;
+      FileStatus[] buckets=fs.listStatus(status[i].getPath(),FileUtils.STAGING_DIR_PATH_FILTER);
+      Assert.assertEquals(numBuckets,buckets.length);
+      Assert.assertTrue(buckets[0].getPath().getName().matches("bucket_00000"));
+    }
+  }
+  Assert.assertTrue(sawNewBase);
+  rs=runStatementOnDriver("select * from " + tblName + " order by a");
+  Assert.assertEquals(Arrays.asList(expectedResult),rs);
+}

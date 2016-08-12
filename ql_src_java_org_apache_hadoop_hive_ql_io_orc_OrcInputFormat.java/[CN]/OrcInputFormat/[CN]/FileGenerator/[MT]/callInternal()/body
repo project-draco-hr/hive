@@ -1,6 +1,47 @@
 {
   AcidUtils.Directory dirInfo=AcidUtils.getAcidState(dir,context.conf,context.transactionList,useFileIds,true);
   Path base=dirInfo.getBaseDirectory();
-  List<HdfsFileStatusWithId> children=(base == null) ? dirInfo.getOriginalFiles() : findBaseFiles(base,useFileIds);
-  return new AcidDirInfo(fs,dir,dirInfo,children);
+  List<AcidBaseFileInfo> baseFiles=new ArrayList<AcidBaseFileInfo>();
+  if (base == null) {
+    for (    HdfsFileStatusWithId fileId : dirInfo.getOriginalFiles()) {
+      baseFiles.add(new AcidBaseFileInfo(fileId,AcidUtils.AcidBaseFileType.ORIGINAL_BASE));
+    }
+  }
+ else {
+    List<HdfsFileStatusWithId> compactedBaseFiles=findBaseFiles(base,useFileIds);
+    for (    HdfsFileStatusWithId fileId : compactedBaseFiles) {
+      baseFiles.add(new AcidBaseFileInfo(fileId,AcidUtils.AcidBaseFileType.COMPACTED_BASE));
+    }
+  }
+  List<ParsedDelta> parsedDeltas=new ArrayList<ParsedDelta>();
+  if (context.acidOperationalProperties != null && context.acidOperationalProperties.isSplitUpdate()) {
+    for (    ParsedDelta parsedDelta : dirInfo.getCurrentDirectories()) {
+      if (parsedDelta.isDeleteDelta()) {
+        parsedDeltas.add(parsedDelta);
+      }
+ else {
+        if (useFileIds) {
+          try {
+            List<HdfsFileStatusWithId> insertDeltaFiles=SHIMS.listLocatedHdfsStatus(fs,parsedDelta.getPath(),AcidUtils.hiddenFileFilter);
+            for (            HdfsFileStatusWithId fileId : insertDeltaFiles) {
+              baseFiles.add(new AcidBaseFileInfo(fileId,AcidUtils.AcidBaseFileType.INSERT_DELTA));
+            }
+            continue;
+          }
+ catch (          Throwable t) {
+            LOG.error("Failed to get files with ID; using regular API: " + t.getMessage());
+          }
+        }
+        List<FileStatus> children=HdfsUtils.listLocatedStatus(fs,parsedDelta.getPath(),AcidUtils.hiddenFileFilter);
+        for (        FileStatus child : children) {
+          HdfsFileStatusWithId fileId=AcidUtils.createOriginalObj(null,child);
+          baseFiles.add(new AcidBaseFileInfo(fileId,AcidUtils.AcidBaseFileType.INSERT_DELTA));
+        }
+      }
+    }
+  }
+ else {
+    parsedDeltas.addAll(dirInfo.getCurrentDirectories());
+  }
+  return new AcidDirInfo(fs,dir,dirInfo,baseFiles,parsedDeltas);
 }

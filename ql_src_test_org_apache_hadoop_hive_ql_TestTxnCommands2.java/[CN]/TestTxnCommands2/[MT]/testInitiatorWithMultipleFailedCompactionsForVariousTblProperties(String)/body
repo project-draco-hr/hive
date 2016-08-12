@@ -1,0 +1,47 @@
+{
+  String tblName="hive12353";
+  runStatementOnDriver("drop table if exists " + tblName);
+  runStatementOnDriver("CREATE TABLE " + tblName + "(a INT, b STRING) "+ " CLUSTERED BY(a) INTO 1 BUCKETS"+ " STORED AS ORC  TBLPROPERTIES ( "+ tblProperties+ " )");
+  hiveConf.setIntVar(HiveConf.ConfVars.HIVE_COMPACTOR_DELTA_NUM_THRESHOLD,4);
+  for (int i=0; i < 5; i++) {
+    runStatementOnDriver("insert into " + tblName + " values("+ (i + 1)+ ", 'foo'),("+ (i + 2)+ ", 'bar'),("+ (i + 3)+ ", 'baz')");
+  }
+  hiveConf.setBoolVar(HiveConf.ConfVars.HIVETESTMODEFAILCOMPACTION,true);
+  int numFailedCompactions=hiveConf.getIntVar(HiveConf.ConfVars.COMPACTOR_INITIATOR_FAILED_THRESHOLD);
+  TxnStore txnHandler=TxnUtils.getTxnStore(hiveConf);
+  AtomicBoolean stop=new AtomicBoolean(true);
+  for (int i=0; i < numFailedCompactions; i++) {
+    txnHandler.compact(new CompactionRequest("default",tblName,CompactionType.MINOR));
+    runWorker(hiveConf);
+  }
+  Initiator init=new Initiator();
+  init.setThreadId((int)init.getId());
+  init.setHiveConf(hiveConf);
+  init.init(stop,new AtomicBoolean());
+  init.run();
+  int numAttemptedCompactions=1;
+  checkCompactionState(new CompactionsByState(numAttemptedCompactions,numFailedCompactions,0,0,0,0,numFailedCompactions + numAttemptedCompactions),countCompacts(txnHandler));
+  hiveConf.setTimeVar(HiveConf.ConfVars.COMPACTOR_HISTORY_REAPER_INTERVAL,10,TimeUnit.MILLISECONDS);
+  AcidCompactionHistoryService compactionHistoryService=new AcidCompactionHistoryService();
+  runHouseKeeperService(compactionHistoryService,hiveConf);
+  checkCompactionState(new CompactionsByState(numAttemptedCompactions,numFailedCompactions,0,0,0,0,numFailedCompactions + numAttemptedCompactions),countCompacts(txnHandler));
+  txnHandler.compact(new CompactionRequest("default",tblName,CompactionType.MAJOR));
+  runWorker(hiveConf);
+  txnHandler.compact(new CompactionRequest("default",tblName,CompactionType.MINOR));
+  runWorker(hiveConf);
+  init.run();
+  numAttemptedCompactions++;
+  init.run();
+  numAttemptedCompactions++;
+  checkCompactionState(new CompactionsByState(numAttemptedCompactions,numFailedCompactions + 2,0,0,0,0,numFailedCompactions + 2 + numAttemptedCompactions),countCompacts(txnHandler));
+  runHouseKeeperService(compactionHistoryService,hiveConf);
+  checkCompactionState(new CompactionsByState(hiveConf.getIntVar(HiveConf.ConfVars.COMPACTOR_HISTORY_RETENTION_ATTEMPTED),hiveConf.getIntVar(HiveConf.ConfVars.COMPACTOR_HISTORY_RETENTION_FAILED),0,0,0,0,hiveConf.getIntVar(HiveConf.ConfVars.COMPACTOR_HISTORY_RETENTION_FAILED) + hiveConf.getIntVar(HiveConf.ConfVars.COMPACTOR_HISTORY_RETENTION_ATTEMPTED)),countCompacts(txnHandler));
+  hiveConf.setBoolVar(HiveConf.ConfVars.HIVETESTMODEFAILCOMPACTION,false);
+  txnHandler.compact(new CompactionRequest("default",tblName,CompactionType.MINOR));
+  checkCompactionState(new CompactionsByState(hiveConf.getIntVar(HiveConf.ConfVars.COMPACTOR_HISTORY_RETENTION_ATTEMPTED),hiveConf.getIntVar(HiveConf.ConfVars.COMPACTOR_HISTORY_RETENTION_FAILED),1,0,0,0,hiveConf.getIntVar(HiveConf.ConfVars.COMPACTOR_HISTORY_RETENTION_FAILED) + hiveConf.getIntVar(HiveConf.ConfVars.COMPACTOR_HISTORY_RETENTION_ATTEMPTED) + 1),countCompacts(txnHandler));
+  runWorker(hiveConf);
+  checkCompactionState(new CompactionsByState(hiveConf.getIntVar(HiveConf.ConfVars.COMPACTOR_HISTORY_RETENTION_ATTEMPTED),hiveConf.getIntVar(HiveConf.ConfVars.COMPACTOR_HISTORY_RETENTION_FAILED),0,1,0,0,hiveConf.getIntVar(HiveConf.ConfVars.COMPACTOR_HISTORY_RETENTION_FAILED) + hiveConf.getIntVar(HiveConf.ConfVars.COMPACTOR_HISTORY_RETENTION_ATTEMPTED) + 1),countCompacts(txnHandler));
+  runCleaner(hiveConf);
+  runHouseKeeperService(compactionHistoryService,hiveConf);
+  checkCompactionState(new CompactionsByState(hiveConf.getIntVar(HiveConf.ConfVars.COMPACTOR_HISTORY_RETENTION_ATTEMPTED),hiveConf.getIntVar(HiveConf.ConfVars.COMPACTOR_HISTORY_RETENTION_FAILED),0,0,1,0,hiveConf.getIntVar(HiveConf.ConfVars.COMPACTOR_HISTORY_RETENTION_FAILED) + hiveConf.getIntVar(HiveConf.ConfVars.COMPACTOR_HISTORY_RETENTION_ATTEMPTED) + 1),countCompacts(txnHandler));
+}

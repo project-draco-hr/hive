@@ -1,7 +1,15 @@
 {
   this.options=options;
+  if (options.getTableProperties() != null) {
+    this.acidOperationalProperties=AcidUtils.getAcidOperationalProperties(options.getTableProperties());
+  }
+ else {
+    this.acidOperationalProperties=AcidUtils.getAcidOperationalProperties(options.getConfiguration());
+  }
   this.bucket.set(options.getBucket());
   this.path=AcidUtils.createFilename(path,options);
+  this.deleteEventWriter=null;
+  this.deleteEventPath=null;
   FileSystem fs=options.getFilesystem();
   if (fs == null) {
     fs=path.getFileSystem(options.getConfiguration());
@@ -24,7 +32,7 @@
  else {
     flushLengths=null;
   }
-  OrcFile.WriterOptions writerOptions=null;
+  this.writerOptions=null;
   if (options.isWritingBase()) {
     if (options instanceof OrcOptions) {
       writerOptions=((OrcOptions)options).getOrcOptions();
@@ -52,6 +60,9 @@
   rowInspector=(StructObjectInspector)options.getInspector();
   writerOptions.inspector(createEventSchema(findRecId(options.getInspector(),options.getRecordIdColumn())));
   this.writer=OrcFile.createWriter(this.path,writerOptions);
+  if (this.acidOperationalProperties.isSplitUpdate()) {
+    this.deleteEventPath=AcidUtils.createFilename(path,options.writingDeleteDelta(true));
+  }
   item=new OrcStruct(FIELDS);
   item.setFieldValue(OPERATION,operation);
   item.setFieldValue(CURRENT_TRANSACTION,currentTransaction);

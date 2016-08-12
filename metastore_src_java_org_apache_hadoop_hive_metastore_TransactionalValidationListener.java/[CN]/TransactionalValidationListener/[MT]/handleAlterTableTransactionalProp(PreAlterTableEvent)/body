@@ -7,11 +7,18 @@
   Set<String> keys=new HashSet<>(parameters.keySet());
   String transactionalValue=null;
   boolean transactionalValuePresent=false;
+  boolean isTransactionalPropertiesPresent=false;
+  String transactionalPropertiesValue=null;
+  boolean hasValidTransactionalValue=false;
   for (  String key : keys) {
     if (hive_metastoreConstants.TABLE_IS_TRANSACTIONAL.equalsIgnoreCase(key)) {
       transactionalValuePresent=true;
       transactionalValue=parameters.get(key);
       parameters.remove(key);
+    }
+    if (hive_metastoreConstants.TABLE_TRANSACTIONAL_PROPERTIES.equalsIgnoreCase(key)) {
+      isTransactionalPropertiesPresent=true;
+      transactionalPropertiesValue=parameters.get(key);
     }
   }
   if (transactionalValuePresent) {
@@ -24,17 +31,33 @@
     if (newTable.getTableType().equals(TableType.EXTERNAL_TABLE.toString())) {
       throw new MetaException(newTable.getDbName() + "." + newTable.getTableName()+ " cannot be declared transactional because it's an external table");
     }
-    return;
+    hasValidTransactionalValue=true;
   }
   Table oldTable=context.getOldTable();
   String oldTransactionalValue=null;
+  String oldTransactionalPropertiesValue=null;
   for (  String key : oldTable.getParameters().keySet()) {
     if (hive_metastoreConstants.TABLE_IS_TRANSACTIONAL.equalsIgnoreCase(key)) {
       oldTransactionalValue=oldTable.getParameters().get(key);
     }
+    if (hive_metastoreConstants.TABLE_TRANSACTIONAL_PROPERTIES.equalsIgnoreCase(key)) {
+      oldTransactionalPropertiesValue=oldTable.getParameters().get(key);
+    }
   }
   if (oldTransactionalValue == null ? transactionalValue == null : oldTransactionalValue.equalsIgnoreCase(transactionalValue)) {
-    return;
+    hasValidTransactionalValue=true;
   }
-  throw new MetaException("TBLPROPERTIES with 'transactional'='true' cannot be unset");
+  if (!hasValidTransactionalValue) {
+    throw new MetaException("TBLPROPERTIES with 'transactional'='true' cannot be unset");
+  }
+  if (isTransactionalPropertiesPresent) {
+    if (oldTransactionalValue == null) {
+      initializeTransactionalProperties(newTable);
+    }
+ else {
+      if (oldTransactionalPropertiesValue == null || !oldTransactionalPropertiesValue.equalsIgnoreCase(transactionalPropertiesValue)) {
+        throw new MetaException("TBLPROPERTIES with 'transactional_properties' cannot be " + "altered after the table is created");
+      }
+    }
+  }
 }

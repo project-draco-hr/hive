@@ -1,0 +1,26 @@
+{
+  if (operation == INSERT_OPERATION) {
+    addSimpleEvent(operation,currentTransaction,rowId,row);
+    return;
+  }
+  this.operation.set(operation);
+  this.currentTransaction.set(currentTransaction);
+  Object rowValue=rowInspector.getStructFieldData(row,recIdField);
+  long originalTransaction=origTxnInspector.get(recIdInspector.getStructFieldData(rowValue,originalTxnField));
+  rowId=rowIdInspector.get(recIdInspector.getStructFieldData(rowValue,rowIdField));
+  if (operation == DELETE_OPERATION || operation == UPDATE_OPERATION) {
+    if (deleteEventWriter == null) {
+      deleteEventIndexBuilder=new KeyIndexBuilder();
+      this.deleteEventWriter=OrcFile.createWriter(deleteEventPath,writerOptions.callback(deleteEventIndexBuilder));
+    }
+    this.rowId.set(rowId);
+    this.originalTransaction.set(originalTransaction);
+    item.setFieldValue(OrcRecordUpdater.OPERATION,new IntWritable(DELETE_OPERATION));
+    item.setFieldValue(OrcRecordUpdater.ROW,null);
+    deleteEventIndexBuilder.addKey(DELETE_OPERATION,originalTransaction,bucket.get(),rowId);
+    deleteEventWriter.addRow(item);
+  }
+  if (operation == UPDATE_OPERATION) {
+    addSimpleEvent(INSERT_OPERATION,currentTransaction,insertedRows++,row);
+  }
+}
