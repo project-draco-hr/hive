@@ -1,0 +1,20 @@
+{
+  HiveConf confForTez=new HiveConf(hiveConf);
+  HiveConf confForMR=new HiveConf(hiveConf);
+  if (engine.equals("tez")) {
+    setupTez(confForTez);
+  }
+  if (joinType.equals("MapJoin")) {
+    setupMapJoin(confForTez);
+    setupMapJoin(confForMR);
+  }
+  runQueries(engine,joinType,confForTez,confForMR);
+  runStatementOnDriver("alter table " + Table.ACIDTBL + " compact 'MAJOR'");
+  TestTxnCommands2.runWorker(hiveConf);
+  TxnStore txnHandler=TxnUtils.getTxnStore(hiveConf);
+  ShowCompactResponse resp=txnHandler.showCompact(new ShowCompactRequest());
+  Assert.assertEquals("Unexpected number of compactions in history",1,resp.getCompactsSize());
+  Assert.assertEquals("Unexpected 0 compaction state",TxnStore.CLEANING_RESPONSE,resp.getCompacts().get(0).getState());
+  TestTxnCommands2.runCleaner(hiveConf);
+  runQueries(engine,joinType,confForTez,confForMR);
+}
