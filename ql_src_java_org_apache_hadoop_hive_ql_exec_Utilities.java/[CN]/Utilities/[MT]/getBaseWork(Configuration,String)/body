@@ -22,6 +22,8 @@
     if (gWork == null) {
       Path localPath=path;
       LOG.debug("local path = " + localPath);
+      final long serializedSize;
+      final String planMode;
       if (HiveConf.getBoolVar(conf,ConfVars.HIVE_RPC_QUERY_PLAN)) {
         LOG.debug("Loading plan from string: " + path.toUri().getPath());
         String planString=conf.getRaw(path.toUri().getPath());
@@ -29,13 +31,18 @@
           LOG.info("Could not find plan string in conf");
           return null;
         }
+        serializedSize=planString.length();
+        planMode="RPC";
         byte[] planBytes=Base64.decodeBase64(planString);
         in=new ByteArrayInputStream(planBytes);
         in=new InflaterInputStream(in);
       }
  else {
         LOG.debug("Open file to read in plan: " + localPath);
-        in=localPath.getFileSystem(conf).open(localPath);
+        FileSystem fs=localPath.getFileSystem(conf);
+        in=fs.open(localPath);
+        serializedSize=fs.getFileStatus(localPath).getLen();
+        planMode="FILE";
       }
       if (MAP_PLAN_NAME.equals(name)) {
         if (ExecMapper.class.getName().equals(conf.get(MAPRED_MAPPER_CLASS))) {
@@ -73,6 +80,7 @@
           throw new RuntimeException("Unknown work type: " + name);
         }
       }
+      LOG.info("Deserialized plan (via {}) - name: {} size: {}",planMode,gWork.getName(),humanReadableByteCount(serializedSize));
       gWorkMap.get(conf).put(path,gWork);
     }
  else     if (LOG.isDebugEnabled()) {

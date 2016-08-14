@@ -4,6 +4,8 @@
     setPlanPath(conf,hiveScratchDir);
     Path planPath=getPlanPath(conf,name);
     OutputStream out=null;
+    final long serializedSize;
+    final String planMode;
     if (HiveConf.getBoolVar(conf,ConfVars.HIVE_RPC_QUERY_PLAN)) {
       ByteArrayOutputStream byteOut=new ByteArrayOutputStream();
       try {
@@ -15,8 +17,10 @@
   finally {
         IOUtils.closeStream(out);
       }
-      LOG.info("Setting plan: " + planPath.toUri().getPath());
-      conf.set(planPath.toUri().getPath(),Base64.encodeBase64String(byteOut.toByteArray()));
+      final String serializedPlan=Base64.encodeBase64String(byteOut.toByteArray());
+      serializedSize=serializedPlan.length();
+      planMode="RPC";
+      conf.set(planPath.toUri().getPath(),serializedPlan);
     }
  else {
       FileSystem fs=planPath.getFileSystem(conf);
@@ -25,6 +29,9 @@
         SerializationUtilities.serializePlan(kryo,w,out);
         out.close();
         out=null;
+        long fileLen=fs.getFileStatus(planPath).getLen();
+        serializedSize=fileLen;
+        planMode="FILE";
       }
   finally {
         IOUtils.closeStream(out);
@@ -39,6 +46,7 @@
         fs.setReplication(planPath,replication);
       }
     }
+    LOG.info("Serialized plan (via {}) - name: {} size: {}",planMode,w.getName(),humanReadableByteCount(serializedSize));
     gWorkMap.get(conf).put(planPath,w);
     return planPath;
   }
