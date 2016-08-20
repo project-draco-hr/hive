@@ -1,0 +1,87 @@
+{
+  int mapSize=map.size();
+  if (mapSize != count) {
+    TestCase.fail("map.size() does not match expected count");
+  }
+  for (int index=0; index < count; index++) {
+    FastRowHashMapElement element=array[index];
+    List<byte[]> values=element.getValues();
+    VectorMapJoinHashMapResult hashMapResult=null;
+    JoinUtil.JoinResult joinResult=JoinUtil.JoinResult.NOMATCH;
+switch (hashTableKeyType) {
+case BOOLEAN:
+case BYTE:
+case SHORT:
+case INT:
+case LONG:
+{
+        Object[] keyRow=element.getKeyRow();
+        Object keyObject=keyRow[0];
+        VectorMapJoinFastLongHashMap longHashMap=(VectorMapJoinFastLongHashMap)map;
+        hashMapResult=longHashMap.createHashMapResult();
+        long longKey;
+switch (hashTableKeyType) {
+case BOOLEAN:
+          longKey=((BooleanWritable)keyObject).get() ? 1 : 0;
+        break;
+case BYTE:
+      longKey=((ByteWritable)keyObject).get();
+    break;
+case SHORT:
+  longKey=((ShortWritable)keyObject).get();
+break;
+case INT:
+longKey=((IntWritable)keyObject).get();
+break;
+case LONG:
+longKey=((LongWritable)keyObject).get();
+break;
+default :
+throw new RuntimeException("Unexpected hash table key type " + hashTableKeyType.name());
+}
+joinResult=longHashMap.lookup(longKey,hashMapResult);
+if (joinResult != JoinUtil.JoinResult.MATCH) {
+assertTrue(false);
+}
+}
+break;
+case STRING:
+{
+Object[] keyRow=element.getKeyRow();
+Object keyObject=keyRow[0];
+VectorMapJoinFastStringHashMap stringHashMap=(VectorMapJoinFastStringHashMap)map;
+hashMapResult=stringHashMap.createHashMapResult();
+Text text=(Text)keyObject;
+byte[] bytes=text.getBytes();
+int length=text.getLength();
+joinResult=stringHashMap.lookup(bytes,0,length,hashMapResult);
+if (joinResult != JoinUtil.JoinResult.MATCH) {
+assertTrue(false);
+}
+}
+break;
+case MULTI_KEY:
+{
+byte[] keyBytes=element.getKey();
+VectorMapJoinFastMultiKeyHashMap stringHashMap=(VectorMapJoinFastMultiKeyHashMap)map;
+hashMapResult=stringHashMap.createHashMapResult();
+joinResult=stringHashMap.lookup(keyBytes,0,keyBytes.length,hashMapResult);
+if (joinResult != JoinUtil.JoinResult.MATCH) {
+assertTrue(false);
+}
+}
+break;
+default :
+throw new RuntimeException("Unexpected hash table key type " + hashTableKeyType.name());
+}
+int[] actualToValueMap=verifyHashMapValues(hashMapResult,values);
+List<Object[]> rows=element.getValueRows();
+if (!doClipping && !useExactBytes) {
+verifyHashMapRows(rows,actualToValueMap,hashMapResult,valuePrimitiveTypeInfos);
+}
+ else {
+int clipIndex=random.nextInt(rows.size());
+verifyHashMapRowsMore(rows,actualToValueMap,hashMapResult,valuePrimitiveTypeInfos,clipIndex,useExactBytes);
+}
+}
+}

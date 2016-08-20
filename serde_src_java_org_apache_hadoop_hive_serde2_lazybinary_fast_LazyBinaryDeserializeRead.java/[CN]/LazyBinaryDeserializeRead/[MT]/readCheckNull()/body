@@ -6,9 +6,10 @@
     }
     return true;
   }
+  fieldStart=offset;
   if (fieldIndex == 0) {
     if (offset >= end) {
-      warnBeyondEof();
+      throw new EOFException();
     }
     nullByte=bytes[offset++];
   }
@@ -19,7 +20,7 @@
  else {
     isNull=false;
     if (offset >= end) {
-      warnBeyondEof();
+      throw new EOFException();
     }
 switch (primitiveCategories[fieldIndex]) {
 case BOOLEAN:
@@ -30,37 +31,37 @@ case BYTE:
 break;
 case SHORT:
 if (offset + 2 > end) {
-warnBeyondEof();
+throw new EOFException();
 }
 currentShort=LazyBinaryUtils.byteArrayToShort(bytes,offset);
 offset+=2;
 break;
 case INT:
+if (offset + WritableUtils.decodeVIntSize(bytes[offset]) > end) {
+throw new EOFException();
+}
 LazyBinaryUtils.readVInt(bytes,offset,tempVInt);
 offset+=tempVInt.length;
-if (offset > end) {
-warnBeyondEof();
-}
 currentInt=tempVInt.value;
 break;
 case LONG:
+if (offset + WritableUtils.decodeVIntSize(bytes[offset]) > end) {
+throw new EOFException();
+}
 LazyBinaryUtils.readVLong(bytes,offset,tempVLong);
 offset+=tempVLong.length;
-if (offset > end) {
-warnBeyondEof();
-}
 currentLong=tempVLong.value;
 break;
 case FLOAT:
 if (offset + 4 > end) {
-warnBeyondEof();
+throw new EOFException();
 }
 currentFloat=Float.intBitsToFloat(LazyBinaryUtils.byteArrayToInt(bytes,offset));
 offset+=4;
 break;
 case DOUBLE:
 if (offset + 8 > end) {
-warnBeyondEof();
+throw new EOFException();
 }
 currentDouble=Double.longBitsToDouble(LazyBinaryUtils.byteArrayToLong(bytes,offset));
 offset+=8;
@@ -70,16 +71,16 @@ case STRING:
 case CHAR:
 case VARCHAR:
 {
+if (offset + WritableUtils.decodeVIntSize(bytes[offset]) > end) {
+throw new EOFException();
+}
 LazyBinaryUtils.readVInt(bytes,offset,tempVInt);
 offset+=tempVInt.length;
-if (offset > end) {
-warnBeyondEof();
-}
 int saveStart=offset;
 int length=tempVInt.value;
 offset+=length;
 if (offset > end) {
-warnBeyondEof();
+throw new EOFException();
 }
 currentBytes=bytes;
 currentBytesStart=saveStart;
@@ -87,11 +88,11 @@ currentBytesLength=length;
 }
 break;
 case DATE:
+if (offset + WritableUtils.decodeVIntSize(bytes[offset]) > end) {
+throw new EOFException();
+}
 LazyBinaryUtils.readVInt(bytes,offset,tempVInt);
 offset+=tempVInt.length;
-if (offset > end) {
-warnBeyondEof();
-}
 currentDateWritable.set(tempVInt.value);
 break;
 case TIMESTAMP:
@@ -100,48 +101,48 @@ int length=TimestampWritable.getTotalLength(bytes,offset);
 int saveStart=offset;
 offset+=length;
 if (offset > end) {
-warnBeyondEof();
+throw new EOFException();
 }
 currentTimestampWritable.set(bytes,saveStart);
 }
 break;
 case INTERVAL_YEAR_MONTH:
+if (offset + WritableUtils.decodeVIntSize(bytes[offset]) > end) {
+throw new EOFException();
+}
 LazyBinaryUtils.readVInt(bytes,offset,tempVInt);
 offset+=tempVInt.length;
-if (offset > end) {
-warnBeyondEof();
-}
 currentHiveIntervalYearMonthWritable.set(tempVInt.value);
 break;
 case INTERVAL_DAY_TIME:
+if (offset + WritableUtils.decodeVIntSize(bytes[offset]) >= end) {
+throw new EOFException();
+}
 LazyBinaryUtils.readVLong(bytes,offset,tempVLong);
 offset+=tempVLong.length;
-if (offset >= end) {
-warnBeyondEof();
+if (offset + WritableUtils.decodeVIntSize(bytes[offset]) > end) {
+throw new EOFException();
 }
 LazyBinaryUtils.readVInt(bytes,offset,tempVInt);
 offset+=tempVInt.length;
-if (offset > end) {
-warnBeyondEof();
-}
 currentHiveIntervalDayTimeWritable.set(tempVLong.value,tempVInt.value);
 break;
 case DECIMAL:
 {
+if (offset + WritableUtils.decodeVIntSize(bytes[offset]) >= end) {
+throw new EOFException();
+}
 LazyBinaryUtils.readVInt(bytes,offset,tempVInt);
 int saveStart=offset;
 offset+=tempVInt.length;
-if (offset >= end) {
-warnBeyondEof();
+if (offset + WritableUtils.decodeVIntSize(bytes[offset]) > end) {
+throw new EOFException();
 }
 LazyBinaryUtils.readVInt(bytes,offset,tempVInt);
 offset+=tempVInt.length;
-if (offset >= end) {
-warnBeyondEof();
-}
 offset+=tempVInt.value;
 if (offset > end) {
-warnBeyondEof();
+throw new EOFException();
 }
 int length=offset - saveStart;
 LazyBinarySerDe.setFromBytes(bytes,saveStart,length,currentHiveDecimalWritable);
@@ -168,7 +169,7 @@ fieldIndex++;
 if (fieldIndex < fieldCount) {
 if ((fieldIndex % 8) == 0) {
 if (offset >= end) {
-warnBeyondEof();
+throw new EOFException();
 }
 nullByte=bytes[offset++];
 }

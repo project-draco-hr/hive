@@ -1,0 +1,169 @@
+{
+  int rowCount=rows.length;
+  int columnCount=primitiveTypeInfos.length;
+  boolean[] columnsToInclude=null;
+  if (useIncludeColumns) {
+    columnsToInclude=new boolean[columnCount];
+    for (int i=0; i < columnCount; i++) {
+      columnsToInclude[i]=r.nextBoolean();
+    }
+  }
+  int writeColumnCount=columnCount;
+  if (doWriteFewerColumns) {
+    writeColumnCount=writeRowOI.getAllStructFieldRefs().size();
+  }
+  BinarySortableSerializeWrite binarySortableSerializeWrite=new BinarySortableSerializeWrite(columnSortOrderIsDesc,columnNullMarker,columnNotNullMarker);
+  BytesWritable serializeWriteBytes[]=new BytesWritable[rowCount];
+  int[][] perFieldWriteLengthsArray=new int[rowCount][];
+  for (int i=0; i < rowCount; i++) {
+    Object[] row=rows[i];
+    Output output=new Output();
+    binarySortableSerializeWrite.set(output);
+    int[] perFieldWriteLengths=new int[columnCount];
+    for (int index=0; index < writeColumnCount; index++) {
+      Writable writable=(Writable)row[index];
+      VerifyFast.serializeWrite(binarySortableSerializeWrite,primitiveTypeInfos[index],writable);
+      perFieldWriteLengths[index]=output.getLength();
+    }
+    perFieldWriteLengthsArray[i]=perFieldWriteLengths;
+    BytesWritable bytesWritable=new BytesWritable();
+    bytesWritable.set(output.getData(),0,output.getLength());
+    serializeWriteBytes[i]=bytesWritable;
+    if (i > 0) {
+      int compareResult=serializeWriteBytes[i - 1].compareTo(serializeWriteBytes[i]);
+      if ((compareResult < 0 && !ascending) || (compareResult > 0 && ascending)) {
+        System.out.println("Test failed in " + (ascending ? "ascending" : "descending") + " order with "+ (i - 1)+ " and "+ i);
+        System.out.println("serialized data [" + (i - 1) + "] = "+ TestBinarySortableSerDe.hexString(serializeWriteBytes[i - 1]));
+        System.out.println("serialized data [" + i + "] = "+ TestBinarySortableSerDe.hexString(serializeWriteBytes[i]));
+        fail("Sort order of serialized " + (i - 1) + " and "+ i+ " are reversed!");
+      }
+    }
+  }
+  for (int i=0; i < rowCount; i++) {
+    Object[] row=rows[i];
+    BinarySortableDeserializeRead binarySortableDeserializeRead=new BinarySortableDeserializeRead(primitiveTypeInfos,columnSortOrderIsDesc);
+    if (useIncludeColumns) {
+      binarySortableDeserializeRead.setColumnsToInclude(columnsToInclude);
+    }
+    BytesWritable bytesWritable=serializeWriteBytes[i];
+    binarySortableDeserializeRead.set(bytesWritable.getBytes(),0,bytesWritable.getLength());
+    for (int index=0; index < columnCount; index++) {
+      if (index >= writeColumnCount || (useIncludeColumns && !columnsToInclude[index])) {
+        VerifyFast.verifyDeserializeRead(binarySortableDeserializeRead,primitiveTypeInfos[index],null);
+      }
+ else {
+        Writable writable=(Writable)row[index];
+        VerifyFast.verifyDeserializeRead(binarySortableDeserializeRead,primitiveTypeInfos[index],writable);
+      }
+    }
+    binarySortableDeserializeRead.extraFieldsCheck();
+    TestCase.assertTrue(!binarySortableDeserializeRead.readBeyondConfiguredFieldsWarned());
+    TestCase.assertTrue(!binarySortableDeserializeRead.bufferRangeHasExtraDataWarned());
+    BinarySortableDeserializeRead binarySortableDeserializeRead2=new BinarySortableDeserializeRead(primitiveTypeInfos,columnSortOrderIsDesc);
+    if (useIncludeColumns) {
+      binarySortableDeserializeRead2.setColumnsToInclude(columnsToInclude);
+    }
+    binarySortableDeserializeRead2.set(bytesWritable.getBytes(),0,bytesWritable.getLength() - 1);
+    for (int index=0; index < writeColumnCount; index++) {
+      Writable writable=(Writable)row[index];
+      if (index == writeColumnCount - 1) {
+        boolean threw=false;
+        try {
+          VerifyFast.verifyDeserializeRead(binarySortableDeserializeRead2,primitiveTypeInfos[index],writable);
+        }
+ catch (        EOFException e) {
+          threw=true;
+        }
+        TestCase.assertTrue(threw);
+      }
+ else {
+        if (useIncludeColumns && !columnsToInclude[index]) {
+          VerifyFast.verifyDeserializeRead(binarySortableDeserializeRead2,primitiveTypeInfos[index],null);
+        }
+ else {
+          VerifyFast.verifyDeserializeRead(binarySortableDeserializeRead2,primitiveTypeInfos[index],writable);
+        }
+      }
+    }
+  }
+  for (int i=0; i < rowCount; i++) {
+    BytesWritable bytesWritable=serializeWriteBytes[i];
+    List<Object> deserializedRow;
+    if (doWriteFewerColumns) {
+      deserializedRow=(List<Object>)serde_fewer.deserialize(bytesWritable);
+    }
+ else {
+      deserializedRow=(List<Object>)serde.deserialize(bytesWritable);
+    }
+    Object[] row=rows[i];
+    for (int index=0; index < writeColumnCount; index++) {
+      Object expected=row[index];
+      Object object=deserializedRow.get(index);
+      if (expected == null || object == null) {
+        if (expected != null || object != null) {
+          fail("SerDe deserialized NULL column mismatch");
+        }
+      }
+ else {
+        if (!object.equals(expected)) {
+          fail("SerDe deserialized value does not match");
+        }
+      }
+    }
+  }
+  BytesWritable serdeBytes[]=new BytesWritable[rowCount];
+  for (int i=0; i < rowCount; i++) {
+    Object[] row=rows[i];
+    BytesWritable serialized;
+    if (doWriteFewerColumns) {
+      serialized=(BytesWritable)serde_fewer.serialize(row,rowOI);
+    }
+ else {
+      serialized=(BytesWritable)serde.serialize(row,rowOI);
+      ;
+    }
+    BytesWritable bytesWritable=new BytesWritable();
+    bytesWritable.set(serialized);
+    byte[] serDeOutput=Arrays.copyOfRange(bytesWritable.getBytes(),0,bytesWritable.getLength());
+    byte[] serializeWriteExpected=Arrays.copyOfRange(serializeWriteBytes[i].getBytes(),0,serializeWriteBytes[i].getLength());
+    if (!Arrays.equals(serDeOutput,serializeWriteExpected)) {
+      int mismatchPos=-1;
+      if (serDeOutput.length != serializeWriteExpected.length) {
+        for (int b=0; b < Math.min(serDeOutput.length,serializeWriteExpected.length); b++) {
+          if (serDeOutput[b] != serializeWriteExpected[b]) {
+            mismatchPos=b;
+            break;
+          }
+        }
+        fail("Different byte array lengths: serDeOutput.length " + serDeOutput.length + ", serializeWriteExpected.length "+ serializeWriteExpected.length+ " mismatchPos "+ mismatchPos+ " perFieldWriteLengths "+ Arrays.toString(perFieldWriteLengthsArray[i]));
+      }
+      for (int b=0; b < serDeOutput.length; b++) {
+        if (serDeOutput[b] != serializeWriteExpected[b]) {
+          fail("SerializeWrite and SerDe serialization does not match at position " + b);
+        }
+      }
+    }
+    serdeBytes[i]=bytesWritable;
+  }
+  for (int i=0; i < rowCount; i++) {
+    Object[] row=rows[i];
+    BinarySortableDeserializeRead binarySortableDeserializeRead=new BinarySortableDeserializeRead(primitiveTypeInfos,columnSortOrderIsDesc);
+    if (useIncludeColumns) {
+      binarySortableDeserializeRead.setColumnsToInclude(columnsToInclude);
+    }
+    BytesWritable bytesWritable=serdeBytes[i];
+    binarySortableDeserializeRead.set(bytesWritable.getBytes(),0,bytesWritable.getLength());
+    for (int index=0; index < columnCount; index++) {
+      if (index >= writeColumnCount || (useIncludeColumns && !columnsToInclude[index])) {
+        VerifyFast.verifyDeserializeRead(binarySortableDeserializeRead,primitiveTypeInfos[index],null);
+      }
+ else {
+        Writable writable=(Writable)row[index];
+        VerifyFast.verifyDeserializeRead(binarySortableDeserializeRead,primitiveTypeInfos[index],writable);
+      }
+    }
+    binarySortableDeserializeRead.extraFieldsCheck();
+    TestCase.assertTrue(!binarySortableDeserializeRead.readBeyondConfiguredFieldsWarned());
+    TestCase.assertTrue(!binarySortableDeserializeRead.bufferRangeHasExtraDataWarned());
+  }
+}
