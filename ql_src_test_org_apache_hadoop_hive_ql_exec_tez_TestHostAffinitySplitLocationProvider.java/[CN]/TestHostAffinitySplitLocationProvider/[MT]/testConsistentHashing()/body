@@ -1,0 +1,49 @@
+{
+  final int LOC_COUNT=20, MIN_LOC_COUNT=4, SPLIT_COUNT=100;
+  String[] locations=new String[LOC_COUNT];
+  for (int i=0; i < locations.length; ++i) {
+    locations[i]=String.valueOf(i);
+  }
+  InputSplit[] splits=new InputSplit[SPLIT_COUNT];
+  for (int i=0; i < splits.length; ++i) {
+    splits[i]=createMockFileSplit(true,"path" + i,0,1000,new String[]{});
+  }
+  StringBuilder failBuilder=new StringBuilder("\n");
+  String[] lastLocations=new String[splits.length];
+  double movedRatioSum=0, newRatioSum=0, movedRatioWorst=0, newRatioWorst=Double.MAX_VALUE;
+  for (int locs=MIN_LOC_COUNT; locs <= locations.length; ++locs) {
+    String[] partLoc=Arrays.copyOf(locations,locs);
+    HostAffinitySplitLocationProvider lp=new HostAffinitySplitLocationProvider(partLoc);
+    int moved=0, newLoc=0;
+    String newNode=partLoc[locs - 1];
+    for (int splitIx=0; splitIx < splits.length; ++splitIx) {
+      String[] splitLocations=lp.getLocations(splits[splitIx]);
+      assertEquals(1,splitLocations.length);
+      String splitLocation=splitLocations[0];
+      if (locs > MIN_LOC_COUNT && !splitLocation.equals(lastLocations[splitIx])) {
+        ++moved;
+      }
+      if (newNode.equals(splitLocation)) {
+        ++newLoc;
+      }
+      lastLocations[splitIx]=splitLocation;
+    }
+    if (locs == MIN_LOC_COUNT)     continue;
+    String msgTail=" when going to " + locs + " locations";
+    String movedMsg=moved + " splits moved", newMsg=newLoc + " splits went to the new node";
+    LOG.info(movedMsg + " and " + newMsg+ msgTail);
+    double maxMoved=1.0f * splits.length / locs, minNew=1.0f * splits.length / locs;
+    movedRatioSum+=Math.max(moved / maxMoved,1f);
+    movedRatioWorst=Math.max(moved / maxMoved,movedRatioWorst);
+    newRatioSum+=Math.min(newLoc / minNew,1f);
+    newRatioWorst=Math.min(newLoc / minNew,newRatioWorst);
+    logBadRatios(failBuilder,moved,newLoc,msgTail,movedMsg,newMsg,maxMoved,minNew);
+  }
+  int count=locations.length - MIN_LOC_COUNT;
+  double moveRatioAvg=movedRatioSum / count, newRatioAvg=newRatioSum / count;
+  String errorMsg="Move counts: average " + moveRatioAvg + ", worst "+ movedRatioWorst+ "; assigned to new node: average "+ newRatioAvg+ ", worst "+ newRatioWorst;
+  LOG.info(errorMsg);
+  if (moveRatioAvg > 1.2f || newRatioAvg < 0.8f || movedRatioWorst > 1.5f || newRatioWorst < 0.5f) {
+    fail(errorMsg + "; example failures: " + failBuilder.toString());
+  }
+}
