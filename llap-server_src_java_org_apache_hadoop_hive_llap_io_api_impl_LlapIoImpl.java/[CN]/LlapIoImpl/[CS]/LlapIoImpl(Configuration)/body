@@ -1,7 +1,7 @@
 {
   String ioMode=HiveConf.getVar(conf,HiveConf.ConfVars.LLAP_IO_MEMORY_MODE);
-  boolean useLowLevelCache=LlapIoImpl.MODE_CACHE.equalsIgnoreCase(ioMode), useAllocOnly=!useLowLevelCache && LlapIoImpl.MODE_ALLOCATOR.equalsIgnoreCase(ioMode);
-  LOG.info("Initializing LLAP IO in {} mode",ioMode);
+  boolean useLowLevelCache=LlapIoImpl.MODE_CACHE.equalsIgnoreCase(ioMode);
+  LOG.info("Initializing LLAP IO in {} mode",useLowLevelCache ? LlapIoImpl.MODE_CACHE : "none");
   String displayName="LlapDaemonCacheMetrics-" + MetricsUtils.getHostName();
   String sessionId=conf.get("llap.daemon.metrics.sessionid");
   this.cacheMetrics=LlapDaemonCacheMetrics.create(displayName,sessionId);
@@ -21,7 +21,7 @@
   this.ioMetrics=LlapDaemonIOMetrics.create(displayName,sessionId,Ints.toArray(intervalList));
   LOG.info("Started llap daemon metrics with displayName: {} sessionId: {}",displayName,sessionId);
   OrcMetadataCache metadataCache=null;
-  LowLevelCacheImpl orcCache=null;
+  LowLevelCache cache=null;
   BufferUsageManager bufferManager=null;
   if (useLowLevelCache) {
     boolean useLrfu=HiveConf.getBoolVar(conf,HiveConf.ConfVars.LLAP_USE_LRFU);
@@ -29,27 +29,24 @@
     LowLevelCacheMemoryManager memManager=new LowLevelCacheMemoryManager(conf,cachePolicy,cacheMetrics);
     EvictionAwareAllocator allocator=new BuddyAllocator(conf,memManager,cacheMetrics);
     this.allocator=allocator;
-    orcCache=new LowLevelCacheImpl(cacheMetrics,cachePolicy,allocator,true);
+    LowLevelCacheImpl cacheImpl=new LowLevelCacheImpl(cacheMetrics,cachePolicy,allocator,true);
+    cache=cacheImpl;
     boolean useGapCache=HiveConf.getBoolVar(conf,ConfVars.LLAP_CACHE_ENABLE_ORC_GAP_CACHE);
     metadataCache=new OrcMetadataCache(memManager,cachePolicy,useGapCache);
-    cachePolicy.setEvictionListener(new EvictionDispatcher(orcCache,metadataCache));
-    cachePolicy.setParentDebugDumper(orcCache);
-    orcCache.init();
-    bufferManager=orcCache;
+    cachePolicy.setEvictionListener(new EvictionDispatcher(cache,metadataCache));
+    cachePolicy.setParentDebugDumper(cacheImpl);
+    cacheImpl.startThreads();
+    bufferManager=cacheImpl;
   }
  else {
-    if (useAllocOnly) {
-      LowLevelCacheMemoryManager memManager=new LowLevelCacheMemoryManager(conf,null,cacheMetrics);
-      allocator=new BuddyAllocator(conf,memManager,cacheMetrics);
-    }
- else {
-      allocator=new SimpleAllocator(conf);
-    }
-    bufferManager=new SimpleBufferManager(allocator,cacheMetrics);
+    this.allocator=new SimpleAllocator(conf);
+    SimpleBufferManager sbm=new SimpleBufferManager(allocator,cacheMetrics);
+    bufferManager=sbm;
+    cache=sbm;
   }
   int numThreads=HiveConf.getIntVar(conf,HiveConf.ConfVars.LLAP_IO_THREADPOOL_SIZE);
   executor=new StatsRecordingThreadPool(numThreads,numThreads,0L,TimeUnit.MILLISECONDS,new LinkedBlockingQueue<Runnable>(),new ThreadFactoryBuilder().setNameFormat("IO-Elevator-Thread-%d").setDaemon(true).build());
-  this.cvp=new OrcColumnVectorProducer(metadataCache,orcCache,bufferManager,conf,cacheMetrics,ioMetrics);
+  this.cvp=new OrcColumnVectorProducer(metadataCache,cache,bufferManager,conf,cacheMetrics,ioMetrics);
   LOG.info("LLAP IO initialized");
   registerMXBeans();
 }
