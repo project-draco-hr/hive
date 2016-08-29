@@ -4,16 +4,38 @@
   if (authErrResp != null) {
     return authErrResp;
   }
-  if (ss.getOverriddenConfigurations().isEmpty()) {
+  command=command.trim();
+  if (StringUtils.isBlank(command)) {
+    resetOverridesOnly(ss);
     return new CommandProcessorResponse(0);
   }
-  HiveConf conf=new HiveConf();
-  for (  String key : ss.getOverriddenConfigurations().keySet()) {
-    String value=conf.get(key);
-    if (value != null) {
-      ss.getConf().set(key,value);
+  String[] parts=command.split("\\s+");
+  boolean isDefault=false;
+  List<String> varnames=new ArrayList<>(parts.length);
+  for (  String part : parts) {
+    if (part.isEmpty())     continue;
+    if (DEFAULT_ARG.equals(part)) {
+      isDefault=true;
+    }
+ else {
+      varnames.add(part);
     }
   }
-  ss.getOverriddenConfigurations().clear();
-  return new CommandProcessorResponse(0);
+  if (varnames.isEmpty()) {
+    return new CommandProcessorResponse(1,"No variable names specified","42000");
+  }
+  String message="";
+  for (  String varname : varnames) {
+    if (isDefault) {
+      if (!message.isEmpty()) {
+        message+=", ";
+      }
+      message+=varname;
+      resetToDefault(ss,varname);
+    }
+ else {
+      resetOverrideOnly(ss,varname);
+    }
+  }
+  return new CommandProcessorResponse(0,isDefault ? Lists.newArrayList("Resetting " + message + " to default values") : null);
 }

@@ -1,0 +1,31 @@
+{
+  varname=varname.trim();
+  try {
+    String nonErrorMessage=null;
+    if (varname.startsWith(SystemVariables.HIVECONF_PREFIX)) {
+      String propName=varname.substring(SystemVariables.HIVECONF_PREFIX.length());
+      nonErrorMessage=SetProcessor.setConf(varname,propName,getConfVar(propName).getDefaultValue(),false);
+    }
+ else     if (varname.startsWith(SystemVariables.METACONF_PREFIX)) {
+      String propName=varname.substring(SystemVariables.METACONF_PREFIX.length());
+      HiveConf.ConfVars confVars=getConfVar(propName);
+      Hive.get(ss.getConf()).setMetaConf(propName,new VariableSubstitution(new HiveVariableSource(){
+        @Override public Map<String,String> getHiveVariable(){
+          return SessionState.get().getHiveVariables();
+        }
+      }
+).substitute(ss.getConf(),confVars.getDefaultValue()));
+    }
+ else {
+      String defaultVal=getConfVar(varname).getDefaultValue();
+      nonErrorMessage=SetProcessor.setConf(varname,varname,defaultVal,true);
+      if (varname.equals(HiveConf.ConfVars.HIVE_SESSION_HISTORY_ENABLED.toString())) {
+        SessionState.get().updateHistory(Boolean.parseBoolean(defaultVal),ss);
+      }
+    }
+    return nonErrorMessage == null ? new CommandProcessorResponse(0) : new CommandProcessorResponse(0,Lists.newArrayList(nonErrorMessage));
+  }
+ catch (  Exception e) {
+    return new CommandProcessorResponse(1,e.getMessage(),"42000",e instanceof IllegalArgumentException ? null : e);
+  }
+}
