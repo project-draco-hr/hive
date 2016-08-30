@@ -1,0 +1,34 @@
+{
+  Map<String,Long> opIdToRuntimeNumRows=new HashMap<String,Long>();
+  FileSystem fs;
+  FileStatus[] statuses=null;
+  try {
+    fs=localTmpPath.getFileSystem(conf);
+    statuses=fs.listStatus(localTmpPath,FileUtils.HIDDEN_FILES_PATH_FILTER);
+  }
+ catch (  IOException e) {
+    LOG.warn(e.toString());
+  }
+  if (statuses != null) {
+    for (    FileStatus status : statuses) {
+      if (status.isDir()) {
+        StatsCollectionContext scc=new StatsCollectionContext(conf);
+        String[] names=status.getPath().toString().split(Path.SEPARATOR);
+        String opId=names[names.length - 1];
+        scc.setStatsTmpDir(status.getPath().toString());
+        StatsAggregator statsAggregator=new FSStatsAggregator();
+        if (!statsAggregator.connect(scc)) {
+          opIdToRuntimeNumRows.put(opId,-1L);
+        }
+ else {
+          String value=statsAggregator.aggregateStats("",StatsSetupConst.RUN_TIME_ROW_COUNT);
+          opIdToRuntimeNumRows.put(opId,Long.parseLong(value));
+        }
+        if (statsAggregator != null) {
+          statsAggregator.closeConnection(scc);
+        }
+      }
+    }
+  }
+  return opIdToRuntimeNumRows;
+}
