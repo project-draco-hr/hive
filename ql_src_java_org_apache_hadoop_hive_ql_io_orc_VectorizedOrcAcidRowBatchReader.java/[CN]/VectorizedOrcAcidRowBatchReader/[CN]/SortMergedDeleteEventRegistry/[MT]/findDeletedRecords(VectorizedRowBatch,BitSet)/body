@@ -1,0 +1,40 @@
+{
+  if (!isDeleteRecordAvailable) {
+    return;
+  }
+  long[] originalTransaction=batch.cols[OrcRecordUpdater.ORIGINAL_TRANSACTION].isRepeating ? null : ((LongColumnVector)batch.cols[OrcRecordUpdater.ORIGINAL_TRANSACTION]).vector;
+  long[] bucket=batch.cols[OrcRecordUpdater.BUCKET].isRepeating ? null : ((LongColumnVector)batch.cols[OrcRecordUpdater.BUCKET]).vector;
+  long[] rowId=batch.cols[OrcRecordUpdater.ROW_ID].isRepeating ? null : ((LongColumnVector)batch.cols[OrcRecordUpdater.ROW_ID]).vector;
+  long repeatedOriginalTransaction=(originalTransaction != null) ? -1 : ((LongColumnVector)batch.cols[OrcRecordUpdater.ORIGINAL_TRANSACTION]).vector[0];
+  long repeatedBucket=(bucket != null) ? -1 : ((LongColumnVector)batch.cols[OrcRecordUpdater.BUCKET]).vector[0];
+  long repeatedRowId=(rowId != null) ? -1 : ((LongColumnVector)batch.cols[OrcRecordUpdater.ROW_ID]).vector[0];
+  int firstValidIndex=selectedBitSet.nextSetBit(0);
+  if (firstValidIndex == -1) {
+    return;
+  }
+  RecordIdentifier firstRecordIdInBatch=new RecordIdentifier(originalTransaction != null ? originalTransaction[firstValidIndex] : repeatedOriginalTransaction,bucket != null ? (int)bucket[firstValidIndex] : (int)repeatedBucket,rowId != null ? (int)rowId[firstValidIndex] : repeatedRowId);
+  int lastValidIndex=selectedBitSet.previousSetBit(batch.size - 1);
+  RecordIdentifier lastRecordIdInBatch=new RecordIdentifier(originalTransaction != null ? originalTransaction[lastValidIndex] : repeatedOriginalTransaction,bucket != null ? (int)bucket[lastValidIndex] : (int)repeatedBucket,rowId != null ? (int)rowId[lastValidIndex] : repeatedRowId);
+  while (deleteRecordKey.compareRow(firstRecordIdInBatch) == -1) {
+    isDeleteRecordAvailable=deleteRecords.next(deleteRecordKey,deleteRecordValue);
+    if (!isDeleteRecordAvailable)     return;
+  }
+  int currIndex=firstValidIndex;
+  RecordIdentifier currRecordIdInBatch=new RecordIdentifier();
+  while (isDeleteRecordAvailable && currIndex != -1 && currIndex <= lastValidIndex) {
+    currRecordIdInBatch.setValues((originalTransaction != null) ? originalTransaction[currIndex] : repeatedOriginalTransaction,(bucket != null) ? (int)bucket[currIndex] : (int)repeatedBucket,(rowId != null) ? rowId[currIndex] : repeatedRowId);
+    if (deleteRecordKey.compareRow(currRecordIdInBatch) == 0) {
+      selectedBitSet.clear(currIndex);
+      currIndex=selectedBitSet.nextSetBit(currIndex + 1);
+    }
+ else     if (deleteRecordKey.compareRow(currRecordIdInBatch) == 1) {
+      if (deleteRecordKey.compareRow(lastRecordIdInBatch) == 1) {
+        return;
+      }
+      currIndex=selectedBitSet.nextSetBit(currIndex + 1);
+    }
+ else {
+      isDeleteRecordAvailable=deleteRecords.next(deleteRecordKey,deleteRecordValue);
+    }
+  }
+}

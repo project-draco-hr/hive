@@ -1,0 +1,37 @@
+{
+  if (sortMerger == null || sortMerger.isEmpty())   return;
+  int distinctOtids=0;
+  long lastSeenOtid=-1;
+  long otids[]=new long[rowIds.length];
+  int index=0;
+  while (!sortMerger.isEmpty()) {
+    Entry<DeleteRecordKey,DeleteReaderValue> entry=sortMerger.pollFirstEntry();
+    DeleteRecordKey deleteRecordKey=entry.getKey();
+    DeleteReaderValue deleteReaderValue=entry.getValue();
+    otids[index]=deleteRecordKey.originalTransactionId;
+    rowIds[index]=deleteRecordKey.rowId;
+    ++index;
+    if (lastSeenOtid != deleteRecordKey.originalTransactionId) {
+      ++distinctOtids;
+      lastSeenOtid=deleteRecordKey.originalTransactionId;
+    }
+    if (deleteReaderValue.next(deleteRecordKey)) {
+      sortMerger.put(deleteRecordKey,deleteReaderValue);
+    }
+ else {
+      deleteReaderValue.close();
+    }
+  }
+  this.compressedOtids=new CompressedOtid[distinctOtids];
+  lastSeenOtid=otids[0];
+  int fromIndex=0, pos=0;
+  for (int i=1; i < otids.length; ++i) {
+    if (otids[i] != lastSeenOtid) {
+      compressedOtids[pos]=new CompressedOtid(lastSeenOtid,fromIndex,i);
+      lastSeenOtid=otids[i];
+      fromIndex=i;
+      ++pos;
+    }
+  }
+  compressedOtids[pos]=new CompressedOtid(lastSeenOtid,fromIndex,otids.length);
+}

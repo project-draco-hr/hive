@@ -1,0 +1,46 @@
+{
+  try {
+    if (addPartitionCols) {
+      if (partitionValues != null) {
+        rbCtx.addPartitionColsToBatch(value,partitionValues);
+      }
+      addPartitionCols=false;
+    }
+    if (!baseReader.nextBatch(vectorizedRowBatchBase)) {
+      return false;
+    }
+  }
+ catch (  Exception e) {
+    throw new IOException("error iterating",e);
+  }
+  BitSet selectedBitSet=new BitSet(vectorizedRowBatchBase.size);
+  if (vectorizedRowBatchBase.selectedInUse) {
+    selectedBitSet.set(0,vectorizedRowBatchBase.size,false);
+    for (int j=0; j < vectorizedRowBatchBase.size; ++j) {
+      int i=vectorizedRowBatchBase.selected[j];
+      selectedBitSet.set(i);
+    }
+  }
+ else {
+    selectedBitSet.set(0,vectorizedRowBatchBase.size,true);
+  }
+  findRecordsWithInvalidTransactionIds(vectorizedRowBatchBase,selectedBitSet);
+  this.deleteEventRegistry.findDeletedRecords(vectorizedRowBatchBase,selectedBitSet);
+  if (selectedBitSet.cardinality() == vectorizedRowBatchBase.size) {
+    value.size=vectorizedRowBatchBase.size;
+    value.selected=vectorizedRowBatchBase.selected;
+    value.selectedInUse=vectorizedRowBatchBase.selectedInUse;
+  }
+ else {
+    value.size=selectedBitSet.cardinality();
+    value.selectedInUse=true;
+    value.selected=new int[selectedBitSet.cardinality()];
+    for (int setBitIndex=selectedBitSet.nextSetBit(0), selectedItr=0; setBitIndex >= 0; setBitIndex=selectedBitSet.nextSetBit(setBitIndex + 1), ++selectedItr) {
+      value.selected[selectedItr]=setBitIndex;
+    }
+  }
+  StructColumnVector payloadStruct=(StructColumnVector)vectorizedRowBatchBase.cols[OrcRecordUpdater.ROW];
+  System.arraycopy(payloadStruct.fields,0,value.cols,0,value.getDataColumnCount());
+  progress=baseReader.getProgress();
+  return true;
+}

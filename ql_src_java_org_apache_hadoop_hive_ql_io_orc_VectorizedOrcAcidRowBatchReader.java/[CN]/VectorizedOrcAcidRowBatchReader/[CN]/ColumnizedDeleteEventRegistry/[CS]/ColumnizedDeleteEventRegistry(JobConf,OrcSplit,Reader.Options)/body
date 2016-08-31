@@ -1,0 +1,48 @@
+{
+  int bucket=AcidUtils.parseBaseOrDeltaBucketFilename(orcSplit.getPath(),conf).getBucket();
+  String txnString=conf.get(ValidTxnList.VALID_TXNS_KEY);
+  this.validTxnList=(txnString == null) ? new ValidReadTxnList() : new ValidReadTxnList(txnString);
+  this.sortMerger=new TreeMap<DeleteRecordKey,DeleteReaderValue>();
+  this.rowIds=null;
+  this.compressedOtids=null;
+  int maxEventsInMemory=HiveConf.getIntVar(conf,ConfVars.HIVE_TRANSACTIONAL_NUM_EVENTS_IN_MEMORY);
+  try {
+    final Path[] deleteDeltaDirs=getDeleteDeltaDirsFromSplit(orcSplit);
+    if (deleteDeltaDirs.length > 0) {
+      int totalDeleteEventCount=0;
+      for (      Path deleteDeltaDir : deleteDeltaDirs) {
+        Path deleteDeltaFile=AcidUtils.createBucketFile(deleteDeltaDir,bucket);
+        FileSystem fs=deleteDeltaFile.getFileSystem(conf);
+        long length=OrcAcidUtils.getLastFlushLength(fs,deleteDeltaFile);
+        if (length != -1 && fs.exists(deleteDeltaFile)) {
+          Reader deleteDeltaReader=OrcFile.createReader(deleteDeltaFile,OrcFile.readerOptions(conf).maxLength(length));
+          AcidStats acidStats=OrcAcidUtils.parseAcidStats(deleteDeltaReader);
+          if (acidStats.deletes == 0) {
+            continue;
+          }
+          totalDeleteEventCount+=acidStats.deletes;
+          if (totalDeleteEventCount > maxEventsInMemory) {
+            LOG.info("Total number of delete events exceeds the maximum number of delete events " + "that can be loaded into memory for the delete deltas in the directory at : " + deleteDeltaDirs.toString() + ". The max limit is currently set at "+ maxEventsInMemory+ " and can be changed by setting the Hive config variable "+ ConfVars.HIVE_TRANSACTIONAL_NUM_EVENTS_IN_MEMORY.varname);
+            throw new DeleteEventsOverflowMemoryException();
+          }
+          DeleteReaderValue deleteReaderValue=new DeleteReaderValue(deleteDeltaReader,readerOptions,bucket,validTxnList);
+          DeleteRecordKey deleteRecordKey=new DeleteRecordKey();
+          if (deleteReaderValue.next(deleteRecordKey)) {
+            sortMerger.put(deleteRecordKey,deleteReaderValue);
+          }
+ else {
+            deleteReaderValue.close();
+          }
+        }
+      }
+      if (totalDeleteEventCount > 0) {
+        rowIds=new long[totalDeleteEventCount];
+        readAllDeleteEventsFromDeleteDeltas();
+      }
+    }
+  }
+ catch (  IOException|DeleteEventsOverflowMemoryException e) {
+    close();
+    throw e;
+  }
+}

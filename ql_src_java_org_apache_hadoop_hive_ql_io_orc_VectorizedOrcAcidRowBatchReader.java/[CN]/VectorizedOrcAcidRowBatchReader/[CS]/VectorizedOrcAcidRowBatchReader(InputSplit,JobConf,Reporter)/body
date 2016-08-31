@@ -1,0 +1,42 @@
+{
+  final boolean isAcidRead=HiveConf.getBoolVar(conf,ConfVars.HIVE_TRANSACTIONAL_TABLE_SCAN);
+  final AcidUtils.AcidOperationalProperties acidOperationalProperties=AcidUtils.getAcidOperationalProperties(conf);
+  boolean isReadNotAllowed=!isAcidRead || !acidOperationalProperties.isSplitUpdate() || !(inputSplit instanceof OrcSplit);
+  if (isReadNotAllowed) {
+    OrcInputFormat.raiseAcidTablesMustBeReadWithAcidReaderException(conf);
+  }
+  final OrcSplit orcSplit=(OrcSplit)inputSplit;
+  rbCtx=Utilities.getVectorizedRowBatchCtx(conf);
+  reporter.setStatus(orcSplit.toString());
+  Reader reader=OrcInputFormat.createOrcReaderForSplit(conf,orcSplit);
+  Reader.Options readerOptions=OrcInputFormat.createOptionsForReader(conf);
+  readerOptions=OrcRawRecordMerger.createEventOptions(readerOptions);
+  this.offset=orcSplit.getStart();
+  this.length=orcSplit.getLength();
+  this.baseReader=reader.rowsOptions(readerOptions.range(offset,length));
+  if (this.baseReader instanceof RecordReaderImpl) {
+    this.vectorizedRowBatchBase=((RecordReaderImpl)this.baseReader).createRowBatch();
+  }
+ else {
+    throw new IOException("Failed to create vectorized row batch for the reader of type " + this.baseReader.getClass().getName());
+  }
+  int partitionColumnCount=(rbCtx != null) ? rbCtx.getPartitionColumnCount() : 0;
+  if (partitionColumnCount > 0) {
+    partitionValues=new Object[partitionColumnCount];
+    VectorizedRowBatchCtx.getPartitionValues(rbCtx,conf,orcSplit,partitionValues);
+  }
+ else {
+    partitionValues=null;
+  }
+  String txnString=conf.get(ValidTxnList.VALID_TXNS_KEY);
+  this.validTxnList=(txnString == null) ? new ValidReadTxnList() : new ValidReadTxnList(txnString);
+  Reader.Options deleteEventReaderOptions=readerOptions.clone();
+  deleteEventReaderOptions.range(0,Long.MAX_VALUE);
+  deleteEventReaderOptions.searchArgument(null,null);
+  try {
+    this.deleteEventRegistry=new ColumnizedDeleteEventRegistry(conf,orcSplit,deleteEventReaderOptions);
+  }
+ catch (  DeleteEventsOverflowMemoryException e) {
+    this.deleteEventRegistry=new SortMergedDeleteEventRegistry(conf,orcSplit,deleteEventReaderOptions);
+  }
+}

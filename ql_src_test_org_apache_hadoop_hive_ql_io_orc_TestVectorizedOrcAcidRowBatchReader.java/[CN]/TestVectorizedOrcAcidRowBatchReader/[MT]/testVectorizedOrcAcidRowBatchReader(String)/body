@@ -1,0 +1,29 @@
+{
+  List<OrcSplit> splits=getSplits();
+  conf.set(ValidTxnList.VALID_TXNS_KEY,"14:1:1:5");
+  VectorizedOrcAcidRowBatchReader vectorizedReader=new VectorizedOrcAcidRowBatchReader(splits.get(0),conf,Reporter.NULL);
+  if (deleteEventRegistry.equals(ColumnizedDeleteEventRegistry.class.getName())) {
+    assertTrue(vectorizedReader.getDeleteEventRegistry() instanceof ColumnizedDeleteEventRegistry);
+  }
+  if (deleteEventRegistry.equals(SortMergedDeleteEventRegistry.class.getName())) {
+    assertTrue(vectorizedReader.getDeleteEventRegistry() instanceof SortMergedDeleteEventRegistry);
+  }
+  TypeDescription schema=OrcInputFormat.getDesiredRowTypeDescr(conf,true,Integer.MAX_VALUE);
+  VectorizedRowBatch vectorizedRowBatch=schema.createRowBatch();
+  vectorizedRowBatch.setPartitionInfo(1,0);
+  long previousPayload=Long.MIN_VALUE;
+  while (vectorizedReader.next(null,vectorizedRowBatch)) {
+    assertTrue(vectorizedRowBatch.selectedInUse);
+    LongColumnVector col=(LongColumnVector)vectorizedRowBatch.cols[0];
+    for (int i=0; i < vectorizedRowBatch.size; ++i) {
+      int idx=vectorizedRowBatch.selected[i];
+      long payload=col.vector[idx];
+      long otid=(payload / NUM_ROWID_PER_OTID) + 1;
+      long rowId=payload % NUM_ROWID_PER_OTID;
+      assertFalse(rowId % 2 == 0 || rowId % 3 == 0);
+      assertTrue(otid != 5);
+      assertTrue(payload > previousPayload);
+      previousPayload=payload;
+    }
+  }
+}

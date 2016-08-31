@@ -1,0 +1,31 @@
+{
+  if (batch == null) {
+    return false;
+  }
+  boolean isValidNext=false;
+  while (!isValidNext) {
+    if (indexPtrInBatch >= batch.size) {
+      if (recordReader.nextBatch(batch)) {
+        long bucketForRecord=((LongColumnVector)batch.cols[OrcRecordUpdater.BUCKET]).vector[0];
+        if ((batch.size > 1 && !batch.cols[OrcRecordUpdater.BUCKET].isRepeating) || (bucketForRecord != bucketForSplit)) {
+          throw new IOException("Corrupted records with different bucket ids " + "from the containing bucket file found! Expected bucket id " + bucketForSplit + ", however found the bucket id "+ bucketForRecord);
+        }
+        indexPtrInBatch=0;
+      }
+ else {
+        return false;
+      }
+    }
+    int originalTransactionIndex=batch.cols[OrcRecordUpdater.ORIGINAL_TRANSACTION].isRepeating ? 0 : indexPtrInBatch;
+    long originalTransaction=((LongColumnVector)batch.cols[OrcRecordUpdater.ORIGINAL_TRANSACTION]).vector[originalTransactionIndex];
+    long rowId=((LongColumnVector)batch.cols[OrcRecordUpdater.ROW_ID]).vector[indexPtrInBatch];
+    int currentTransactionIndex=batch.cols[OrcRecordUpdater.CURRENT_TRANSACTION].isRepeating ? 0 : indexPtrInBatch;
+    long currentTransaction=((LongColumnVector)batch.cols[OrcRecordUpdater.CURRENT_TRANSACTION]).vector[currentTransactionIndex];
+    ++indexPtrInBatch;
+    if (validTxnList.isTxnValid(currentTransaction)) {
+      isValidNext=true;
+      deleteRecordKey.set(originalTransaction,rowId);
+    }
+  }
+  return true;
+}

@@ -16,33 +16,17 @@
   AcidUtils.AcidOperationalProperties acidOperationalProperties=AcidUtils.getAcidOperationalProperties(options.getConfiguration());
   final Path[] deltas=acidOperationalProperties.isSplitUpdate() ? AcidUtils.deserializeDeleteDeltas(root,split.getDeltas()) : AcidUtils.deserializeDeltas(root,split.getDeltas());
   final Configuration conf=options.getConfiguration();
-  TypeDescription schema=getDesiredRowTypeDescr(conf,true,Integer.MAX_VALUE);
-  final Reader reader;
-  final int bucket;
-  Reader.Options readOptions=new Reader.Options().schema(schema);
+  final Reader reader=OrcInputFormat.createOrcReaderForSplit(conf,split);
+  final int bucket=OrcInputFormat.getBucketForSplit(conf,split);
+  final Reader.Options readOptions=OrcInputFormat.createOptionsForReader(conf);
   readOptions.range(split.getStart(),split.getLength());
-  final List<OrcProto.Type> schemaTypes=OrcUtils.getOrcTypes(schema);
-  readOptions.include(genIncludedColumns(schemaTypes,conf,SCHEMA_TYPES_IS_ORIGINAL));
-  setSearchArgument(readOptions,schemaTypes,conf,SCHEMA_TYPES_IS_ORIGINAL);
-  if (split.hasBase()) {
-    bucket=AcidUtils.parseBaseOrDeltaBucketFilename(split.getPath(),conf).getBucket();
-    OrcFile.ReaderOptions readerOptions=OrcFile.readerOptions(conf).maxLength(split.getFileLength());
-    if (split.hasFooter()) {
-      readerOptions.orcTail(split.getOrcTail());
-    }
-    reader=OrcFile.createReader(path,readerOptions);
-  }
- else {
-    bucket=(int)split.getStart();
-    reader=null;
-  }
   String txnString=conf.get(ValidTxnList.VALID_TXNS_KEY);
   ValidTxnList validTxnList=txnString == null ? new ValidReadTxnList() : new ValidReadTxnList(txnString);
   final OrcRawRecordMerger records=new OrcRawRecordMerger(conf,true,reader,split.isOriginal(),bucket,validTxnList,readOptions,deltas);
   return new RowReader<OrcStruct>(){
     OrcStruct innerRecord=records.createValue();
     @Override public ObjectInspector getObjectInspector(){
-      return OrcStruct.createObjectInspector(0,schemaTypes);
+      return OrcStruct.createObjectInspector(0,OrcUtils.getOrcTypes(readOptions.getSchema()));
     }
     @Override public boolean next(    RecordIdentifier recordIdentifier,    OrcStruct orcStruct) throws IOException {
       boolean result;
