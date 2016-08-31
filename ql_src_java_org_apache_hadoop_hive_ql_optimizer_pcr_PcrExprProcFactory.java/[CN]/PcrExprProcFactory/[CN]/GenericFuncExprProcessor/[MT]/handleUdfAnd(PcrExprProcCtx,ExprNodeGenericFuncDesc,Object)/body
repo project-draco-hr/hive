@@ -1,0 +1,42 @@
+{
+  boolean anyUnknown=false;
+  boolean allDivided=true;
+  List<NodeInfoWrapper> newNodeOutputsList=new ArrayList<NodeInfoWrapper>(nodeOutputs.length);
+  for (int i=0; i < nodeOutputs.length; i++) {
+    NodeInfoWrapper c=(NodeInfoWrapper)nodeOutputs[i];
+    if (c.state == WalkState.FALSE) {
+      return c;
+    }
+    if (c.state == WalkState.UNKNOWN) {
+      anyUnknown=true;
+    }
+    if (c.state != WalkState.DIVIDED) {
+      allDivided=false;
+    }
+    if (c.state != WalkState.TRUE) {
+      newNodeOutputsList.add(c);
+    }
+  }
+  if (newNodeOutputsList.size() == 0) {
+    return new NodeInfoWrapper(WalkState.TRUE,null,new ExprNodeConstantDesc(fd.getTypeInfo(),Boolean.TRUE));
+  }
+  if (newNodeOutputsList.size() == 1) {
+    return newNodeOutputsList.get(0);
+  }
+  Object[] newNodeOutputs=newNodeOutputsList.toArray();
+  if (anyUnknown) {
+    return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,newNodeOutputs));
+  }
+  if (allDivided) {
+    Boolean[] results=new Boolean[ctx.getPartList().size()];
+    for (int i=0; i < ctx.getPartList().size(); i++) {
+      Boolean[] andArray=new Boolean[newNodeOutputs.length];
+      for (int j=0; j < newNodeOutputs.length; j++) {
+        andArray[j]=((NodeInfoWrapper)newNodeOutputs[j]).ResultVector[i];
+      }
+      results[i]=opAnd(andArray);
+    }
+    return getResultWrapFromResults(results,fd,newNodeOutputs);
+  }
+  return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,newNodeOutputs));
+}

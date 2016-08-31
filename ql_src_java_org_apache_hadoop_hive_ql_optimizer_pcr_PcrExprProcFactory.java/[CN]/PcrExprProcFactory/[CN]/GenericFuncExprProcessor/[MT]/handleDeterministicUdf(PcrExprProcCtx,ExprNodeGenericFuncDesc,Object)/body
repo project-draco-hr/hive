@@ -1,0 +1,39 @@
+{
+  Boolean has_part_col=checkForPartColsAndUnknown(fd,nodeOutputs);
+  if (has_part_col == null) {
+    return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,nodeOutputs));
+  }
+  if (has_part_col && fd.getTypeInfo().getCategory() == Category.PRIMITIVE) {
+    if (fd.getTypeInfo().equals(TypeInfoFactory.booleanTypeInfo)) {
+      Boolean[] results=new Boolean[ctx.getPartList().size()];
+      for (int i=0; i < ctx.getPartList().size(); i++) {
+        results[i]=(Boolean)evalExprWithPart(fd,ctx.getPartList().get(i),ctx.getVirtualColumns());
+      }
+      return getResultWrapFromResults(results,fd,nodeOutputs);
+    }
+    Object[] results=new Object[ctx.getPartList().size()];
+    for (int i=0; i < ctx.getPartList().size(); i++) {
+      results[i]=evalExprWithPart(fd,ctx.getPartList().get(i),ctx.getVirtualColumns());
+    }
+    Object result=ifResultsAgree(results);
+    if (result == null) {
+      return new NodeInfoWrapper(WalkState.UNKNOWN,null,getOutExpr(fd,nodeOutputs));
+    }
+    return new NodeInfoWrapper(WalkState.CONSTANT,null,new ExprNodeConstantDesc(fd.getTypeInfo(),result));
+  }
+  final ExprNodeGenericFuncDesc desc=getOutExpr(fd,nodeOutputs);
+  final ExprNodeDesc foldedDesc=ConstantPropagateProcFactory.foldExpr(desc);
+  if (foldedDesc != null && foldedDesc instanceof ExprNodeConstantDesc) {
+    ExprNodeConstantDesc constant=(ExprNodeConstantDesc)foldedDesc;
+    if (Boolean.TRUE.equals(constant.getValue())) {
+      return new NodeInfoWrapper(WalkState.TRUE,null,constant);
+    }
+ else     if (Boolean.FALSE.equals(constant.getValue())) {
+      return new NodeInfoWrapper(WalkState.FALSE,null,constant);
+    }
+ else {
+      return new NodeInfoWrapper(WalkState.CONSTANT,null,constant);
+    }
+  }
+  return new NodeInfoWrapper(WalkState.CONSTANT,null,desc);
+}
