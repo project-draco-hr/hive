@@ -1,0 +1,39 @@
+{
+  final CuratorFramework curator=newCurator();
+  ExecutorService executor=Executors.newFixedThreadPool(nodeCount);
+  final CountDownLatch cdlIn=new CountDownLatch(nodeCount), cdlOut=new CountDownLatch(1);
+  @SuppressWarnings("unchecked") FutureTask<SlotZnode>[] startTasks=new FutureTask[nodeCount];
+  for (int i=0; i < nodeCount; ++i) {
+    if (isFallback) {
+      curator.create().creatingParentsIfNeeded().forPath(PATH + "/worker-" + i);
+    }
+    startTasks[i]=new FutureTask<SlotZnode>(new Callable<SlotZnode>(){
+      SlotZnode node=createZnode(curator);
+      public SlotZnode call() throws Exception {
+        syncThreadStart(cdlIn,cdlOut);
+        return node.start(5,TimeUnit.SECONDS) ? node : null;
+      }
+    }
+);
+  }
+  for (int i=0; i < startTasks.length; ++i) {
+    executor.execute(startTasks[i]);
+  }
+  cdlIn.await();
+  cdlOut.countDown();
+  boolean[] found=new boolean[nodeCount];
+  int totalFallbackCount=0;
+  for (int i=0; i < startTasks.length; ++i) {
+    SlotZnode node=startTasks[i].get();
+    assertNotNull(node);
+    totalFallbackCount+=node.getFallbackCount();
+    int slot=node.getCurrentSlot();
+    assertTrue(slot < found.length);
+    assertFalse(found[slot]);
+    found[slot]=true;
+  }
+  if (isFallback) {
+    LOG.info("Total fallback count " + totalFallbackCount);
+    assertTrue(totalFallbackCount > 0);
+  }
+}

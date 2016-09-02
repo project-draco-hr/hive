@@ -1,35 +1,26 @@
 {
   Preconditions.checkArgument(client != null && client.getState() == CuratorFrameworkState.STARTED,"client is not started");
 synchronized (this) {
-    if (!stateChangeListeners.isEmpty()) {
-      ServiceInstance instance=null;
-      ChildData childData=event.getData();
-      if (childData != null) {
-        byte[] data=childData.getData();
-        if (data != null) {
-          try {
-            ServiceRecord srv=encoder.fromBytes(event.getData().getPath(),data);
-            instance=new DynamicServiceInstance(srv);
-          }
- catch (          IOException e) {
-            LOG.error("Unable to decode data for zknode: {}." + " Dropping notification of type: {}",childData.getPath(),event.getType());
-          }
-        }
-      }
-      for (      ServiceInstanceStateChangeListener listener : stateChangeListeners) {
-        if (event.getType() == PathChildrenCacheEvent.Type.CHILD_ADDED) {
-          LOG.info("Added zknode {} to llap namespace. Notifying state change listener.",event.getData().getPath());
-          listener.onCreate(instance);
-        }
- else         if (event.getType() == PathChildrenCacheEvent.Type.CHILD_UPDATED) {
-          LOG.info("Updated zknode {} in llap namespace. Notifying state change listener.",event.getData().getPath());
-          listener.onUpdate(instance);
-        }
- else         if (event.getType() == PathChildrenCacheEvent.Type.CHILD_REMOVED) {
-          LOG.info("Removed zknode {} from llap namespace. Notifying state change listener.",event.getData().getPath());
-          listener.onRemove(instance);
-        }
-      }
-    }
-  }
+    if (stateChangeListeners.isEmpty())     return;
+    ChildData childData=event.getData();
+    if (childData == null)     return;
+    String nodeName=extractNodeName(childData);
+    if (!nodeName.startsWith(WORKER_PREFIX))     return;
+    LOG.info("{} for zknode {} in llap namespace",event.getType(),childData.getPath());
+    ServiceInstance instance=extractServiceInstance(event,childData);
+    for (    ServiceInstanceStateChangeListener listener : stateChangeListeners) {
+switch (event.getType()) {
+case CHILD_ADDED:
+        listener.onCreate(instance);
+      break;
+case CHILD_UPDATED:
+    listener.onUpdate(instance);
+  break;
+case CHILD_REMOVED:
+listener.onRemove(instance);
+break;
+default :
+}
+}
+}
 }

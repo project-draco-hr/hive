@@ -13,13 +13,17 @@
   }
   srv.set(UNIQUE_IDENTIFIER,uniq.toString());
   try {
-    znode=new PersistentEphemeralNode(zooKeeperClient,PersistentEphemeralNode.Mode.EPHEMERAL_SEQUENTIAL,pathPrefix,encoder.toBytes(srv));
+    znode=new PersistentEphemeralNode(zooKeeperClient,Mode.EPHEMERAL_SEQUENTIAL,workersPath + "/" + WORKER_PREFIX,encoder.toBytes(srv));
     znode.start();
     long znodeCreationTimeout=120;
     if (!znode.waitForInitialCreate(znodeCreationTimeout,TimeUnit.SECONDS)) {
       throw new Exception("Max znode creation wait time: " + znodeCreationTimeout + "s exhausted");
     }
     znodePath=znode.getActualPath();
+    slotZnode=new SlotZnode(zooKeeperClient,workersPath,SLOT_PREFIX,WORKER_PREFIX,uniq.toString());
+    if (!slotZnode.start(znodeCreationTimeout,TimeUnit.SECONDS)) {
+      throw new Exception("Max znode creation wait time: " + znodeCreationTimeout + "s exhausted");
+    }
     if (HiveConf.getBoolVar(conf,ConfVars.LLAP_VALIDATE_ACLS)) {
       try {
         checkAndSetAcls();
@@ -36,6 +40,7 @@
  catch (  Exception e) {
     LOG.error("Unable to create a znode for this server instance",e);
     CloseableUtils.closeQuietly(znode);
+    CloseableUtils.closeQuietly(slotZnode);
     throw (e instanceof IOException) ? (IOException)e : new IOException(e);
   }
   if (LOG.isDebugEnabled()) {

@@ -1,0 +1,36 @@
+{
+  boolean doesExist=event.getResultCode() == KeeperException.Code.NODEEXISTS.intValue();
+  if (!doesExist && event.getResultCode() != KeeperException.Code.OK.intValue()) {
+    if (LOG.isInfoEnabled()) {
+      LOG.info("Trying to reacquire due to create error: " + event);
+    }
+    startCreateCurrentNode();
+    return;
+  }
+  State localState=state.get();
+switch (localState) {
+case CLOSED:
+case LATENT:
+    return;
+case INITIAL_SELECTION:
+  if (doesExist) {
+    LOG.info("Slot " + currentSlot + " was occupied");
+    chooseSlotToTake();
+    startCreateCurrentNode();
+  }
+ else {
+    handleCreatedNode(event.getName());
+  }
+break;
+case AFTER_SELECTION:
+if (doesExist) {
+processExistsFromCreate(client,event.getPath());
+}
+ else {
+handleCreatedNode(event.getName());
+}
+break;
+default :
+throw new AssertionError("Unknown state " + localState);
+}
+}

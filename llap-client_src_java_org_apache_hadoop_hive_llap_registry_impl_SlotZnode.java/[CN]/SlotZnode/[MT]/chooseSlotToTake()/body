@@ -1,0 +1,37 @@
+{
+  int slotToTake=-1;
+  while (true) {
+    List<String> allChildNodes;
+    try {
+      allChildNodes=client.getChildren().forPath(basePath);
+    }
+ catch (    Exception e) {
+      LOG.error("Cannot list nodes to get slots; failing",e);
+      throw e;
+    }
+    TreeSet<Integer> slots=new TreeSet<>();
+    int approxWorkerCount=0;
+    for (    String child : allChildNodes) {
+      if (!child.startsWith(prefix)) {
+        if (child.startsWith(workerPrefix)) {
+          ++approxWorkerCount;
+        }
+      }
+ else {
+        slots.add(Integer.parseInt(child.substring(prefix.length())));
+      }
+    }
+    Iterator<Integer> slotIter=slots.iterator();
+    slotToTake=0;
+    while (slotIter.hasNext()) {
+      int nextTaken=slotIter.next();
+      if (slotToTake < nextTaken)       break;
+      slotToTake=nextTaken + 1;
+    }
+    if (slotToTake != currentSlot || !shouldFallBackOnCollision(approxWorkerCount))     break;
+    ++fallbackCount;
+    Thread.sleep(rdm.nextInt(200));
+  }
+  currentSlot=slotToTake;
+  LOG.info("Will attempt to take slot " + currentSlot);
+}
