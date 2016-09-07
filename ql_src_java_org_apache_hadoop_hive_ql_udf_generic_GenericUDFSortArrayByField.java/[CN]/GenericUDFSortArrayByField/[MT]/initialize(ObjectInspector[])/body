@@ -1,0 +1,42 @@
+{
+  GenericUDFUtils.ReturnObjectInspectorResolver returnOIResolver;
+  returnOIResolver=new GenericUDFUtils.ReturnObjectInspectorResolver(true);
+  if (arguments.length < 2) {
+    throw new UDFArgumentLengthException("SORT_ARRAY_BY requires minimum 2 arguments, got " + arguments.length);
+  }
+switch (arguments[0].getCategory()) {
+case LIST:
+    listObjectInspector=(ListObjectInspector)arguments[0];
+  break;
+default :
+throw new UDFArgumentTypeException(0,"Argument 1 of function SORT_ARRAY_BY must be " + serdeConstants.LIST_TYPE_NAME + ", but "+ arguments[0].getTypeName()+ " was found.");
+}
+switch (listObjectInspector.getListElementObjectInspector().getCategory()) {
+case STRUCT:
+structObjectInspector=(StructObjectInspector)listObjectInspector.getListElementObjectInspector();
+break;
+default :
+throw new UDFArgumentTypeException(0,"Element[s] of first argument array in function SORT_ARRAY_BY must be " + serdeConstants.STRUCT_TYPE_NAME + ", but "+ listObjectInspector.getTypeName()+ " was found.");
+}
+converters=new Converter[arguments.length];
+inputTypes=new PrimitiveCategory[arguments.length];
+fields=new StructField[arguments.length - 1];
+noOfInputFields=arguments.length - 1;
+for (int i=1; i < arguments.length; i++) {
+checkArgPrimitive(arguments,i);
+checkArgGroups(arguments,i,inputTypes,PrimitiveGrouping.STRING_GROUP);
+if (arguments[i] instanceof ConstantObjectInspector) {
+String fieldName=getConstantStringValue(arguments,i);
+if (i != 1 && (i == arguments.length - 1) && (fieldName.trim().toUpperCase().equals(SORT_ORDER_TYPE.ASC.name()) || fieldName.trim().toUpperCase().equals(SORT_ORDER_TYPE.DESC.name()))) {
+sortOrder=SORT_ORDER_TYPE.valueOf(fieldName.trim().toUpperCase());
+noOfInputFields-=1;
+continue;
+}
+fields[i - 1]=structObjectInspector.getStructFieldRef(getConstantStringValue(arguments,i));
+}
+obtainStringConverter(arguments,i,inputTypes,converters);
+}
+ObjectInspector returnOI=returnOIResolver.get(structObjectInspector);
+converters[0]=ObjectInspectorConverters.getConverter(structObjectInspector,returnOI);
+return ObjectInspectorFactory.getStandardListObjectInspector(structObjectInspector);
+}

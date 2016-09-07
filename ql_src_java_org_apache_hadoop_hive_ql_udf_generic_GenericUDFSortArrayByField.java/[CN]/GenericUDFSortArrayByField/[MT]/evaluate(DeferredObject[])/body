@@ -1,0 +1,40 @@
+{
+  if (arguments[0].get() == null) {
+    return null;
+  }
+  String field=null;
+  for (int i=0; i < noOfInputFields && fields[i] == null; i++) {
+    field=getStringValue(arguments,i + 1,converters);
+    if (i != 0 && (i == arguments.length - 2) && (field.trim().toUpperCase().equals(SORT_ORDER_TYPE.ASC.name()) || field.trim().toUpperCase().equals(SORT_ORDER_TYPE.DESC.name()))) {
+      noOfInputFields-=1;
+      sortOrder=SORT_ORDER_TYPE.valueOf(field.trim().toUpperCase());
+      continue;
+    }
+    fields[i]=structObjectInspector.getStructFieldRef(field);
+  }
+  Object array=arguments[0].get();
+  List<Object> retArray=(List<Object>)listObjectInspector.getList(array);
+  Collections.sort(retArray,new Comparator<Object>(){
+    @Override public int compare(    Object object1,    Object object2){
+      int result=0;
+      for (int i=0; i < noOfInputFields; i++) {
+        Object o1=structObjectInspector.getStructFieldData(object1,fields[i]);
+        Object o2=structObjectInspector.getStructFieldData(object2,fields[i]);
+        result=ObjectInspectorUtils.compare(o1,fields[i].getFieldObjectInspector(),o2,fields[i].getFieldObjectInspector());
+        if (result != 0) {
+          if (sortOrder == SORT_ORDER_TYPE.DESC) {
+            result*=-1;
+          }
+          return result;
+        }
+      }
+      return result;
+    }
+  }
+);
+  ret.clear();
+  for (int i=0; i < retArray.size(); i++) {
+    ret.add(converters[0].convert(retArray.get(i)));
+  }
+  return ret;
+}
