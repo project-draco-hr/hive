@@ -159,16 +159,48 @@ break;
 case STRING:
 case CHAR:
 case VARCHAR:
+{
 if (isEscaped) {
-LazyUtils.copyAndEscapeStringDataToText(bytes,fieldStart,fieldLength,escapeChar,tempText);
-currentBytes=tempText.getBytes();
-currentBytesStart=0;
-currentBytesLength=tempText.getLength();
+int outputLength=0;
+for (int i=0; i < fieldLength; i++) {
+if (bytes[fieldStart + i] != escapeChar) {
+outputLength++;
 }
  else {
+outputLength++;
+i++;
+}
+}
+if (outputLength == fieldLength) {
+currentExternalBufferNeeded=false;
+currentBytes=bytes;
+currentBytesStart=fieldStart;
+currentBytesLength=outputLength;
+}
+ else {
+if (useExternalBuffer) {
+currentExternalBufferNeeded=true;
+currentExternalBufferNeededLen=outputLength;
+}
+ else {
+currentExternalBufferNeeded=false;
+if (internalBufferLen < outputLength) {
+internalBufferLen=outputLength;
+internalBuffer=new byte[internalBufferLen];
+}
+copyToBuffer(internalBuffer,0,outputLength);
+currentBytes=internalBuffer;
+currentBytesStart=0;
+currentBytesLength=outputLength;
+}
+}
+}
+ else {
+currentExternalBufferNeeded=false;
 currentBytes=bytes;
 currentBytesStart=fieldStart;
 currentBytesLength=fieldLength;
+}
 }
 break;
 case BINARY:

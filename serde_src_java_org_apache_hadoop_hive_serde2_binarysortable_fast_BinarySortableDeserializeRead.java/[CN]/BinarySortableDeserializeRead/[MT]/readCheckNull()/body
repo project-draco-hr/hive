@@ -109,13 +109,43 @@ case STRING:
 case CHAR:
 case VARCHAR:
 {
-if (tempText == null) {
-tempText=new Text();
+bytesStart=inputByteBuffer.tell();
+final boolean invert=columnSortOrderIsDesc[fieldIndex];
+int length=0;
+do {
+byte b=inputByteBuffer.read(invert);
+if (b == 0) {
+break;
 }
-BinarySortableSerDe.deserializeText(inputByteBuffer,columnSortOrderIsDesc[fieldIndex],tempText);
-currentBytes=tempText.getBytes();
+if (b == 1) {
+inputByteBuffer.read(invert);
+}
+length++;
+}
+ while (true);
+if (length == 0 || (!invert && length == inputByteBuffer.tell() - bytesStart - 1)) {
+currentExternalBufferNeeded=false;
+currentBytes=inputByteBuffer.getData();
+currentBytesStart=bytesStart;
+currentBytesLength=length;
+}
+ else {
+if (useExternalBuffer) {
+currentExternalBufferNeeded=true;
+currentExternalBufferNeededLen=length;
+}
+ else {
+currentExternalBufferNeeded=false;
+if (internalBufferLen < length) {
+internalBufferLen=length;
+internalBuffer=new byte[internalBufferLen];
+}
+copyToBuffer(internalBuffer,0,length);
+currentBytes=internalBuffer;
 currentBytesStart=0;
-currentBytesLength=tempText.getLength();
+currentBytesLength=length;
+}
+}
 }
 break;
 case INTERVAL_YEAR_MONTH:
@@ -146,7 +176,9 @@ case DECIMAL:
 {
 final boolean invert=columnSortOrderIsDesc[fieldIndex];
 int b=inputByteBuffer.read(invert) - 1;
-assert(b == 1 || b == -1 || b == 0);
+if (!(b == 1 || b == -1 || b == 0)) {
+throw new IOException("Unexpected byte value " + (int)b + " in binary sortable format data (invert "+ invert+ ")");
+}
 boolean positive=b != -1;
 int factor=inputByteBuffer.read(invert) ^ 0x80;
 for (int i=0; i < 3; i++) {
@@ -159,7 +191,9 @@ int decimalStart=inputByteBuffer.tell();
 int length=0;
 do {
 b=inputByteBuffer.read(positive ? invert : !invert);
-assert(b != 1);
+if (b == 1) {
+throw new IOException("Expected -1 and found byte value " + (int)b + " in binary sortable format data (invert "+ invert+ ")");
+}
 if (b == 0) {
 break;
 }

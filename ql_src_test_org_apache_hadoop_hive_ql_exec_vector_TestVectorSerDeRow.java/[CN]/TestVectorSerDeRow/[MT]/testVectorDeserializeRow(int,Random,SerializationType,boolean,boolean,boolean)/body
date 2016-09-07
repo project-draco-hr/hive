@@ -1,0 +1,117 @@
+{
+  String[] emptyScratchTypeNames=new String[0];
+  VectorRandomRowSource source=new VectorRandomRowSource();
+  source.init(r);
+  VectorizedRowBatchCtx batchContext=new VectorizedRowBatchCtx();
+  batchContext.init(source.rowStructObjectInspector(),emptyScratchTypeNames);
+  VectorizedRowBatch batch=batchContext.createVectorizedRowBatch();
+  for (  ColumnVector cv : batch.cols) {
+    Arrays.fill(cv.isNull,true);
+  }
+  PrimitiveTypeInfo[] primitiveTypeInfos=source.primitiveTypeInfos();
+  int fieldCount=source.typeNames().size();
+  DeserializeRead deserializeRead;
+  SerializeWrite serializeWrite;
+switch (serializationType) {
+case BINARY_SORTABLE:
+    boolean useColumnSortOrderIsDesc=alternate1;
+  if (!useColumnSortOrderIsDesc) {
+    deserializeRead=new BinarySortableDeserializeRead(source.primitiveTypeInfos(),useExternalBuffer);
+    serializeWrite=new BinarySortableSerializeWrite(fieldCount);
+  }
+ else {
+    boolean[] columnSortOrderIsDesc=new boolean[fieldCount];
+    for (int i=0; i < fieldCount; i++) {
+      columnSortOrderIsDesc[i]=r.nextBoolean();
+    }
+    deserializeRead=new BinarySortableDeserializeRead(source.primitiveTypeInfos(),useExternalBuffer,columnSortOrderIsDesc);
+    byte[] columnNullMarker=new byte[fieldCount];
+    byte[] columnNotNullMarker=new byte[fieldCount];
+    for (int i=0; i < fieldCount; i++) {
+      if (columnSortOrderIsDesc[i]) {
+        columnNullMarker[i]=BinarySortableSerDe.ZERO;
+        columnNotNullMarker[i]=BinarySortableSerDe.ONE;
+      }
+ else {
+        columnNullMarker[i]=BinarySortableSerDe.ZERO;
+        columnNotNullMarker[i]=BinarySortableSerDe.ONE;
+      }
+    }
+    serializeWrite=new BinarySortableSerializeWrite(columnSortOrderIsDesc,columnNullMarker,columnNotNullMarker);
+  }
+boolean useBinarySortableCharsNeedingEscape=alternate2;
+if (useBinarySortableCharsNeedingEscape) {
+source.addBinarySortableAlphabets();
+}
+break;
+case LAZY_BINARY:
+deserializeRead=new LazyBinaryDeserializeRead(source.primitiveTypeInfos(),useExternalBuffer);
+serializeWrite=new LazyBinarySerializeWrite(fieldCount);
+break;
+case LAZY_SIMPLE:
+{
+StructObjectInspector rowObjectInspector=source.rowStructObjectInspector();
+Configuration conf=new Configuration();
+Properties tbl=new Properties();
+tbl.setProperty(serdeConstants.FIELD_DELIM,"\t");
+tbl.setProperty(serdeConstants.LINE_DELIM,"\n");
+byte separator=(byte)'\t';
+boolean useLazySimpleEscapes=alternate1;
+if (useLazySimpleEscapes) {
+tbl.setProperty(serdeConstants.QUOTE_CHAR,"'");
+String escapeString="\\";
+tbl.setProperty(serdeConstants.ESCAPE_CHAR,escapeString);
+}
+LazySerDeParameters lazySerDeParams=getSerDeParams(conf,tbl,rowObjectInspector);
+if (useLazySimpleEscapes) {
+boolean[] needsEscape=lazySerDeParams.getNeedsEscape();
+StringBuilder sb=new StringBuilder();
+if (needsEscape['\n']) {
+sb.append('\n');
+}
+if (needsEscape['\r']) {
+sb.append('\r');
+}
+String needsEscapeStr=sb.toString();
+if (needsEscapeStr.length() > 0) {
+source.addEscapables(needsEscapeStr);
+}
+}
+deserializeRead=new LazySimpleDeserializeRead(source.primitiveTypeInfos(),useExternalBuffer,separator,lazySerDeParams);
+serializeWrite=new LazySimpleSerializeWrite(fieldCount,separator,lazySerDeParams);
+}
+break;
+default :
+throw new Error("Unknown serialization type " + serializationType);
+}
+VectorDeserializeRow vectorDeserializeRow=new VectorDeserializeRow(deserializeRead);
+vectorDeserializeRow.init();
+for (ColumnVector cv : batch.cols) {
+Arrays.fill(cv.isNull,true);
+cv.noNulls=false;
+}
+VectorExtractRow vectorExtractRow=new VectorExtractRow();
+vectorExtractRow.init(source.typeNames());
+Object[][] randomRows=source.randomRows(100000);
+int firstRandomRowIndex=0;
+for (int i=0; i < randomRows.length; i++) {
+Object[] row=randomRows[i];
+Output output=serializeRow(row,source,serializeWrite);
+vectorDeserializeRow.setBytes(output.getData(),0,output.getLength());
+try {
+vectorDeserializeRow.deserialize(batch,batch.size);
+}
+ catch (Exception e) {
+throw new HiveException("\nDeserializeRead details: " + vectorDeserializeRow.getDetailedReadPositionString(),e);
+}
+batch.size++;
+if (batch.size == batch.DEFAULT_SIZE) {
+examineBatch(batch,vectorExtractRow,primitiveTypeInfos,randomRows,firstRandomRowIndex);
+firstRandomRowIndex=i + 1;
+batch.reset();
+}
+}
+if (batch.size > 0) {
+examineBatch(batch,vectorExtractRow,primitiveTypeInfos,randomRows,firstRandomRowIndex);
+}
+}
