@@ -17,16 +17,29 @@
   try {
     for (    Path location : getLocations(db,table,partSpec)) {
       FileSystem fs=location.getFileSystem(conf);
-      HdfsUtils.HadoopFileStatus status=new HdfsUtils.HadoopFileStatus(conf,fs,location);
-      FileStatus targetStatus=fs.getFileStatus(location);
-      String targetGroup=targetStatus == null ? null : targetStatus.getGroup();
-      fs.delete(location,true);
-      fs.mkdirs(location);
-      try {
-        HdfsUtils.setFullFileStatus(conf,status,targetGroup,fs,location,false);
+      HadoopShims.HdfsEncryptionShim shim=ShimLoader.getHadoopShims().createHdfsEncryptionShim(fs,conf);
+      if (!shim.isPathEncrypted(location)) {
+        HdfsUtils.HadoopFileStatus status=new HdfsUtils.HadoopFileStatus(conf,fs,location);
+        FileStatus targetStatus=fs.getFileStatus(location);
+        String targetGroup=targetStatus == null ? null : targetStatus.getGroup();
+        FileUtils.moveToTrash(fs,location,conf);
+        fs.mkdirs(location);
+        try {
+          HdfsUtils.setFullFileStatus(conf,status,targetGroup,fs,location,false);
+        }
+ catch (        Exception e) {
+          LOG.warn("Error setting permissions of " + location,e);
+        }
       }
- catch (      Exception e) {
-        LOG.warn("Error setting permissions of " + location,e);
+ else {
+        FileStatus[] statuses=fs.listStatus(location,FileUtils.HIDDEN_FILES_PATH_FILTER);
+        if (statuses == null || statuses.length == 0) {
+          continue;
+        }
+        boolean success=Hive.trashFiles(fs,statuses,conf);
+        if (!success) {
+          throw new HiveException("Error in deleting the contents of " + location.toString());
+        }
       }
     }
   }
