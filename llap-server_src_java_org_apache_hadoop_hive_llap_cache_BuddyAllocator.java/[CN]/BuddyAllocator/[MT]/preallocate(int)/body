@@ -1,18 +1,24 @@
 {
   if (isMapped) {
+    RandomAccessFile rwf=null;
+    File rf=null;
     Preconditions.checkArgument(isDirect,"All memory mapped allocations have to be direct buffers");
     try {
-      File rf=File.createTempFile("arena-",".cache",cacheDir.toFile());
-      RandomAccessFile rwf=new RandomAccessFile(rf,"rw");
+      rf=File.createTempFile("arena-",".cache",cacheDir.toFile());
+      rwf=new RandomAccessFile(rf,"rw");
       rwf.setLength(arenaSize);
       ByteBuffer rwbuf=rwf.getChannel().map(MapMode.READ_WRITE,0,arenaSize);
-      rwf.close();
-      rf.delete();
       return rwbuf;
     }
  catch (    IOException ioe) {
       LlapIoImpl.LOG.warn("Failed trying to allocate memory mapped arena",ioe);
       throw new OutOfMemoryError("Failed trying to allocate memory mapped arena: " + ioe.getMessage());
+    }
+ finally {
+      IOUtils.closeQuietly(rwf);
+      if (rf != null) {
+        rf.delete();
+      }
     }
   }
   return isDirect ? ByteBuffer.allocateDirect(arenaSize) : ByteBuffer.allocate(arenaSize);
