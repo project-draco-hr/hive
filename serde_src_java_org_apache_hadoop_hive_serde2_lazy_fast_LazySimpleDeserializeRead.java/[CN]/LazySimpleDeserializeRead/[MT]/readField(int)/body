@@ -1,0 +1,222 @@
+{
+  if (!parsed) {
+    parse();
+    parsed=true;
+  }
+  currentFieldIndex=fieldIndex;
+  final int fieldStart=startPosition[fieldIndex];
+  currentFieldStart=fieldStart;
+  final int fieldLength=startPosition[fieldIndex + 1] - startPosition[fieldIndex] - 1;
+  currentFieldLength=fieldLength;
+  if (fieldLength < 0) {
+    return false;
+  }
+  final byte[] bytes=this.bytes;
+  if (nullSequenceBytes != null) {
+    if (checkNull(bytes,fieldStart,fieldLength)) {
+      return false;
+    }
+  }
+  try {
+switch (primitiveCategories[fieldIndex]) {
+case BOOLEAN:
+{
+        int i=fieldStart;
+        if (fieldLength == 4) {
+          if ((bytes[i] == 'T' || bytes[i] == 't') && (bytes[i + 1] == 'R' || bytes[i + 1] == 'r') && (bytes[i + 2] == 'U' || bytes[i + 1] == 'u')&& (bytes[i + 3] == 'E' || bytes[i + 3] == 'e')) {
+            currentBoolean=true;
+          }
+ else {
+            return false;
+          }
+        }
+ else         if (fieldLength == 5) {
+          if ((bytes[i] == 'F' || bytes[i] == 'f') && (bytes[i + 1] == 'A' || bytes[i + 1] == 'a') && (bytes[i + 2] == 'L' || bytes[i + 2] == 'l')&& (bytes[i + 3] == 'S' || bytes[i + 3] == 's')&& (bytes[i + 4] == 'E' || bytes[i + 4] == 'e')) {
+            currentBoolean=false;
+          }
+ else {
+            return false;
+          }
+        }
+ else         if (isExtendedBooleanLiteral && fieldLength == 1) {
+          byte b=bytes[fieldStart];
+          if (b == '1' || b == 't' || b == 'T') {
+            currentBoolean=true;
+          }
+ else           if (b == '0' || b == 'f' || b == 'F') {
+            currentBoolean=false;
+          }
+ else {
+            return false;
+          }
+        }
+ else {
+          return false;
+        }
+      }
+    return true;
+case BYTE:
+  if (!LazyUtils.isNumberMaybe(bytes,fieldStart,fieldLength)) {
+    return false;
+  }
+currentByte=LazyByte.parseByte(bytes,fieldStart,fieldLength,10);
+return true;
+case SHORT:
+if (!LazyUtils.isNumberMaybe(bytes,fieldStart,fieldLength)) {
+return false;
+}
+currentShort=LazyShort.parseShort(bytes,fieldStart,fieldLength,10);
+return true;
+case INT:
+if (!LazyUtils.isNumberMaybe(bytes,fieldStart,fieldLength)) {
+return false;
+}
+currentInt=LazyInteger.parseInt(bytes,fieldStart,fieldLength,10);
+return true;
+case LONG:
+if (!LazyUtils.isNumberMaybe(bytes,fieldStart,fieldLength)) {
+return false;
+}
+currentLong=LazyLong.parseLong(bytes,fieldStart,fieldLength,10);
+return true;
+case FLOAT:
+if (!LazyUtils.isNumberMaybe(bytes,fieldStart,fieldLength)) {
+return false;
+}
+currentFloat=Float.parseFloat(new String(bytes,fieldStart,fieldLength,StandardCharsets.UTF_8));
+return true;
+case DOUBLE:
+if (!LazyUtils.isNumberMaybe(bytes,fieldStart,fieldLength)) {
+return false;
+}
+currentDouble=Double.parseDouble(new String(bytes,fieldStart,fieldLength,StandardCharsets.UTF_8));
+return true;
+case STRING:
+case CHAR:
+case VARCHAR:
+{
+if (isEscaped) {
+if (escapeCounts[fieldIndex] == 0) {
+currentExternalBufferNeeded=false;
+currentBytes=bytes;
+currentBytesStart=fieldStart;
+currentBytesLength=fieldLength;
+}
+ else {
+final int unescapedLength=fieldLength - escapeCounts[fieldIndex];
+if (useExternalBuffer) {
+currentExternalBufferNeeded=true;
+currentExternalBufferNeededLen=unescapedLength;
+}
+ else {
+currentExternalBufferNeeded=false;
+if (internalBufferLen < unescapedLength) {
+internalBufferLen=unescapedLength;
+internalBuffer=new byte[internalBufferLen];
+}
+copyToBuffer(internalBuffer,0,unescapedLength);
+currentBytes=internalBuffer;
+currentBytesStart=0;
+currentBytesLength=unescapedLength;
+}
+}
+}
+ else {
+currentExternalBufferNeeded=false;
+currentBytes=bytes;
+currentBytesStart=fieldStart;
+currentBytesLength=fieldLength;
+}
+}
+return true;
+case BINARY:
+{
+byte[] recv=new byte[fieldLength];
+System.arraycopy(bytes,fieldStart,recv,0,fieldLength);
+byte[] decoded=LazyBinary.decodeIfNeeded(recv);
+decoded=decoded.length > 0 ? decoded : recv;
+currentBytes=decoded;
+currentBytesStart=0;
+currentBytesLength=decoded.length;
+}
+return true;
+case DATE:
+if (!LazyUtils.isDateMaybe(bytes,fieldStart,fieldLength)) {
+return false;
+}
+currentDateWritable.set(Date.valueOf(new String(bytes,fieldStart,fieldLength,StandardCharsets.UTF_8)));
+return true;
+case TIMESTAMP:
+{
+if (!LazyUtils.isDateMaybe(bytes,fieldStart,fieldLength)) {
+return false;
+}
+String s=new String(bytes,fieldStart,fieldLength,StandardCharsets.US_ASCII);
+if (s.compareTo("NULL") == 0) {
+logExceptionMessage(bytes,fieldStart,fieldLength,"TIMESTAMP");
+return false;
+}
+try {
+currentTimestampWritable.set(timestampParser.parseTimestamp(s));
+}
+ catch (IllegalArgumentException e) {
+logExceptionMessage(bytes,fieldStart,fieldLength,"TIMESTAMP");
+return false;
+}
+}
+return true;
+case INTERVAL_YEAR_MONTH:
+if (fieldLength == 0) {
+return false;
+}
+try {
+String s=new String(bytes,fieldStart,fieldLength,StandardCharsets.UTF_8);
+currentHiveIntervalYearMonthWritable.set(HiveIntervalYearMonth.valueOf(s));
+}
+ catch (Exception e) {
+logExceptionMessage(bytes,fieldStart,fieldLength,"INTERVAL_YEAR_MONTH");
+return false;
+}
+return true;
+case INTERVAL_DAY_TIME:
+if (fieldLength == 0) {
+return false;
+}
+try {
+String s=new String(bytes,fieldStart,fieldLength,StandardCharsets.UTF_8);
+currentHiveIntervalDayTimeWritable.set(HiveIntervalDayTime.valueOf(s));
+}
+ catch (Exception e) {
+logExceptionMessage(bytes,fieldStart,fieldLength,"INTERVAL_DAY_TIME");
+return false;
+}
+return true;
+case DECIMAL:
+{
+if (!LazyUtils.isNumberMaybe(bytes,fieldStart,fieldLength)) {
+return false;
+}
+String byteData=new String(bytes,fieldStart,fieldLength,StandardCharsets.UTF_8);
+HiveDecimal decimal=HiveDecimal.create(byteData);
+DecimalTypeInfo decimalTypeInfo=(DecimalTypeInfo)typeInfos[fieldIndex];
+int precision=decimalTypeInfo.getPrecision();
+int scale=decimalTypeInfo.getScale();
+decimal=HiveDecimal.enforcePrecisionScale(decimal,precision,scale);
+if (decimal == null) {
+if (LOG.isDebugEnabled()) {
+LOG.debug("Data not in the HiveDecimal data type range so converted to null. Given data is :" + byteData);
+}
+return false;
+}
+currentHiveDecimalWritable.set(decimal);
+}
+return true;
+default :
+throw new Error("Unexpected primitive category " + primitiveCategories[fieldIndex].name());
+}
+}
+ catch (NumberFormatException nfe) {
+logExceptionMessage(bytes,fieldStart,fieldLength,primitiveCategories[fieldIndex]);
+return false;
+}
+}

@@ -1,12 +1,42 @@
 {
   final int count=isConvert.length;
-  for (int i=0; i < count; i++) {
-    if (isConvert[i]) {
-      deserializeConvertRowColumn(batch,batchIndex,i);
-    }
+  if (!useReadField) {
+    for (int i=0; i < count; i++) {
+      final int projectionColumnNum=projectionColumnNums[i];
+      if (projectionColumnNum == -1) {
+        deserializeRead.skipNextField();
+        continue;
+      }
+      if (!deserializeRead.readNextField()) {
+        ColumnVector colVector=batch.cols[projectionColumnNum];
+        colVector.isNull[batchIndex]=true;
+        colVector.noNulls=false;
+        continue;
+      }
+      if (isConvert[i]) {
+        convertRowColumn(batch,batchIndex,i);
+      }
  else {
-      deserializeRowColumn(batch,batchIndex,i,false);
+        storeRowColumn(batch,batchIndex,i,false);
+      }
     }
   }
-  deserializeRead.extraFieldsCheck();
+ else {
+    final int readFieldCount=readFieldLogicalIndices.length;
+    for (int i=0; i < readFieldCount; i++) {
+      final int logicalIndex=readFieldLogicalIndices[i];
+      if (!deserializeRead.readField(logicalIndex)) {
+        ColumnVector colVector=batch.cols[projectionColumnNums[logicalIndex]];
+        colVector.isNull[batchIndex]=true;
+        colVector.noNulls=false;
+        continue;
+      }
+      if (isConvert[logicalIndex]) {
+        convertRowColumn(batch,batchIndex,logicalIndex);
+      }
+ else {
+        storeRowColumn(batch,batchIndex,logicalIndex,false);
+      }
+    }
+  }
 }

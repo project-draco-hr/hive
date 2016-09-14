@@ -1,37 +1,72 @@
 {
-  int structByteEnd=end;
+  int fieldId=0;
   int fieldByteBegin=start;
   int fieldByteEnd=start;
-  parseFieldIndex=0;
-  while (fieldByteEnd <= structByteEnd) {
-    if (fieldByteEnd == structByteEnd || bytes[fieldByteEnd] == separator) {
-      if (lastColumnTakesRest && parseFieldIndex == fieldCount - 1) {
-        fieldByteEnd=structByteEnd;
-      }
-      startPosition[parseFieldIndex]=fieldByteBegin;
-      parseFieldIndex++;
-      if (parseFieldIndex == fieldCount || fieldByteEnd == structByteEnd) {
-        for (int i=parseFieldIndex; i <= fieldCount; i++) {
-          startPosition[i]=fieldByteEnd + 1;
+  final byte separator=this.separator;
+  final int fieldCount=this.fieldCount;
+  final int[] startPosition=this.startPosition;
+  final byte[] bytes=this.bytes;
+  final int end=this.end;
+  if (!isEscaped) {
+    while (fieldByteEnd < end) {
+      if (bytes[fieldByteEnd] == separator) {
+        startPosition[fieldId++]=fieldByteBegin;
+        if (fieldId == fieldCount) {
+          break;
         }
-        break;
-      }
-      fieldByteBegin=fieldByteEnd + 1;
-      fieldByteEnd++;
-    }
- else {
-      if (isEscaped && bytes[fieldByteEnd] == escapeChar && fieldByteEnd + 1 < structByteEnd) {
-        fieldByteEnd+=2;
+        fieldByteBegin=++fieldByteEnd;
       }
  else {
         fieldByteEnd++;
       }
     }
+    if (fieldByteEnd == end && fieldId < fieldCount) {
+      startPosition[fieldId++]=fieldByteBegin;
+    }
   }
-  if (!extraFieldWarned && fieldByteEnd < structByteEnd) {
-    doExtraFieldWarned();
+ else {
+    final byte escapeChar=this.escapeChar;
+    final int endLessOne=end - 1;
+    final int[] escapeCounts=this.escapeCounts;
+    int escapeCount=0;
+    while (fieldByteEnd < endLessOne) {
+      if (bytes[fieldByteEnd] == separator) {
+        escapeCounts[fieldId]=escapeCount;
+        escapeCount=0;
+        startPosition[fieldId++]=fieldByteBegin;
+        if (fieldId == fieldCount) {
+          break;
+        }
+        fieldByteBegin=++fieldByteEnd;
+      }
+ else       if (bytes[fieldByteEnd] == escapeChar) {
+        fieldByteEnd+=2;
+        escapeCount++;
+      }
+ else {
+        fieldByteEnd++;
+      }
+    }
+    if (fieldByteEnd == endLessOne && fieldId < fieldCount) {
+      if (bytes[fieldByteEnd] == separator) {
+        escapeCounts[fieldId]=escapeCount;
+        escapeCount=0;
+        startPosition[fieldId++]=fieldByteBegin;
+        if (fieldId <= fieldCount) {
+          fieldByteBegin=++fieldByteEnd;
+        }
+      }
+ else {
+        fieldByteEnd++;
+      }
+    }
+    if (fieldByteEnd == end && fieldId < fieldCount) {
+      escapeCounts[fieldId]=escapeCount;
+      startPosition[fieldId++]=fieldByteBegin;
+    }
   }
-  if (!missingFieldWarned && parseFieldIndex < fieldCount) {
-    doMissingFieldWarned(parseFieldIndex);
+  if (fieldId == fieldCount || fieldByteEnd == end) {
+    Arrays.fill(startPosition,fieldId,startPosition.length,fieldByteEnd + 1);
   }
+  isEndOfInputReached=(fieldByteEnd == end);
 }

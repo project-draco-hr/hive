@@ -31,9 +31,6 @@
   for (int i=0; i < rowCount; i++) {
     Object[] row=rows[i];
     LazySimpleDeserializeRead lazySimpleDeserializeRead=new LazySimpleDeserializeRead(writePrimitiveTypeInfos,false,separator,serdeParams);
-    if (useIncludeColumns) {
-      lazySimpleDeserializeRead.setColumnsToInclude(columnsToInclude);
-    }
     BytesWritable bytesWritable=serializeWriteBytes[i];
     byte[] bytes=bytesWritable.getBytes();
     int length=bytesWritable.getLength();
@@ -43,7 +40,10 @@
       chars[c]=(char)(bytes[c] & 0xFF);
     }
     for (int index=0; index < columnCount; index++) {
-      if (index >= writeColumnCount || (useIncludeColumns && !columnsToInclude[index])) {
+      if (useIncludeColumns && !columnsToInclude[index]) {
+        lazySimpleDeserializeRead.skipNextField();
+      }
+ else       if (index >= writeColumnCount) {
         VerifyFast.verifyDeserializeRead(lazySimpleDeserializeRead,primitiveTypeInfos[index],null);
       }
  else {
@@ -51,9 +51,9 @@
         VerifyFast.verifyDeserializeRead(lazySimpleDeserializeRead,primitiveTypeInfos[index],writable);
       }
     }
-    lazySimpleDeserializeRead.extraFieldsCheck();
-    TestCase.assertTrue(!lazySimpleDeserializeRead.readBeyondConfiguredFieldsWarned());
-    TestCase.assertTrue(!lazySimpleDeserializeRead.bufferRangeHasExtraDataWarned());
+    if (writeColumnCount == columnCount) {
+      TestCase.assertTrue(lazySimpleDeserializeRead.isEndOfInputReached());
+    }
   }
   for (int i=0; i < rowCount; i++) {
     BytesWritable bytesWritable=serializeWriteBytes[i];
@@ -100,13 +100,13 @@
   for (int i=0; i < rowCount; i++) {
     Object[] row=rows[i];
     LazySimpleDeserializeRead lazySimpleDeserializeRead=new LazySimpleDeserializeRead(writePrimitiveTypeInfos,false,separator,serdeParams);
-    if (useIncludeColumns) {
-      lazySimpleDeserializeRead.setColumnsToInclude(columnsToInclude);
-    }
     byte[] bytes=serdeBytes[i];
     lazySimpleDeserializeRead.set(bytes,0,bytes.length);
     for (int index=0; index < columnCount; index++) {
-      if (index >= writeColumnCount || (useIncludeColumns && !columnsToInclude[index])) {
+      if (useIncludeColumns && !columnsToInclude[index]) {
+        lazySimpleDeserializeRead.skipNextField();
+      }
+ else       if (index >= writeColumnCount) {
         VerifyFast.verifyDeserializeRead(lazySimpleDeserializeRead,primitiveTypeInfos[index],null);
       }
  else {
@@ -114,8 +114,8 @@
         VerifyFast.verifyDeserializeRead(lazySimpleDeserializeRead,primitiveTypeInfos[index],writable);
       }
     }
-    lazySimpleDeserializeRead.extraFieldsCheck();
-    TestCase.assertTrue(!lazySimpleDeserializeRead.readBeyondConfiguredFieldsWarned());
-    TestCase.assertTrue(!lazySimpleDeserializeRead.bufferRangeHasExtraDataWarned());
+    if (writeColumnCount == columnCount) {
+      TestCase.assertTrue(lazySimpleDeserializeRead.isEndOfInputReached());
+    }
   }
 }

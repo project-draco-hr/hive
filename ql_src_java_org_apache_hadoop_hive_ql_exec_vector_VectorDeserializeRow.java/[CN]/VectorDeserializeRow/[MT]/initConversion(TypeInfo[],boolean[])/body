@@ -1,19 +1,13 @@
 {
-  if (columnsToIncludeTruncated != null) {
-    deserializeRead.setColumnsToInclude(columnsToIncludeTruncated);
-  }
-  int targetColumnCount;
-  if (columnsToIncludeTruncated == null) {
-    targetColumnCount=targetTypeInfos.length;
-  }
- else {
-    targetColumnCount=Math.min(targetTypeInfos.length,columnsToIncludeTruncated.length);
-  }
-  int sourceColumnCount=Math.min(sourceTypeInfos.length,targetColumnCount);
-  allocateArrays(sourceColumnCount);
-  allocateConvertArrays(sourceColumnCount);
+  Preconditions.checkState(targetTypeInfos.length >= sourceTypeInfos.length);
+  Preconditions.checkState(columnsToIncludeTruncated == null || columnsToIncludeTruncated.length >= sourceTypeInfos.length);
+  final int columnCount=sourceTypeInfos.length;
+  allocateArrays(columnCount);
+  allocateConvertArrays(columnCount);
+  int includedCount=0;
+  int[] includedIndices=new int[columnCount];
   boolean atLeastOneConvert=false;
-  for (int i=0; i < sourceColumnCount; i++) {
+  for (int i=0; i < columnCount; i++) {
     if (columnsToIncludeTruncated != null && !columnsToIncludeTruncated[i]) {
     }
  else {
@@ -32,11 +26,15 @@
  else {
         initSourceEntry(i,i,sourceTypeInfo);
       }
+      includedIndices[includedCount++]=i;
     }
+  }
+  if (includedCount < columnCount && deserializeRead.isReadFieldSupported()) {
+    useReadField=true;
+    readFieldLogicalIndices=Arrays.copyOf(includedIndices,includedCount);
   }
   if (atLeastOneConvert) {
     convertVectorAssignRow=new VectorAssignRow();
     convertVectorAssignRow.initConversion(sourceTypeInfos,targetTypeInfos,columnsToIncludeTruncated);
   }
-  return sourceColumnCount;
 }
