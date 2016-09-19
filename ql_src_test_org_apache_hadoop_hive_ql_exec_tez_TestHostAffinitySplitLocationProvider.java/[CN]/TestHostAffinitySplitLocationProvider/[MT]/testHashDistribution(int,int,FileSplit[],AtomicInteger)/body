@@ -1,0 +1,28 @@
+{
+  @SuppressWarnings("unchecked") List<String> partLocs=(List<String>)Mockito.mock(List.class);
+  Mockito.when(partLocs.size()).thenReturn(locs);
+  final AtomicInteger state=new AtomicInteger(0);
+  Mockito.when(partLocs.get(Mockito.anyInt())).thenAnswer(new Answer<String>(){
+    @Override public String answer(    InvocationOnMock invocation) throws Throwable {
+      return (state.getAndIncrement() == missCount) ? "not-null" : null;
+    }
+  }
+);
+  int[] hitCounts=new int[locs];
+  for (int splitIx=0; splitIx < splits.length; ++splitIx) {
+    state.set(0);
+    int index=HostAffinitySplitLocationProvider.determineLocation(partLocs,splits[splitIx].getPath().toString(),splits[splitIx].getStart(),null);
+    ++hitCounts[index];
+  }
+  SummaryStatistics ss=new SummaryStatistics();
+  for (  int hitCount : hitCounts) {
+    ss.addValue(hitCount);
+  }
+  double avg=ss.getSum() / ss.getN(), stdev=ss.getStandardDeviation(), cv=stdev / avg;
+  double allowedMin=avg - 2.5 * stdev, allowedMax=avg + 2.5 * stdev;
+  if (allowedMin > ss.getMin() || allowedMax < ss.getMax() || cv > 0.22) {
+    LOG.info("The distribution for " + locs + " locations, "+ missCount+ " misses isn't to "+ "our liking: avg "+ avg+ ", stdev "+ stdev+ ", cv "+ cv+ ", min "+ ss.getMin()+ ", max "+ ss.getMax());
+    errorCount.incrementAndGet();
+  }
+  return cv;
+}
