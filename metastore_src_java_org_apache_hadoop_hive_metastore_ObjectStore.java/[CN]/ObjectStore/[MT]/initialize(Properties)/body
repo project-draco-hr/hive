@@ -1,13 +1,34 @@
 {
-  LOG.info("ObjectStore, initialize called");
-  prop=dsProps;
-  pm=getPersistenceManager();
-  isInitialized=pm != null;
-  if (isInitialized) {
-    expressionProxy=createExpressionProxy(hiveConf);
-    if (HiveConf.getBoolVar(getConf(),ConfVars.METASTORE_TRY_DIRECT_SQL)) {
-      directSql=new MetaStoreDirectSql(pm,hiveConf);
+  int retryLimit=HiveConf.getIntVar(hiveConf,HiveConf.ConfVars.HMSHANDLERATTEMPTS);
+  long retryInterval=HiveConf.getTimeVar(hiveConf,HiveConf.ConfVars.HMSHANDLERINTERVAL,TimeUnit.MILLISECONDS);
+  int numTries=retryLimit;
+  while (numTries > 0) {
+    try {
+      initializeHelper(dsProps);
+      return;
+    }
+ catch (    Exception e) {
+      numTries--;
+      boolean retriable=isRetriableException(e);
+      if ((numTries > 0) && retriable) {
+        LOG.info("Retriable exception while instantiating ObjectStore, retrying. " + numTries + " tries left",e);
+        try {
+          Thread.sleep(retryInterval);
+        }
+ catch (        InterruptedException ie) {
+          LOG.debug("Interrupted while sleeping before retrying.",ie);
+          Thread.currentThread().interrupt();
+        }
+      }
+ else {
+        if (retriable) {
+          LOG.warn("Exception retry limit reached, not retrying any longer.",e);
+        }
+ else {
+          LOG.debug("Non-retriable exception during ObjectStore initialize.",e);
+        }
+        throw e;
+      }
     }
   }
-  LOG.debug("RawStore: " + this + ", with PersistenceManager: "+ pm+ " created in the thread with id: "+ Thread.currentThread().getId());
 }
