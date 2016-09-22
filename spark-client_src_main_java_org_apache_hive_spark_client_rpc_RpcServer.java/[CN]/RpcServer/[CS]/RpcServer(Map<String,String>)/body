@@ -1,7 +1,7 @@
 {
   this.config=new RpcConfiguration(mapConf);
   this.group=new NioEventLoopGroup(this.config.getRpcThreadCount(),new ThreadFactoryBuilder().setNameFormat("RPC-Handler-%d").setDaemon(true).build());
-  this.channel=new ServerBootstrap().group(group).channel(NioServerSocketChannel.class).childHandler(new ChannelInitializer<SocketChannel>(){
+  ServerBootstrap serverBootstrap=new ServerBootstrap().group(group).channel(NioServerSocketChannel.class).childHandler(new ChannelInitializer<SocketChannel>(){
     @Override public void initChannel(    SocketChannel ch) throws Exception {
       SaslServerHandler saslHandler=new SaslServerHandler(config);
       final Rpc newRpc=Rpc.createServer(saslHandler,config,ch,group);
@@ -16,7 +16,8 @@
       saslHandler.cancelTask=group.schedule(cancelTask,RpcServer.this.config.getServerConnectTimeoutMs(),TimeUnit.MILLISECONDS);
     }
   }
-).option(ChannelOption.SO_BACKLOG,1).option(ChannelOption.SO_REUSEADDR,true).childOption(ChannelOption.SO_KEEPALIVE,true).bind(0).sync().channel();
+).option(ChannelOption.SO_BACKLOG,1).option(ChannelOption.SO_REUSEADDR,true).childOption(ChannelOption.SO_KEEPALIVE,true);
+  this.channel=bindServerPort(serverBootstrap).channel();
   this.port=((InetSocketAddress)channel.localAddress()).getPort();
   this.pendingClients=Maps.newConcurrentMap();
   this.address=this.config.getServerAddress();
