@@ -1,0 +1,67 @@
+{
+  QBParseInfo qbp=qb.getParseInfo();
+  if (!qbp.getDestToGroupBy().isEmpty()) {
+    throw new SemanticException(ErrorMsg.UDTF_NO_GROUP_BY.getMsg());
+  }
+  if (!qbp.getDestToDistributeBy().isEmpty()) {
+    throw new SemanticException(ErrorMsg.UDTF_NO_DISTRIBUTE_BY.getMsg());
+  }
+  if (!qbp.getDestToSortBy().isEmpty()) {
+    throw new SemanticException(ErrorMsg.UDTF_NO_SORT_BY.getMsg());
+  }
+  if (!qbp.getDestToClusterBy().isEmpty()) {
+    throw new SemanticException(ErrorMsg.UDTF_NO_CLUSTER_BY.getMsg());
+  }
+  if (!qbp.getAliasToLateralViews().isEmpty()) {
+    throw new SemanticException(ErrorMsg.UDTF_LATERAL_VIEW.getMsg());
+  }
+  LOG.debug("Table alias: " + outputTableAlias + " Col aliases: "+ colAliases);
+  ArrayList<ColumnInfo> inputCols=selectRR.getColumnInfos();
+  ArrayList<String> colNames=new ArrayList<String>();
+  ObjectInspector[] colOIs=new ObjectInspector[inputCols.size()];
+  for (int i=0; i < inputCols.size(); i++) {
+    colNames.add(inputCols.get(i).getInternalName());
+    colOIs[i]=inputCols.get(i).getObjectInspector();
+  }
+  StandardStructObjectInspector rowOI=ObjectInspectorFactory.getStandardStructObjectInspector(colNames,Arrays.asList(colOIs));
+  StructObjectInspector outputOI=genericUDTF.initialize(rowOI);
+  int numUdtfCols=outputOI.getAllStructFieldRefs().size();
+  if (colAliases.isEmpty()) {
+    for (    StructField field : outputOI.getAllStructFieldRefs()) {
+      colAliases.add(field.getFieldName());
+    }
+  }
+  int numSuppliedAliases=colAliases.size();
+  if (numUdtfCols != numSuppliedAliases) {
+    throw new SemanticException(ErrorMsg.UDTF_ALIAS_MISMATCH.getMsg("expected " + numUdtfCols + " aliases "+ "but got "+ numSuppliedAliases));
+  }
+  ArrayList<ColumnInfo> udtfCols=new ArrayList<ColumnInfo>();
+  Iterator<String> colAliasesIter=colAliases.iterator();
+  for (  StructField sf : outputOI.getAllStructFieldRefs()) {
+    String colAlias=colAliasesIter.next();
+    assert(colAlias != null);
+    ColumnInfo col=new ColumnInfo(sf.getFieldName(),TypeInfoUtils.getTypeInfoFromObjectInspector(sf.getFieldObjectInspector()),outputTableAlias,false);
+    udtfCols.add(col);
+  }
+  RowResolver out_rwsch=new RowResolver();
+  for (int i=0; i < udtfCols.size(); i++) {
+    out_rwsch.put(outputTableAlias,colAliases.get(i),udtfCols.get(i));
+  }
+  RelTraitSet traitSet=TraitsUtil.getDefaultTraitSet(cluster);
+  RelDataType retType=TypeConverter.getType(cluster,out_rwsch,null);
+  Builder<RelDataType> argTypeBldr=ImmutableList.<RelDataType>builder();
+  RexBuilder rexBuilder=cluster.getRexBuilder();
+  RelDataTypeFactory dtFactory=rexBuilder.getTypeFactory();
+  RowSchema rs=selectRR.getRowSchema();
+  for (  ColumnInfo ci : rs.getSignature()) {
+    argTypeBldr.add(TypeConverter.convert(ci.getType(),dtFactory));
+  }
+  SqlOperator calciteOp=SqlFunctionConverter.getCalciteOperator(genericUDTFName,genericUDTF,argTypeBldr.build(),retType);
+  List<RelNode> list=new ArrayList<>();
+  list.add(input);
+  RexNode rexNode=cluster.getRexBuilder().makeCall(calciteOp,selectColLst);
+  RelNode udtf=HiveTableFunctionScan.create(cluster,traitSet,list,rexNode,null,retType,null);
+  relToHiveColNameCalcitePosMap.put(udtf,this.buildHiveToCalciteColumnMap(out_rwsch,udtf));
+  relToHiveRR.put(udtf,out_rwsch);
+  return udtf;
+}

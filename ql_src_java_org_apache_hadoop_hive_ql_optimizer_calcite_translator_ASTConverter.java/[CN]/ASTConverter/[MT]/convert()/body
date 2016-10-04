@@ -57,24 +57,46 @@
     hiveAST.having=ASTBuilder.having(cond);
   }
   ASTBuilder b=ASTBuilder.construct(HiveParser.TOK_SELECT,"TOK_SELECT");
-  if (select.getChildExps().isEmpty()) {
-    RexLiteral r=select.getCluster().getRexBuilder().makeExactLiteral(new BigDecimal(1));
-    ASTNode selectExpr=ASTBuilder.selectExpr(ASTBuilder.literal(r),"1");
-    b.add(selectExpr);
+  if (select instanceof Project) {
+    if (select.getChildExps().isEmpty()) {
+      RexLiteral r=select.getCluster().getRexBuilder().makeExactLiteral(new BigDecimal(1));
+      ASTNode selectExpr=ASTBuilder.selectExpr(ASTBuilder.literal(r),"1");
+      b.add(selectExpr);
+    }
+ else {
+      int i=0;
+      for (      RexNode r : select.getChildExps()) {
+        if (RexUtil.isNull(r) && r.getType().getSqlTypeName() != SqlTypeName.NULL) {
+          r=select.getCluster().getRexBuilder().makeAbstractCast(r.getType(),r);
+        }
+        ASTNode expr=r.accept(new RexVisitor(schema,r instanceof RexLiteral));
+        String alias=select.getRowType().getFieldNames().get(i++);
+        ASTNode selectExpr=ASTBuilder.selectExpr(expr,alias);
+        b.add(selectExpr);
+      }
+    }
+    hiveAST.select=b.node();
   }
  else {
-    int i=0;
-    for (    RexNode r : select.getChildExps()) {
+    HiveTableFunctionScan udtf=(HiveTableFunctionScan)select;
+    List<ASTNode> children=new ArrayList<>();
+    RexCall call=(RexCall)udtf.getCall();
+    for (    RexNode r : call.getOperands()) {
       if (RexUtil.isNull(r) && r.getType().getSqlTypeName() != SqlTypeName.NULL) {
         r=select.getCluster().getRexBuilder().makeAbstractCast(r.getType(),r);
       }
       ASTNode expr=r.accept(new RexVisitor(schema,r instanceof RexLiteral));
-      String alias=select.getRowType().getFieldNames().get(i++);
-      ASTNode selectExpr=ASTBuilder.selectExpr(expr,alias);
-      b.add(selectExpr);
+      children.add(expr);
     }
+    ASTBuilder sel=ASTBuilder.construct(HiveParser.TOK_SELEXPR,"TOK_SELEXPR");
+    ASTNode function=buildUDTFAST(call.getOperator().getName(),children);
+    sel.add(function);
+    for (    String alias : udtf.getRowType().getFieldNames()) {
+      sel.add(HiveParser.Identifier,alias);
+    }
+    b.add(sel);
+    hiveAST.select=b.node();
   }
-  hiveAST.select=b.node();
   convertOrderLimitToASTNode((HiveSortLimit)orderLimit);
   return hiveAST.getAST();
 }
